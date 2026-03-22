@@ -16,6 +16,15 @@ import { useToast } from "@/hooks/use-toast";
 
 const appointmentTypes: AppointmentType[] = ["consulta", "retorno", "exame", "procedimento", "terapia_avulsa", "terapia_pacote"];
 
+const defaultDurations: Record<AppointmentType, number> = {
+  consulta: 30,
+  retorno: 20,
+  exame: 30,
+  procedimento: 60,
+  terapia_avulsa: 50,
+  terapia_pacote: 50,
+};
+
 interface NewAppointmentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -36,8 +45,6 @@ interface IntervalInfo {
 export function NewAppointmentDialog({ open, onOpenChange, doctors, specialties, patients }: NewAppointmentDialogProps) {
   const { toast } = useToast();
   const [step, setStep] = useState<Step>("form");
-
-  // Form fields
   const [patientId, setPatientId] = useState("");
   const [type, setType] = useState<AppointmentType | "">("");
   const [doctorId, setDoctorId] = useState("");
@@ -48,8 +55,6 @@ export function NewAppointmentDialog({ open, onOpenChange, doctors, specialties,
   const [value, setValue] = useState("");
   const [therapyType, setTherapyType] = useState("");
   const [notes, setNotes] = useState("");
-
-  // Business rule states
   const [intervalInfo, setIntervalInfo] = useState<IntervalInfo | null>(null);
   const [overrideReason, setOverrideReason] = useState("");
   const [activeReturns, setActiveReturns] = useState<ReturnControl[]>([]);
@@ -57,125 +62,79 @@ export function NewAppointmentDialog({ open, onOpenChange, doctors, specialties,
   const [patientPackages, setPatientPackages] = useState<TherapyPackage[]>([]);
   const [selectedPackageId, setSelectedPackageId] = useState("");
 
+  // Duplicate detection
+  const [cpfSearch, setCpfSearch] = useState("");
+  const duplicatePatient = cpfSearch.length >= 5
+    ? patients.find((p) => p.cpf.includes(cpfSearch) || p.phone.includes(cpfSearch))
+    : undefined;
+
   const selectedDoctor = doctors.find((d) => d.id === doctorId);
-  const filteredDoctors = specialtyId
-    ? doctors.filter((d) => d.specialtyId === specialtyId)
-    : doctors;
+  const filteredDoctors = specialtyId ? doctors.filter((d) => d.specialtyId === specialtyId) : doctors;
+
+  const handleTypeChange = (v: string) => {
+    const newType = v as AppointmentType;
+    setType(newType);
+    setDuration(String(defaultDurations[newType]));
+  };
 
   const resetForm = () => {
     setStep("form");
-    setPatientId("");
-    setType("");
-    setDoctorId("");
-    setSpecialtyId("");
-    setDate("");
-    setTime("");
-    setDuration("30");
-    setValue("");
-    setTherapyType("");
-    setNotes("");
-    setIntervalInfo(null);
-    setOverrideReason("");
-    setActiveReturns([]);
-    setSelectedReturnId("");
-    setPatientPackages([]);
-    setSelectedPackageId("");
+    setPatientId(""); setType(""); setDoctorId(""); setSpecialtyId("");
+    setDate(""); setTime(""); setDuration("30"); setValue("");
+    setTherapyType(""); setNotes(""); setIntervalInfo(null);
+    setOverrideReason(""); setActiveReturns([]); setSelectedReturnId("");
+    setPatientPackages([]); setSelectedPackageId(""); setCpfSearch("");
   };
 
-  const handleClose = () => {
-    resetForm();
-    onOpenChange(false);
-  };
+  const handleClose = () => { resetForm(); onOpenChange(false); };
 
   const handleSubmit = async () => {
     if (!patientId || !type || !doctorId || !date || !time) {
       toast({ title: "Preencha todos os campos obrigatórios", variant: "destructive" });
       return;
     }
-
     const specialty = selectedDoctor?.specialty || "";
-
-    // Check 30-day interval for consulta
     if (type === "consulta" && specialty) {
       const check = await api.checkConsultaInterval(patientId, specialty);
       if (check.blocked) {
-        setIntervalInfo({
-          specialty,
-          lastDate: check.lastDate!,
-          daysPassed: check.daysPassed!,
-          availableDate: check.availableDate!,
-        });
+        setIntervalInfo({ specialty, lastDate: check.lastDate!, daysPassed: check.daysPassed!, availableDate: check.availableDate! });
         setStep("interval_alert");
         return;
       }
     }
-
-    // Check returns for retorno type
     if (type === "retorno") {
       const returns = await api.checkActiveReturns(patientId);
-      if (returns.length > 0) {
-        setActiveReturns(returns);
-        setStep("return_alert");
-        return;
-      }
+      if (returns.length > 0) { setActiveReturns(returns); setStep("return_alert"); return; }
     }
-
-    // Check therapy packages
     if (type === "terapia_pacote") {
       const packages = await api.getTherapyPackages(patientId);
       const active = packages.filter((p) => p.status === "active");
-      if (active.length > 0) {
-        setPatientPackages(active);
-        setStep("therapy_package");
-        return;
-      } else {
-        toast({
-          title: "Nenhum pacote ativo",
-          description: "Este paciente não possui pacotes de terapia ativos.",
-          variant: "destructive",
-        });
-        return;
-      }
+      if (active.length > 0) { setPatientPackages(active); setStep("therapy_package"); return; }
+      else { toast({ title: "Nenhum pacote ativo", description: "Este paciente não possui pacotes de terapia ativos.", variant: "destructive" }); return; }
     }
-
     confirmAppointment();
   };
 
-  const confirmAppointment = () => {
-    toast({ title: "Agendamento criado com sucesso!" });
-    handleClose();
-  };
+  const confirmAppointment = () => { toast({ title: "Agendamento criado com sucesso!" }); handleClose(); };
 
   const handleOverride = () => {
-    if (!overrideReason.trim()) {
-      toast({ title: "Justificativa obrigatória", description: "Informe o motivo da liberação antecipada.", variant: "destructive" });
-      return;
-    }
-    // Audit log would be created here
+    if (!overrideReason.trim()) { toast({ title: "Justificativa obrigatória", variant: "destructive" }); return; }
     toast({ title: "Agendamento liberado", description: "A liberação antecipada foi registrada em auditoria." });
     handleClose();
   };
 
   const handleReturnConfirm = (asReturn: boolean) => {
-    if (asReturn && selectedReturnId) {
-      toast({ title: "Retorno agendado com sucesso!", description: "Vinculado ao retorno ativo." });
-    } else {
-      toast({ title: "Agendamento criado com sucesso!" });
-    }
+    toast({ title: asReturn && selectedReturnId ? "Retorno agendado com sucesso!" : "Agendamento criado com sucesso!" });
     handleClose();
   };
 
   const handlePackageConfirm = () => {
     const pkg = patientPackages.find((p) => p.id === selectedPackageId);
-    if (!pkg) {
-      toast({ title: "Selecione um pacote", variant: "destructive" });
-      return;
-    }
-    if (pkg.remainingSessions <= 0) {
-      toast({ title: "Sessão agendada", description: "⚠️ Pacote sem saldo. Sessão extra registrada." });
-    } else {
-      toast({ title: "Sessão agendada", description: `Restam ${pkg.remainingSessions - 1} sessões no pacote.` });
-    }
+    if (!pkg) { toast({ title: "Selecione um pacote", variant: "destructive" }); return; }
+    toast({
+      title: "Sessão agendada",
+      description: pkg.remainingSessions <= 0 ? "⚠️ Pacote sem saldo. Sessão extra registrada." : `Restam ${pkg.remainingSessions - 1} sessões no pacote.`,
+    });
     handleClose();
   };
 
@@ -201,28 +160,29 @@ export function NewAppointmentDialog({ open, onOpenChange, doctors, specialties,
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label>Tipo de Atendimento *</Label>
-                <Select value={type} onValueChange={(v) => setType(v as AppointmentType)}>
-                  <SelectTrigger><SelectValue placeholder="Selecione o tipo" /></SelectTrigger>
-                  <SelectContent>
-                    {appointmentTypes.map((t) => (
-                      <SelectItem key={t} value={t}>{getAppointmentTypeLabel(t)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Especialidade *</Label>
-                <Select value={specialtyId} onValueChange={(v) => { setSpecialtyId(v); setDoctorId(""); }}>
-                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                  <SelectContent>
-                    {specialties.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Tipo de Atendimento *</Label>
+                  <Select value={type} onValueChange={handleTypeChange}>
+                    <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                    <SelectContent>
+                      {appointmentTypes.map((t) => (
+                        <SelectItem key={t} value={t}>{getAppointmentTypeLabel(t)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Especialidade *</Label>
+                  <Select value={specialtyId} onValueChange={(v) => { setSpecialtyId(v); setDoctorId(""); }}>
+                    <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                    <SelectContent>
+                      {specialties.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -249,6 +209,7 @@ export function NewAppointmentDialog({ open, onOpenChange, doctors, specialties,
                 <div className="space-y-2">
                   <Label>Duração (min)</Label>
                   <Input type="number" value={duration} onChange={(e) => setDuration(e.target.value)} min="10" step="5" />
+                  {type && <p className="text-[10px] text-muted-foreground">Padrão: {defaultDurations[type]}min</p>}
                 </div>
               </div>
 
@@ -287,27 +248,14 @@ export function NewAppointmentDialog({ open, onOpenChange, doctors, specialties,
             </DialogHeader>
             <Card className="border-warning/30 bg-warning/5">
               <CardContent className="p-4 space-y-2">
-                <p className="text-sm">
-                  Este paciente realizou consulta em <strong>{intervalInfo.specialty}</strong> em{" "}
-                  <strong>{formatDate(intervalInfo.lastDate)}</strong>.
-                </p>
-                <p className="text-sm">
-                  Dias passados: <strong>{intervalInfo.daysPassed}</strong> de 30.
-                </p>
-                <p className="text-sm">
-                  Novo agendamento estará liberado a partir de{" "}
-                  <strong>{formatDate(intervalInfo.availableDate)}</strong>.
-                </p>
+                <p className="text-sm">Este paciente realizou consulta em <strong>{intervalInfo.specialty}</strong> em <strong>{formatDate(intervalInfo.lastDate)}</strong>.</p>
+                <p className="text-sm">Dias passados: <strong>{intervalInfo.daysPassed}</strong> de 30.</p>
+                <p className="text-sm">Liberado a partir de <strong>{formatDate(intervalInfo.availableDate)}</strong>.</p>
               </CardContent>
             </Card>
             <div className="space-y-2">
               <Label>Justificativa para liberação antecipada *</Label>
-              <Textarea
-                placeholder="Informe o motivo da exceção..."
-                value={overrideReason}
-                onChange={(e) => setOverrideReason(e.target.value)}
-                rows={3}
-              />
+              <Textarea placeholder="Informe o motivo da exceção..." value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} rows={3} />
               <p className="text-xs text-muted-foreground">Esta ação será registrada em auditoria.</p>
             </div>
             <DialogFooter className="flex gap-2">
@@ -327,11 +275,7 @@ export function NewAppointmentDialog({ open, onOpenChange, doctors, specialties,
             </DialogHeader>
             <div className="space-y-3">
               {activeReturns.map((ret) => (
-                <Card
-                  key={ret.id}
-                  className={`cursor-pointer transition-colors ${selectedReturnId === ret.id ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`}
-                  onClick={() => setSelectedReturnId(ret.id)}
-                >
+                <Card key={ret.id} className={`cursor-pointer transition-colors ${selectedReturnId === ret.id ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`} onClick={() => setSelectedReturnId(ret.id)}>
                   <CardContent className="p-4 space-y-1">
                     <div className="flex items-center justify-between">
                       <p className="font-medium text-sm">{ret.specialty}</p>
@@ -362,15 +306,11 @@ export function NewAppointmentDialog({ open, onOpenChange, doctors, specialties,
             </DialogHeader>
             <div className="space-y-3">
               {patientPackages.map((pkg) => {
-                const percentage = (pkg.usedSessions / pkg.totalSessions) * 100;
+                const pct = (pkg.usedSessions / pkg.totalSessions) * 100;
                 const isExpired = new Date(pkg.expiresAt + "T00:00:00") < new Date();
                 const noBalance = pkg.remainingSessions <= 0;
                 return (
-                  <Card
-                    key={pkg.id}
-                    className={`cursor-pointer transition-colors ${selectedPackageId === pkg.id ? "border-primary bg-primary/5" : "hover:bg-muted/50"} ${isExpired ? "opacity-60" : ""}`}
-                    onClick={() => setSelectedPackageId(pkg.id)}
-                  >
+                  <Card key={pkg.id} className={`cursor-pointer transition-colors ${selectedPackageId === pkg.id ? "border-primary bg-primary/5" : "hover:bg-muted/50"} ${isExpired ? "opacity-60" : ""}`} onClick={() => setSelectedPackageId(pkg.id)}>
                     <CardContent className="p-4 space-y-2">
                       <div className="flex items-center justify-between">
                         <p className="font-medium text-sm">{pkg.therapyType}</p>
@@ -384,7 +324,7 @@ export function NewAppointmentDialog({ open, onOpenChange, doctors, specialties,
                         <span>{pkg.usedSessions}/{pkg.totalSessions} sessões</span>
                         <span>Restam: {pkg.remainingSessions}</span>
                       </div>
-                      <Progress value={percentage} className="h-2" />
+                      <Progress value={pct} className="h-2" />
                       <div className="flex justify-between text-xs text-muted-foreground">
                         <span>Valor: {formatCurrency(pkg.value)}</span>
                         <span>Validade: {formatDate(pkg.expiresAt)}</span>
