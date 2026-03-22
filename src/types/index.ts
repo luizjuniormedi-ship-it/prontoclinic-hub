@@ -44,22 +44,17 @@ export interface Unit {
 // ── Patient ──────────────────────────────────
 export interface Patient {
   id: string;
+  companyId?: string;
   name: string;
   cpf: string;
   birthDate: string;
   phone: string;
   email: string;
   gender: "M" | "F" | "O";
-  address?: string;
   healthInsurance?: string;
   healthInsuranceNumber?: string;
-  bloodType?: string;
   allergies?: string;
-  emergencyContact?: string;
-  emergencyPhone?: string;
-  guardian?: string;
-  adminNotes?: string;
-  clinicalNotes?: string;
+  clinicalAlerts?: string;
   createdAt: string;
   updatedAt: string;
 }
