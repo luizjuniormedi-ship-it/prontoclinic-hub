@@ -8,7 +8,10 @@ export interface SystemUser {
   phone: string;
   cpf: string;
   role: string; // cargo/função
+  companyId?: string;
+  companyName?: string;
   unit: string;
+  unitIds?: string[]; // access to multiple units
   status: SystemUserStatus;
   profileId: string;
   profileName: string;
@@ -35,16 +38,16 @@ export interface PermissionProfile {
   id: string;
   name: string;
   description: string;
-  isSystem: boolean; // perfis de sistema não podem ser excluídos
-  permissions: Record<string, string[]>; // moduleKey -> action keys[]
+  isSystem: boolean;
+  permissions: Record<string, string[]>;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface UserPermissionOverride {
   userId: string;
-  grants: Record<string, string[]>; // moduleKey -> action keys granted beyond profile
-  blocks: Record<string, string[]>; // moduleKey -> action keys blocked despite profile
+  grants: Record<string, string[]>;
+  blocks: Record<string, string[]>;
 }
 
 export interface AdminAuditEntry {
@@ -64,6 +67,16 @@ export const PERMISSION_MODULES: ModulePermissions[] = [
     moduleKey: "dashboard",
     moduleLabel: "Dashboard",
     actions: [{ key: "view", label: "Visualizar" }],
+  },
+  {
+    moduleKey: "companies",
+    moduleLabel: "Empresas/Filiais",
+    actions: [
+      { key: "view", label: "Visualizar" },
+      { key: "create", label: "Cadastrar" },
+      { key: "edit", label: "Editar" },
+      { key: "deactivate", label: "Inativar" },
+    ],
   },
   {
     moduleKey: "patients",
@@ -87,6 +100,15 @@ export const PERMISSION_MODULES: ModulePermissions[] = [
     ],
   },
   {
+    moduleKey: "specialties",
+    moduleLabel: "Especialidades",
+    actions: [
+      { key: "view", label: "Visualizar" },
+      { key: "create", label: "Cadastrar" },
+      { key: "edit", label: "Editar" },
+    ],
+  },
+  {
     moduleKey: "schedule",
     moduleLabel: "Agenda",
     actions: [
@@ -95,7 +117,21 @@ export const PERMISSION_MODULES: ModulePermissions[] = [
       { key: "reschedule", label: "Remarcar" },
       { key: "cancel", label: "Cancelar" },
       { key: "squeeze_in", label: "Encaixar" },
+      { key: "block_slot", label: "Bloquear horário" },
       { key: "override_interval", label: "Liberar antes (30 dias)" },
+    ],
+  },
+  {
+    moduleKey: "callcenter",
+    moduleLabel: "Call Center",
+    actions: [
+      { key: "view", label: "Visualizar agenda" },
+      { key: "pre_register", label: "Pré-cadastrar paciente" },
+      { key: "create", label: "Agendar" },
+      { key: "reschedule", label: "Remarcar" },
+      { key: "cancel", label: "Cancelar" },
+      { key: "confirm", label: "Registrar confirmação" },
+      { key: "notes", label: "Registrar observações" },
     ],
   },
   {
@@ -119,6 +155,40 @@ export const PERMISSION_MODULES: ModulePermissions[] = [
     ],
   },
   {
+    moduleKey: "worklist",
+    moduleLabel: "Worklist",
+    actions: [
+      { key: "view", label: "Visualizar" },
+      { key: "create", label: "Criar solicitação" },
+      { key: "edit", label: "Editar" },
+      { key: "execute", label: "Iniciar execução" },
+      { key: "complete", label: "Concluir" },
+      { key: "cancel", label: "Cancelar" },
+      { key: "send_pacs", label: "Enviar ao PACS" },
+    ],
+  },
+  {
+    moduleKey: "pacs",
+    moduleLabel: "PACS",
+    actions: [
+      { key: "view", label: "Visualizar vínculo" },
+      { key: "view_status", label: "Visualizar status" },
+      { key: "external_link", label: "Acessar link externo" },
+      { key: "link_report", label: "Vincular laudo" },
+      { key: "admin_integration", label: "Administrar integração" },
+    ],
+  },
+  {
+    moduleKey: "billing_production",
+    moduleLabel: "Faturamento",
+    actions: [
+      { key: "view", label: "Visualizar" },
+      { key: "create", label: "Lançar produção" },
+      { key: "cancel", label: "Cancelar" },
+      { key: "view_reports", label: "Visualizar relatórios" },
+    ],
+  },
+  {
     moduleKey: "financial",
     moduleLabel: "Financeiro",
     actions: [
@@ -127,6 +197,7 @@ export const PERMISSION_MODULES: ModulePermissions[] = [
       { key: "register_payment", label: "Registrar pagamento" },
       { key: "cancel_billing", label: "Cancelar cobrança" },
       { key: "view_reports", label: "Visualizar relatórios" },
+      { key: "config_professional_payment", label: "Configurar pagamento médico" },
     ],
   },
   {
@@ -152,7 +223,6 @@ export const PERMISSION_MODULES: ModulePermissions[] = [
   },
 ];
 
-// All possible actions flat
 export function getAllPermissionKeys(): { module: string; action: string }[] {
   return PERMISSION_MODULES.flatMap((m) =>
     m.actions.map((a) => ({ module: m.moduleKey, action: a.key }))
