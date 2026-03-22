@@ -88,9 +88,9 @@ export default function PatientDetailPage() {
               <span className="text-xs text-muted-foreground">Última: {formatDate(lastApp.date)} — {lastApp.specialty || lastApp.doctorName}</span>
             </div>
           )}
-          {patient.bloodType && (
-            <div className="px-2 py-1 rounded bg-primary/10">
-              <span className="text-xs text-primary font-medium">Tipo: {patient.bloodType}</span>
+          {patient.clinicalAlerts && (
+            <div className="px-2 py-1 rounded bg-destructive/10">
+              <span className="text-xs text-destructive font-medium">Alerta: {patient.clinicalAlerts}</span>
             </div>
           )}
         </div>
