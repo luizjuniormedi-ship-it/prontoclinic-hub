@@ -1,25 +1,26 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { Plus, ChevronLeft, ChevronRight, Clock, Users, CheckCircle, AlertCircle, XCircle, UserX, AlertTriangle, CalendarPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/PageHeader";
-import { LoadingState, EmptyState } from "@/components/StateViews";
-import { AppointmentStatusBadge, AppointmentTypeBadge } from "@/components/StatusBadge";
+import { LoadingState, EmptyState, ErrorState } from "@/components/StateViews";
+import { AppointmentStatusBadge } from "@/components/StatusBadge";
 import { ScheduleFilters } from "@/components/schedule/ScheduleFilters";
 import { QuickActionsMenu } from "@/components/schedule/QuickActionsMenu";
 import { NewAppointmentDialog } from "@/components/schedule/NewAppointmentDialog";
 import { QuickActionDialog } from "@/components/schedule/QuickActionDialog";
 import { AppointmentPreviewPopover } from "@/components/schedule/AppointmentPreviewPopover";
 import { EncaixeDialog } from "@/components/schedule/EncaixeDialog";
-import { api } from "@/services/api";
-import { Appointment, AppointmentStatus, Doctor, Specialty, Patient } from "@/types";
+import { appointmentsService, professionalsLookup, specialtiesLookup, appointmentTypesLookup, DbAppointment, DbProfessional, DbSpecialty, DbAppointmentType } from "@/services/appointmentsService";
+import { patientsService } from "@/services/patientsService";
+import { Appointment, AppointmentStatus, Patient } from "@/types";
 import { useToast } from "@/hooks/use-toast";
-import { formatCurrency, calculateAge } from "@/utils/formatters";
+import { calculateAge } from "@/utils/formatters";
 
 const weekDays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
-const statusBorderColors: Record<AppointmentStatus, string> = {
+const statusBorderColors: Record<string, string> = {
   scheduled: "",
   confirmed: "border-l-4 border-l-primary",
   waiting: "border-l-4 border-l-warning",
@@ -29,13 +30,62 @@ const statusBorderColors: Record<AppointmentStatus, string> = {
   cancelled: "border-l-4 border-l-muted opacity-50",
 };
 
+// Convert DB appointment to display format
+function toDisplayAppointment(
+  db: DbAppointment,
+  patients: Patient[],
+  professionals: DbProfessional[],
+  specialties: DbSpecialty[],
+  appointmentTypes: DbAppointmentType[]
+): Appointment {
+  const patient = patients.find((p) => p.id === db.patient_id);
+  const professional = professionals.find((p) => p.id === db.professional_id);
+  const specialty = specialties.find((s) => s.id === db.specialty_id);
+  const appType = appointmentTypes.find((t) => t.id === db.appointment_type_id);
+
+  // Calculate duration from start_time and end_time
+  let duration = 30;
+  if (db.start_time && db.end_time) {
+    const [sh, sm] = db.start_time.split(":").map(Number);
+    const [eh, em] = db.end_time.split(":").map(Number);
+    duration = (eh * 60 + em) - (sh * 60 + sm);
+    if (duration <= 0) duration = 30;
+  }
+
+  // Map appointment_type category to AppointmentType
+  const typeCategory = appType?.category || "consulta";
+  const validTypes = ["consulta", "retorno", "exame", "procedimento", "terapia_avulsa", "terapia_pacote"];
+  const type = validTypes.includes(typeCategory) ? typeCategory : "consulta";
+
+  return {
+    id: db.id,
+    patientId: db.patient_id || "",
+    patientName: patient?.name || "Paciente não encontrado",
+    patientCpf: patient?.cpf,
+    patientPhone: patient?.phone,
+    doctorId: db.professional_id || "",
+    doctorName: professional?.full_name || "Profissional não encontrado",
+    specialty: specialty?.name,
+    unitId: db.unit_id || undefined,
+    date: db.appointment_date,
+    time: db.start_time?.substring(0, 5) || "00:00",
+    duration,
+    status: (db.status as AppointmentStatus) || "scheduled",
+    type: type as any,
+    typeLabel: appType?.name,
+    notes: db.notes || undefined,
+  };
+}
+
 export default function SchedulePage() {
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [specialties, setSpecialties] = useState<Specialty[]>([]);
+  const [dbAppointments, setDbAppointments] = useState<DbAppointment[]>([]);
+  const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
+  const [specialties, setSpecialties] = useState<DbSpecialty[]>([]);
+  const [appointmentTypes, setAppointmentTypes] = useState<DbAppointmentType[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState("2026-03-22");
+  const [error, setError] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [view, setView] = useState<"day" | "week">("day");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [encaixeOpen, setEncaixeOpen] = useState(false);
@@ -53,20 +103,64 @@ export default function SchedulePage() {
   const [quickActionAppointment, setQuickActionAppointment] = useState<Appointment | null>(null);
   const [quickActionOpen, setQuickActionOpen] = useState(false);
 
-  useEffect(() => {
-    Promise.all([
-      api.getAppointments(),
-      api.getDoctors(),
-      api.getSpecialties(),
-      api.getPatients(),
-    ]).then(([a, d, s, p]) => {
-      setAppointments(a);
-      setDoctors(d);
-      setSpecialties(s);
-      setPatients(p);
-      setLoading(false);
-    });
+  const loadLookups = useCallback(async () => {
+    const [profs, specs, types, pats] = await Promise.all([
+      professionalsLookup.getAll(),
+      specialtiesLookup.getAll(),
+      appointmentTypesLookup.getAll(),
+      patientsService.getAll(),
+    ]);
+    setProfessionals(profs);
+    setSpecialties(specs);
+    setAppointmentTypes(types);
+    setPatients(pats);
   }, []);
+
+  const loadAppointments = useCallback(async (date: string) => {
+    // For week view, load the whole week; for day, load single day
+    const d = new Date(date + "T00:00:00");
+    const dayOfWeek = d.getDay();
+    const startOfWeek = new Date(d);
+    startOfWeek.setDate(d.getDate() - dayOfWeek);
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+
+    const startStr = startOfWeek.toISOString().split("T")[0];
+    const endStr = endOfWeek.toISOString().split("T")[0];
+
+    const data = await appointmentsService.getByDateRange(startStr, endStr);
+    setDbAppointments(data);
+  }, []);
+
+  const loadAll = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      await loadLookups();
+      await loadAppointments(selectedDate);
+    } catch (err: any) {
+      setError(err.message || "Erro ao carregar agenda");
+    } finally {
+      setLoading(false);
+    }
+  }, [loadLookups, loadAppointments, selectedDate]);
+
+  useEffect(() => {
+    loadAll();
+  }, []);
+
+  // Reload appointments when date changes (without reloading lookups)
+  useEffect(() => {
+    if (!loading) {
+      loadAppointments(selectedDate).catch(() => {});
+    }
+  }, [selectedDate]);
+
+  // Convert all DB appointments to display format
+  const appointments = useMemo(() =>
+    dbAppointments.map((db) => toDisplayAppointment(db, patients, professionals, specialties, appointmentTypes)),
+    [dbAppointments, patients, professionals, specialties, appointmentTypes]
+  );
 
   const hasFilters = search !== "" || doctorFilter !== "all" || specialtyFilter !== "all" || typeFilter !== "all" || statusFilter !== "all";
 
@@ -84,8 +178,8 @@ export default function SchedulePage() {
       if (search) {
         const q = search.toLowerCase();
         if (!a.patientName.toLowerCase().includes(q) &&
-            !(a.patientCpf && a.patientCpf.includes(q)) &&
-            !(a.patientPhone && a.patientPhone.includes(q))) return false;
+            !(a.patientCpf && a.patientCpf.includes(q.replace(/\D/g, ''))) &&
+            !(a.patientPhone && a.patientPhone.includes(q.replace(/\D/g, '')))) return false;
       }
       if (doctorFilter !== "all" && a.doctorId !== doctorFilter) return false;
       if (specialtyFilter !== "all" && a.specialty !== specialtyFilter) return false;
@@ -132,23 +226,41 @@ export default function SchedulePage() {
     setQuickActionOpen(true);
   };
 
-  const handleQuickActionConfirm = (appointment: Appointment, newStatus: AppointmentStatus) => {
-    setAppointments((prev) =>
-      prev.map((a) => (a.id === appointment.id ? { ...a, status: newStatus } : a))
-    );
-    const labels: Record<string, string> = {
-      waiting: "Check-in realizado",
-      in_progress: "Atendimento iniciado",
-      scheduled: "Remarcado com sucesso",
-      cancelled: "Agendamento cancelado",
-      no_show: "Falta registrada",
-    };
-    toast({ title: labels[newStatus] || "Atualizado" });
+  const handleQuickActionConfirm = async (appointment: Appointment, newStatus: AppointmentStatus, notes?: string) => {
+    try {
+      await appointmentsService.updateStatus(appointment.id, newStatus, notes);
+      await loadAppointments(selectedDate);
+      const labels: Record<string, string> = {
+        waiting: "Check-in realizado",
+        in_progress: "Atendimento iniciado",
+        scheduled: "Remarcado com sucesso",
+        cancelled: "Agendamento cancelado",
+        no_show: "Falta registrada",
+      };
+      toast({ title: labels[newStatus] || "Atualizado" });
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleAppointmentCreated = async () => {
+    await loadAppointments(selectedDate);
+    setDialogOpen(false);
+  };
+
+  const handleEncaixeCreated = async () => {
+    await loadAppointments(selectedDate);
+    setEncaixeOpen(false);
   };
 
   const getPatientForAppointment = (a: Appointment) => patients.find((p) => p.id === a.patientId);
 
+  // Map DB lookups to legacy Doctor/Specialty format for filter components
+  const doctorsForFilter = professionals.map((p) => ({ id: p.id, name: p.full_name, specialty: "", specialtyId: "" }));
+  const specialtiesForFilter = specialties.map((s) => ({ id: s.id, name: s.name, code: s.code || undefined, status: (s.status as any) || "active" }));
+
   if (loading) return <LoadingState />;
+  if (error) return <ErrorState message={error} onRetry={loadAll} />;
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -204,7 +316,7 @@ export default function SchedulePage() {
         specialtyFilter={specialtyFilter} onSpecialtyFilter={setSpecialtyFilter}
         typeFilter={typeFilter} onTypeFilter={setTypeFilter}
         statusFilter={statusFilter} onStatusFilter={setStatusFilter}
-        doctors={doctors} specialties={specialties}
+        doctors={doctorsForFilter} specialties={specialtiesForFilter}
         onClearFilters={clearFilters} hasFilters={hasFilters}
       />
 
@@ -239,15 +351,14 @@ export default function SchedulePage() {
         <div className="space-y-2">
           {dayAppointments.map((a) => {
             const patient = getPatientForAppointment(a);
-            const age = patient ? calculateAge(patient.birthDate) : null;
+            const age = patient?.birthDate ? calculateAge(patient.birthDate) : null;
             const insurance = patient?.healthInsurance || "Particular";
             const allergies = patient?.allergies;
 
             return (
-              <Card key={a.id} className={`hover:shadow-md transition-shadow ${statusBorderColors[a.status]}`}>
+              <Card key={a.id} className={`hover:shadow-md transition-shadow ${statusBorderColors[a.status] || ""}`}>
                 <CardContent className="p-3 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
-                    {/* Time block */}
                     <div className="text-center min-w-[52px]">
                       <p className="text-base font-bold text-primary leading-tight">{a.time}</p>
                       <p className="text-[10px] text-muted-foreground">{a.duration} min</p>
@@ -263,7 +374,11 @@ export default function SchedulePage() {
                         {age != null && (
                           <span className="text-[10px] text-muted-foreground">{age}a</span>
                         )}
-                        <AppointmentTypeBadge type={a.type} />
+                        {a.typeLabel && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-0 bg-primary/10 text-primary">
+                            {a.typeLabel}
+                          </Badge>
+                        )}
                         {a.type === "retorno" && (
                           <Badge variant="outline" className="bg-secondary/10 text-secondary border-0 text-[10px] px-1.5 py-0">Retorno</Badge>
                         )}
@@ -278,17 +393,11 @@ export default function SchedulePage() {
                             <AlertTriangle className="h-2.5 w-2.5" />{allergies}
                           </span>
                         )}
-                        {a.therapyType && (
-                          <span className="text-[10px] text-secondary">{a.therapyType}</span>
-                        )}
                       </div>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-1.5 shrink-0">
-                    {a.value != null && a.value > 0 && (
-                      <span className="text-[10px] font-medium text-muted-foreground hidden md:block">{formatCurrency(a.value)}</span>
-                    )}
                     <AppointmentStatusBadge status={a.status} />
                     <QuickActionsMenu appointment={a} onAction={handleQuickAction} />
                   </div>
@@ -303,18 +412,23 @@ export default function SchedulePage() {
       <NewAppointmentDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        doctors={doctors}
+        professionals={professionals}
         specialties={specialties}
+        appointmentTypes={appointmentTypes}
         patients={patients}
+        selectedDate={selectedDate}
+        onCreated={handleAppointmentCreated}
       />
       <EncaixeDialog
         open={encaixeOpen}
         onOpenChange={setEncaixeOpen}
-        doctors={doctors}
+        professionals={professionals}
         specialties={specialties}
+        appointmentTypes={appointmentTypes}
         patients={patients}
         selectedDate={selectedDate}
         existingAppointments={dayAppointments}
+        onCreated={handleEncaixeCreated}
       />
       <QuickActionDialog
         open={quickActionOpen}
