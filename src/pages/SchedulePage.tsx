@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Plus, ChevronLeft, ChevronRight, Clock, Users, CheckCircle, AlertCircle, XCircle, UserX } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Clock, Users, CheckCircle, AlertCircle, XCircle, UserX, AlertTriangle, CalendarPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState } from "@/components/StateViews";
 import { AppointmentStatusBadge, AppointmentTypeBadge } from "@/components/StatusBadge";
@@ -9,12 +10,24 @@ import { ScheduleFilters } from "@/components/schedule/ScheduleFilters";
 import { QuickActionsMenu } from "@/components/schedule/QuickActionsMenu";
 import { NewAppointmentDialog } from "@/components/schedule/NewAppointmentDialog";
 import { QuickActionDialog } from "@/components/schedule/QuickActionDialog";
+import { AppointmentPreviewPopover } from "@/components/schedule/AppointmentPreviewPopover";
+import { EncaixeDialog } from "@/components/schedule/EncaixeDialog";
 import { api } from "@/services/api";
 import { Appointment, AppointmentStatus, Doctor, Specialty, Patient } from "@/types";
 import { useToast } from "@/hooks/use-toast";
-import { formatCurrency } from "@/utils/formatters";
+import { formatCurrency, calculateAge } from "@/utils/formatters";
 
 const weekDays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
+const statusBorderColors: Record<AppointmentStatus, string> = {
+  scheduled: "",
+  confirmed: "border-l-4 border-l-primary",
+  waiting: "border-l-4 border-l-warning",
+  in_progress: "border-l-4 border-l-success",
+  completed: "border-l-4 border-l-muted-foreground",
+  no_show: "border-l-4 border-l-destructive",
+  cancelled: "border-l-4 border-l-muted opacity-50",
+};
 
 export default function SchedulePage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -25,6 +38,7 @@ export default function SchedulePage() {
   const [selectedDate, setSelectedDate] = useState("2026-03-22");
   const [view, setView] = useState<"day" | "week">("day");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [encaixeOpen, setEncaixeOpen] = useState(false);
   const { toast } = useToast();
 
   // Filters
@@ -102,7 +116,6 @@ export default function SchedulePage() {
     });
   };
 
-  // Stats for the day (all appointments, not filtered)
   const allDayApps = appointments.filter((a) => a.date === selectedDate);
   const stats = {
     total: allDayApps.length,
@@ -119,7 +132,7 @@ export default function SchedulePage() {
     setQuickActionOpen(true);
   };
 
-  const handleQuickActionConfirm = (appointment: Appointment, newStatus: AppointmentStatus, _notes?: string) => {
+  const handleQuickActionConfirm = (appointment: Appointment, newStatus: AppointmentStatus) => {
     setAppointments((prev) =>
       prev.map((a) => (a.id === appointment.id ? { ...a, status: newStatus } : a))
     );
@@ -133,6 +146,8 @@ export default function SchedulePage() {
     toast({ title: labels[newStatus] || "Atualizado" });
   };
 
+  const getPatientForAppointment = (a: Appointment) => patients.find((p) => p.id === a.patientId);
+
   if (loading) return <LoadingState />;
 
   return (
@@ -141,18 +156,23 @@ export default function SchedulePage() {
         title="Agenda"
         description="Gerencie atendimentos, retornos e terapias"
         actions={
-          <Button onClick={() => setDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />Novo Agendamento
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setEncaixeOpen(true)}>
+              <CalendarPlus className="mr-2 h-4 w-4" />Encaixe
+            </Button>
+            <Button onClick={() => setDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />Novo Agendamento
+            </Button>
+          </div>
         }
       />
 
       {/* Stats row */}
       <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
         <MiniStat icon={<Clock className="h-4 w-4" />} label="Total" value={stats.total} />
-        <MiniStat icon={<Users className="h-4 w-4 text-secondary" />} label="Aguardando" value={stats.waiting} color="text-secondary" />
-        <MiniStat icon={<AlertCircle className="h-4 w-4 text-warning" />} label="Em atendimento" value={stats.inProgress} color="text-warning" />
-        <MiniStat icon={<CheckCircle className="h-4 w-4 text-success" />} label="Finalizados" value={stats.completed} color="text-success" />
+        <MiniStat icon={<Users className="h-4 w-4 text-warning" />} label="Aguardando" value={stats.waiting} color="text-warning" />
+        <MiniStat icon={<AlertCircle className="h-4 w-4 text-success" />} label="Em atendim." value={stats.inProgress} color="text-success" />
+        <MiniStat icon={<CheckCircle className="h-4 w-4 text-muted-foreground" />} label="Finalizados" value={stats.completed} color="text-muted-foreground" />
         <MiniStat icon={<UserX className="h-4 w-4 text-destructive" />} label="Faltas" value={stats.noShow} color="text-destructive" />
         <MiniStat icon={<XCircle className="h-4 w-4 text-muted-foreground" />} label="Cancelados" value={stats.cancelled} color="text-muted-foreground" />
       </div>
@@ -206,7 +226,7 @@ export default function SchedulePage() {
                   <p className={`text-lg font-bold ${isToday ? "text-primary" : ""}`}>{new Date(date + "T00:00:00").getDate()}</p>
                   <p className="text-xs text-primary font-medium">{dayApps.length} atend.</p>
                   {dayApps.filter((a) => a.status === "waiting").length > 0 && (
-                    <p className="text-xs text-secondary">{dayApps.filter((a) => a.status === "waiting").length} aguard.</p>
+                    <p className="text-xs text-warning">{dayApps.filter((a) => a.status === "waiting").length} aguard.</p>
                   )}
                 </CardContent>
               </Card>
@@ -217,43 +237,65 @@ export default function SchedulePage() {
         <EmptyState title="Sem agendamentos" description={hasFilters ? "Nenhum resultado para os filtros aplicados." : "Não há atendimentos para esta data."} />
       ) : (
         <div className="space-y-2">
-          {dayAppointments.map((a) => (
-            <Card key={a.id} className={`hover:shadow-md transition-shadow ${a.status === "cancelled" ? "opacity-50" : ""} ${a.status === "in_progress" ? "border-l-4 border-l-warning" : a.status === "waiting" ? "border-l-4 border-l-secondary" : ""}`}>
-              <CardContent className="p-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  {/* Time block */}
-                  <div className="text-center min-w-[56px]">
-                    <p className="text-base font-bold text-primary leading-tight">{a.time}</p>
-                    <p className="text-[10px] text-muted-foreground">{a.duration} min</p>
-                  </div>
+          {dayAppointments.map((a) => {
+            const patient = getPatientForAppointment(a);
+            const age = patient ? calculateAge(patient.birthDate) : null;
+            const insurance = patient?.healthInsurance || "Particular";
+            const allergies = patient?.allergies;
 
-                  <div className="border-l pl-3 flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="font-medium text-sm truncate">{a.patientName}</p>
-                      <AppointmentTypeBadge type={a.type} />
+            return (
+              <Card key={a.id} className={`hover:shadow-md transition-shadow ${statusBorderColors[a.status]}`}>
+                <CardContent className="p-3 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    {/* Time block */}
+                    <div className="text-center min-w-[52px]">
+                      <p className="text-base font-bold text-primary leading-tight">{a.time}</p>
+                      <p className="text-[10px] text-muted-foreground">{a.duration} min</p>
                     </div>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {a.doctorName}{a.specialty ? ` • ${a.specialty}` : ""}
-                    </p>
-                    {a.patientCpf && (
-                      <p className="text-[10px] text-muted-foreground">{a.patientCpf} {a.patientPhone ? `• ${a.patientPhone}` : ""}</p>
-                    )}
-                    {a.therapyType && (
-                      <p className="text-[10px] text-secondary">{a.therapyType}</p>
-                    )}
-                  </div>
-                </div>
 
-                <div className="flex items-center gap-2 shrink-0">
-                  {a.value != null && a.value > 0 && (
-                    <span className="text-xs font-medium text-muted-foreground hidden md:block">{formatCurrency(a.value)}</span>
-                  )}
-                  <AppointmentStatusBadge status={a.status} />
-                  <QuickActionsMenu appointment={a} onAction={handleQuickAction} />
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                    <div className="border-l pl-3 flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <AppointmentPreviewPopover appointment={a} patient={patient} appointments={appointments}>
+                          <span className="font-medium text-sm truncate cursor-pointer hover:text-primary transition-colors">
+                            {a.patientName}
+                          </span>
+                        </AppointmentPreviewPopover>
+                        {age != null && (
+                          <span className="text-[10px] text-muted-foreground">{age}a</span>
+                        )}
+                        <AppointmentTypeBadge type={a.type} />
+                        {a.type === "retorno" && (
+                          <Badge variant="outline" className="bg-secondary/10 text-secondary border-0 text-[10px] px-1.5 py-0">Retorno</Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {a.doctorName}{a.specialty ? ` • ${a.specialty}` : ""}
+                      </p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] text-muted-foreground">{insurance}</span>
+                        {allergies && (
+                          <span className="text-[10px] text-destructive font-medium flex items-center gap-0.5">
+                            <AlertTriangle className="h-2.5 w-2.5" />{allergies}
+                          </span>
+                        )}
+                        {a.therapyType && (
+                          <span className="text-[10px] text-secondary">{a.therapyType}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {a.value != null && a.value > 0 && (
+                      <span className="text-[10px] font-medium text-muted-foreground hidden md:block">{formatCurrency(a.value)}</span>
+                    )}
+                    <AppointmentStatusBadge status={a.status} />
+                    <QuickActionsMenu appointment={a} onAction={handleQuickAction} />
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 
@@ -264,6 +306,15 @@ export default function SchedulePage() {
         doctors={doctors}
         specialties={specialties}
         patients={patients}
+      />
+      <EncaixeDialog
+        open={encaixeOpen}
+        onOpenChange={setEncaixeOpen}
+        doctors={doctors}
+        specialties={specialties}
+        patients={patients}
+        selectedDate={selectedDate}
+        existingAppointments={dayAppointments}
       />
       <QuickActionDialog
         open={quickActionOpen}
@@ -279,11 +330,11 @@ export default function SchedulePage() {
 function MiniStat({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: number; color?: string }) {
   return (
     <Card>
-      <CardContent className="p-3 flex items-center gap-2">
+      <CardContent className="p-2.5 flex items-center gap-2">
         {icon}
         <div>
           <p className={`text-lg font-bold leading-tight ${color || ""}`}>{value}</p>
-          <p className="text-[10px] text-muted-foreground">{label}</p>
+          <p className="text-[10px] text-muted-foreground leading-tight">{label}</p>
         </div>
       </CardContent>
     </Card>
