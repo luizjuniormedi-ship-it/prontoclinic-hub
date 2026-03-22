@@ -2,10 +2,11 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard, Users, Calendar, ClipboardList, FileText,
-  DollarSign, Settings, LogOut, Heart, UserCheck, Stethoscope
+  DollarSign, Settings, LogOut, Heart, UserCheck, Stethoscope,
+  ShieldCheck, UserCog, KeyRound
 } from "lucide-react";
 import {
-  Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
+  Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarFooter, useSidebar,
 } from "@/components/ui/sidebar";
 import { NavLink } from "@/components/NavLink";
@@ -21,6 +22,12 @@ const navItems = [
   { title: "Prontuário", url: "/records", icon: FileText },
   { title: "Financeiro", url: "/financial", icon: DollarSign },
   { title: "Configurações", url: "/settings", icon: Settings },
+];
+
+const adminItems = [
+  { title: "Usuários", url: "/admin/users", icon: UserCog },
+  { title: "Perfis", url: "/admin/profiles", icon: ShieldCheck },
+  { title: "Permissões", url: "/admin/permissions", icon: KeyRound },
 ];
 
 export function AppSidebar() {
@@ -58,6 +65,28 @@ export function AppSidebar() {
                     <NavLink
                       to={item.url}
                       end={item.url === "/"}
+                      className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+                      activeClassName="bg-sidebar-accent text-sidebar-accent-foreground"
+                    >
+                      <item.icon className="h-4 w-4 shrink-0" />
+                      {!collapsed && <span>{item.title}</span>}
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          {!collapsed && <SidebarGroupLabel className="text-[10px] uppercase tracking-wider text-sidebar-muted px-3">Administrativo</SidebarGroupLabel>}
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {adminItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild>
+                    <NavLink
+                      to={item.url}
                       className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
                       activeClassName="bg-sidebar-accent text-sidebar-accent-foreground"
                     >

@@ -14,6 +14,9 @@ import ReceptionPage from "@/pages/ReceptionPage";
 import MedicalRecordsPage from "@/pages/MedicalRecordsPage";
 import FinancialPage from "@/pages/FinancialPage";
 import SettingsPage from "@/pages/SettingsPage";
+import AdminUsersPage from "@/pages/AdminUsersPage";
+import AdminProfilesPage from "@/pages/AdminProfilesPage";
+import AdminPermissionsPage from "@/pages/AdminPermissionsPage";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -35,6 +38,9 @@ const App = () => (
             <Route path="/records" element={<AppLayout><MedicalRecordsPage /></AppLayout>} />
             <Route path="/financial" element={<AppLayout><FinancialPage /></AppLayout>} />
             <Route path="/settings" element={<AppLayout><SettingsPage /></AppLayout>} />
+            <Route path="/admin/users" element={<AppLayout><AdminUsersPage /></AppLayout>} />
+            <Route path="/admin/profiles" element={<AppLayout><AdminProfilesPage /></AppLayout>} />
+            <Route path="/admin/permissions" element={<AppLayout><AdminPermissionsPage /></AppLayout>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
