@@ -1,9 +1,9 @@
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import {
-  LayoutDashboard, Users, Calendar, ClipboardList, FileText,
-  DollarSign, Settings, LogOut, Heart, UserCheck, Stethoscope,
-  ShieldCheck, UserCog, KeyRound
+  LayoutDashboard, Users, Calendar, FileText, DollarSign, Settings, LogOut,
+  Heart, UserCheck, Stethoscope, ShieldCheck, UserCog, KeyRound, Phone,
+  ClipboardList, Monitor, Receipt, Banknote, Building2, Database
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
@@ -13,22 +13,64 @@ import { NavLink } from "@/components/NavLink";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { getInitials } from "@/utils/formatters";
 
-const navItems = [
+const mainItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Pacientes", url: "/patients", icon: Users },
   { title: "Profissionais", url: "/professionals", icon: Stethoscope },
   { title: "Agenda", url: "/schedule", icon: Calendar },
+  { title: "Call Center", url: "/callcenter", icon: Phone },
   { title: "Recepção", url: "/reception", icon: UserCheck },
   { title: "Prontuário", url: "/records", icon: FileText },
+];
+
+const diagnosticItems = [
+  { title: "Worklist", url: "/worklist", icon: ClipboardList },
+  { title: "PACS", url: "/pacs", icon: Monitor },
+];
+
+const financialItems = [
   { title: "Financeiro", url: "/financial", icon: DollarSign },
-  { title: "Configurações", url: "/settings", icon: Settings },
+  { title: "Faturamento", url: "/billing-production", icon: Receipt },
+  { title: "Pgto Médico", url: "/professional-payment", icon: Banknote },
 ];
 
 const adminItems = [
+  { title: "Empresas", url: "/companies", icon: Building2 },
+  { title: "Cadastros", url: "/master-data", icon: Database },
   { title: "Usuários", url: "/admin/users", icon: UserCog },
   { title: "Perfis", url: "/admin/profiles", icon: ShieldCheck },
   { title: "Permissões", url: "/admin/permissions", icon: KeyRound },
+  { title: "Configurações", url: "/settings", icon: Settings },
 ];
+
+function NavGroup({ items, label, collapsed }: { items: typeof mainItems; label?: string; collapsed: boolean }) {
+  return (
+    <SidebarGroup>
+      {label && !collapsed && (
+        <SidebarGroupLabel className="text-[10px] uppercase tracking-wider text-sidebar-muted px-3">{label}</SidebarGroupLabel>
+      )}
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {items.map((item) => (
+            <SidebarMenuItem key={item.title}>
+              <SidebarMenuButton asChild>
+                <NavLink
+                  to={item.url}
+                  end={item.url === "/"}
+                  className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+                  activeClassName="bg-sidebar-accent text-sidebar-accent-foreground"
+                >
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  {!collapsed && <span>{item.title}</span>}
+                </NavLink>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
+}
 
 export function AppSidebar() {
   const { state } = useSidebar();
@@ -36,10 +78,7 @@ export function AppSidebar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout();
-    navigate("/login");
-  };
+  const handleLogout = () => { logout(); navigate("/login"); };
 
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
@@ -55,50 +94,11 @@ export function AppSidebar() {
         )}
       </div>
 
-      <SidebarContent className="pt-2">
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {navItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild>
-                    <NavLink
-                      to={item.url}
-                      end={item.url === "/"}
-                      className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
-                      activeClassName="bg-sidebar-accent text-sidebar-accent-foreground"
-                    >
-                      <item.icon className="h-4 w-4 shrink-0" />
-                      {!collapsed && <span>{item.title}</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarGroup>
-          {!collapsed && <SidebarGroupLabel className="text-[10px] uppercase tracking-wider text-sidebar-muted px-3">Administrativo</SidebarGroupLabel>}
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {adminItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild>
-                    <NavLink
-                      to={item.url}
-                      className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
-                      activeClassName="bg-sidebar-accent text-sidebar-accent-foreground"
-                    >
-                      <item.icon className="h-4 w-4 shrink-0" />
-                      {!collapsed && <span>{item.title}</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+      <SidebarContent className="pt-2 scrollbar-thin">
+        <NavGroup items={mainItems} collapsed={collapsed} />
+        <NavGroup items={diagnosticItems} label="Diagnóstico" collapsed={collapsed} />
+        <NavGroup items={financialItems} label="Financeiro" collapsed={collapsed} />
+        <NavGroup items={adminItems} label="Administrativo" collapsed={collapsed} />
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-3">
