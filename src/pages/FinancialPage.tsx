@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { DollarSign, Search, TrendingUp, TrendingDown, Calendar } from "lucide-react";
+import { DollarSign, Search, TrendingUp, TrendingDown, Calendar, Plus, Receipt } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/PageHeader";
@@ -7,64 +7,66 @@ import { LoadingState, EmptyState } from "@/components/StateViews";
 import { PaymentStatusBadge } from "@/components/StatusBadge";
 import { StatsCard } from "@/components/StatsCard";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { api } from "@/services/api";
-import { Payment } from "@/types";
-import { formatCurrency, formatDate } from "@/utils/formatters";
+import { Billing, PaymentMethod, BillingType, PaymentStatus } from "@/types";
+import { formatCurrency, formatDate, getBillingTypeLabel, getPaymentMethodLabel, getAppointmentTypeLabel } from "@/utils/formatters";
 import { useToast } from "@/hooks/use-toast";
 
+const allBillingTypes: BillingType[] = ["particular", "convenio", "retorno", "terapia_avulsa", "terapia_pacote"];
+const allPaymentMethods: PaymentMethod[] = ["dinheiro", "pix", "cartao_debito", "cartao_credito", "transferencia", "convenio"];
+const allStatuses: PaymentStatus[] = ["pending", "paid", "overdue", "cancelled"];
+
 export default function FinancialPage() {
-  const [payments, setPayments] = useState<Payment[]>([]);
+  const [billings, setBillings] = useState<Billing[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [periodFilter, setPeriodFilter] = useState<string>("all");
-  const [paymentDialog, setPaymentDialog] = useState<Payment | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState("pix");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [periodFilter, setPeriodFilter] = useState("all");
+  const [billingTypeFilter, setBillingTypeFilter] = useState("all");
+  const [paymentDialog, setPaymentDialog] = useState<Billing | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("pix");
+  const [newBillingOpen, setNewBillingOpen] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
-    api.getPayments().then((p) => { setPayments(p); setLoading(false); });
+    api.getBillings().then((b) => { setBillings(b); setLoading(false); });
   }, []);
 
-  const filtered = payments.filter((p) => {
-    const matchesSearch = p.patientName.toLowerCase().includes(search.toLowerCase()) || p.description.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = statusFilter === "all" || p.status === statusFilter;
-    if (!matchesSearch || !matchesStatus) return false;
+  const filtered = billings.filter((b) => {
+    const q = search.toLowerCase();
+    const matchesSearch = !search || b.patientName.toLowerCase().includes(q) || b.professionalName.toLowerCase().includes(q) || b.description.toLowerCase().includes(q);
+    const matchesStatus = statusFilter === "all" || b.status === statusFilter;
+    const matchesBillingType = billingTypeFilter === "all" || b.billingType === billingTypeFilter;
+    if (!matchesSearch || !matchesStatus || !matchesBillingType) return false;
 
     if (periodFilter !== "all") {
-      const dueDate = new Date(p.dueDate + "T00:00:00");
+      const dueDate = new Date(b.dueDate + "T00:00:00");
       const now = new Date();
-      if (periodFilter === "today") {
-        return dueDate.toDateString() === now.toDateString();
-      }
-      if (periodFilter === "week") {
-        const weekAgo = new Date(now);
-        weekAgo.setDate(now.getDate() - 7);
-        return dueDate >= weekAgo && dueDate <= now;
-      }
-      if (periodFilter === "month") {
-        return dueDate.getMonth() === now.getMonth() && dueDate.getFullYear() === now.getFullYear();
-      }
+      if (periodFilter === "today") return dueDate.toDateString() === now.toDateString();
+      if (periodFilter === "week") { const w = new Date(now); w.setDate(now.getDate() - 7); return dueDate >= w && dueDate <= now; }
+      if (periodFilter === "month") return dueDate.getMonth() === now.getMonth() && dueDate.getFullYear() === now.getFullYear();
     }
     return true;
   });
 
-  const totalPaid = payments.filter((p) => p.status === "paid").reduce((s, p) => s + p.amount, 0);
-  const totalPending = payments.filter((p) => p.status === "pending").reduce((s, p) => s + p.amount, 0);
-  const totalOverdue = payments.filter((p) => p.status === "overdue").reduce((s, p) => s + p.amount, 0);
+  const totalPaid = billings.filter((b) => b.status === "paid").reduce((s, b) => s + b.finalAmount, 0);
+  const totalPending = billings.filter((b) => b.status === "pending").reduce((s, b) => s + b.finalAmount, 0);
+  const totalOverdue = billings.filter((b) => b.status === "overdue").reduce((s, b) => s + b.finalAmount, 0);
+  const totalCancelled = billings.filter((b) => b.status === "cancelled").reduce((s, b) => s + b.finalAmount, 0);
 
-  // Daily summary
   const today = new Date().toISOString().split("T")[0];
-  const todayPaid = payments.filter((p) => p.paidAt === today).reduce((s, p) => s + p.amount, 0);
-  const todayDue = payments.filter((p) => p.dueDate === today && p.status !== "paid").reduce((s, p) => s + p.amount, 0);
+  const todayPaid = billings.filter((b) => b.paidAt === today).reduce((s, b) => s + b.finalAmount, 0);
+  const todayDue = billings.filter((b) => b.dueDate === today && b.status !== "paid").reduce((s, b) => s + b.finalAmount, 0);
 
   const handleMarkPaid = () => {
     if (!paymentDialog) return;
-    setPayments((prev) => prev.map((p) => p.id === paymentDialog.id ? { ...p, status: "paid" as const, paidAt: new Date().toISOString().split("T")[0], method: paymentMethod } : p));
+    setBillings((prev) => prev.map((b) => b.id === paymentDialog.id ? { ...b, status: "paid" as const, paidAt: today, paymentMethod } : b));
     toast({ title: "Pagamento registrado!" });
     setPaymentDialog(null);
   };
@@ -73,13 +75,22 @@ export default function FinancialPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <PageHeader title="Financeiro" description="Gestão de cobranças e pagamentos" />
+      <PageHeader
+        title="Financeiro"
+        description="Faturamento e cobranças"
+        actions={
+          <Button onClick={() => setNewBillingOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />Nova Cobrança
+          </Button>
+        }
+      />
 
       {/* Stats */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
         <StatsCard title="Recebido" value={formatCurrency(totalPaid)} icon={TrendingUp} variant="success" />
         <StatsCard title="Pendente" value={formatCurrency(totalPending)} icon={DollarSign} variant="warning" />
         <StatsCard title="Atrasado" value={formatCurrency(totalOverdue)} icon={TrendingDown} variant="default" />
+        <StatsCard title="Cancelado" value={formatCurrency(totalCancelled)} icon={DollarSign} variant="default" />
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-1">
@@ -94,17 +105,22 @@ export default function FinancialPage() {
 
       {/* Filters */}
       <div className="flex gap-2 flex-wrap">
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
+        <div className="relative flex-1 min-w-[180px] max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Buscar paciente ou descrição..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Input placeholder="Buscar paciente, profissional..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[130px]"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectTrigger className="w-[120px]"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
-            <SelectItem value="paid">Pago</SelectItem>
-            <SelectItem value="pending">Pendente</SelectItem>
-            <SelectItem value="overdue">Atrasado</SelectItem>
+            {allStatuses.map((s) => <SelectItem key={s} value={s}>{s === "paid" ? "Pago" : s === "pending" ? "Pendente" : s === "overdue" ? "Atrasado" : "Cancelado"}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={billingTypeFilter} onValueChange={setBillingTypeFilter}>
+          <SelectTrigger className="w-[140px]"><SelectValue placeholder="Tipo cobrança" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos</SelectItem>
+            {allBillingTypes.map((t) => <SelectItem key={t} value={t}>{getBillingTypeLabel(t)}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={periodFilter} onValueChange={setPeriodFilter}>
@@ -120,42 +136,49 @@ export default function FinancialPage() {
 
       {/* Table */}
       {filtered.length === 0 ? (
-        <EmptyState icon={DollarSign} title="Nenhuma cobrança encontrada" />
+        <EmptyState icon={Receipt} title="Nenhuma cobrança encontrada" />
       ) : (
         <div className="rounded-lg border bg-card overflow-auto">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Paciente</TableHead>
+                <TableHead>Profissional</TableHead>
+                <TableHead>Tipo</TableHead>
                 <TableHead>Descrição</TableHead>
-                <TableHead>Valor</TableHead>
+                <TableHead>Bruto</TableHead>
+                <TableHead>Desc.</TableHead>
+                <TableHead>Final</TableHead>
+                <TableHead>Pgto</TableHead>
                 <TableHead>Vencimento</TableHead>
-                <TableHead>Pagamento</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((p) => {
-                const isOverdue = p.status === "overdue";
-                return (
-                  <TableRow key={p.id} className={isOverdue ? "bg-destructive/5" : ""}>
-                    <TableCell className="font-medium text-sm">{p.patientName}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{p.description}</TableCell>
-                    <TableCell className={`font-medium ${isOverdue ? "text-destructive" : ""}`}>{formatCurrency(p.amount)}</TableCell>
-                    <TableCell className="text-xs">{formatDate(p.dueDate)}</TableCell>
-                    <TableCell className="text-xs">{p.method || "—"}</TableCell>
-                    <TableCell><PaymentStatusBadge status={p.status} /></TableCell>
-                    <TableCell>
-                      {p.status !== "paid" && (
-                        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setPaymentDialog(p); setPaymentMethod("pix"); }}>
-                          Registrar Pgto
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+              {filtered.map((b) => (
+                <TableRow key={b.id} className={b.status === "overdue" ? "bg-destructive/5" : b.status === "cancelled" ? "opacity-50" : ""}>
+                  <TableCell className="font-medium text-sm">{b.patientName}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{b.professionalName}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-0">{getBillingTypeLabel(b.billingType)}</Badge>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground max-w-[150px] truncate">{b.description}</TableCell>
+                  <TableCell className="text-xs">{formatCurrency(b.grossAmount)}</TableCell>
+                  <TableCell className="text-xs">{b.discount > 0 ? `-${formatCurrency(b.discount)}` : "—"}</TableCell>
+                  <TableCell className={`font-medium text-sm ${b.status === "overdue" ? "text-destructive" : ""}`}>{formatCurrency(b.finalAmount)}</TableCell>
+                  <TableCell className="text-xs">{b.paymentMethod ? getPaymentMethodLabel(b.paymentMethod) : "—"}</TableCell>
+                  <TableCell className="text-xs">{formatDate(b.dueDate)}</TableCell>
+                  <TableCell><PaymentStatusBadge status={b.status} /></TableCell>
+                  <TableCell>
+                    {(b.status === "pending" || b.status === "overdue") && (
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setPaymentDialog(b); setPaymentMethod("pix"); }}>
+                        Registrar
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </div>
@@ -173,19 +196,20 @@ export default function FinancialPage() {
               <div className="rounded-lg bg-muted/50 p-3 space-y-1">
                 <p className="font-medium text-sm">{paymentDialog.patientName}</p>
                 <p className="text-xs text-muted-foreground">{paymentDialog.description}</p>
-                <p className="text-lg font-bold text-primary">{formatCurrency(paymentDialog.amount)}</p>
+                <p className="text-xs text-muted-foreground">Profissional: {paymentDialog.professionalName}</p>
+                {paymentDialog.discount > 0 && (
+                  <p className="text-xs text-muted-foreground">Desconto: {formatCurrency(paymentDialog.discount)}</p>
+                )}
+                <p className="text-lg font-bold text-primary">{formatCurrency(paymentDialog.finalAmount)}</p>
               </div>
               <div className="space-y-2">
-                <Label className="text-xs">Forma de Pagamento</Label>
-                <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                <Label className="text-xs">Forma de Pagamento *</Label>
+                <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as PaymentMethod)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="pix">PIX</SelectItem>
-                    <SelectItem value="cartao_credito">Cartão de Crédito</SelectItem>
-                    <SelectItem value="cartao_debito">Cartão de Débito</SelectItem>
-                    <SelectItem value="dinheiro">Dinheiro</SelectItem>
-                    <SelectItem value="boleto">Boleto</SelectItem>
-                    <SelectItem value="convenio">Convênio</SelectItem>
+                    {allPaymentMethods.map((m) => (
+                      <SelectItem key={m} value={m}>{getPaymentMethodLabel(m)}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -194,6 +218,50 @@ export default function FinancialPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setPaymentDialog(null)}>Cancelar</Button>
             <Button onClick={handleMarkPaid}>Confirmar Pagamento</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* New billing dialog (stub) */}
+      <Dialog open={newBillingOpen} onOpenChange={setNewBillingOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nova Cobrança</DialogTitle>
+            <DialogDescription>Registre uma cobrança vinculada a um atendimento.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Paciente *</Label><Input placeholder="Selecione o paciente" /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Tipo de Cobrança *</Label>
+                <Select><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectContent>{allBillingTypes.map((t) => <SelectItem key={t} value={t}>{getBillingTypeLabel(t)}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Profissional *</Label>
+                <Input placeholder="Selecione" />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-2"><Label>Valor Bruto *</Label><Input type="number" placeholder="0,00" /></div>
+              <div className="space-y-2"><Label>Desconto</Label><Input type="number" placeholder="0,00" /></div>
+              <div className="space-y-2"><Label>Valor Final</Label><Input type="number" placeholder="0,00" disabled /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2"><Label>Vencimento *</Label><Input type="date" /></div>
+              <div className="space-y-2">
+                <Label>Forma de Pagamento</Label>
+                <Select><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectContent>{allPaymentMethods.map((m) => <SelectItem key={m} value={m}>{getPaymentMethodLabel(m)}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2"><Label>Observações</Label><Textarea placeholder="Notas..." rows={2} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNewBillingOpen(false)}>Cancelar</Button>
+            <Button onClick={() => { toast({ title: "Cobrança registrada!" }); setNewBillingOpen(false); }}>Registrar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
