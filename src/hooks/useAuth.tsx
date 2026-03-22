@@ -9,6 +9,7 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
+const AUTH_STORAGE_KEY = "prontomedic_auth";
 
 const mockUser: User = {
   id: "1",
@@ -17,17 +18,35 @@ const mockUser: User = {
   role: "admin",
 };
 
+function getStoredUser(): User | null {
+  if (typeof window === "undefined") return null;
+
+  const stored = window.localStorage.getItem(AUTH_STORAGE_KEY);
+  if (!stored) return null;
+
+  try {
+    const parsed = JSON.parse(stored) as Partial<User>;
+
+    if (!parsed || typeof parsed !== "object" || !parsed.email) {
+      window.localStorage.removeItem(AUTH_STORAGE_KEY);
+      return null;
+    }
+
+    return parsed as User;
+  } catch {
+    window.localStorage.removeItem(AUTH_STORAGE_KEY);
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(() => {
-    const stored = localStorage.getItem("prontomedic_auth");
-    return stored ? JSON.parse(stored) : null;
-  });
+  const [user, setUser] = useState<User | null>(getStoredUser);
 
   const login = async (email: string, _password: string) => {
     // Mock login — replace with real auth
     if (email) {
       setUser(mockUser);
-      localStorage.setItem("prontomedic_auth", JSON.stringify(mockUser));
+      window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockUser));
       return true;
     }
     return false;
@@ -35,7 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     setUser(null);
-    localStorage.removeItem("prontomedic_auth");
+    window.localStorage.removeItem(AUTH_STORAGE_KEY);
   };
 
   return (
