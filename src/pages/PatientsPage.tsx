@@ -1,40 +1,55 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, Users, AlertTriangle, CheckCircle, AlertCircle } from "lucide-react";
+import { Plus, Search, Users, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/PageHeader";
-import { LoadingState, EmptyState } from "@/components/StateViews";
+import { LoadingState, EmptyState, ErrorState } from "@/components/StateViews";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { api } from "@/services/api";
-import { Patient, Appointment } from "@/types";
+import { patientsService } from "@/services/patientsService";
+import { Patient } from "@/types";
 import { formatDate, calculateAge } from "@/utils/formatters";
 import { useToast } from "@/hooks/use-toast";
 
 export default function PatientsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // New patient form duplicate detection
-  const [newCpf, setNewCpf] = useState("");
-  const [newPhone, setNewPhone] = useState("");
+  // Form state
+  const [formName, setFormName] = useState("");
+  const [formCpf, setFormCpf] = useState("");
+  const [formBirthDate, setFormBirthDate] = useState("");
+  const [formPhone, setFormPhone] = useState("");
+  const [formEmail, setFormEmail] = useState("");
+  const [formGender, setFormGender] = useState<"M" | "F" | "O">("M");
+  const [formInsurance, setFormInsurance] = useState("");
+
+  const loadPatients = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await patientsService.getAll();
+      setPatients(data);
+    } catch (err: any) {
+      setError(err.message || "Erro ao carregar pacientes");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    Promise.all([api.getPatients(), api.getAppointments()]).then(([p, a]) => {
-      setPatients(p);
-      setAppointments(a);
-      setLoading(false);
-    });
+    loadPatients();
   }, []);
 
   const filtered = patients.filter((p) =>
@@ -44,30 +59,48 @@ export default function PatientsPage() {
   );
 
   // Duplicate detection
-  const duplicateByCpf = newCpf.length >= 6 ? patients.find((p) => p.cpf.includes(newCpf)) : undefined;
-  const duplicateByPhone = newPhone.length >= 8 ? patients.find((p) => p.phone.includes(newPhone)) : undefined;
+  const duplicateByCpf = formCpf.length >= 6 ? patients.find((p) => p.cpf.includes(formCpf)) : undefined;
+  const duplicateByPhone = formPhone.length >= 8 ? patients.find((p) => p.phone.includes(formPhone)) : undefined;
   const duplicate = duplicateByCpf || duplicateByPhone;
 
-  // Check profile completeness
   const isComplete = (p: Patient) => !!(p.name && p.cpf && p.birthDate && p.phone && p.email && p.gender);
 
-  // Get last appointment for patient
-  const getLastAppointment = (patientId: string) => {
-    const patientApps = appointments
-      .filter((a) => a.patientId === patientId && a.status === "completed")
-      .sort((a, b) => b.date.localeCompare(a.date));
-    return patientApps[0];
+  const resetForm = () => {
+    setFormName("");
+    setFormCpf("");
+    setFormBirthDate("");
+    setFormPhone("");
+    setFormEmail("");
+    setFormGender("M");
+    setFormInsurance("");
   };
 
-  const handleCreate = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    toast({ title: "Paciente cadastrado com sucesso!" });
-    setDialogOpen(false);
-    setNewCpf("");
-    setNewPhone("");
+    try {
+      setSaving(true);
+      await patientsService.create({
+        name: formName,
+        cpf: formCpf,
+        birthDate: formBirthDate,
+        phone: formPhone,
+        email: formEmail,
+        gender: formGender,
+        healthInsurance: formInsurance || undefined,
+      });
+      toast({ title: "Paciente cadastrado com sucesso!" });
+      setDialogOpen(false);
+      resetForm();
+      await loadPatients();
+    } catch (err: any) {
+      toast({ title: "Erro ao cadastrar", description: err.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading) return <LoadingState />;
+  if (error) return <ErrorState message={error} onRetry={loadPatients} />;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -75,7 +108,7 @@ export default function PatientsPage() {
         title="Pacientes"
         description={`${patients.length} pacientes cadastrados`}
         actions={
-          <Dialog open={dialogOpen} onOpenChange={(v) => { setDialogOpen(v); if (!v) { setNewCpf(""); setNewPhone(""); } }}>
+          <Dialog open={dialogOpen} onOpenChange={(v) => { setDialogOpen(v); if (!v) resetForm(); }}>
             <DialogTrigger asChild>
               <Button><Plus className="mr-2 h-4 w-4" />Novo Paciente</Button>
             </DialogTrigger>
@@ -85,7 +118,6 @@ export default function PatientsPage() {
                 <DialogDescription>Preencha os dados do paciente. Campos com * são obrigatórios.</DialogDescription>
               </DialogHeader>
 
-              {/* Duplicate alert */}
               {duplicate && (
                 <Card className="border-warning/30 bg-warning/5">
                   <CardContent className="p-3">
@@ -105,23 +137,23 @@ export default function PatientsPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2 space-y-2">
                     <Label>Nome Completo *</Label>
-                    <Input placeholder="Nome do paciente" required />
+                    <Input placeholder="Nome do paciente" required value={formName} onChange={(e) => setFormName(e.target.value)} />
                   </div>
                   <div className="space-y-2">
                     <Label>CPF *</Label>
-                    <Input placeholder="000.000.000-00" required value={newCpf} onChange={(e) => setNewCpf(e.target.value)} />
+                    <Input placeholder="000.000.000-00" required value={formCpf} onChange={(e) => setFormCpf(e.target.value)} />
                   </div>
                   <div className="space-y-2">
                     <Label>Data de Nascimento *</Label>
-                    <Input type="date" required />
+                    <Input type="date" required value={formBirthDate} onChange={(e) => setFormBirthDate(e.target.value)} />
                   </div>
                   <div className="space-y-2">
                     <Label>Telefone *</Label>
-                    <Input placeholder="(00) 00000-0000" required value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
+                    <Input placeholder="(00) 00000-0000" required value={formPhone} onChange={(e) => setFormPhone(e.target.value)} />
                   </div>
                   <div className="space-y-2">
                     <Label>Sexo *</Label>
-                    <Select>
+                    <Select value={formGender} onValueChange={(v) => setFormGender(v as "M" | "F" | "O")}>
                       <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="M">Masculino</SelectItem>
@@ -132,16 +164,18 @@ export default function PatientsPage() {
                   </div>
                   <div className="space-y-2">
                     <Label>E-mail</Label>
-                    <Input type="email" placeholder="email@email.com" />
+                    <Input type="email" placeholder="email@email.com" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} />
                   </div>
                   <div className="space-y-2">
                     <Label>Convênio</Label>
-                    <Input placeholder="Nome do convênio" />
+                    <Input placeholder="Nome do convênio" value={formInsurance} onChange={(e) => setFormInsurance(e.target.value)} />
                   </div>
                 </div>
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-                  <Button type="submit">Salvar</Button>
+                  <Button type="submit" disabled={saving}>
+                    {saving ? "Salvando..." : "Salvar"}
+                  </Button>
                 </div>
               </form>
             </DialogContent>
@@ -167,12 +201,10 @@ export default function PatientsPage() {
                 <TableHead>Telefone</TableHead>
                 <TableHead>Convênio</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Último atendimento</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.map((p) => {
-                const lastApp = getLastAppointment(p.id);
                 const complete = isComplete(p);
                 return (
                   <TableRow key={p.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/patients/${p.id}`)}>
@@ -183,23 +215,13 @@ export default function PatientsPage() {
                       </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground text-xs">{p.cpf}</TableCell>
-                    <TableCell>{calculateAge(p.birthDate)}a</TableCell>
+                    <TableCell>{p.birthDate ? `${calculateAge(p.birthDate)}a` : '—'}</TableCell>
                     <TableCell className="text-xs">{p.phone}</TableCell>
                     <TableCell className="text-xs">{p.healthInsurance || <span className="text-muted-foreground">Particular</span>}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={`text-[10px] border-0 ${complete ? "bg-success/10 text-success" : "bg-warning/10 text-warning"}`}>
                         {complete ? "Completo" : "Incompleto"}
                       </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {lastApp ? (
-                        <div className="text-xs">
-                          <p>{formatDate(lastApp.date)}</p>
-                          <p className="text-muted-foreground">{lastApp.specialty || lastApp.doctorName}</p>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
                     </TableCell>
                   </TableRow>
                 );
