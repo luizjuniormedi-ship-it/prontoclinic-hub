@@ -25,6 +25,24 @@ export interface Patient {
   updatedAt: string;
 }
 
+export type ProfessionalStatus = "active" | "inactive";
+
+export interface Professional {
+  id: string;
+  name: string;
+  category: string;
+  specialties: string[];
+  council: string;
+  councilNumber: string;
+  cpf: string;
+  phone: string;
+  email: string;
+  status: ProfessionalStatus;
+  agendaColor: string;
+  defaultDuration: number;
+  notes?: string;
+}
+
 export type AppointmentType = "consulta" | "retorno" | "exame" | "procedimento" | "terapia_avulsa" | "terapia_pacote";
 
 export type AppointmentStatus = "scheduled" | "confirmed" | "waiting" | "in_progress" | "completed" | "no_show" | "cancelled";
@@ -55,15 +73,40 @@ export interface Appointment {
   overrideAt?: string;
 }
 
-export type PaymentStatus = "paid" | "pending" | "overdue";
+export type PaymentStatus = "paid" | "pending" | "overdue" | "cancelled";
 
+export type BillingType = "particular" | "convenio" | "retorno" | "terapia_avulsa" | "terapia_pacote";
+
+export type PaymentMethod = "dinheiro" | "pix" | "cartao_debito" | "cartao_credito" | "transferencia" | "convenio";
+
+export interface Billing {
+  id: string;
+  patientId: string;
+  patientName: string;
+  appointmentId?: string;
+  professionalId: string;
+  professionalName: string;
+  billingType: BillingType;
+  appointmentType: AppointmentType;
+  grossAmount: number;
+  discount: number;
+  finalAmount: number;
+  paymentMethod?: PaymentMethod;
+  status: PaymentStatus;
+  dueDate: string;
+  paidAt?: string;
+  notes?: string;
+  description: string;
+}
+
+// Keep legacy Payment for backwards compat
 export interface Payment {
   id: string;
   patientId: string;
   patientName: string;
   description: string;
   amount: number;
-  status: PaymentStatus;
+  status: "paid" | "pending" | "overdue";
   dueDate: string;
   paidAt?: string;
   method?: string;
@@ -151,6 +194,7 @@ export interface Specialty {
   name: string;
 }
 
+// Keep legacy Doctor for backwards compat - maps to Professional
 export interface Doctor {
   id: string;
   name: string;

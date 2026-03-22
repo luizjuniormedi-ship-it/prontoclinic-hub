@@ -2,7 +2,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard, Users, Calendar, ClipboardList, FileText,
-  DollarSign, Settings, LogOut, Heart, UserCheck
+  DollarSign, Settings, LogOut, Heart, UserCheck, Stethoscope
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
@@ -15,6 +15,7 @@ import { getInitials } from "@/utils/formatters";
 const navItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Pacientes", url: "/patients", icon: Users },
+  { title: "Profissionais", url: "/professionals", icon: Stethoscope },
   { title: "Agenda", url: "/schedule", icon: Calendar },
   { title: "Recepção", url: "/reception", icon: UserCheck },
   { title: "Prontuário", url: "/records", icon: FileText },
