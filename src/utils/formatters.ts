@@ -1,4 +1,4 @@
-import { AppointmentStatus, PaymentStatus } from "@/types";
+import { AppointmentStatus, AppointmentType, PaymentStatus, ReturnStatus, TherapyPackageStatus } from "@/types";
 
 export function formatCurrency(value: number): string {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
@@ -16,11 +16,25 @@ export function getAppointmentStatusLabel(status: AppointmentStatus): string {
   const map: Record<AppointmentStatus, string> = {
     scheduled: "Agendado",
     confirmed: "Confirmado",
+    waiting: "Aguardando",
     in_progress: "Em atendimento",
     completed: "Finalizado",
+    no_show: "Falta",
     cancelled: "Cancelado",
   };
   return map[status];
+}
+
+export function getAppointmentTypeLabel(type: AppointmentType): string {
+  const map: Record<AppointmentType, string> = {
+    consulta: "Consulta",
+    retorno: "Retorno",
+    exame: "Exame",
+    procedimento: "Procedimento",
+    terapia_avulsa: "Terapia Avulsa",
+    terapia_pacote: "Terapia Pacote",
+  };
+  return map[type];
 }
 
 export function getPaymentStatusLabel(status: PaymentStatus): string {
@@ -28,6 +42,26 @@ export function getPaymentStatusLabel(status: PaymentStatus): string {
     paid: "Pago",
     pending: "Pendente",
     overdue: "Atrasado",
+  };
+  return map[status];
+}
+
+export function getReturnStatusLabel(status: ReturnStatus): string {
+  const map: Record<ReturnStatus, string> = {
+    active: "Ativo",
+    used: "Utilizado",
+    expired: "Expirado",
+    cancelled: "Cancelado",
+  };
+  return map[status];
+}
+
+export function getTherapyPackageStatusLabel(status: TherapyPackageStatus): string {
+  const map: Record<TherapyPackageStatus, string> = {
+    active: "Ativo",
+    completed: "Concluído",
+    expired: "Expirado",
+    cancelled: "Cancelado",
   };
   return map[status];
 }
@@ -43,4 +77,16 @@ export function calculateAge(birthDate: string): number {
   const m = today.getMonth() - birth.getMonth();
   if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
   return age;
+}
+
+export function daysBetween(dateA: string, dateB: string): number {
+  const a = new Date(dateA + "T00:00:00");
+  const b = new Date(dateB + "T00:00:00");
+  return Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+export function addDays(date: string, days: number): string {
+  const d = new Date(date + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
 }

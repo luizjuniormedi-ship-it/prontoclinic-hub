@@ -1,11 +1,5 @@
-/**
- * API Service Layer
- * Centralizes all API communication. Currently uses mock data.
- * Replace with real API calls when backend is ready.
- */
-
-import { Patient, Appointment, Payment, MedicalRecord, DashboardStats } from "@/types";
-import { mockPatients, mockAppointments, mockPayments, mockMedicalRecords, mockDashboardStats } from "./mockData";
+import { Patient, Appointment, Payment, MedicalRecord, DashboardStats, ReturnControl, TherapyPackage, Specialty, Doctor, AuditLog } from "@/types";
+import { mockPatients, mockAppointments, mockPayments, mockMedicalRecords, mockDashboardStats, mockReturnControls, mockTherapyPackages, mockSpecialties, mockDoctors, mockAuditLogs } from "./mockData";
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -43,5 +37,72 @@ export const api = {
   async getMedicalRecords(patientId: string): Promise<MedicalRecord[]> {
     await delay(400);
     return mockMedicalRecords.filter((r) => r.patientId === patientId);
+  },
+
+  // Specialties & Doctors
+  async getSpecialties(): Promise<Specialty[]> {
+    await delay(200);
+    return mockSpecialties;
+  },
+  async getDoctors(): Promise<Doctor[]> {
+    await delay(200);
+    return mockDoctors;
+  },
+
+  // Return Controls
+  async getReturnControls(patientId?: string): Promise<ReturnControl[]> {
+    await delay(300);
+    if (patientId) return mockReturnControls.filter((r) => r.patientId === patientId);
+    return mockReturnControls;
+  },
+
+  // Therapy Packages
+  async getTherapyPackages(patientId?: string): Promise<TherapyPackage[]> {
+    await delay(300);
+    if (patientId) return mockTherapyPackages.filter((p) => p.patientId === patientId);
+    return mockTherapyPackages;
+  },
+
+  // Audit Logs
+  async getAuditLogs(): Promise<AuditLog[]> {
+    await delay(300);
+    return mockAuditLogs;
+  },
+
+  // Check 30-day interval rule
+  async checkConsultaInterval(patientId: string, specialty: string): Promise<{ blocked: boolean; lastDate?: string; daysPassed?: number; availableDate?: string }> {
+    await delay(200);
+    const completedConsultas = mockAppointments.filter(
+      (a) => a.patientId === patientId && a.specialty === specialty && a.type === "consulta" && a.status === "completed"
+    ).sort((a, b) => b.date.localeCompare(a.date));
+
+    if (completedConsultas.length === 0) return { blocked: false };
+
+    const lastDate = completedConsultas[0].date;
+    const today = new Date().toISOString().split("T")[0];
+    const last = new Date(lastDate + "T00:00:00");
+    const now = new Date(today + "T00:00:00");
+    const daysPassed = Math.floor((now.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (daysPassed < 30) {
+      const available = new Date(last);
+      available.setDate(available.getDate() + 30);
+      return {
+        blocked: true,
+        lastDate,
+        daysPassed,
+        availableDate: available.toISOString().split("T")[0],
+      };
+    }
+    return { blocked: false };
+  },
+
+  // Check active returns for patient
+  async checkActiveReturns(patientId: string): Promise<ReturnControl[]> {
+    await delay(200);
+    const today = new Date().toISOString().split("T")[0];
+    return mockReturnControls.filter(
+      (r) => r.patientId === patientId && r.status === "active" && r.expiresAt >= today
+    );
   },
 };

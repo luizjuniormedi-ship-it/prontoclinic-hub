@@ -25,20 +25,34 @@ export interface Patient {
   updatedAt: string;
 }
 
-export type AppointmentStatus = "scheduled" | "confirmed" | "in_progress" | "completed" | "cancelled";
+export type AppointmentType = "consulta" | "retorno" | "exame" | "procedimento" | "terapia_avulsa" | "terapia_pacote";
+
+export type AppointmentStatus = "scheduled" | "confirmed" | "waiting" | "in_progress" | "completed" | "no_show" | "cancelled";
 
 export interface Appointment {
   id: string;
   patientId: string;
   patientName: string;
+  patientCpf?: string;
+  patientPhone?: string;
   doctorId: string;
   doctorName: string;
+  specialty?: string;
   date: string;
   time: string;
   duration: number;
   status: AppointmentStatus;
-  type: string;
+  type: AppointmentType;
+  typeLabel?: string;
   notes?: string;
+  returnOriginId?: string;
+  therapyPackageId?: string;
+  therapyType?: string;
+  value?: number;
+  overrideInterval?: boolean;
+  overrideReason?: string;
+  overrideBy?: string;
+  overrideAt?: string;
 }
 
 export type PaymentStatus = "paid" | "pending" | "overdue";
@@ -78,4 +92,68 @@ export interface DashboardStats {
   totalPatients: number;
   monthlyRevenue: number;
   pendingPayments: number;
+}
+
+export type ReturnStatus = "active" | "used" | "expired" | "cancelled";
+
+export interface ReturnControl {
+  id: string;
+  patientId: string;
+  patientName: string;
+  originAppointmentId: string;
+  specialty: string;
+  doctorId: string;
+  doctorName: string;
+  originDate: string;
+  expiresAt: string;
+  status: ReturnStatus;
+  usedAppointmentId?: string;
+}
+
+export type TherapyPackageStatus = "active" | "completed" | "expired" | "cancelled";
+
+export interface TherapyPackage {
+  id: string;
+  patientId: string;
+  patientName: string;
+  therapyType: string;
+  totalSessions: number;
+  usedSessions: number;
+  remainingSessions: number;
+  value: number;
+  startDate: string;
+  expiresAt: string;
+  status: TherapyPackageStatus;
+  sessions: TherapySession[];
+}
+
+export interface TherapySession {
+  id: string;
+  packageId: string;
+  appointmentId?: string;
+  date: string;
+  status: "scheduled" | "completed" | "cancelled" | "no_show";
+}
+
+export interface AuditLog {
+  id: string;
+  userId: string;
+  userName: string;
+  action: string;
+  entity: string;
+  entityId: string;
+  details: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface Specialty {
+  id: string;
+  name: string;
+}
+
+export interface Doctor {
+  id: string;
+  name: string;
+  specialtyId: string;
+  specialty: string;
 }
