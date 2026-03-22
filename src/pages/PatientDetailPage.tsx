@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Phone, Mail, MapPin, AlertTriangle, Calendar, Clock, User } from "lucide-react";
+import { ArrowLeft, Phone, Mail, AlertTriangle, Calendar, Clock, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -88,9 +88,9 @@ export default function PatientDetailPage() {
               <span className="text-xs text-muted-foreground">Última: {formatDate(lastApp.date)} — {lastApp.specialty || lastApp.doctorName}</span>
             </div>
           )}
-          {patient.bloodType && (
-            <div className="px-2 py-1 rounded bg-primary/10">
-              <span className="text-xs text-primary font-medium">Tipo: {patient.bloodType}</span>
+          {patient.clinicalAlerts && (
+            <div className="px-2 py-1 rounded bg-destructive/10">
+              <span className="text-xs text-destructive font-medium">Alerta: {patient.clinicalAlerts}</span>
             </div>
           )}
         </div>
@@ -102,7 +102,7 @@ export default function PatientDetailPage() {
           <CardContent className="space-y-2 text-sm">
             <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" />{patient.phone}</div>
             <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" />{patient.email}</div>
-            {patient.address && <div className="flex items-center gap-2"><MapPin className="h-3.5 w-3.5 text-muted-foreground" /><span className="text-xs">{patient.address}</span></div>}
+            {patient.clinicalAlerts && <div className="flex items-center gap-2"><AlertTriangle className="h-3.5 w-3.5 text-destructive" /><span className="text-xs">{patient.clinicalAlerts}</span></div>}
             <div className="pt-2 border-t space-y-1 text-xs">
               <p><span className="text-muted-foreground">CPF:</span> {patient.cpf}</p>
               <p><span className="text-muted-foreground">Nascimento:</span> {formatDate(patient.birthDate)}</p>

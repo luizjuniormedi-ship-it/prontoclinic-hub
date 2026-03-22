@@ -98,11 +98,11 @@ export const mockDoctors: Doctor[] = mockProfessionals
 
 // ── Patients ──────────────────────────────────
 export const mockPatients: Patient[] = [
-  { id: "1", name: "Maria Silva Santos", cpf: "123.456.789-00", birthDate: "1985-03-15", phone: "(11) 98765-4321", email: "maria@email.com", gender: "F", healthInsurance: "Unimed", healthInsuranceNumber: "12345", bloodType: "O+", allergies: "Dipirona", address: "Rua das Flores, 123 - São Paulo/SP", emergencyContact: "José Santos", emergencyPhone: "(11) 91234-0000", createdAt: "2024-01-15", updatedAt: "2024-03-20" },
-  { id: "2", name: "João Pedro Oliveira", cpf: "987.654.321-00", birthDate: "1990-07-22", phone: "(11) 91234-5678", email: "joao@email.com", gender: "M", healthInsurance: "Bradesco Saúde", healthInsuranceNumber: "67890", bloodType: "A+", address: "Av. Paulista, 1000 - São Paulo/SP", createdAt: "2024-02-10", updatedAt: "2024-03-18" },
-  { id: "3", name: "Ana Beatriz Costa", cpf: "456.789.123-00", birthDate: "1978-11-05", phone: "(21) 99876-5432", email: "ana@email.com", gender: "F", healthInsurance: "SulAmérica", healthInsuranceNumber: "11223", bloodType: "B-", allergies: "Penicilina", address: "Rua Copacabana, 500 - Rio de Janeiro/RJ", createdAt: "2024-01-20", updatedAt: "2024-03-15" },
-  { id: "4", name: "Carlos Eduardo Lima", cpf: "321.654.987-00", birthDate: "1995-01-30", phone: "(31) 98765-1234", email: "carlos@email.com", gender: "M", address: "Rua Bahia, 200 - Belo Horizonte/MG", createdAt: "2024-03-01", updatedAt: "2024-03-22" },
-  { id: "5", name: "Fernanda Rodrigues", cpf: "654.321.987-00", birthDate: "1982-09-12", phone: "(41) 91234-9876", email: "fernanda@email.com", gender: "F", healthInsurance: "Amil", healthInsuranceNumber: "33456", bloodType: "AB+", address: "Rua XV de Novembro, 300 - Curitiba/PR", createdAt: "2024-02-28", updatedAt: "2024-03-19" },
+  { id: "1", name: "Maria Silva Santos", cpf: "123.456.789-00", birthDate: "1985-03-15", phone: "(11) 98765-4321", email: "maria@email.com", gender: "F", healthInsurance: "Unimed", healthInsuranceNumber: "12345", allergies: "Dipirona", clinicalAlerts: "Alergia a Dipirona", createdAt: "2024-01-15", updatedAt: "2024-03-20" },
+  { id: "2", name: "João Pedro Oliveira", cpf: "987.654.321-00", birthDate: "1990-07-22", phone: "(11) 91234-5678", email: "joao@email.com", gender: "M", healthInsurance: "Bradesco Saúde", healthInsuranceNumber: "67890", createdAt: "2024-02-10", updatedAt: "2024-03-18" },
+  { id: "3", name: "Ana Beatriz Costa", cpf: "456.789.123-00", birthDate: "1978-11-05", phone: "(21) 99876-5432", email: "ana@email.com", gender: "F", healthInsurance: "SulAmérica", healthInsuranceNumber: "11223", allergies: "Penicilina", clinicalAlerts: "Alergia a Penicilina", createdAt: "2024-01-20", updatedAt: "2024-03-15" },
+  { id: "4", name: "Carlos Eduardo Lima", cpf: "321.654.987-00", birthDate: "1995-01-30", phone: "(31) 98765-1234", email: "carlos@email.com", gender: "M", createdAt: "2024-03-01", updatedAt: "2024-03-22" },
+  { id: "5", name: "Fernanda Rodrigues", cpf: "654.321.987-00", birthDate: "1982-09-12", phone: "(41) 91234-9876", email: "fernanda@email.com", gender: "F", healthInsurance: "Amil", healthInsuranceNumber: "33456", createdAt: "2024-02-28", updatedAt: "2024-03-19" },
 ];
 
 // ── Appointments ──────────────────────────────────
