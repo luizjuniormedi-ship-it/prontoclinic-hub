@@ -102,7 +102,7 @@ export default function PatientDetailPage() {
           <CardContent className="space-y-2 text-sm">
             <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" />{patient.phone}</div>
             <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" />{patient.email}</div>
-            {patient.address && <div className="flex items-center gap-2"><MapPin className="h-3.5 w-3.5 text-muted-foreground" /><span className="text-xs">{patient.address}</span></div>}
+            {patient.clinicalAlerts && <div className="flex items-center gap-2"><AlertTriangle className="h-3.5 w-3.5 text-destructive" /><span className="text-xs">{patient.clinicalAlerts}</span></div>}
             <div className="pt-2 border-t space-y-1 text-xs">
               <p><span className="text-muted-foreground">CPF:</span> {patient.cpf}</p>
               <p><span className="text-muted-foreground">Nascimento:</span> {formatDate(patient.birthDate)}</p>
