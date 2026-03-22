@@ -18,23 +18,48 @@ const mockUser: User = {
   role: "admin",
 };
 
-function getStoredUser(): User | null {
+function safeGetStorageValue(key: string): string | null {
   if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
 
-  const stored = window.localStorage.getItem(AUTH_STORAGE_KEY);
+function safeSetStorageValue(key: string, value: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // storage may be blocked by browser privacy settings
+  }
+}
+
+function safeRemoveStorageValue(key: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // storage may be blocked by browser privacy settings
+  }
+}
+
+function getStoredUser(): User | null {
+  const stored = safeGetStorageValue(AUTH_STORAGE_KEY);
   if (!stored) return null;
 
   try {
     const parsed = JSON.parse(stored) as Partial<User>;
 
     if (!parsed || typeof parsed !== "object" || !parsed.email) {
-      window.localStorage.removeItem(AUTH_STORAGE_KEY);
+      safeRemoveStorageValue(AUTH_STORAGE_KEY);
       return null;
     }
 
     return parsed as User;
   } catch {
-    window.localStorage.removeItem(AUTH_STORAGE_KEY);
+    safeRemoveStorageValue(AUTH_STORAGE_KEY);
     return null;
   }
 }
@@ -46,7 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Mock login — replace with real auth
     if (email) {
       setUser(mockUser);
-      window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(mockUser));
+      safeSetStorageValue(AUTH_STORAGE_KEY, JSON.stringify(mockUser));
       return true;
     }
     return false;
@@ -54,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     setUser(null);
-    window.localStorage.removeItem(AUTH_STORAGE_KEY);
+    safeRemoveStorageValue(AUTH_STORAGE_KEY);
   };
 
   return (
