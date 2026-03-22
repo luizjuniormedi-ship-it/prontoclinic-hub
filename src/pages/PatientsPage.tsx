@@ -1,20 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, Users, AlertTriangle } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Search, Users, AlertTriangle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState, ErrorState } from "@/components/StateViews";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { patientsService } from "@/services/patientsService";
 import { Patient } from "@/types";
-import { formatDate, calculateAge } from "@/utils/formatters";
+import { formatCPF, calculateAge } from "@/utils/formatters";
+import { maskPhone } from "@/utils/masks";
 import { useToast } from "@/hooks/use-toast";
+import { NewPatientDialog } from "@/components/patients/NewPatientDialog";
 
 export default function PatientsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -26,16 +23,7 @@ export default function PatientsPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // Form state
-  const [formName, setFormName] = useState("");
-  const [formCpf, setFormCpf] = useState("");
-  const [formBirthDate, setFormBirthDate] = useState("");
-  const [formPhone, setFormPhone] = useState("");
-  const [formEmail, setFormEmail] = useState("");
-  const [formGender, setFormGender] = useState<"M" | "F" | "O">("M");
-  const [formInsurance, setFormInsurance] = useState("");
-
-  const loadPatients = async () => {
+  const loadPatients = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -46,51 +34,31 @@ export default function PatientsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadPatients();
-  }, []);
+  }, [loadPatients]);
 
-  const filtered = patients.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase()) ||
-    p.cpf.includes(search) ||
-    p.phone.includes(search)
-  );
-
-  // Duplicate detection
-  const duplicateByCpf = formCpf.length >= 6 ? patients.find((p) => p.cpf.includes(formCpf)) : undefined;
-  const duplicateByPhone = formPhone.length >= 8 ? patients.find((p) => p.phone.includes(formPhone)) : undefined;
-  const duplicate = duplicateByCpf || duplicateByPhone;
+  // Client-side filter (data already loaded)
+  const filtered = patients.filter((p) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return (
+      p.name.toLowerCase().includes(q) ||
+      p.cpf.includes(q.replace(/\D/g, '')) ||
+      p.phone.includes(q.replace(/\D/g, ''))
+    );
+  });
 
   const isComplete = (p: Patient) => !!(p.name && p.cpf && p.birthDate && p.phone && p.email && p.gender);
 
-  const resetForm = () => {
-    setFormName("");
-    setFormCpf("");
-    setFormBirthDate("");
-    setFormPhone("");
-    setFormEmail("");
-    setFormGender("M");
-    setFormInsurance("");
-  };
-
-  const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const handleCreate = async (patientData: Omit<Patient, "id" | "createdAt" | "updatedAt">) => {
     try {
       setSaving(true);
-      await patientsService.create({
-        name: formName,
-        cpf: formCpf,
-        birthDate: formBirthDate,
-        phone: formPhone,
-        email: formEmail,
-        gender: formGender,
-        healthInsurance: formInsurance || undefined,
-      });
+      await patientsService.create(patientData);
       toast({ title: "Paciente cadastrado com sucesso!" });
       setDialogOpen(false);
-      resetForm();
       await loadPatients();
     } catch (err: any) {
       toast({ title: "Erro ao cadastrar", description: err.message, variant: "destructive" });
@@ -108,78 +76,14 @@ export default function PatientsPage() {
         title="Pacientes"
         description={`${patients.length} pacientes cadastrados`}
         actions={
-          <Dialog open={dialogOpen} onOpenChange={(v) => { setDialogOpen(v); if (!v) resetForm(); }}>
-            <DialogTrigger asChild>
-              <Button><Plus className="mr-2 h-4 w-4" />Novo Paciente</Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg">
-              <DialogHeader>
-                <DialogTitle>Cadastrar Paciente</DialogTitle>
-                <DialogDescription>Preencha os dados do paciente. Campos com * são obrigatórios.</DialogDescription>
-              </DialogHeader>
-
-              {duplicate && (
-                <Card className="border-warning/30 bg-warning/5">
-                  <CardContent className="p-3">
-                    <div className="flex items-center gap-1.5 text-warning text-sm font-medium mb-1">
-                      <AlertTriangle className="h-4 w-4" />Possível duplicidade encontrada
-                    </div>
-                    <p className="text-xs">{duplicate.name} — {duplicate.cpf}</p>
-                    <p className="text-xs text-muted-foreground">{duplicate.phone}</p>
-                    <Button variant="link" size="sm" className="h-auto p-0 text-xs mt-1" onClick={() => { setDialogOpen(false); navigate(`/patients/${duplicate.id}`); }}>
-                      Ver cadastro existente →
-                    </Button>
-                  </CardContent>
-                </Card>
-              )}
-
-              <form onSubmit={handleCreate} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2 space-y-2">
-                    <Label>Nome Completo *</Label>
-                    <Input placeholder="Nome do paciente" required value={formName} onChange={(e) => setFormName(e.target.value)} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>CPF *</Label>
-                    <Input placeholder="000.000.000-00" required value={formCpf} onChange={(e) => setFormCpf(e.target.value)} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Data de Nascimento *</Label>
-                    <Input type="date" required value={formBirthDate} onChange={(e) => setFormBirthDate(e.target.value)} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Telefone *</Label>
-                    <Input placeholder="(00) 00000-0000" required value={formPhone} onChange={(e) => setFormPhone(e.target.value)} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Sexo *</Label>
-                    <Select value={formGender} onValueChange={(v) => setFormGender(v as "M" | "F" | "O")}>
-                      <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="M">Masculino</SelectItem>
-                        <SelectItem value="F">Feminino</SelectItem>
-                        <SelectItem value="O">Outro</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>E-mail</Label>
-                    <Input type="email" placeholder="email@email.com" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Convênio</Label>
-                    <Input placeholder="Nome do convênio" value={formInsurance} onChange={(e) => setFormInsurance(e.target.value)} />
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-                  <Button type="submit" disabled={saving}>
-                    {saving ? "Salvando..." : "Salvar"}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
+          <NewPatientDialog
+            open={dialogOpen}
+            onOpenChange={setDialogOpen}
+            patients={patients}
+            onSave={handleCreate}
+            saving={saving}
+            navigateToPatient={(id) => navigate(`/patients/${id}`)}
+          />
         }
       />
 
@@ -189,7 +93,7 @@ export default function PatientsPage() {
       </div>
 
       {filtered.length === 0 ? (
-        <EmptyState icon={Users} title="Nenhum paciente encontrado" description="Tente ajustar os filtros de busca." />
+        <EmptyState icon={Users} title="Nenhum paciente encontrado" description={search ? "Tente ajustar os filtros de busca." : "Cadastre o primeiro paciente clicando em 'Novo Paciente'."} />
       ) : (
         <div className="rounded-lg border bg-card overflow-auto">
           <Table>
@@ -214,9 +118,9 @@ export default function PatientsPage() {
                         {p.allergies && <AlertTriangle className="h-3 w-3 text-destructive" />}
                       </div>
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-xs">{p.cpf}</TableCell>
+                    <TableCell className="text-muted-foreground text-xs">{p.cpf ? formatCPF(p.cpf) : '—'}</TableCell>
                     <TableCell>{p.birthDate ? `${calculateAge(p.birthDate)}a` : '—'}</TableCell>
-                    <TableCell className="text-xs">{p.phone}</TableCell>
+                    <TableCell className="text-xs">{p.phone ? maskPhone(p.phone) : '—'}</TableCell>
                     <TableCell className="text-xs">{p.healthInsurance || <span className="text-muted-foreground">Particular</span>}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={`text-[10px] border-0 ${complete ? "bg-success/10 text-success" : "bg-warning/10 text-warning"}`}>
