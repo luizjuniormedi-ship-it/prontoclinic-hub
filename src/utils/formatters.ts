@@ -1,4 +1,4 @@
-import { AppointmentStatus, AppointmentType, PaymentStatus, ReturnStatus, TherapyPackageStatus } from "@/types";
+import { AppointmentStatus, AppointmentType, PaymentStatus, ReturnStatus, TherapyPackageStatus, BillingType, PaymentMethod, ProfessionalStatus } from "@/types";
 
 export function formatCurrency(value: number): string {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
@@ -14,55 +14,54 @@ export function formatCPF(cpf: string): string {
 
 export function getAppointmentStatusLabel(status: AppointmentStatus): string {
   const map: Record<AppointmentStatus, string> = {
-    scheduled: "Agendado",
-    confirmed: "Confirmado",
-    waiting: "Aguardando",
-    in_progress: "Em atendimento",
-    completed: "Finalizado",
-    no_show: "Falta",
-    cancelled: "Cancelado",
+    scheduled: "Agendado", confirmed: "Confirmado", waiting: "Aguardando",
+    in_progress: "Em atendimento", completed: "Finalizado", no_show: "Falta", cancelled: "Cancelado",
   };
   return map[status];
 }
 
 export function getAppointmentTypeLabel(type: AppointmentType): string {
   const map: Record<AppointmentType, string> = {
-    consulta: "Consulta",
-    retorno: "Retorno",
-    exame: "Exame",
-    procedimento: "Procedimento",
-    terapia_avulsa: "Terapia Avulsa",
-    terapia_pacote: "Terapia Pacote",
+    consulta: "Consulta", retorno: "Retorno", exame: "Exame",
+    procedimento: "Procedimento", terapia_avulsa: "Terapia Avulsa", terapia_pacote: "Terapia Pacote",
   };
   return map[type];
 }
 
 export function getPaymentStatusLabel(status: PaymentStatus): string {
   const map: Record<PaymentStatus, string> = {
-    paid: "Pago",
-    pending: "Pendente",
-    overdue: "Atrasado",
+    paid: "Pago", pending: "Pendente", overdue: "Atrasado", cancelled: "Cancelado",
   };
   return map[status];
 }
 
-export function getReturnStatusLabel(status: ReturnStatus): string {
-  const map: Record<ReturnStatus, string> = {
-    active: "Ativo",
-    used: "Utilizado",
-    expired: "Expirado",
-    cancelled: "Cancelado",
+export function getBillingTypeLabel(type: BillingType): string {
+  const map: Record<BillingType, string> = {
+    particular: "Particular", convenio: "Convênio", retorno: "Retorno",
+    terapia_avulsa: "Terapia Avulsa", terapia_pacote: "Terapia Pacote",
   };
+  return map[type];
+}
+
+export function getPaymentMethodLabel(method: PaymentMethod): string {
+  const map: Record<PaymentMethod, string> = {
+    dinheiro: "Dinheiro", pix: "PIX", cartao_debito: "Cartão Débito",
+    cartao_credito: "Cartão Crédito", transferencia: "Transferência", convenio: "Convênio",
+  };
+  return map[method];
+}
+
+export function getProfessionalStatusLabel(status: ProfessionalStatus): string {
+  return status === "active" ? "Ativo" : "Inativo";
+}
+
+export function getReturnStatusLabel(status: ReturnStatus): string {
+  const map: Record<ReturnStatus, string> = { active: "Ativo", used: "Utilizado", expired: "Expirado", cancelled: "Cancelado" };
   return map[status];
 }
 
 export function getTherapyPackageStatusLabel(status: TherapyPackageStatus): string {
-  const map: Record<TherapyPackageStatus, string> = {
-    active: "Ativo",
-    completed: "Concluído",
-    expired: "Expirado",
-    cancelled: "Cancelado",
-  };
+  const map: Record<TherapyPackageStatus, string> = { active: "Ativo", completed: "Concluído", expired: "Expirado", cancelled: "Cancelado" };
   return map[status];
 }
 
