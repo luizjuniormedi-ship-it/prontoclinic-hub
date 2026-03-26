@@ -94,14 +94,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // Set up listener FIRST
+    // Set up listener FIRST — do NOT await inside callback to avoid deadlocks
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, sess) => {
-        await loadProfile(sess);
+      (_event, sess) => {
+        loadProfile(sess);
       }
     );
 
-    // Then get existing session
+    // Then restore existing session
     supabase.auth.getSession().then(({ data: { session: sess } }) => {
       loadProfile(sess);
     });
