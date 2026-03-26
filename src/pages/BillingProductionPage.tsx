@@ -1,64 +1,136 @@
-import { useEffect, useState } from "react";
-import { Receipt, Search, TrendingUp } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { Receipt, Search, TrendingUp, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/PageHeader";
-import { LoadingState, EmptyState } from "@/components/StateViews";
+import { LoadingState, EmptyState, ErrorState } from "@/components/StateViews";
 import { StatsCard } from "@/components/StatsCard";
-import { api } from "@/services/api";
-import { BillingProduction, BillingProductionStatus, Unit } from "@/types";
-import { formatCurrency, formatDate, getBillingTypeLabel, getAppointmentTypeLabel } from "@/utils/formatters";
+import { billingsService, DbBilling } from "@/services/financialService";
+import { patientsService } from "@/services/patientsService";
+import { professionalsLookup, DbProfessional } from "@/services/appointmentsService";
+import { Patient } from "@/types";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 
-const prodStatusLabels: Record<BillingProductionStatus, string> = { em_aberto: "Em Aberto", faturado: "Faturado", cancelado: "Cancelado", glosa: "Glosa" };
-const prodStatusColors: Record<BillingProductionStatus, string> = {
+const formatCurrency = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+const statusLabels: Record<string, string> = { em_aberto: "Em Aberto", faturado: "Faturado", cancelado: "Cancelado", glosa: "Glosa" };
+const statusColors: Record<string, string> = {
   em_aberto: "bg-warning/10 text-warning", faturado: "bg-success/10 text-success",
   cancelado: "bg-muted text-muted-foreground", glosa: "bg-destructive/10 text-destructive",
 };
+const billingTypeLabels: Record<string, string> = { particular: "Particular", convenio: "Convênio", retorno: "Retorno" };
 
 export default function BillingProductionPage() {
-  const [items, setItems] = useState<BillingProduction[]>([]);
-  const [units, setUnits] = useState<Unit[]>([]);
+  const [billings, setBillings] = useState<DbBilling[]>([]);
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [unitFilter, setUnitFilter] = useState("all");
+  const [newOpen, setNewOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const { user } = useAuth();
+  const { toast } = useToast();
 
-  useEffect(() => {
-    Promise.all([api.getBillingProductions(), api.getUnits()]).then(([b, u]) => {
-      setItems(b); setUnits(u); setLoading(false);
-    });
+  // New billing form
+  const [newPatientId, setNewPatientId] = useState("");
+  const [newProfId, setNewProfId] = useState("");
+  const [newGross, setNewGross] = useState("");
+  const [newDiscount, setNewDiscount] = useState("0");
+  const [newType, setNewType] = useState("particular");
+
+  const loadAll = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const [b, pats, profs] = await Promise.all([
+        billingsService.getAll(),
+        patientsService.getAll(),
+        professionalsLookup.getAll(),
+      ]);
+      setBillings(b);
+      setPatients(pats);
+      setProfessionals(profs);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const filtered = items.filter((i) => {
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  const getPatientName = (id: string | null) => patients.find((p) => p.id === id)?.name || "—";
+  const getProfName = (id: string | null) => professionals.find((p) => p.id === id)?.full_name || "—";
+
+  const filtered = billings.filter((b) => {
     const q = search.toLowerCase();
-    const matchSearch = !search || i.patientName.toLowerCase().includes(q) || i.professionalName.toLowerCase().includes(q) || i.description.toLowerCase().includes(q);
-    const matchStatus = statusFilter === "all" || i.status === statusFilter;
-    const matchUnit = unitFilter === "all" || i.unitId === unitFilter;
-    return matchSearch && matchStatus && matchUnit;
+    const patName = getPatientName(b.patient_id).toLowerCase();
+    const profName = getProfName(b.professional_id).toLowerCase();
+    const matchSearch = !search || patName.includes(q) || profName.includes(q);
+    const matchStatus = statusFilter === "all" || b.status === statusFilter;
+    return matchSearch && matchStatus;
   });
 
-  const totalFaturado = items.filter((i) => i.status === "faturado").reduce((s, i) => s + i.finalAmount, 0);
-  const totalAberto = items.filter((i) => i.status === "em_aberto").reduce((s, i) => s + i.finalAmount, 0);
+  const totalFaturado = billings.filter((b) => b.status === "faturado").reduce((s, b) => s + b.net_amount, 0);
+  const totalAberto = billings.filter((b) => b.status === "em_aberto").reduce((s, b) => s + b.net_amount, 0);
+
+  const handleCreate = async () => {
+    if (!newPatientId || !newGross) {
+      toast({ title: "Preencha paciente e valor", variant: "destructive" });
+      return;
+    }
+    const gross = Number(newGross);
+    const disc = Number(newDiscount) || 0;
+    setSaving(true);
+    try {
+      await billingsService.create({
+        patient_id: newPatientId,
+        professional_id: newProfId || undefined,
+        company_id: user?.company_id || undefined,
+        unit_id: user?.primary_unit_id || undefined,
+        billing_type: newType,
+        gross_amount: gross,
+        discount: disc,
+        net_amount: gross - disc,
+        status: "em_aberto",
+      });
+      toast({ title: "Faturamento criado!" });
+      setNewOpen(false);
+      setNewPatientId("");
+      setNewProfId("");
+      setNewGross("");
+      setNewDiscount("0");
+      loadAll();
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (loading) return <LoadingState />;
+  if (error) return <ErrorState message={error} onRetry={loadAll} />;
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <PageHeader title="Faturamento" description="Produção faturável vinculada aos atendimentos" />
+      <PageHeader
+        title="Faturamento"
+        description="Produção faturável vinculada aos atendimentos"
+        actions={<Button onClick={() => setNewOpen(true)}><Plus className="mr-2 h-4 w-4" />Novo Faturamento</Button>}
+      />
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <StatsCard title="Faturado" value={formatCurrency(totalFaturado)} icon={TrendingUp} variant="success" />
         <StatsCard title="Em Aberto" value={formatCurrency(totalAberto)} icon={Receipt} variant="warning" />
-        <Card><CardContent className="p-4">
-          <p className="text-xs text-muted-foreground mb-1">Produção por Unidade</p>
-          {units.map((u) => {
-            const unitTotal = items.filter((i) => i.unitId === u.id).reduce((s, i) => s + i.finalAmount, 0);
-            return unitTotal > 0 ? <p key={u.id} className="text-xs">{u.name}: <span className="font-bold">{formatCurrency(unitTotal)}</span></p> : null;
-          })}
-        </CardContent></Card>
+        <StatsCard title="Total registros" value={String(billings.length)} icon={Receipt} variant="default" />
       </div>
 
       <div className="flex gap-2 flex-wrap">
@@ -70,41 +142,91 @@ export default function BillingProductionPage() {
           <SelectTrigger className="w-[130px]"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
-            {(Object.keys(prodStatusLabels) as BillingProductionStatus[]).map((s) => <SelectItem key={s} value={s}>{prodStatusLabels[s]}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={unitFilter} onValueChange={setUnitFilter}>
-          <SelectTrigger className="w-[150px]"><SelectValue placeholder="Unidade" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas</SelectItem>
-            {units.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+            {Object.entries(statusLabels).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
 
-      {filtered.length === 0 ? <EmptyState icon={Receipt} title="Nenhuma produção encontrada" /> : (
+      {filtered.length === 0 ? <EmptyState icon={Receipt} title="Nenhum faturamento encontrado" /> : (
         <div className="rounded-lg border bg-card overflow-auto">
           <Table>
             <TableHeader><TableRow>
-              <TableHead>Paciente</TableHead><TableHead>Profissional</TableHead><TableHead>Unidade</TableHead><TableHead>Tipo</TableHead><TableHead>Convênio</TableHead><TableHead>Bruto</TableHead><TableHead>Final</TableHead><TableHead>Status</TableHead>
+              <TableHead>Paciente</TableHead>
+              <TableHead>Profissional</TableHead>
+              <TableHead>Tipo</TableHead>
+              <TableHead>Bruto</TableHead>
+              <TableHead>Desc.</TableHead>
+              <TableHead>Líquido</TableHead>
+              <TableHead>Status</TableHead>
             </TableRow></TableHeader>
             <TableBody>
-              {filtered.map((i) => (
-                <TableRow key={i.id}>
-                  <TableCell className="font-medium text-sm">{i.patientName}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{i.professionalName}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{i.unitName}</TableCell>
-                  <TableCell><Badge variant="outline" className="border-0 bg-primary/10 text-primary text-[10px]">{getBillingTypeLabel(i.billingType)}</Badge></TableCell>
-                  <TableCell className="text-xs">{i.insuranceName || "Particular"}</TableCell>
-                  <TableCell className="text-xs">{formatCurrency(i.grossAmount)}</TableCell>
-                  <TableCell className="font-medium text-sm">{formatCurrency(i.finalAmount)}</TableCell>
-                  <TableCell><Badge variant="outline" className={`border-0 text-[10px] ${prodStatusColors[i.status]}`}>{prodStatusLabels[i.status]}</Badge></TableCell>
+              {filtered.map((b) => (
+                <TableRow key={b.id}>
+                  <TableCell className="font-medium text-sm">{getPatientName(b.patient_id)}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{getProfName(b.professional_id)}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="border-0 bg-primary/10 text-primary text-[10px]">
+                      {billingTypeLabels[b.billing_type || ""] || b.billing_type || "—"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-xs">{formatCurrency(b.gross_amount)}</TableCell>
+                  <TableCell className="text-xs">{b.discount > 0 ? `-${formatCurrency(b.discount)}` : "—"}</TableCell>
+                  <TableCell className="font-medium text-sm">{formatCurrency(b.net_amount)}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={`border-0 text-[10px] ${statusColors[b.status] || ""}`}>
+                      {statusLabels[b.status] || b.status}
+                    </Badge>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </div>
       )}
+
+      {/* New billing dialog */}
+      <Dialog open={newOpen} onOpenChange={setNewOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Novo Faturamento</DialogTitle>
+            <DialogDescription>Registre um faturamento.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Paciente *</Label>
+              <Select value={newPatientId} onValueChange={setNewPatientId}>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>{patients.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Profissional</Label>
+              <Select value={newProfId} onValueChange={setNewProfId}>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>{professionals.map((p) => <SelectItem key={p.id} value={p.id}>{p.full_name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo</Label>
+              <Select value={newType} onValueChange={setNewType}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(billingTypeLabels).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-2"><Label>Bruto *</Label><Input type="number" value={newGross} onChange={(e) => setNewGross(e.target.value)} /></div>
+              <div className="space-y-2"><Label>Desconto</Label><Input type="number" value={newDiscount} onChange={(e) => setNewDiscount(e.target.value)} /></div>
+              <div className="space-y-2"><Label>Líquido</Label><Input type="number" value={String((Number(newGross) || 0) - (Number(newDiscount) || 0))} disabled /></div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNewOpen(false)}>Cancelar</Button>
+            <Button onClick={handleCreate} disabled={saving}>{saving ? "Salvando..." : "Registrar"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
