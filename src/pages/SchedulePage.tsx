@@ -260,7 +260,7 @@ export default function SchedulePage() {
   const doctorsForFilter = professionals.map((p) => ({ id: p.id, name: p.full_name, specialty: "", specialtyId: "" }));
   const specialtiesForFilter = specialties.map((s) => ({ id: s.id, name: s.name, code: s.code || undefined, status: (s.status as any) || "active" }));
 
-  if (loading) return <LoadingState />;
+  if (loading) return <div className="space-y-4"><PageHeader title="Agenda" description="Carregando..." /><ScheduleSkeleton count={5} /></div>;
   if (error) return <ErrorState message={error} onRetry={loadAll} />;
 
   return (
