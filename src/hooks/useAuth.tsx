@@ -10,7 +10,6 @@ export interface UserProfile {
   role_name: string | null;
   company_id: string | null;
   primary_unit_id: string | null;
-  avatar_url: string | null;
 }
 
 interface AuthContextType {
@@ -47,7 +46,6 @@ async function fetchUserProfile(supabaseUser: SupabaseUser): Promise<UserProfile
         role_name: null,
         company_id: null,
         primary_unit_id: null,
-        avatar_url: null,
       };
     }
 
@@ -70,7 +68,6 @@ async function fetchUserProfile(supabaseUser: SupabaseUser): Promise<UserProfile
       role_name,
       company_id: data.company_id,
       primary_unit_id: data.primary_unit_id,
-      avatar_url: data.avatar_url,
     };
   } catch (err) {
     console.error("Failed to fetch user profile:", err);
