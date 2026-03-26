@@ -9,12 +9,18 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("admin@prontomedic.com");
-  const [password, setPassword] = useState("admin123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  // If already authenticated, redirect
+  if (isAuthenticated) {
+    navigate("/", { replace: true });
+    return null;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,12 +29,15 @@ export default function LoginPage() {
       return;
     }
     setLoading(true);
-    const success = await login(email, password);
+    const result = await login(email, password);
     setLoading(false);
-    if (success) {
+    if (result.success) {
       navigate("/");
     } else {
-      toast({ title: "Credenciais inválidas", variant: "destructive" });
+      const msg = result.error?.includes("Invalid login")
+        ? "E-mail ou senha inválidos"
+        : result.error || "Erro ao fazer login";
+      toast({ title: msg, variant: "destructive" });
     }
   };
 
@@ -52,6 +61,7 @@ export default function LoginPage() {
                 placeholder="seu@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
               />
             </div>
             <div className="space-y-2">
@@ -62,15 +72,13 @@ export default function LoginPage() {
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
               />
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Entrar
             </Button>
-            <p className="text-xs text-center text-muted-foreground">
-              Demo: use qualquer e-mail e senha
-            </p>
           </form>
         </CardContent>
       </Card>

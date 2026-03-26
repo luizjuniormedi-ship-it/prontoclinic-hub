@@ -106,12 +106,12 @@ export function AppSidebar() {
           <div className="flex items-center gap-2">
             <Avatar className="h-8 w-8">
               <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
-                {getInitials(user.name)}
+                {getInitials(user.full_name)}
               </AvatarFallback>
             </Avatar>
             {!collapsed && (
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold truncate">{user.name}</p>
+                <p className="text-xs font-semibold truncate">{user.full_name}</p>
                 <p className="text-[10px] text-sidebar-muted truncate">{user.email}</p>
               </div>
             )}
