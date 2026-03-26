@@ -5,45 +5,32 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/PageHeader";
-import { EmptyState, LoadingState } from "@/components/StateViews";
-import { api } from "@/services/api";
-import { Patient, MedicalRecord, Appointment } from "@/types";
-import { calculateAge, formatDate } from "@/utils/formatters";
+import { EmptyState, LoadingState, ErrorState } from "@/components/StateViews";
+import { patientsService } from "@/services/patientsService";
+import { Patient } from "@/types";
+import { calculateAge } from "@/utils/formatters";
 
 export default function MedicalRecordsPage() {
   const [search, setSearch] = useState("");
   const [patients, setPatients] = useState<Patient[]>([]);
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [records, setRecords] = useState<Record<string, MedicalRecord[]>>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    Promise.all([api.getPatients(), api.getAppointments()]).then(async ([p, a]) => {
-      setPatients(p);
-      setAppointments(a);
-      // Load records for each patient
-      const recordMap: Record<string, MedicalRecord[]> = {};
-      await Promise.all(p.map(async (pat) => {
-        const recs = await api.getMedicalRecords(pat.id);
-        if (recs.length > 0) recordMap[pat.id] = recs;
-      }));
-      setRecords(recordMap);
-      setLoading(false);
-    });
+    patientsService.getAll()
+      .then((p) => { setPatients(p); setLoading(false); })
+      .catch((err) => { setError(err.message); setLoading(false); });
   }, []);
 
-  const filtered = patients.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase()) || p.cpf.includes(search) || p.phone.includes(search)
-  );
-
-  const getLastAppointment = (patientId: string) => {
-    return appointments
-      .filter((a) => a.patientId === patientId && a.status === "completed")
-      .sort((a, b) => b.date.localeCompare(a.date))[0];
-  };
+  const filtered = patients.filter((p) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return p.name.toLowerCase().includes(q) || p.cpf.includes(q.replace(/\D/g, '')) || p.phone.includes(q.replace(/\D/g, ''));
+  });
 
   if (loading) return <LoadingState />;
+  if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -59,14 +46,10 @@ export default function MedicalRecordsPage() {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((p) => {
-            const lastApp = getLastAppointment(p.id);
-            const patRecords = records[p.id] || [];
-            const age = calculateAge(p.birthDate);
-
+            const age = p.birthDate ? calculateAge(p.birthDate) : null;
             return (
               <Card key={p.id} className="cursor-pointer hover:shadow-md hover:border-primary/30 transition-all" onClick={() => navigate(`/patients/${p.id}`)}>
                 <CardContent className="p-4 space-y-2">
-                  {/* Patient header */}
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-2">
                       <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
@@ -74,36 +57,22 @@ export default function MedicalRecordsPage() {
                       </div>
                       <div>
                         <p className="font-medium text-sm">{p.name}</p>
-                        <p className="text-xs text-muted-foreground">{age}a • {p.gender === "M" ? "Masc." : "Fem."} • {p.healthInsurance || "Particular"}</p>
+                        <p className="text-xs text-muted-foreground">{age != null ? `${age}a • ` : ""}{p.gender === "M" ? "Masc." : p.gender === "F" ? "Fem." : "Outro"} • {p.healthInsurance || "Particular"}</p>
                       </div>
                     </div>
                   </div>
-
-                  {/* Alerts */}
                   {p.allergies && (
                     <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-destructive/10 w-fit">
                       <AlertTriangle className="h-2.5 w-2.5 text-destructive" />
                       <span className="text-[10px] text-destructive font-medium">{p.allergies}</span>
                     </div>
                   )}
-
-                  {/* Timeline info */}
-                  <div className="border-t pt-2 space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-muted-foreground">Registros: {patRecords.length}</span>
-                      {patRecords.length > 0 && (
-                        <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-0">
-                          {patRecords.length} {patRecords.length === 1 ? "registro" : "registros"}
-                        </Badge>
-                      )}
+                  {p.clinicalAlerts && (
+                    <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-warning/10 w-fit">
+                      <AlertTriangle className="h-2.5 w-2.5 text-warning" />
+                      <span className="text-[10px] text-warning font-medium">{p.clinicalAlerts}</span>
                     </div>
-                    {lastApp && (
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Calendar className="h-3 w-3" />
-                        <span>Última: {formatDate(lastApp.date)} — {lastApp.specialty || lastApp.doctorName}</span>
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </CardContent>
               </Card>
             );
