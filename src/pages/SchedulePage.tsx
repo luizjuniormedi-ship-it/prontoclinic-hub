@@ -94,6 +94,7 @@ export default function SchedulePage() {
 
   // Filters
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 300);
   const [doctorFilter, setDoctorFilter] = useState("all");
   const [specialtyFilter, setSpecialtyFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -163,7 +164,7 @@ export default function SchedulePage() {
     [dbAppointments, patients, professionals, specialties, appointmentTypes]
   );
 
-  const hasFilters = search !== "" || doctorFilter !== "all" || specialtyFilter !== "all" || typeFilter !== "all" || statusFilter !== "all";
+  const hasFilters = debouncedSearch !== "" || doctorFilter !== "all" || specialtyFilter !== "all" || typeFilter !== "all" || statusFilter !== "all";
 
   const clearFilters = () => {
     setSearch("");
