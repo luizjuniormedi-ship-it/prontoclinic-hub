@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/PageHeader";
-import { LoadingState, EmptyState, ErrorState } from "@/components/StateViews";
+import { ScheduleSkeleton, EmptyState, ErrorState } from "@/components/StateViews";
 import { AppointmentStatusBadge } from "@/components/StatusBadge";
 import { ScheduleFilters } from "@/components/schedule/ScheduleFilters";
 import { QuickActionsMenu } from "@/components/schedule/QuickActionsMenu";
@@ -17,6 +17,7 @@ import { patientsService } from "@/services/patientsService";
 import { Appointment, AppointmentStatus, Patient } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 import { calculateAge } from "@/utils/formatters";
+import { useDebounce } from "@/hooks/useDebounce";
 
 const weekDays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
