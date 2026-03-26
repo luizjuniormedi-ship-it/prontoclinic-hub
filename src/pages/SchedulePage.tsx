@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/PageHeader";
-import { LoadingState, EmptyState, ErrorState } from "@/components/StateViews";
+import { ScheduleSkeleton, EmptyState, ErrorState } from "@/components/StateViews";
 import { AppointmentStatusBadge } from "@/components/StatusBadge";
 import { ScheduleFilters } from "@/components/schedule/ScheduleFilters";
 import { QuickActionsMenu } from "@/components/schedule/QuickActionsMenu";
@@ -17,6 +17,7 @@ import { patientsService } from "@/services/patientsService";
 import { Appointment, AppointmentStatus, Patient } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 import { calculateAge } from "@/utils/formatters";
+import { useDebounce } from "@/hooks/useDebounce";
 
 const weekDays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
@@ -93,6 +94,7 @@ export default function SchedulePage() {
 
   // Filters
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 300);
   const [doctorFilter, setDoctorFilter] = useState("all");
   const [specialtyFilter, setSpecialtyFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -162,7 +164,7 @@ export default function SchedulePage() {
     [dbAppointments, patients, professionals, specialties, appointmentTypes]
   );
 
-  const hasFilters = search !== "" || doctorFilter !== "all" || specialtyFilter !== "all" || typeFilter !== "all" || statusFilter !== "all";
+  const hasFilters = debouncedSearch !== "" || doctorFilter !== "all" || specialtyFilter !== "all" || typeFilter !== "all" || statusFilter !== "all";
 
   const clearFilters = () => {
     setSearch("");
@@ -175,8 +177,8 @@ export default function SchedulePage() {
   const dayAppointments = appointments
     .filter((a) => a.date === selectedDate)
     .filter((a) => {
-      if (search) {
-        const q = search.toLowerCase();
+      if (debouncedSearch) {
+        const q = debouncedSearch.toLowerCase();
         if (!a.patientName.toLowerCase().includes(q) &&
             !(a.patientCpf && a.patientCpf.includes(q.replace(/\D/g, ''))) &&
             !(a.patientPhone && a.patientPhone.includes(q.replace(/\D/g, '')))) return false;
@@ -259,7 +261,7 @@ export default function SchedulePage() {
   const doctorsForFilter = professionals.map((p) => ({ id: p.id, name: p.full_name, specialty: "", specialtyId: "" }));
   const specialtiesForFilter = specialties.map((s) => ({ id: s.id, name: s.name, code: s.code || undefined, status: (s.status as any) || "active" }));
 
-  if (loading) return <LoadingState />;
+  if (loading) return <div className="space-y-4"><PageHeader title="Agenda" description="Carregando..." /><ScheduleSkeleton count={5} /></div>;
   if (error) return <ErrorState message={error} onRetry={loadAll} />;
 
   return (

@@ -1,16 +1,18 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Users, AlertTriangle } from "lucide-react";
+import { Search, Users, AlertTriangle, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/PageHeader";
-import { LoadingState, EmptyState, ErrorState } from "@/components/StateViews";
+import { TableSkeleton, EmptyState, ErrorState } from "@/components/StateViews";
 import { Badge } from "@/components/ui/badge";
 import { patientsService } from "@/services/patientsService";
 import { Patient } from "@/types";
 import { formatCPF, calculateAge } from "@/utils/formatters";
 import { maskPhone } from "@/utils/masks";
 import { useToast } from "@/hooks/use-toast";
+import { useDebounce } from "@/hooks/useDebounce";
 import { NewPatientDialog } from "@/components/patients/NewPatientDialog";
 
 export default function PatientsPage() {
@@ -40,16 +42,18 @@ export default function PatientsPage() {
     loadPatients();
   }, [loadPatients]);
 
-  // Client-side filter (data already loaded)
-  const filtered = patients.filter((p) => {
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
+  const debouncedSearch = useDebounce(search, 300);
+
+  // Client-side filter with debounced search
+  const filtered = useMemo(() => patients.filter((p) => {
+    if (!debouncedSearch.trim()) return true;
+    const q = debouncedSearch.toLowerCase();
     return (
       p.name.toLowerCase().includes(q) ||
       p.cpf.includes(q.replace(/\D/g, '')) ||
       p.phone.includes(q.replace(/\D/g, ''))
     );
-  });
+  }), [patients, debouncedSearch]);
 
   const isComplete = (p: Patient) => !!(p.name && p.cpf && p.birthDate && p.phone && p.email && p.gender);
 
@@ -67,7 +71,7 @@ export default function PatientsPage() {
     }
   };
 
-  if (loading) return <LoadingState />;
+  if (loading) return <div className="space-y-6"><PageHeader title="Pacientes" description="Carregando..." /><TableSkeleton rows={6} cols={6} /></div>;
   if (error) return <ErrorState message={error} onRetry={loadPatients} />;
 
   return (
