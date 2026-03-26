@@ -177,8 +177,8 @@ export default function SchedulePage() {
   const dayAppointments = appointments
     .filter((a) => a.date === selectedDate)
     .filter((a) => {
-      if (search) {
-        const q = search.toLowerCase();
+      if (debouncedSearch) {
+        const q = debouncedSearch.toLowerCase();
         if (!a.patientName.toLowerCase().includes(q) &&
             !(a.patientCpf && a.patientCpf.includes(q.replace(/\D/g, ''))) &&
             !(a.patientPhone && a.patientPhone.includes(q.replace(/\D/g, '')))) return false;
