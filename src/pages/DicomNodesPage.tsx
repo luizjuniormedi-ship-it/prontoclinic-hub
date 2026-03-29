@@ -51,9 +51,7 @@ export default function DicomNodesPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <PageHeader title="Nós DICOM / PACS" description="Servidores PACS, Worklist SCP e viewers configurados">
-        <Button onClick={openNew}><Plus className="h-4 w-4 mr-2" />Novo Nó</Button>
-      </PageHeader>
+      <PageHeader title="Nós DICOM / PACS" description="Servidores PACS, Worklist SCP e viewers configurados" actions={<Button onClick={openNew}><Plus className="h-4 w-4 mr-2" />Novo Nó</Button>} />
 
       {nodes.length === 0 ? <EmptyState icon={Server} title="Nenhum nó DICOM configurado" /> : (
         <div className="rounded-lg border bg-card overflow-auto">

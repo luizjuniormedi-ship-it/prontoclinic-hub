@@ -57,9 +57,7 @@ export default function DicomWorklistPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <PageHeader title="DICOM Worklist Queue" description="Itens de worklist prontos para as modalidades consultarem">
-        <Button variant="outline" onClick={load}><RefreshCw className="h-4 w-4 mr-2" />Atualizar</Button>
-      </PageHeader>
+      <PageHeader title="DICOM Worklist Queue" description="Itens de worklist prontos para as modalidades consultarem" actions={<Button variant="outline" onClick={load}><RefreshCw className="h-4 w-4 mr-2" />Atualizar</Button>} />
 
       <div className="flex gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-sm">

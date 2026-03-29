@@ -131,9 +131,7 @@ export default function ImagingOrdersPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <PageHeader title="Pedidos de Exame de Imagem" description="Requisições de exames vinculadas a pacientes e agendamentos">
-        <Button onClick={openNew}><Plus className="h-4 w-4 mr-2" />Novo Pedido</Button>
-      </PageHeader>
+      <PageHeader title="Pedidos de Exame de Imagem" description="Requisições de exames vinculadas a pacientes e agendamentos" actions={<Button onClick={openNew}><Plus className="h-4 w-4 mr-2" />Novo Pedido</Button>} />
 
       <div className="flex gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-sm">

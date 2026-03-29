@@ -56,9 +56,7 @@ export default function DicomModalitiesPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <PageHeader title="Equipamentos DICOM" description="Modalidades de imagem configuradas na rede">
-        <Button onClick={openNew}><Plus className="h-4 w-4 mr-2" />Novo Equipamento</Button>
-      </PageHeader>
+      <PageHeader title="Equipamentos DICOM" description="Modalidades de imagem configuradas na rede" actions={<Button onClick={openNew}><Plus className="h-4 w-4 mr-2" />Novo Equipamento</Button>} />
 
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />

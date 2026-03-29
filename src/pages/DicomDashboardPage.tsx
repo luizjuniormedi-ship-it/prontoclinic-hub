@@ -34,9 +34,7 @@ export default function DicomDashboardPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <PageHeader title="Integração DICOM / PACS" description="Painel de monitoramento da integração com equipamentos de imagem">
-        <Button variant="outline" onClick={load}><RefreshCw className="h-4 w-4 mr-2" />Atualizar</Button>
-      </PageHeader>
+      <PageHeader title="Integração DICOM / PACS" description="Painel de monitoramento da integração com equipamentos de imagem" actions={<Button variant="outline" onClick={load}><RefreshCw className="h-4 w-4 mr-2" />Atualizar</Button>} />
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
