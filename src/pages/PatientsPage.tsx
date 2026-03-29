@@ -1,93 +1,88 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Users, AlertTriangle, Plus } from "lucide-react";
+import { Search, Users, AlertTriangle, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/PageHeader";
 import { TableSkeleton, EmptyState, ErrorState } from "@/components/StateViews";
 import { Badge } from "@/components/ui/badge";
-import { patientsService } from "@/services/patientsService";
-import { Patient } from "@/types";
+import { supabase } from "@/lib/supabase";
 import { formatCPF, calculateAge } from "@/utils/formatters";
 import { maskPhone } from "@/utils/masks";
-import { useToast } from "@/hooks/use-toast";
 import { useDebounce } from "@/hooks/useDebounce";
-import { NewPatientDialog } from "@/components/patients/NewPatientDialog";
+
+interface PatientRow {
+  id: string;
+  full_name: string;
+  social_name: string | null;
+  cpf: string | null;
+  birth_date: string | null;
+  phone: string | null;
+  email: string | null;
+  sex: string | null;
+  insurance_plan_id: string | null;
+  allergies: string | null;
+  clinical_alerts: string | null;
+  status: string | null;
+}
+
+const PAGE_SIZE = 20;
 
 export default function PatientsPage() {
-  const [patients, setPatients] = useState<Patient[]>([]);
+  const [patients, setPatients] = useState<PatientRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
   const navigate = useNavigate();
-  const { toast } = useToast();
+  const debouncedSearch = useDebounce(search, 300);
 
   const loadPatients = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await patientsService.getAll();
-      setPatients(data);
+      let query = supabase
+        .from("patients")
+        .select("id, full_name, social_name, cpf, birth_date, phone, email, sex, insurance_plan_id, allergies, clinical_alerts, status", { count: "exact" });
+
+      if (debouncedSearch.trim()) {
+        const q = debouncedSearch.trim();
+        query = query.or(`full_name.ilike.%${q}%,cpf.ilike.%${q.replace(/\D/g, "")}%,phone.ilike.%${q.replace(/\D/g, "")}%`);
+      }
+
+      const { data, error: e, count } = await query
+        .order("full_name")
+        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
+      if (e) throw e;
+      setPatients(data || []);
+      setTotal(count || 0);
     } catch (err: any) {
       setError(err.message || "Erro ao carregar pacientes");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [debouncedSearch, page]);
 
-  useEffect(() => {
-    loadPatients();
-  }, [loadPatients]);
+  useEffect(() => { setPage(0); }, [debouncedSearch]);
+  useEffect(() => { loadPatients(); }, [loadPatients]);
 
-  const debouncedSearch = useDebounce(search, 300);
+  const totalPages = Math.ceil(total / PAGE_SIZE);
 
-  // Client-side filter with debounced search
-  const filtered = useMemo(() => patients.filter((p) => {
-    if (!debouncedSearch.trim()) return true;
-    const q = debouncedSearch.toLowerCase();
-    return (
-      p.name.toLowerCase().includes(q) ||
-      p.cpf.includes(q.replace(/\D/g, '')) ||
-      p.phone.includes(q.replace(/\D/g, ''))
-    );
-  }), [patients, debouncedSearch]);
-
-  const isComplete = (p: Patient) => !!(p.name && p.cpf && p.birthDate && p.phone && p.email && p.gender);
-
-  const handleCreate = async (patientData: Omit<Patient, "id" | "createdAt" | "updatedAt">) => {
-    try {
-      setSaving(true);
-      await patientsService.create(patientData);
-      toast({ title: "Paciente cadastrado com sucesso!" });
-      setDialogOpen(false);
-      await loadPatients();
-    } catch (err: any) {
-      toast({ title: "Erro ao cadastrar", description: err.message, variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading) return <div className="space-y-6"><PageHeader title="Pacientes" description="Carregando..." /><TableSkeleton rows={6} cols={6} /></div>;
+  if (loading && patients.length === 0) return <div className="space-y-6"><PageHeader title="Pacientes" description="Carregando..." /><TableSkeleton rows={6} cols={6} /></div>;
   if (error) return <ErrorState message={error} onRetry={loadPatients} />;
 
   return (
     <div className="space-y-6 animate-fade-in">
       <PageHeader
         title="Pacientes"
-        description={`${patients.length} pacientes cadastrados`}
+        description={`${total} pacientes cadastrados`}
         actions={
-          <NewPatientDialog
-            open={dialogOpen}
-            onOpenChange={setDialogOpen}
-            patients={patients}
-            onSave={handleCreate}
-            saving={saving}
-            navigateToPatient={(id) => navigate(`/patients/${id}`)}
-          />
+          <Button onClick={() => navigate("/patients/new")}>
+            <Plus className="mr-2 h-4 w-4" />Novo Paciente
+          </Button>
         }
       />
 
@@ -96,47 +91,61 @@ export default function PatientsPage() {
         <Input placeholder="Buscar por nome, CPF ou telefone..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
-      {filtered.length === 0 ? (
-        <EmptyState icon={Users} title="Nenhum paciente encontrado" description={search ? "Tente ajustar os filtros de busca." : "Cadastre o primeiro paciente clicando em 'Novo Paciente'."} />
+      {patients.length === 0 ? (
+        <EmptyState icon={Users} title="Nenhum paciente encontrado" description={search ? "Tente ajustar a busca." : "Cadastre o primeiro paciente."} />
       ) : (
-        <div className="rounded-lg border bg-card overflow-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nome</TableHead>
-                <TableHead>CPF</TableHead>
-                <TableHead>Idade</TableHead>
-                <TableHead>Telefone</TableHead>
-                <TableHead>Convênio</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((p) => {
-                const complete = isComplete(p);
-                return (
+        <>
+          <div className="rounded-lg border bg-card overflow-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>CPF</TableHead>
+                  <TableHead>Idade</TableHead>
+                  <TableHead>Telefone</TableHead>
+                  <TableHead>Convênio</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {patients.map((p) => (
                   <TableRow key={p.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/patients/${p.id}`)}>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <span className="font-medium">{p.name}</span>
+                        <span className="font-medium">{p.social_name || p.full_name}</span>
                         {p.allergies && <AlertTriangle className="h-3 w-3 text-destructive" />}
+                        {p.clinical_alerts && <AlertTriangle className="h-3 w-3 text-warning" />}
                       </div>
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-xs">{p.cpf ? formatCPF(p.cpf) : '—'}</TableCell>
-                    <TableCell>{p.birthDate ? `${calculateAge(p.birthDate)}a` : '—'}</TableCell>
-                    <TableCell className="text-xs">{p.phone ? maskPhone(p.phone) : '—'}</TableCell>
-                    <TableCell className="text-xs">{p.healthInsurance || <span className="text-muted-foreground">Particular</span>}</TableCell>
+                    <TableCell className="text-muted-foreground text-xs">{p.cpf ? formatCPF(p.cpf) : "—"}</TableCell>
+                    <TableCell>{p.birth_date ? `${calculateAge(p.birth_date)}a` : "—"}</TableCell>
+                    <TableCell className="text-xs">{p.phone ? maskPhone(p.phone) : "—"}</TableCell>
+                    <TableCell className="text-xs">{p.insurance_plan_id || <span className="text-muted-foreground">Particular</span>}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={`text-[10px] border-0 ${complete ? "bg-success/10 text-success" : "bg-warning/10 text-warning"}`}>
-                        {complete ? "Completo" : "Incompleto"}
+                      <Badge variant="outline" className={`text-[10px] border-0 ${p.status === "inactive" ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success"}`}>
+                        {p.status === "inactive" ? "Inativo" : "Ativo"}
                       </Badge>
                     </TableCell>
                   </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">Página {page + 1} de {totalPages}</p>
+              <div className="flex gap-1">
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page === 0} onClick={() => setPage(page - 1)}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -8,7 +8,7 @@ interface StatsCardProps {
   icon: LucideIcon;
   description?: string;
   trend?: { value: number; positive: boolean };
-  variant?: "default" | "primary" | "secondary" | "success" | "warning";
+  variant?: "default" | "primary" | "secondary" | "success" | "warning" | "destructive";
 }
 
 const variantStyles: Record<string, string> = {
@@ -17,6 +17,7 @@ const variantStyles: Record<string, string> = {
   secondary: "bg-secondary/5 border-secondary/20",
   success: "bg-success/5 border-success/20",
   warning: "bg-warning/5 border-warning/20",
+  destructive: "bg-destructive/5 border-destructive/20",
 };
 
 const iconVariantStyles: Record<string, string> = {
@@ -25,6 +26,7 @@ const iconVariantStyles: Record<string, string> = {
   secondary: "bg-secondary/10 text-secondary",
   success: "bg-success/10 text-success",
   warning: "bg-warning/10 text-warning",
+  destructive: "bg-destructive/10 text-destructive",
 };
 
 export function StatsCard({ title, value, icon: Icon, description, trend, variant = "default" }: StatsCardProps) {
