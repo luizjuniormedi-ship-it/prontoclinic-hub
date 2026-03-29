@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Phone, Mail, AlertTriangle, Calendar, User, Edit, MapPin, Heart, FileText } from "lucide-react";
+import { ArrowLeft, Phone, Mail, AlertTriangle, User, Edit, FileText, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -8,38 +8,29 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LoadingState, ErrorState, EmptyState } from "@/components/StateViews";
 import { supabase } from "@/lib/supabase";
 import { formatDate, calculateAge, formatCPF } from "@/utils/formatters";
-import { maskPhone, maskCEP } from "@/utils/masks";
+import { maskPhone } from "@/utils/masks";
 import { medicalRecordsService, DbMedicalRecord } from "@/services/medicalRecordsService";
 import { professionalsLookup, DbProfessional } from "@/services/appointmentsService";
 
 interface PatientFull {
   id: string;
   full_name: string;
-  social_name: string | null;
   cpf: string | null;
-  rg: string | null;
-  cns: string | null;
   birth_date: string | null;
   sex: string | null;
   phone: string | null;
-  phone_secondary: string | null;
   email: string | null;
-  zip_code: string | null;
-  address_street: string | null;
-  address_number: string | null;
-  address_complement: string | null;
-  address_neighborhood: string | null;
-  address_city: string | null;
-  address_state: string | null;
-  mother_name: string | null;
-  guardian_name: string | null;
+  marital_status: string | null;
+  responsible_name: string | null;
+  emergency_contact_name: string | null;
+  emergency_contact_phone: string | null;
   insurance_plan_id: string | null;
   insurance_card_number: string | null;
-  insurance_card_expiry: string | null;
-  observations: string | null;
-  clinical_alerts: string | null;
   allergies: string | null;
-  status: string | null;
+  clinical_alerts: string | null;
+  admin_notes: string | null;
+  clinical_notes: string | null;
+  registration_status: string | null;
   created_at: string | null;
 }
 
@@ -70,8 +61,7 @@ export default function PatientDetailPage() {
   if (loading) return <LoadingState />;
   if (error || !patient) return <ErrorState message={error || "Paciente não encontrado."} onRetry={() => navigate("/patients")} />;
 
-  const displayName = patient.social_name || patient.full_name;
-  const address = [patient.address_street, patient.address_number, patient.address_complement, patient.address_neighborhood, patient.address_city, patient.address_state].filter(Boolean).join(", ");
+  const maritalLabel: Record<string, string> = { solteiro: "Solteiro(a)", casado: "Casado(a)", divorciado: "Divorciado(a)", viuvo: "Viúvo(a)", uniao_estavel: "União Estável" };
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -84,10 +74,9 @@ export default function PatientDetailPage() {
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl font-bold">{displayName}</h1>
-                {patient.social_name && <span className="text-sm text-muted-foreground">({patient.full_name})</span>}
-                <Badge variant="outline" className={`text-[10px] border-0 ${patient.status === "inactive" ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success"}`}>
-                  {patient.status === "inactive" ? "Inativo" : "Ativo"}
+                <h1 className="text-xl font-bold">{patient.full_name}</h1>
+                <Badge variant="outline" className={`text-[10px] border-0 ${patient.registration_status === "complete" ? "bg-success/10 text-success" : "bg-warning/10 text-warning"}`}>
+                  {patient.registration_status === "complete" ? "Completo" : "Incompleto"}
                 </Badge>
               </div>
               <div className="flex items-center gap-3 text-sm text-muted-foreground mt-0.5 flex-wrap">
@@ -139,11 +128,10 @@ export default function PatientDetailPage() {
               <CardHeader className="pb-2"><CardTitle className="text-base">Dados Pessoais</CardTitle></CardHeader>
               <CardContent className="space-y-2 text-sm">
                 <p><span className="text-muted-foreground text-xs">CPF:</span> {patient.cpf ? formatCPF(patient.cpf) : "—"}</p>
-                <p><span className="text-muted-foreground text-xs">RG:</span> {patient.rg || "—"}</p>
-                <p><span className="text-muted-foreground text-xs">CNS:</span> {patient.cns || "—"}</p>
                 <p><span className="text-muted-foreground text-xs">Nascimento:</span> {patient.birth_date ? formatDate(patient.birth_date) : "—"}</p>
-                <p><span className="text-muted-foreground text-xs">Mãe:</span> {patient.mother_name || "—"}</p>
-                <p><span className="text-muted-foreground text-xs">Responsável:</span> {patient.guardian_name || "—"}</p>
+                <p><span className="text-muted-foreground text-xs">Estado Civil:</span> {patient.marital_status ? maritalLabel[patient.marital_status] || patient.marital_status : "—"}</p>
+                <p><span className="text-muted-foreground text-xs">Responsável:</span> {patient.responsible_name || "—"}</p>
+                <p><span className="text-muted-foreground text-xs">Cadastrado em:</span> {patient.created_at ? formatDate(patient.created_at.split("T")[0]) : "—"}</p>
               </CardContent>
             </Card>
 
@@ -151,12 +139,12 @@ export default function PatientDetailPage() {
               <CardHeader className="pb-2"><CardTitle className="text-base">Contato</CardTitle></CardHeader>
               <CardContent className="space-y-2 text-sm">
                 <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" />{patient.phone ? maskPhone(patient.phone) : "—"}</div>
-                {patient.phone_secondary && <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" />{maskPhone(patient.phone_secondary)}</div>}
                 <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" />{patient.email || "—"}</div>
-                {address && (
-                  <div className="flex items-start gap-2 pt-2 border-t">
-                    <MapPin className="h-3.5 w-3.5 text-muted-foreground mt-0.5" />
-                    <span className="text-xs">{address}{patient.zip_code ? ` — CEP: ${maskCEP(patient.zip_code)}` : ""}</span>
+                {(patient.emergency_contact_name || patient.emergency_contact_phone) && (
+                  <div className="pt-2 border-t">
+                    <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><Shield className="h-3 w-3" />Emergência</p>
+                    {patient.emergency_contact_name && <p className="text-xs">{patient.emergency_contact_name}</p>}
+                    {patient.emergency_contact_phone && <p className="text-xs">{maskPhone(patient.emergency_contact_phone)}</p>}
                   </div>
                 )}
               </CardContent>
@@ -167,10 +155,6 @@ export default function PatientDetailPage() {
               <CardContent className="space-y-2 text-sm">
                 <p className="font-medium">{patient.insurance_plan_id || "Particular"}</p>
                 {patient.insurance_card_number && <p className="text-xs text-muted-foreground">Carteirinha: {patient.insurance_card_number}</p>}
-                {patient.insurance_card_expiry && <p className="text-xs text-muted-foreground">Validade: {formatDate(patient.insurance_card_expiry)}</p>}
-                <div className="pt-2 border-t">
-                  <p className="text-xs text-muted-foreground">Cadastrado em: {patient.created_at ? formatDate(patient.created_at.split("T")[0]) : "—"}</p>
-                </div>
               </CardContent>
             </Card>
           </div>
@@ -190,12 +174,8 @@ export default function PatientDetailPage() {
                 <p className="text-xs text-muted-foreground mb-1">Alertas Clínicos</p>
                 {patient.clinical_alerts ? <span className="text-warning font-medium">{patient.clinical_alerts}</span> : <p className="text-muted-foreground">Nenhum alerta</p>}
               </div>
-              {patient.observations && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Observações</p>
-                  <p className="whitespace-pre-wrap">{patient.observations}</p>
-                </div>
-              )}
+              {patient.clinical_notes && <div><p className="text-xs text-muted-foreground mb-1">Notas Clínicas</p><p className="whitespace-pre-wrap">{patient.clinical_notes}</p></div>}
+              {patient.admin_notes && <div><p className="text-xs text-muted-foreground mb-1">Notas Administrativas</p><p className="whitespace-pre-wrap">{patient.admin_notes}</p></div>}
             </CardContent>
           </Card>
         </TabsContent>
