@@ -6,45 +6,34 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { maskCPF, maskPhone } from "@/utils/masks";
-import { maskCEP } from "@/utils/masks";
 import { Loader2 } from "lucide-react";
 
+// Matches the real Supabase patients table columns exactly
 export interface PatientFormData {
   full_name: string;
-  social_name: string;
   cpf: string;
-  rg: string;
-  cns: string;
   birth_date: string;
   sex: string;
   phone: string;
-  phone_secondary: string;
   email: string;
-  zip_code: string;
-  address_street: string;
-  address_number: string;
-  address_complement: string;
-  address_neighborhood: string;
-  address_city: string;
-  address_state: string;
-  mother_name: string;
-  guardian_name: string;
+  marital_status: string;
+  responsible_name: string;
+  emergency_contact_name: string;
+  emergency_contact_phone: string;
   insurance_plan_id: string;
   insurance_card_number: string;
-  insurance_card_expiry: string;
-  observations: string;
-  clinical_alerts: string;
   allergies: string;
+  clinical_alerts: string;
+  admin_notes: string;
+  clinical_notes: string;
 }
 
 const emptyForm: PatientFormData = {
-  full_name: "", social_name: "", cpf: "", rg: "", cns: "",
-  birth_date: "", sex: "M", phone: "", phone_secondary: "", email: "",
-  zip_code: "", address_street: "", address_number: "", address_complement: "",
-  address_neighborhood: "", address_city: "", address_state: "",
-  mother_name: "", guardian_name: "",
-  insurance_plan_id: "", insurance_card_number: "", insurance_card_expiry: "",
-  observations: "", clinical_alerts: "", allergies: "",
+  full_name: "", cpf: "", birth_date: "", sex: "M",
+  phone: "", email: "", marital_status: "",
+  responsible_name: "", emergency_contact_name: "", emergency_contact_phone: "",
+  insurance_plan_id: "", insurance_card_number: "",
+  allergies: "", clinical_alerts: "", admin_notes: "", clinical_notes: "",
 };
 
 interface Props {
@@ -65,24 +54,6 @@ export function PatientForm({ initialData, onSubmit, onCancel, saving, validatio
     await onSubmit(form);
   };
 
-  const fetchCEP = async (cep: string) => {
-    const clean = cep.replace(/\D/g, "");
-    if (clean.length !== 8) return;
-    try {
-      const res = await fetch(`https://viacep.com.br/ws/${clean}/json/`);
-      const data = await res.json();
-      if (!data.erro) {
-        setForm((f) => ({
-          ...f,
-          address_street: data.logradouro || f.address_street,
-          address_neighborhood: data.bairro || f.address_neighborhood,
-          address_city: data.localidade || f.address_city,
-          address_state: data.uf || f.address_state,
-        }));
-      }
-    } catch { /* ignore */ }
-  };
-
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {validationError && (
@@ -93,25 +64,13 @@ export function PatientForm({ initialData, onSubmit, onCancel, saving, validatio
       <Card>
         <CardHeader className="pb-3"><CardTitle className="text-base">Dados Pessoais</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div className="md:col-span-2 space-y-1.5">
+          <div className="md:col-span-2 lg:col-span-3 space-y-1.5">
             <Label className="text-xs">Nome Completo *</Label>
             <Input required placeholder="Nome completo do paciente" value={form.full_name} onChange={(e) => set("full_name", e.target.value)} maxLength={200} />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Nome Social</Label>
-            <Input placeholder="Nome social" value={form.social_name} onChange={(e) => set("social_name", e.target.value)} maxLength={200} />
-          </div>
-          <div className="space-y-1.5">
             <Label className="text-xs">CPF *</Label>
             <Input required placeholder="000.000.000-00" value={maskCPF(form.cpf)} onChange={(e) => set("cpf", e.target.value.replace(/\D/g, ""))} maxLength={14} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">RG</Label>
-            <Input placeholder="RG" value={form.rg} onChange={(e) => set("rg", e.target.value)} maxLength={20} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">CNS</Label>
-            <Input placeholder="Cartão Nacional de Saúde" value={form.cns} onChange={(e) => set("cns", e.target.value.replace(/\D/g, ""))} maxLength={15} />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Data de Nascimento *</Label>
@@ -129,12 +88,21 @@ export function PatientForm({ initialData, onSubmit, onCancel, saving, validatio
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Nome da Mãe</Label>
-            <Input placeholder="Nome da mãe" value={form.mother_name} onChange={(e) => set("mother_name", e.target.value)} maxLength={200} />
+            <Label className="text-xs">Estado Civil</Label>
+            <Select value={form.marital_status || ""} onValueChange={(v) => set("marital_status", v)}>
+              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="solteiro">Solteiro(a)</SelectItem>
+                <SelectItem value="casado">Casado(a)</SelectItem>
+                <SelectItem value="divorciado">Divorciado(a)</SelectItem>
+                <SelectItem value="viuvo">Viúvo(a)</SelectItem>
+                <SelectItem value="uniao_estavel">União Estável</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Responsável</Label>
-            <Input placeholder="Nome do responsável" value={form.guardian_name} onChange={(e) => set("guardian_name", e.target.value)} maxLength={200} />
+            <Input placeholder="Nome do responsável" value={form.responsible_name} onChange={(e) => set("responsible_name", e.target.value)} maxLength={200} />
           </div>
         </CardContent>
       </Card>
@@ -148,53 +116,16 @@ export function PatientForm({ initialData, onSubmit, onCancel, saving, validatio
             <Input required placeholder="(00) 00000-0000" value={maskPhone(form.phone)} onChange={(e) => set("phone", e.target.value.replace(/\D/g, ""))} maxLength={15} />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Telefone Secundário</Label>
-            <Input placeholder="(00) 00000-0000" value={maskPhone(form.phone_secondary)} onChange={(e) => set("phone_secondary", e.target.value.replace(/\D/g, ""))} maxLength={15} />
-          </div>
-          <div className="space-y-1.5">
             <Label className="text-xs">E-mail</Label>
             <Input type="email" placeholder="email@email.com" value={form.email} onChange={(e) => set("email", e.target.value)} maxLength={255} />
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Endereço */}
-      <Card>
-        <CardHeader className="pb-3"><CardTitle className="text-base">Endereço</CardTitle></CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="space-y-1.5">
-            <Label className="text-xs">CEP</Label>
-            <Input
-              placeholder="00000-000"
-              value={maskCEP(form.zip_code)}
-              onChange={(e) => set("zip_code", e.target.value.replace(/\D/g, ""))}
-              onBlur={(e) => fetchCEP(e.target.value)}
-              maxLength={9}
-            />
-          </div>
-          <div className="lg:col-span-2 space-y-1.5">
-            <Label className="text-xs">Logradouro</Label>
-            <Input placeholder="Rua, Av., etc." value={form.address_street} onChange={(e) => set("address_street", e.target.value)} maxLength={200} />
+            <Label className="text-xs">Contato de Emergência</Label>
+            <Input placeholder="Nome" value={form.emergency_contact_name} onChange={(e) => set("emergency_contact_name", e.target.value)} maxLength={200} />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Número</Label>
-            <Input placeholder="Nº" value={form.address_number} onChange={(e) => set("address_number", e.target.value)} maxLength={10} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Complemento</Label>
-            <Input placeholder="Apto, Sala, etc." value={form.address_complement} onChange={(e) => set("address_complement", e.target.value)} maxLength={100} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Bairro</Label>
-            <Input placeholder="Bairro" value={form.address_neighborhood} onChange={(e) => set("address_neighborhood", e.target.value)} maxLength={100} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Cidade</Label>
-            <Input placeholder="Cidade" value={form.address_city} onChange={(e) => set("address_city", e.target.value)} maxLength={100} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Estado</Label>
-            <Input placeholder="UF" value={form.address_state} onChange={(e) => set("address_state", e.target.value)} maxLength={2} />
+            <Label className="text-xs">Tel. Emergência</Label>
+            <Input placeholder="(00) 00000-0000" value={maskPhone(form.emergency_contact_phone)} onChange={(e) => set("emergency_contact_phone", e.target.value.replace(/\D/g, ""))} maxLength={15} />
           </div>
         </CardContent>
       </Card>
@@ -202,7 +133,7 @@ export function PatientForm({ initialData, onSubmit, onCancel, saving, validatio
       {/* Convênio */}
       <Card>
         <CardHeader className="pb-3"><CardTitle className="text-base">Convênio</CardTitle></CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label className="text-xs">Convênio</Label>
             <Input placeholder="Nome do convênio" value={form.insurance_plan_id} onChange={(e) => set("insurance_plan_id", e.target.value)} maxLength={100} />
@@ -210,10 +141,6 @@ export function PatientForm({ initialData, onSubmit, onCancel, saving, validatio
           <div className="space-y-1.5">
             <Label className="text-xs">Nº Carteirinha</Label>
             <Input placeholder="Número da carteirinha" value={form.insurance_card_number} onChange={(e) => set("insurance_card_number", e.target.value)} maxLength={50} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Validade</Label>
-            <Input type="date" value={form.insurance_card_expiry} onChange={(e) => set("insurance_card_expiry", e.target.value)} />
           </div>
         </CardContent>
       </Card>
@@ -230,9 +157,13 @@ export function PatientForm({ initialData, onSubmit, onCancel, saving, validatio
             <Label className="text-xs">Alertas Clínicos</Label>
             <Textarea placeholder="Ex: Diabético, Hipertenso, Gestante" value={form.clinical_alerts} onChange={(e) => set("clinical_alerts", e.target.value)} maxLength={500} rows={2} />
           </div>
-          <div className="md:col-span-2 space-y-1.5">
-            <Label className="text-xs">Observações</Label>
-            <Textarea placeholder="Observações gerais sobre o paciente" value={form.observations} onChange={(e) => set("observations", e.target.value)} maxLength={1000} rows={3} />
+          <div className="space-y-1.5">
+            <Label className="text-xs">Notas Clínicas</Label>
+            <Textarea placeholder="Observações clínicas" value={form.clinical_notes} onChange={(e) => set("clinical_notes", e.target.value)} maxLength={1000} rows={2} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Notas Administrativas</Label>
+            <Textarea placeholder="Observações administrativas" value={form.admin_notes} onChange={(e) => set("admin_notes", e.target.value)} maxLength={1000} rows={2} />
           </div>
         </CardContent>
       </Card>

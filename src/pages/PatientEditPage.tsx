@@ -22,30 +22,21 @@ export default function PatientEditPage() {
       if (e || !data) { setError("Paciente não encontrado"); setLoading(false); return; }
       setInitialData({
         full_name: data.full_name || "",
-        social_name: data.social_name || "",
         cpf: data.cpf || "",
-        rg: data.rg || "",
-        cns: data.cns || "",
         birth_date: data.birth_date || "",
         sex: data.sex || "M",
         phone: data.phone || "",
-        phone_secondary: data.phone_secondary || "",
         email: data.email || "",
-        zip_code: data.zip_code || "",
-        address_street: data.address_street || "",
-        address_number: data.address_number || "",
-        address_complement: data.address_complement || "",
-        address_neighborhood: data.address_neighborhood || "",
-        address_city: data.address_city || "",
-        address_state: data.address_state || "",
-        mother_name: data.mother_name || "",
-        guardian_name: data.guardian_name || "",
+        marital_status: data.marital_status || "",
+        responsible_name: data.responsible_name || "",
+        emergency_contact_name: data.emergency_contact_name || "",
+        emergency_contact_phone: data.emergency_contact_phone || "",
         insurance_plan_id: data.insurance_plan_id || "",
         insurance_card_number: data.insurance_card_number || "",
-        insurance_card_expiry: data.insurance_card_expiry || "",
-        observations: data.observations || "",
-        clinical_alerts: data.clinical_alerts || "",
         allergies: data.allergies || "",
+        clinical_alerts: data.clinical_alerts || "",
+        admin_notes: data.admin_notes || "",
+        clinical_notes: data.clinical_notes || "",
       });
       setLoading(false);
     });
@@ -63,9 +54,7 @@ export default function PatientEditPage() {
       setValidationError("CPF deve conter 11 dígitos."); return;
     }
 
-    // Check CPF uniqueness excluding self
-    const { data: existing } = await supabase
-      .from("patients").select("id").eq("cpf", cleanCpf).neq("id", id).limit(1);
+    const { data: existing } = await supabase.from("patients").select("id").eq("cpf", cleanCpf).neq("id", id).limit(1);
     if (existing && existing.length > 0) {
       setValidationError("Já existe outro paciente com este CPF."); return;
     }
@@ -74,30 +63,22 @@ export default function PatientEditPage() {
     try {
       const row: Record<string, any> = {
         full_name: data.full_name.trim(),
-        social_name: data.social_name.trim() || null,
         cpf: cleanCpf,
-        rg: data.rg.trim() || null,
-        cns: data.cns.trim() || null,
         birth_date: data.birth_date,
         sex: data.sex,
         phone: data.phone.replace(/\D/g, ""),
-        phone_secondary: data.phone_secondary.replace(/\D/g, "") || null,
         email: data.email.trim() || null,
-        zip_code: data.zip_code.replace(/\D/g, "") || null,
-        address_street: data.address_street.trim() || null,
-        address_number: data.address_number.trim() || null,
-        address_complement: data.address_complement.trim() || null,
-        address_neighborhood: data.address_neighborhood.trim() || null,
-        address_city: data.address_city.trim() || null,
-        address_state: data.address_state.trim() || null,
-        mother_name: data.mother_name.trim() || null,
-        guardian_name: data.guardian_name.trim() || null,
+        marital_status: data.marital_status || null,
+        responsible_name: data.responsible_name.trim() || null,
+        emergency_contact_name: data.emergency_contact_name.trim() || null,
+        emergency_contact_phone: data.emergency_contact_phone.replace(/\D/g, "") || null,
         insurance_plan_id: data.insurance_plan_id.trim() || null,
         insurance_card_number: data.insurance_card_number.trim() || null,
-        insurance_card_expiry: data.insurance_card_expiry || null,
-        observations: data.observations.trim() || null,
-        clinical_alerts: data.clinical_alerts.trim() || null,
         allergies: data.allergies.trim() || null,
+        clinical_alerts: data.clinical_alerts.trim() || null,
+        admin_notes: data.admin_notes.trim() || null,
+        clinical_notes: data.clinical_notes.trim() || null,
+        registration_status: "complete",
         updated_at: new Date().toISOString(),
       };
 
@@ -107,9 +88,7 @@ export default function PatientEditPage() {
       navigate(`/patients/${id}`);
     } catch (err: any) {
       toast({ title: "Erro ao atualizar", description: err.message, variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   if (loading) return <LoadingState />;
