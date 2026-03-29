@@ -3,7 +3,8 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard, Users, Calendar, FileText, DollarSign, Settings, LogOut,
   Heart, UserCheck, Stethoscope, ShieldCheck, UserCog, KeyRound, Phone,
-  ClipboardList, Monitor, Receipt, Banknote, Building2, Database
+  ClipboardList, Monitor, Receipt, Banknote, Building2, Database,
+  Server, FileImage, Activity, Radio
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
@@ -26,6 +27,12 @@ const mainItems = [
 const diagnosticItems = [
   { title: "Worklist", url: "/worklist", icon: ClipboardList },
   { title: "PACS", url: "/pacs", icon: Monitor },
+  { title: "Pedidos Imagem", url: "/dicom/orders", icon: FileImage },
+  { title: "DICOM Worklist", url: "/dicom/worklist", icon: Radio },
+  { title: "Laudos", url: "/dicom/reports", icon: FileText },
+  { title: "Equipamentos", url: "/dicom/modalities", icon: Activity },
+  { title: "Nós DICOM", url: "/dicom/nodes", icon: Server },
+  { title: "Integração", url: "/dicom/dashboard", icon: Monitor },
 ];
 
 const financialItems = [
