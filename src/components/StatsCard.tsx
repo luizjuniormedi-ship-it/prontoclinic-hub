@@ -8,7 +8,7 @@ interface StatsCardProps {
   icon: LucideIcon;
   description?: string;
   trend?: { value: number; positive: boolean };
-  variant?: "default" | "primary" | "secondary" | "success" | "warning";
+  variant?: "default" | "primary" | "secondary" | "success" | "warning" | "destructive";
 }
 
 const variantStyles: Record<string, string> = {
