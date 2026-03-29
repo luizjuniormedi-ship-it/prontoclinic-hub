@@ -29,6 +29,12 @@ import PACSPage from "@/pages/PACSPage";
 import BillingProductionPage from "@/pages/BillingProductionPage";
 import ProfessionalPaymentPage from "@/pages/ProfessionalPaymentPage";
 import MasterDataPage from "@/pages/MasterDataPage";
+import DicomNodesPage from "@/pages/DicomNodesPage";
+import DicomModalitiesPage from "@/pages/DicomModalitiesPage";
+import ImagingOrdersPage from "@/pages/ImagingOrdersPage";
+import DicomWorklistPage from "@/pages/DicomWorklistPage";
+import DicomDashboardPage from "@/pages/DicomDashboardPage";
+import RadiologyReportsPage from "@/pages/RadiologyReportsPage";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -56,6 +62,12 @@ const App = () => (
             <Route path="/attendance/:appointmentId" element={<AppLayout><AttendancePage /></AppLayout>} />
             <Route path="/worklist" element={<AppLayout><WorklistPage /></AppLayout>} />
             <Route path="/pacs" element={<AppLayout><PACSPage /></AppLayout>} />
+            <Route path="/dicom/nodes" element={<AppLayout><DicomNodesPage /></AppLayout>} />
+            <Route path="/dicom/modalities" element={<AppLayout><DicomModalitiesPage /></AppLayout>} />
+            <Route path="/dicom/orders" element={<AppLayout><ImagingOrdersPage /></AppLayout>} />
+            <Route path="/dicom/worklist" element={<AppLayout><DicomWorklistPage /></AppLayout>} />
+            <Route path="/dicom/dashboard" element={<AppLayout><DicomDashboardPage /></AppLayout>} />
+            <Route path="/dicom/reports" element={<AppLayout><RadiologyReportsPage /></AppLayout>} />
             <Route path="/financial" element={<AppLayout><FinancialPage /></AppLayout>} />
             <Route path="/billing-production" element={<AppLayout><BillingProductionPage /></AppLayout>} />
             <Route path="/professional-payment" element={<AppLayout><ProfessionalPaymentPage /></AppLayout>} />
