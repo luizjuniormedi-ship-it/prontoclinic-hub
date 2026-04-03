@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Database, Search, Plus } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { Database, Search, Plus, Pencil, Trash2, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,9 +13,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState } from "@/components/StateViews";
 import { api } from "@/services/api";
+import { appointmentTypesLookup, DbAppointmentType } from "@/services/appointmentsService";
+import { priceTableService, DbPriceEntry, PriceEntryInput } from "@/services/priceTableService";
 import { ConsultationType, ExamType, ProcedureType, TherapyService, HealthInsurancePlan, Room, Specialty } from "@/types";
 import { formatCurrency } from "@/utils/formatters";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function MasterDataPage() {
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
@@ -25,36 +28,113 @@ export default function MasterDataPage() {
   const [therapies, setTherapies] = useState<TherapyService[]>([]);
   const [insurances, setInsurances] = useState<HealthInsurancePlan[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [prices, setPrices] = useState<DbPriceEntry[]>([]);
+  const [appointmentTypes, setAppointmentTypes] = useState<DbAppointmentType[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const { toast } = useToast();
+  const { user } = useAuth();
+
+  // Price dialog
+  const [priceDialogOpen, setPriceDialogOpen] = useState(false);
+  const [editingPrice, setEditingPrice] = useState<DbPriceEntry | null>(null);
+  const [priceForm, setPriceForm] = useState({ appointment_type_id: "", insurance_plan_id: "", price: "", description: "" });
+  const [savingPrice, setSavingPrice] = useState(false);
+
+  const loadPrices = useCallback(async () => {
+    try {
+      const [p, at] = await Promise.all([priceTableService.getAll(), appointmentTypesLookup.getAll()]);
+      setPrices(p);
+      setAppointmentTypes(at);
+    } catch { /* table may not exist yet */ }
+  }, []);
 
   useEffect(() => {
     Promise.all([
       api.getSpecialties(), api.getConsultationTypes(), api.getExamTypes(),
       api.getProcedureTypes(), api.getTherapyServices(), api.getInsurancePlans(), api.getRooms(),
+      loadPrices(),
     ]).then(([sp, ct, ex, pr, th, ins, rm]) => {
       setSpecialties(sp); setConsultations(ct); setExams(ex);
       setProcedures(pr); setTherapies(th); setInsurances(ins); setRooms(rm);
       setLoading(false);
     });
-  }, []);
+  }, [loadPrices]);
+
+  const openNewPrice = () => {
+    setEditingPrice(null);
+    setPriceForm({ appointment_type_id: "", insurance_plan_id: "", price: "", description: "" });
+    setPriceDialogOpen(true);
+  };
+
+  const openEditPrice = (p: DbPriceEntry) => {
+    setEditingPrice(p);
+    setPriceForm({
+      appointment_type_id: p.appointment_type_id || "",
+      insurance_plan_id: p.insurance_plan_id || "",
+      price: String(p.price),
+      description: p.description || "",
+    });
+    setPriceDialogOpen(true);
+  };
+
+  const handleSavePrice = async () => {
+    if (!priceForm.appointment_type_id || !priceForm.price) {
+      toast({ title: "Preencha tipo de atendimento e valor", variant: "destructive" });
+      return;
+    }
+    setSavingPrice(true);
+    try {
+      const input: PriceEntryInput = {
+        appointment_type_id: priceForm.appointment_type_id,
+        insurance_plan_id: priceForm.insurance_plan_id || null,
+        price: Number(priceForm.price),
+        description: priceForm.description || undefined,
+        company_id: user?.company_id || undefined,
+      };
+      if (editingPrice) {
+        await priceTableService.update(editingPrice.id, input);
+        toast({ title: "Preço atualizado!" });
+      } else {
+        await priceTableService.create(input);
+        toast({ title: "Preço cadastrado!" });
+      }
+      setPriceDialogOpen(false);
+      await loadPrices();
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setSavingPrice(false);
+    }
+  };
+
+  const handleDeletePrice = async (id: string) => {
+    try {
+      await priceTableService.delete(id);
+      toast({ title: "Preço removido" });
+      await loadPrices();
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    }
+  };
 
   if (loading) return <LoadingState />;
 
   const q = search.toLowerCase();
+  const getTypeName = (id: string | null) => appointmentTypes.find((t) => t.id === id)?.name || "—";
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <PageHeader title="Cadastros Mestres" description="Especialidades, consultas, exames, procedimentos, terapias, convênios e salas" />
+      <PageHeader title="Cadastros Mestres" description="Especialidades, consultas, exames, procedimentos, terapias, convênios, salas e preços" />
 
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input placeholder="Buscar..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
-      <Tabs defaultValue="specialties">
+      <Tabs defaultValue="prices">
         <TabsList className="flex-wrap h-auto gap-1">
+          <TabsTrigger value="prices">Preços ({prices.length})</TabsTrigger>
           <TabsTrigger value="specialties">Especialidades ({specialties.length})</TabsTrigger>
           <TabsTrigger value="consultations">Consultas ({consultations.length})</TabsTrigger>
           <TabsTrigger value="exams">Exames ({exams.length})</TabsTrigger>
@@ -63,6 +143,66 @@ export default function MasterDataPage() {
           <TabsTrigger value="insurances">Convênios ({insurances.length})</TabsTrigger>
           <TabsTrigger value="rooms">Salas ({rooms.length})</TabsTrigger>
         </TabsList>
+
+        {/* Prices */}
+        <TabsContent value="prices">
+          <div className="flex justify-end mb-3">
+            <Button onClick={openNewPrice}><Plus className="mr-2 h-4 w-4" />Novo Preço</Button>
+          </div>
+          {prices.length === 0 ? (
+            <EmptyState icon={DollarSign} title="Nenhum preço cadastrado" description="Cadastre preços para que o billing seja preenchido automaticamente." />
+          ) : (
+            <div className="rounded-lg border bg-card overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tipo Atendimento</TableHead>
+                    <TableHead>Convênio</TableHead>
+                    <TableHead>Valor</TableHead>
+                    <TableHead>Descrição</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {prices.filter((p) => {
+                    if (!search) return true;
+                    const typeName = (p.appointment_type_name || getTypeName(p.appointment_type_id)).toLowerCase();
+                    return typeName.includes(q) || (p.description || "").toLowerCase().includes(q);
+                  }).map((p) => (
+                    <TableRow key={p.id}>
+                      <TableCell className="font-medium text-sm">{p.appointment_type_name || getTypeName(p.appointment_type_id)}</TableCell>
+                      <TableCell className="text-xs">
+                        {p.insurance_plan_id ? (
+                          <Badge variant="outline" className="border-0 bg-primary/10 text-primary text-[10px]">Convênio</Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-0 bg-muted text-muted-foreground text-[10px]">Particular</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-medium text-sm text-primary">{formatCurrency(p.price)}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{p.description || "—"}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={`border-0 text-[10px] ${p.active ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"}`}>
+                          {p.active ? "Ativo" : "Inativo"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openEditPrice(p)}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => handleDeletePrice(p.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
 
         {/* Specialties */}
         <TabsContent value="specialties">
@@ -206,6 +346,63 @@ export default function MasterDataPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Price Dialog */}
+      <Dialog open={priceDialogOpen} onOpenChange={setPriceDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingPrice ? "Editar Preço" : "Novo Preço"}</DialogTitle>
+            <DialogDescription>Configure o valor por tipo de atendimento e convênio.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Tipo de Atendimento *</Label>
+              <Select value={priceForm.appointment_type_id} onValueChange={(v) => setPriceForm({ ...priceForm, appointment_type_id: v })}>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  {appointmentTypes.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Convênio (vazio = particular)</Label>
+              <Input
+                placeholder="ID do convênio (deixe vazio para particular)"
+                value={priceForm.insurance_plan_id}
+                onChange={(e) => setPriceForm({ ...priceForm, insurance_plan_id: e.target.value })}
+              />
+              <p className="text-[10px] text-muted-foreground">Deixe vazio para definir o preço particular padrão.</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Valor (R$) *</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="150.00"
+                value={priceForm.price}
+                onChange={(e) => setPriceForm({ ...priceForm, price: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Descrição</Label>
+              <Input
+                placeholder="Ex: Consulta padrão 30min"
+                value={priceForm.description}
+                onChange={(e) => setPriceForm({ ...priceForm, description: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPriceDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSavePrice} disabled={savingPrice}>
+              {savingPrice ? "Salvando..." : editingPrice ? "Atualizar" : "Cadastrar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
