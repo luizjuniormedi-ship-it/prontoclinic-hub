@@ -13,7 +13,7 @@ import { QuickActionDialog } from "@/components/schedule/QuickActionDialog";
 import { AppointmentPreviewPopover } from "@/components/schedule/AppointmentPreviewPopover";
 import { EncaixeDialog } from "@/components/schedule/EncaixeDialog";
 import { appointmentsService, professionalsLookup, specialtiesLookup, appointmentTypesLookup, DbAppointment, DbProfessional, DbSpecialty, DbAppointmentType } from "@/services/appointmentsService";
-import { patientsService } from "@/services/patientsService";
+import { supabase } from "@/lib/supabase";
 import { Appointment, AppointmentStatus, Patient } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 import { calculateAge } from "@/utils/formatters";
