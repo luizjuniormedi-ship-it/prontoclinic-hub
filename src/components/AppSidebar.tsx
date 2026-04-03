@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { canAccessRoute } from "@/config/routePermissions";
 import {
   LayoutDashboard, Users, Calendar, FileText, DollarSign, Settings, LogOut,
   Heart, UserCheck, Stethoscope, ShieldCheck, UserCog, KeyRound, Phone,
@@ -50,7 +51,11 @@ const adminItems = [
   { title: "Configurações", url: "/settings", icon: Settings },
 ];
 
-function NavGroup({ items, label, collapsed }: { items: typeof mainItems; label?: string; collapsed: boolean }) {
+type MenuItem = { title: string; url: string; icon: React.ComponentType<{ className?: string }> };
+
+function NavGroup({ items, label, collapsed }: { items: MenuItem[]; label?: string; collapsed: boolean }) {
+  if (items.length === 0) return null;
+
   return (
     <SidebarGroup>
       {label && !collapsed && (
@@ -79,11 +84,16 @@ function NavGroup({ items, label, collapsed }: { items: typeof mainItems; label?
   );
 }
 
+function filterItems(items: MenuItem[], roleName: string | null | undefined): MenuItem[] {
+  return items.filter((item) => canAccessRoute(roleName, item.url));
+}
+
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const roleName = user?.role_name;
 
   const handleLogout = () => { logout(); navigate("/login"); };
 
@@ -102,10 +112,10 @@ export function AppSidebar() {
       </div>
 
       <SidebarContent className="pt-2 scrollbar-thin">
-        <NavGroup items={mainItems} collapsed={collapsed} />
-        <NavGroup items={diagnosticItems} label="Diagnóstico" collapsed={collapsed} />
-        <NavGroup items={financialItems} label="Financeiro" collapsed={collapsed} />
-        <NavGroup items={adminItems} label="Administrativo" collapsed={collapsed} />
+        <NavGroup items={filterItems(mainItems, roleName)} collapsed={collapsed} />
+        <NavGroup items={filterItems(diagnosticItems, roleName)} label="Diagnóstico" collapsed={collapsed} />
+        <NavGroup items={filterItems(financialItems, roleName)} label="Financeiro" collapsed={collapsed} />
+        <NavGroup items={filterItems(adminItems, roleName)} label="Administrativo" collapsed={collapsed} />
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-3">
