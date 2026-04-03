@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { canTransitionAppointment } from './statusTransitions';
 
 // ── Lookup types matching Supabase schema ──
 
