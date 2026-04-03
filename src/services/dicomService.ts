@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { canTransitionImaging, canTransitionReport } from './statusTransitions';
 import type {
   DicomNode, DicomModality, ImagingOrder, ImagingOrderItem,
   DicomWorklistItem, PacsStudy, RadiologyReport, ImagingOrderStatus,
