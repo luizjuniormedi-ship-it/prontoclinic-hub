@@ -1,78 +1,74 @@
 
+## Plano: Tabela de Preços e Billing Automático
 
-## Plan: Role-Based Access Control (RBAC)
+### 1. Migration — Criar tabela `price_table`
 
-### Current State
-- `useAuth` loads `role_name` from Supabase (`user_profiles` → `roles`).
-- `usePermissions` uses **mock data** (`adminMockData.ts`) — not connected to the real role system.
-- Sidebar shows all items to all users. No route protection beyond authentication.
+```sql
+CREATE TABLE public.price_table (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  appointment_type_id UUID REFERENCES public.appointment_types(id),
+  service_id UUID REFERENCES public.services_catalog(id),
+  insurance_plan_id UUID,  -- NULL = preço particular
+  price NUMERIC(12,2) NOT NULL DEFAULT 0,
+  description TEXT,
+  active BOOLEAN DEFAULT true,
+  company_id UUID,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  
+  -- Um preço por combinação tipo+convênio (ou tipo+particular)
+  UNIQUE(appointment_type_id, insurance_plan_id)
+);
 
-### Architecture
+ALTER TABLE public.price_table ENABLE ROW LEVEL SECURITY;
 
-A single **route permission map** (`src/config/routePermissions.ts`) will define which `role_name` values can access each route. This is the central source of truth — no hardcoded checks scattered across pages.
+CREATE POLICY "Authenticated users can read prices"
+  ON public.price_table FOR SELECT TO authenticated USING (true);
 
-```text
-routePermissions.ts
-       │
-       ├──▶ ProtectedRoute (wraps pages in App.tsx)
-       ├──▶ AppSidebar (filters menu items)
-       └──▶ usePermissionGate (reusable hook)
+CREATE POLICY "Authenticated users can manage prices"
+  ON public.price_table FOR ALL TO authenticated USING (true) WITH CHECK (true);
 ```
 
-### Files to Create
+### 2. Service — `src/services/priceTableService.ts`
 
-1. **`src/config/routePermissions.ts`** — Central permission map
-   - Maps each route path to allowed roles array
-   - `"*"` means all authenticated users
-   - Exports `canAccessRoute(roleName, path)` helper
-   - Role definitions: `admin`, `recepcao`, `medico`, `financeiro`, `diagnostico`, `gestor`, `administrativo`
-   - Route mapping per the requirements (e.g., `recepcao` → `/patients`, `/schedule`, `/reception`, `/callcenter`)
+- `getAll()` — lista todos os preços
+- `create(input)` — cadastrar preço
+- `update(id, input)` — alterar preço
+- `delete(id)` — remover
+- `findPrice(appointmentTypeId, insurancePlanId?)` — busca com prioridade:
+  1. Preço específico do convênio
+  2. Preço particular (insurance_plan_id = NULL)
+  3. Preço do `services_catalog.price` como fallback
+  4. Retorna 0 se nada encontrado
 
-2. **`src/hooks/usePermissionGate.ts`** — Reusable hook
-   - Takes a route path, returns `{ allowed: boolean, role: string | null }`
-   - Uses `useAuth().user.role_name` + `canAccessRoute()`
-   - Logs denied access attempts to console (preparation for audit_logs table)
+### 3. UI — Seção "Tabela de Preços" na MasterDataPage
 
-3. **`src/components/ProtectedRoute.tsx`** — Route guard component
-   - Wraps page content; checks permission via `usePermissionGate`
-   - If denied → renders `AccessDenied`
-   - If loading → renders spinner
+- Tabela com colunas: Tipo Atendimento, Convênio, Preço, Status
+- Dialog para criar/editar preço
+- Select de appointment_type e insurance_plan
+- Campo de valor monetário
 
-4. **`src/pages/AccessDeniedPage.tsx`** — Fallback page
-   - Shows "Acesso Negado" with user's role info
-   - Link to go back to Dashboard
+### 4. Integração — AttendancePage
 
-### Files to Modify
+Na `handleSave`, antes de criar o billing:
+```
+const price = await priceTableService.findPrice(
+  appointment.appointment_type_id,
+  patient.insurance_plan_id
+);
+```
+Preencher `gross_amount` e `net_amount` com o valor encontrado.
 
-5. **`src/App.tsx`** — Wrap each protected route with `ProtectedRoute`
-   - Replace `<AppLayout><Page /></AppLayout>` with `<AppLayout><ProtectedRoute path="/..."><Page /></ProtectedRoute></AppLayout>`
+### 5. Validação — financialService
 
-6. **`src/components/AppSidebar.tsx`** — Filter menu items
-   - Import `canAccessRoute` and `useAuth`
-   - Filter each items array: `items.filter(item => canAccessRoute(user?.role_name, item.url))`
-   - Hide entire group if no items visible
+Adicionar warning (não bloqueio) quando `amount === 0`.
 
-7. **`src/hooks/usePermissions.ts`** — Replace mock-based logic
-   - Remove mock imports
-   - Use `role_name` from `useAuth` + `canAccessRoute` from config
-   - Keep `hasPermission` and `hasModuleAccess` signatures but backed by role map
+### Arquivos criados/alterados
 
-### Permission Map (Summary)
-
-| Role | Accessible Routes |
-|------|------------------|
-| admin | All (`*`) |
-| recepcao | `/`, `/patients/**`, `/schedule`, `/callcenter`, `/reception` |
-| medico | `/`, `/schedule`, `/attendance/**`, `/records`, `/dicom/reports` |
-| financeiro | `/`, `/financial`, `/billing-production`, `/professional-payment` |
-| diagnostico | `/`, `/worklist`, `/pacs`, `/dicom/**` |
-| gestor | `/`, `/companies`, `/settings`, `/financial`, `/billing-production` |
-| administrativo | `/`, `/admin/**`, `/master-data`, `/companies`, `/settings` |
-
-### Technical Details
-- Route matching uses `startsWith` for wildcard paths (e.g., `/patients` matches `/patients/new`)
-- `admin` role bypasses all checks
-- Users with `null` role_name get access only to `/` (dashboard)
-- Console warns on denied access: `[ACCESS_DENIED] role=X path=Y`
-- No database changes required — uses existing `roles.name` field
-
+| Arquivo | Ação |
+|---------|------|
+| Migration SQL | Criar tabela `price_table` |
+| `src/services/priceTableService.ts` | Novo — CRUD + busca de preço |
+| `src/pages/MasterDataPage.tsx` | Adicionar aba "Tabela de Preços" |
+| `src/pages/AttendancePage.tsx` | Buscar preço ao finalizar |
+| `src/services/financialService.ts` | Validação de valor |
