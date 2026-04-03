@@ -12,6 +12,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, ErrorState } from "@/components/StateViews";
 import { supabase } from "@/lib/supabase";
 import { medicalRecordsService } from "@/services/medicalRecordsService";
+import { appointmentsService } from "@/services/appointmentsService";
+import { billingsService } from "@/services/financialService";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { calculateAge } from "@/utils/formatters";
