@@ -20,7 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { calculateAge } from "@/utils/formatters";
 
 interface PatientInfo { id: string; full_name: string; birth_date: string | null; sex: string | null; allergies: string | null; clinical_alerts: string | null; insurance_plan_id: string | null; }
-interface AppointmentInfo { id: string; patient_id: string; professional_id: string; specialty_id: string | null; unit_id: string | null; company_id: string | null; status: string; }
+interface AppointmentInfo { id: string; patient_id: string; professional_id: string; specialty_id: string | null; unit_id: string | null; company_id: string | null; appointment_type_id: string | null; status: string; }
 
 export default function AttendancePage() {
   const { appointmentId } = useParams<{ appointmentId: string }>();
