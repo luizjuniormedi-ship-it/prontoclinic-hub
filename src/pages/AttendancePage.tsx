@@ -110,8 +110,26 @@ export default function AttendancePage() {
         vital_signs: Object.keys(vs).length > 0 ? vs : undefined,
       });
 
-      // Update appointment status to completed
-      await supabase.from("appointments").update({ status: "completed", updated_at: new Date().toISOString() }).eq("id", appointment.id);
+      // Update appointment status to completed (with validation)
+      await appointmentsService.updateStatus(appointment.id, "completed");
+
+      // Auto-create billing
+      try {
+        await billingsService.create({
+          patient_id: patient.id,
+          professional_id: appointment.professional_id || undefined,
+          appointment_id: appointment.id,
+          company_id: appointment.company_id || user?.company_id || undefined,
+          unit_id: appointment.unit_id || user?.primary_unit_id || undefined,
+          billing_type: "particular",
+          gross_amount: 0,
+          net_amount: 0,
+          status: "em_aberto",
+          notes: "Gerado automaticamente ao finalizar atendimento",
+        });
+      } catch (billingErr: any) {
+        console.warn("Auto-billing failed (non-critical):", billingErr.message);
+      }
 
       toast({ title: "Atendimento salvo e finalizado!" });
       navigate("/reception");
