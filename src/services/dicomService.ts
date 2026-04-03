@@ -186,10 +186,22 @@ export const imagingOrderItemsService = {
     return data as ImagingOrderItem;
   },
 
-  async updateStatus(id: string, status: ImagingOrderStatus) {
+  async updateStatus(id: string, newStatus: ImagingOrderStatus) {
+    // Fetch current status for validation
+    const { data: current, error: fetchErr } = await supabase
+      .from('imaging_order_items')
+      .select('status')
+      .eq('id', id)
+      .single();
+    if (fetchErr) throw new Error(`Erro ao buscar item: ${fetchErr.message}`);
+
+    if (!canTransitionImaging(current.status, newStatus)) {
+      throw new Error(`Transição inválida para item: ${current.status} → ${newStatus}`);
+    }
+
     const { error } = await supabase
       .from('imaging_order_items')
-      .update({ status, updated_at: new Date().toISOString() })
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
       .eq('id', id);
     if (error) throw error;
   },
