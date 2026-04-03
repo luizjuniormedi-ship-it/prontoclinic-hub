@@ -17,7 +17,7 @@ import { Patient } from "@/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 
-const formatCurrency = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const formatCurrency = (v: number | null | undefined) => (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 const statusLabels: Record<string, string> = { em_aberto: "Em Aberto", faturado: "Faturado", cancelado: "Cancelado", glosa: "Glosa" };
 const statusColors: Record<string, string> = {
