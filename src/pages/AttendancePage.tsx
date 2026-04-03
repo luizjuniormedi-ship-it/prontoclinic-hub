@@ -14,6 +14,7 @@ import { supabase } from "@/lib/supabase";
 import { medicalRecordsService } from "@/services/medicalRecordsService";
 import { appointmentsService } from "@/services/appointmentsService";
 import { billingsService } from "@/services/financialService";
+import { priceTableService } from "@/services/priceTableService";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { calculateAge } from "@/utils/formatters";
