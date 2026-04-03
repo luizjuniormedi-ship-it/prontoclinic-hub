@@ -354,6 +354,18 @@ export const radiologyReportsService = {
   },
 
   async sign(id: string, radiologistName: string, radiologistId?: string) {
+    // Validate transition
+    const { data: current, error: fetchErr } = await supabase
+      .from('radiology_reports')
+      .select('status')
+      .eq('id', id)
+      .single();
+    if (fetchErr) throw new Error(`Erro ao buscar laudo: ${fetchErr.message}`);
+
+    if (!canTransitionReport(current.status, 'final')) {
+      throw new Error(`Não é possível assinar laudo com status: ${current.status}`);
+    }
+
     const { error } = await supabase
       .from('radiology_reports')
       .update({
