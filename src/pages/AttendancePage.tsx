@@ -114,20 +114,32 @@ export default function AttendancePage() {
       // Update appointment status to completed (with validation)
       await appointmentsService.updateStatus(appointment.id, "completed");
 
-      // Auto-create billing
+      // Auto-create billing with price lookup
       try {
+        const price = await priceTableService.findPrice(
+          appointment.appointment_type_id,
+          patient.insurance_plan_id
+        );
+        const billingType = patient.insurance_plan_id ? "convenio" : "particular";
+
         await billingsService.create({
           patient_id: patient.id,
           professional_id: appointment.professional_id || undefined,
           appointment_id: appointment.id,
           company_id: appointment.company_id || user?.company_id || undefined,
           unit_id: appointment.unit_id || user?.primary_unit_id || undefined,
-          billing_type: "particular",
-          gross_amount: 0,
-          net_amount: 0,
+          billing_type: billingType,
+          gross_amount: price,
+          net_amount: price,
           status: "em_aberto",
-          notes: "Gerado automaticamente ao finalizar atendimento",
+          notes: price > 0
+            ? `Valor automático: R$ ${price.toFixed(2)}`
+            : "Preço não configurado — ajuste manualmente",
         });
+
+        if (price === 0) {
+          toast({ title: "Atenção", description: "Billing gerado com valor R$ 0,00. Configure a tabela de preços em Cadastros.", variant: "destructive" });
+        }
       } catch (billingErr: any) {
         console.warn("Auto-billing failed (non-critical):", billingErr.message);
       }
