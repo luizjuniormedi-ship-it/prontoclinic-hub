@@ -106,16 +106,14 @@ export default function SchedulePage() {
   const [quickActionOpen, setQuickActionOpen] = useState(false);
 
   const loadLookups = useCallback(async () => {
-    const [profs, specs, types, pats] = await Promise.all([
+    const [profs, specs, types] = await Promise.all([
       professionalsLookup.getAll(),
       specialtiesLookup.getAll(),
       appointmentTypesLookup.getAll(),
-      patientsService.getAll(),
     ]);
     setProfessionals(profs);
     setSpecialties(specs);
     setAppointmentTypes(types);
-    setPatients(pats);
   }, []);
 
   const loadAppointments = useCallback(async (date: string) => {
