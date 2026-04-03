@@ -13,7 +13,7 @@ import { QuickActionDialog } from "@/components/schedule/QuickActionDialog";
 import { AppointmentPreviewPopover } from "@/components/schedule/AppointmentPreviewPopover";
 import { EncaixeDialog } from "@/components/schedule/EncaixeDialog";
 import { appointmentsService, professionalsLookup, specialtiesLookup, appointmentTypesLookup, DbAppointment, DbProfessional, DbSpecialty, DbAppointmentType } from "@/services/appointmentsService";
-import { patientsService } from "@/services/patientsService";
+import { supabase } from "@/lib/supabase";
 import { Appointment, AppointmentStatus, Patient } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 import { calculateAge } from "@/utils/formatters";
@@ -106,20 +106,17 @@ export default function SchedulePage() {
   const [quickActionOpen, setQuickActionOpen] = useState(false);
 
   const loadLookups = useCallback(async () => {
-    const [profs, specs, types, pats] = await Promise.all([
+    const [profs, specs, types] = await Promise.all([
       professionalsLookup.getAll(),
       specialtiesLookup.getAll(),
       appointmentTypesLookup.getAll(),
-      patientsService.getAll(),
     ]);
     setProfessionals(profs);
     setSpecialties(specs);
     setAppointmentTypes(types);
-    setPatients(pats);
   }, []);
 
   const loadAppointments = useCallback(async (date: string) => {
-    // For week view, load the whole week; for day, load single day
     const d = new Date(date + "T00:00:00");
     const dayOfWeek = d.getDay();
     const startOfWeek = new Date(d);
@@ -132,6 +129,24 @@ export default function SchedulePage() {
 
     const data = await appointmentsService.getByDateRange(startStr, endStr);
     setDbAppointments(data);
+
+    // Load only patients referenced in these appointments
+    const patientIds = [...new Set(data.map((a) => a.patient_id).filter(Boolean))] as string[];
+    if (patientIds.length > 0) {
+      const { data: pats } = await supabase
+        .from("patients")
+        .select("id, full_name, cpf, birth_date, phone, email, sex, insurance_plan_id, insurance_card_number, allergies, clinical_alerts, created_at, updated_at")
+        .in("id", patientIds);
+      setPatients((pats || []).map((row: any) => ({
+        id: row.id, companyId: undefined, name: row.full_name || "", cpf: row.cpf || "",
+        birthDate: row.birth_date || "", phone: row.phone || "", email: row.email || "",
+        gender: row.sex || "O", healthInsurance: row.insurance_plan_id, healthInsuranceNumber: row.insurance_card_number,
+        allergies: row.allergies, clinicalAlerts: row.clinical_alerts,
+        createdAt: row.created_at || "", updatedAt: row.updated_at || "",
+      })));
+    } else {
+      setPatients([]);
+    }
   }, []);
 
   const loadAll = useCallback(async () => {

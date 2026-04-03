@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { canTransitionAppointment } from './statusTransitions';
 
 // ── Lookup types matching Supabase schema ──
 
@@ -157,8 +158,20 @@ export const appointmentsService = {
     return data;
   },
 
-  async updateStatus(id: string, status: string, notes?: string): Promise<DbAppointment> {
-    const row: Record<string, any> = { status, updated_at: new Date().toISOString() };
+  async updateStatus(id: string, newStatus: string, notes?: string): Promise<DbAppointment> {
+    // Fetch current status for validation
+    const { data: current, error: fetchErr } = await supabase
+      .from('appointments')
+      .select('status')
+      .eq('id', id)
+      .single();
+    if (fetchErr) throw new Error(`Erro ao buscar agendamento: ${fetchErr.message}`);
+
+    if (!canTransitionAppointment(current.status, newStatus)) {
+      throw new Error(`Transição inválida: ${current.status} → ${newStatus}`);
+    }
+
+    const row: Record<string, any> = { status: newStatus, updated_at: new Date().toISOString() };
     if (notes !== undefined) row.notes = notes;
 
     const { data, error } = await supabase

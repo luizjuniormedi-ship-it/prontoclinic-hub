@@ -1,5 +1,6 @@
 // Central permission map — single source of truth for RBAC
-// Role names must match `roles.name` in Supabase
+// Role names are normalized to lowercase for matching.
+// DB role names like "Administrador", "Recepção", "Médico" are mapped here.
 
 export const ROLES = {
   ADMIN: "admin",
@@ -12,6 +13,37 @@ export const ROLES = {
 } as const;
 
 export type RoleName = (typeof ROLES)[keyof typeof ROLES];
+
+// Map DB role names (Portuguese, mixed case) to internal role keys
+const ROLE_ALIASES: Record<string, RoleName> = {
+  administrador: "admin",
+  admin: "admin",
+  "recepção": "recepcao",
+  recepcao: "recepcao",
+  recepcionista: "recepcao",
+  "médico": "medico",
+  medico: "medico",
+  doutor: "medico",
+  financeiro: "financeiro",
+  "diagnóstico": "diagnostico",
+  diagnostico: "diagnostico",
+  "técnico": "diagnostico",
+  tecnico: "diagnostico",
+  imagem: "diagnostico",
+  gestor: "gestor",
+  gerente: "gestor",
+  administrativo: "administrativo",
+};
+
+/**
+ * Normalize a DB role name to an internal role key.
+ * Falls back to the lowercase version if no alias matches.
+ */
+export function normalizeRoleName(dbRoleName: string | null | undefined): RoleName | null {
+  if (!dbRoleName) return null;
+  const key = dbRoleName.trim().toLowerCase();
+  return ROLE_ALIASES[key] || null;
+}
 
 // "*" means any authenticated user can access
 type PermissionEntry = "*" | RoleName[];
@@ -40,12 +72,11 @@ const routePermissionMap: Record<string, PermissionEntry> = {
 
 /**
  * Check if a role can access a given path.
- * - `admin` always has access.
- * - `null` role only gets access to routes marked `"*"`.
- * - Matching uses longest-prefix-first.
+ * Accepts raw DB role names — normalizes internally.
  */
 export function canAccessRoute(roleName: string | null | undefined, path: string): boolean {
-  if (roleName === ROLES.ADMIN) return true;
+  const normalized = normalizeRoleName(roleName);
+  if (normalized === ROLES.ADMIN) return true;
 
   // Find the best matching prefix (longest first)
   const sortedPrefixes = Object.keys(routePermissionMap).sort(
@@ -57,12 +88,11 @@ export function canAccessRoute(roleName: string | null | undefined, path: string
     if (matches) {
       const entry = routePermissionMap[prefix];
       if (entry === "*") return true;
-      if (!roleName) return false;
-      return entry.includes(roleName as RoleName);
+      if (!normalized) return false;
+      return entry.includes(normalized);
     }
   }
 
-  // No matching rule — deny by default
   return false;
 }
 
@@ -70,13 +100,14 @@ export function canAccessRoute(roleName: string | null | undefined, path: string
  * Get all route prefixes a role can access (for sidebar filtering).
  */
 export function getAccessiblePrefixes(roleName: string | null | undefined): string[] {
-  if (roleName === ROLES.ADMIN) return Object.keys(routePermissionMap);
+  const normalized = normalizeRoleName(roleName);
+  if (normalized === ROLES.ADMIN) return Object.keys(routePermissionMap);
 
   return Object.entries(routePermissionMap)
     .filter(([, entry]) => {
       if (entry === "*") return true;
-      if (!roleName) return false;
-      return entry.includes(roleName as RoleName);
+      if (!normalized) return false;
+      return entry.includes(normalized);
     })
     .map(([prefix]) => prefix);
 }
