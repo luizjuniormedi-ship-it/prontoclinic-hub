@@ -1,35 +1,23 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
-import { Plus, ChevronLeft, ChevronRight, Clock, Users, CheckCircle, AlertCircle, XCircle, UserX, AlertTriangle, CalendarPlus } from "lucide-react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { Plus, ChevronLeft, ChevronRight, Clock, Users, CheckCircle, AlertCircle, XCircle, UserX, CalendarPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/PageHeader";
 import { ScheduleSkeleton, EmptyState, ErrorState } from "@/components/StateViews";
-import { AppointmentStatusBadge } from "@/components/StatusBadge";
 import { ScheduleFilters } from "@/components/schedule/ScheduleFilters";
-import { QuickActionsMenu } from "@/components/schedule/QuickActionsMenu";
+import { AppointmentCard } from "@/components/schedule/AppointmentCard";
 import { NewAppointmentDialog } from "@/components/schedule/NewAppointmentDialog";
 import { QuickActionDialog } from "@/components/schedule/QuickActionDialog";
-import { AppointmentPreviewPopover } from "@/components/schedule/AppointmentPreviewPopover";
 import { EncaixeDialog } from "@/components/schedule/EncaixeDialog";
 import { appointmentsService, professionalsLookup, specialtiesLookup, appointmentTypesLookup, DbAppointment, DbProfessional, DbSpecialty, DbAppointmentType } from "@/services/appointmentsService";
 import { supabase } from "@/lib/supabase";
 import { Appointment, AppointmentStatus, Patient } from "@/types";
 import { useToast } from "@/hooks/use-toast";
-import { calculateAge } from "@/utils/formatters";
 import { useDebounce } from "@/hooks/useDebounce";
+import { friendlyError } from "@/utils/friendlyError";
 
 const weekDays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-
-const statusBorderColors: Record<string, string> = {
-  scheduled: "",
-  confirmed: "border-l-4 border-l-primary",
-  waiting: "border-l-4 border-l-warning",
-  in_progress: "border-l-4 border-l-success",
-  completed: "border-l-4 border-l-muted-foreground",
-  no_show: "border-l-4 border-l-destructive",
-  cancelled: "border-l-4 border-l-muted opacity-50",
-};
 
 // Convert DB appointment to display format
 function toDisplayAppointment(
@@ -156,7 +144,7 @@ export default function SchedulePage() {
       await loadLookups();
       await loadAppointments(selectedDate);
     } catch (err: any) {
-      setError(err.message || "Erro ao carregar agenda");
+      setError(friendlyError(err, "Carregar agenda"));
     } finally {
       setLoading(false);
     }
@@ -256,7 +244,7 @@ export default function SchedulePage() {
       };
       toast({ title: labels[newStatus] || "Atualizado" });
     } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+      toast({ title: friendlyError(err, "Atualizar agendamento"), variant: "destructive" });
     }
   };
 
@@ -280,17 +268,25 @@ export default function SchedulePage() {
   if (error) return <ErrorState message={error} onRetry={loadAll} />;
 
   return (
-    <div className="space-y-4 animate-fade-in">
+    <div className="space-y-4 animate-fade-in" aria-labelledby="schedule-page-title">
       <PageHeader
         title="Agenda"
+        titleId="schedule-page-title"
         description="Gerencie atendimentos, retornos e terapias"
         actions={
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setEncaixeOpen(true)}>
-              <CalendarPlus className="mr-2 h-4 w-4" />Encaixe
+            <Button
+              variant="outline"
+              onClick={() => setEncaixeOpen(true)}
+              aria-label="Adicionar encaixe (agendamento fora da grade)"
+            >
+              <CalendarPlus className="mr-2 h-4 w-4" aria-hidden="true" />Encaixe
             </Button>
-            <Button onClick={() => setDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />Novo Agendamento
+            <Button
+              onClick={() => setDialogOpen(true)}
+              aria-label="Criar novo agendamento (atalho Control mais N)"
+            >
+              <Plus className="mr-2 h-4 w-4" aria-hidden="true" />Novo Agendamento
             </Button>
           </div>
         }
@@ -307,22 +303,60 @@ export default function SchedulePage() {
       </div>
 
       {/* Date navigation */}
-      <div className="flex items-center justify-between">
+      <div
+        className="flex items-center justify-between"
+        role="toolbar"
+        aria-label="Navegação de data e visualização"
+      >
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => changeDate(-1)}>
-            <ChevronLeft className="h-4 w-4" />
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => changeDate(-1)}
+            aria-label={`Dia anterior${view === "week" ? " (voltar uma semana)" : ""}`}
+          >
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
           </Button>
-          <span className="text-sm font-medium capitalize min-w-[220px] text-center">{formattedDate}</span>
-          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => changeDate(1)}>
-            <ChevronRight className="h-4 w-4" />
+          <h2 className="text-sm font-medium capitalize min-w-[220px] text-center" aria-live="polite">
+            {formattedDate}
+          </h2>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => changeDate(1)}
+            aria-label={`Próximo dia${view === "week" ? " (avançar uma semana)" : ""}`}
+          >
+            <ChevronRight className="h-4 w-4" aria-hidden="true" />
           </Button>
-          <Button variant="ghost" size="sm" className="text-xs" onClick={() => setSelectedDate(new Date().toISOString().split("T")[0])}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs"
+            onClick={() => setSelectedDate(new Date().toISOString().split("T")[0])}
+            aria-label="Ir para hoje"
+          >
             Hoje
           </Button>
         </div>
-        <div className="flex gap-1">
-          <Button variant={view === "day" ? "default" : "outline"} size="sm" onClick={() => setView("day")}>Dia</Button>
-          <Button variant={view === "week" ? "default" : "outline"} size="sm" onClick={() => setView("week")}>Semana</Button>
+        <div className="flex gap-1" role="group" aria-label="Modo de visualização">
+          <Button
+            variant={view === "day" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setView("day")}
+            aria-pressed={view === "day"}
+          >
+            Dia
+          </Button>
+          <Button
+            variant={view === "week" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setView("week")}
+            aria-pressed={view === "week"}
+          >
+            Semana
+          </Button>
         </div>
       </div>
 
@@ -339,23 +373,42 @@ export default function SchedulePage() {
 
       {/* Content */}
       {view === "week" ? (
-        <div className="grid grid-cols-7 gap-2">
+        <div
+          className="grid grid-cols-7 gap-2"
+          role="grid"
+          aria-label={`Semana de ${formattedDate}`}
+          aria-rowcount={1}
+          aria-colcount={7}
+        >
           {getWeekDates().map((date, i) => {
             const dayApps = appointments.filter((a) => a.date === date);
             const isSelected = date === selectedDate;
             const isToday = date === new Date().toISOString().split("T")[0];
+            const waiting = dayApps.filter((a) => a.status === "waiting").length;
             return (
               <Card
                 key={date}
+                role="gridcell"
+                tabIndex={0}
+                aria-colindex={i + 1}
+                aria-selected={isSelected}
+                aria-label={`${weekDays[i]} ${new Date(date + "T00:00:00").getDate()}, ${dayApps.length} agendamentos${waiting > 0 ? `, ${waiting} aguardando` : ""}${isToday ? ", hoje" : ""}`}
                 className={`cursor-pointer transition-colors ${isSelected ? "border-primary bg-primary/5" : isToday ? "border-secondary/50" : "hover:bg-muted/50"}`}
                 onClick={() => { setSelectedDate(date); setView("day"); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setSelectedDate(date);
+                    setView("day");
+                  }
+                }}
               >
                 <CardContent className="p-3 text-center">
                   <p className="text-xs text-muted-foreground">{weekDays[i]}</p>
                   <p className={`text-lg font-bold ${isToday ? "text-primary" : ""}`}>{new Date(date + "T00:00:00").getDate()}</p>
                   <p className="text-xs text-primary font-medium">{dayApps.length} atend.</p>
-                  {dayApps.filter((a) => a.status === "waiting").length > 0 && (
-                    <p className="text-xs text-warning">{dayApps.filter((a) => a.status === "waiting").length} aguard.</p>
+                  {waiting > 0 && (
+                    <p className="text-xs text-warning">{waiting} aguard.</p>
                   )}
                 </CardContent>
               </Card>
@@ -363,66 +416,18 @@ export default function SchedulePage() {
           })}
         </div>
       ) : dayAppointments.length === 0 ? (
-        <EmptyState title="Sem agendamentos" description={hasFilters ? "Nenhum resultado para os filtros aplicados." : "Não há atendimentos para esta data."} />
+        <EmptyState
+          title="Sem agendamentos"
+          description={hasFilters ? "Nenhum resultado para os filtros aplicados." : "Não há atendimentos para esta data."}
+        />
       ) : (
-        <div className="space-y-2">
-          {dayAppointments.map((a) => {
-            const patient = getPatientForAppointment(a);
-            const age = patient?.birthDate ? calculateAge(patient.birthDate) : null;
-            const insurance = patient?.healthInsurance || "Particular";
-            const allergies = patient?.allergies;
-
-            return (
-              <Card key={a.id} className={`hover:shadow-md transition-shadow ${statusBorderColors[a.status] || ""}`}>
-                <CardContent className="p-3 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className="text-center min-w-[52px]">
-                      <p className="text-base font-bold text-primary leading-tight">{a.time}</p>
-                      <p className="text-[10px] text-muted-foreground">{a.duration} min</p>
-                    </div>
-
-                    <div className="border-l pl-3 flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <AppointmentPreviewPopover appointment={a} patient={patient} appointments={appointments}>
-                          <span className="font-medium text-sm truncate cursor-pointer hover:text-primary transition-colors">
-                            {a.patientName}
-                          </span>
-                        </AppointmentPreviewPopover>
-                        {age != null && (
-                          <span className="text-[10px] text-muted-foreground">{age}a</span>
-                        )}
-                        {a.typeLabel && (
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-0 bg-primary/10 text-primary">
-                            {a.typeLabel}
-                          </Badge>
-                        )}
-                        {a.type === "retorno" && (
-                          <Badge variant="outline" className="bg-secondary/10 text-secondary border-0 text-[10px] px-1.5 py-0">Retorno</Badge>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {a.doctorName}{a.specialty ? ` • ${a.specialty}` : ""}
-                      </p>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[10px] text-muted-foreground">{insurance}</span>
-                        {allergies && (
-                          <span className="text-[10px] text-destructive font-medium flex items-center gap-0.5">
-                            <AlertTriangle className="h-2.5 w-2.5" />{allergies}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <AppointmentStatusBadge status={a.status} />
-                    <QuickActionsMenu appointment={a} onAction={handleQuickAction} />
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+        <VirtualizedDayList
+          appointments={dayAppointments}
+          appointmentsLookup={appointments}
+          getPatientForAppointment={getPatientForAppointment}
+          onQuickAction={handleQuickAction}
+          formattedDate={formattedDate}
+        />
       )}
 
       {/* Dialogs */}
@@ -469,5 +474,82 @@ function MiniStat({ icon, label, value, color }: { icon: React.ReactNode; label:
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * VirtualizedDayList — renderiza a lista de agendamentos do dia com virtualização.
+ * Substitui a renderização direta por uma windowed list usando @tanstack/react-virtual
+ * para suportar dias com grande volume (clinicas com 200+ agendamentos/dia).
+ */
+function VirtualizedDayList({
+  appointments,
+  appointmentsLookup,
+  getPatientForAppointment,
+  onQuickAction,
+  formattedDate,
+}: {
+  appointments: Appointment[];
+  appointmentsLookup: Appointment[];
+  getPatientForAppointment: (a: Appointment) => Patient | undefined;
+  onQuickAction: (action: string, a: Appointment) => void;
+  formattedDate: string;
+}) {
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  const virtualizer = useVirtualizer({
+    count: appointments.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 96, // altura estimada de um card (px)
+    overscan: 5,
+  });
+
+  return (
+    <div
+      role="grid"
+      aria-label={`Agendamentos de ${formattedDate}`}
+      aria-rowcount={appointments.length}
+      aria-colcount={1}
+      ref={parentRef}
+      className="space-y-2 overflow-auto"
+      style={{ height: "min(70vh, 720px)" }}
+    >
+      <div
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          width: "100%",
+          position: "relative",
+        }}
+      >
+        {virtualizer.getVirtualItems().map((virtualRow) => {
+          const a = appointments[virtualRow.index];
+          if (!a) return null;
+          const patient = getPatientForAppointment(a);
+          return (
+            <div
+              key={virtualRow.key}
+              data-index={virtualRow.index}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                height: `${virtualRow.size}px`,
+                transform: `translateY(${virtualRow.start}px)`,
+                paddingBottom: "0.5rem",
+              }}
+            >
+              <AppointmentCard
+                appointment={a}
+                patient={patient}
+                allAppointments={appointmentsLookup}
+                onQuickAction={onQuickAction}
+                rowIndex={virtualRow.index}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

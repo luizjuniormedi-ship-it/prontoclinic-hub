@@ -11,6 +11,7 @@ import { supabase } from "@/lib/supabase";
 import { formatCPF, calculateAge } from "@/utils/formatters";
 import { maskPhone } from "@/utils/masks";
 import { useDebounce } from "@/hooks/useDebounce";
+import { friendlyError } from "@/utils/friendlyError";
 
 interface PatientRow {
   id: string;
@@ -60,7 +61,7 @@ export default function PatientsPage() {
       setPatients(data || []);
       setTotal(count || 0);
     } catch (err: any) {
-      setError(err.message || "Erro ao carregar pacientes");
+      setError(friendlyError(err, "Carregar pacientes"));
     } finally {
       setLoading(false);
     }

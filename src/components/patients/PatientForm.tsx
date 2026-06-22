@@ -44,53 +44,185 @@ interface Props {
   validationError?: string | null;
 }
 
+/**
+ * Lightweight per-field validator. Returns true if field is valid.
+ * Extend with Zod schema when form grows. We mark fields with
+ * `aria-invalid` and pair with `aria-describedby` to the error node.
+ */
+function validateField(field: keyof PatientFormData, value: string): string | null {
+  if (field === "full_name" && value.trim().length < 3) {
+    return "Informe o nome completo (mínimo 3 caracteres).";
+  }
+  if (field === "cpf") {
+    const digits = value.replace(/\D/g, "");
+    if (digits && digits.length !== 11) return "CPF deve ter 11 dígitos.";
+  }
+  if (field === "phone") {
+    const digits = value.replace(/\D/g, "");
+    if (digits && (digits.length < 10 || digits.length > 11)) {
+      return "Telefone deve ter DDD + número.";
+    }
+  }
+  if (field === "email" && value) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return "E-mail inválido.";
+  }
+  return null;
+}
+
 export function PatientForm({ initialData, onSubmit, onCancel, saving, validationError }: Props) {
   const [form, setForm] = useState<PatientFormData>({ ...emptyForm, ...initialData });
+  const [errors, setErrors] = useState<Partial<Record<keyof PatientFormData, string>>>({});
+  const [touched, setTouched] = useState<Partial<Record<keyof PatientFormData, boolean>>>({});
 
-  const set = (field: keyof PatientFormData, value: string) => setForm((f) => ({ ...f, [field]: value }));
+  const set = (field: keyof PatientFormData, value: string) => {
+    setForm((f) => ({ ...f, [field]: value }));
+    if (touched[field]) {
+      const msg = validateField(field, value);
+      setErrors((e) => ({ ...e, [field]: msg ?? undefined }));
+    }
+  };
+
+  const onBlurField = (field: keyof PatientFormData) => {
+    setTouched((t) => ({ ...t, [field]: true }));
+    const msg = validateField(field, form[field]);
+    setErrors((e) => ({ ...e, [field]: msg ?? undefined }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Validate everything before submit
+    const next: typeof errors = {};
+    (Object.keys(form) as (keyof PatientFormData)[]).forEach((k) => {
+      const msg = validateField(k, form[k]);
+      if (msg) next[k] = msg;
+    });
+    setErrors(next);
+    setTouched(
+      Object.keys(form).reduce((acc, k) => ({ ...acc, [k]: true }), {} as typeof touched)
+    );
+    if (Object.values(next).some(Boolean)) return;
     await onSubmit(form);
   };
 
+  // Helper to render an input field with label + error wiring
+  const Field = ({
+    id,
+    label,
+    required,
+    children,
+    fieldKey,
+    describedBy,
+  }: {
+    id: string;
+    label: string;
+    required?: boolean;
+    children: React.ReactNode;
+    fieldKey: keyof PatientFormData;
+    describedBy?: string;
+  }) => {
+    const err = errors[fieldKey];
+    const errId = `${id}-error`;
+    const composedDescribedBy = [describedBy, err ? errId : null].filter(Boolean).join(" ") || undefined;
+    return (
+      <div className="space-y-1.5">
+        <Label htmlFor={id} className="text-xs">
+          {label}
+          {required && (
+            <>
+              {" "}
+              <span className="text-destructive" aria-hidden="true">*</span>
+              <span className="sr-only"> (obrigatório)</span>
+            </>
+          )}
+        </Label>
+        <div data-field={fieldKey} aria-describedby={composedDescribedBy}>
+          {children}
+        </div>
+        {err && (
+          <p id={errId} role="alert" className="text-xs text-destructive">
+            {err}
+          </p>
+        )}
+      </div>
+    );
+  };
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-6" noValidate aria-label="Formulário de cadastro de paciente">
       {validationError && (
-        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{validationError}</div>
+        <div
+          role="alert"
+          className="rounded-md bg-destructive/10 p-3 text-sm text-destructive"
+        >
+          {validationError}
+        </div>
       )}
 
       {/* Dados Pessoais */}
       <Card>
-        <CardHeader className="pb-3"><CardTitle className="text-base">Dados Pessoais</CardTitle></CardHeader>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base" id="dados-pessoais-title">Dados Pessoais</CardTitle>
+        </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div className="md:col-span-2 lg:col-span-3 space-y-1.5">
-            <Label className="text-xs">Nome Completo *</Label>
-            <Input required placeholder="Nome completo do paciente" value={form.full_name} onChange={(e) => set("full_name", e.target.value)} maxLength={200} />
+          <div className="md:col-span-2 lg:col-span-3">
+            <Field id="full_name" label="Nome Completo" required fieldKey="full_name">
+              <Input
+                id="full_name"
+                required
+                placeholder="Nome completo do paciente"
+                value={form.full_name}
+                onChange={(e) => set("full_name", e.target.value)}
+                onBlur={() => onBlurField("full_name")}
+                maxLength={200}
+                aria-required="true"
+                aria-invalid={!!errors.full_name}
+              />
+            </Field>
           </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">CPF *</Label>
-            <Input required placeholder="000.000.000-00" value={maskCPF(form.cpf)} onChange={(e) => set("cpf", e.target.value.replace(/\D/g, ""))} maxLength={14} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Data de Nascimento *</Label>
-            <Input type="date" required value={form.birth_date} onChange={(e) => set("birth_date", e.target.value)} max={new Date().toISOString().split("T")[0]} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Sexo *</Label>
+          <Field id="cpf" label="CPF" required fieldKey="cpf">
+            <Input
+              id="cpf"
+              required
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="000.000.000-00"
+              value={maskCPF(form.cpf)}
+              onChange={(e) => set("cpf", e.target.value.replace(/\D/g, ""))}
+              onBlur={() => onBlurField("cpf")}
+              maxLength={14}
+              aria-required="true"
+              aria-invalid={!!errors.cpf}
+            />
+          </Field>
+          <Field id="birth_date" label="Data de Nascimento" required fieldKey="birth_date">
+            <Input
+              id="birth_date"
+              type="date"
+              required
+              value={form.birth_date}
+              onChange={(e) => set("birth_date", e.target.value)}
+              max={new Date().toISOString().split("T")[0]}
+              aria-required="true"
+              aria-invalid={!!errors.birth_date}
+            />
+          </Field>
+          <Field id="sex" label="Sexo" required fieldKey="sex">
             <Select value={form.sex} onValueChange={(v) => set("sex", v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger id="sex" aria-required="true" aria-label="Sexo">
+                <SelectValue placeholder="Selecione" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="M">Masculino</SelectItem>
                 <SelectItem value="F">Feminino</SelectItem>
                 <SelectItem value="O">Outro</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Estado Civil</Label>
+          </Field>
+          <Field id="marital_status" label="Estado Civil" fieldKey="marital_status">
             <Select value={form.marital_status || ""} onValueChange={(v) => set("marital_status", v)}>
-              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+              <SelectTrigger id="marital_status" aria-label="Estado civil">
+                <SelectValue placeholder="Selecione" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="solteiro">Solteiro(a)</SelectItem>
                 <SelectItem value="casado">Casado(a)</SelectItem>
@@ -99,11 +231,18 @@ export function PatientForm({ initialData, onSubmit, onCancel, saving, validatio
                 <SelectItem value="uniao_estavel">União Estável</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Responsável</Label>
-            <Input placeholder="Nome do responsável" value={form.responsible_name} onChange={(e) => set("responsible_name", e.target.value)} maxLength={200} />
-          </div>
+          </Field>
+          <Field id="responsible_name" label="Responsável" fieldKey="responsible_name">
+            <Input
+              id="responsible_name"
+              placeholder="Nome do responsável"
+              value={form.responsible_name}
+              onChange={(e) => set("responsible_name", e.target.value)}
+              onBlur={() => onBlurField("responsible_name")}
+              maxLength={200}
+              aria-invalid={!!errors.responsible_name}
+            />
+          </Field>
         </CardContent>
       </Card>
 
@@ -111,22 +250,61 @@ export function PatientForm({ initialData, onSubmit, onCancel, saving, validatio
       <Card>
         <CardHeader className="pb-3"><CardTitle className="text-base">Contato</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div className="space-y-1.5">
-            <Label className="text-xs">Telefone Principal *</Label>
-            <Input required placeholder="(00) 00000-0000" value={maskPhone(form.phone)} onChange={(e) => set("phone", e.target.value.replace(/\D/g, ""))} maxLength={15} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">E-mail</Label>
-            <Input type="email" placeholder="email@email.com" value={form.email} onChange={(e) => set("email", e.target.value)} maxLength={255} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Contato de Emergência</Label>
-            <Input placeholder="Nome" value={form.emergency_contact_name} onChange={(e) => set("emergency_contact_name", e.target.value)} maxLength={200} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Tel. Emergência</Label>
-            <Input placeholder="(00) 00000-0000" value={maskPhone(form.emergency_contact_phone)} onChange={(e) => set("emergency_contact_phone", e.target.value.replace(/\D/g, ""))} maxLength={15} />
-          </div>
+          <Field id="phone" label="Telefone Principal" required fieldKey="phone">
+            <Input
+              id="phone"
+              required
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="(00) 00000-0000"
+              value={maskPhone(form.phone)}
+              onChange={(e) => set("phone", e.target.value.replace(/\D/g, ""))}
+              onBlur={() => onBlurField("phone")}
+              maxLength={15}
+              aria-required="true"
+              aria-invalid={!!errors.phone}
+            />
+          </Field>
+          <Field id="email" label="E-mail" fieldKey="email">
+            <Input
+              id="email"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              placeholder="email@email.com"
+              value={form.email}
+              onChange={(e) => set("email", e.target.value)}
+              onBlur={() => onBlurField("email")}
+              maxLength={255}
+              aria-invalid={!!errors.email}
+            />
+          </Field>
+          <Field id="emergency_contact_name" label="Contato de Emergência" fieldKey="emergency_contact_name">
+            <Input
+              id="emergency_contact_name"
+              placeholder="Nome do contato de emergência"
+              value={form.emergency_contact_name}
+              onChange={(e) => set("emergency_contact_name", e.target.value)}
+              onBlur={() => onBlurField("emergency_contact_name")}
+              maxLength={200}
+              aria-invalid={!!errors.emergency_contact_name}
+            />
+          </Field>
+          <Field id="emergency_contact_phone" label="Tel. Emergência" fieldKey="emergency_contact_phone">
+            <Input
+              id="emergency_contact_phone"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="(00) 00000-0000"
+              value={maskPhone(form.emergency_contact_phone)}
+              onChange={(e) => set("emergency_contact_phone", e.target.value.replace(/\D/g, ""))}
+              onBlur={() => onBlurField("emergency_contact_phone")}
+              maxLength={15}
+              aria-invalid={!!errors.emergency_contact_phone}
+            />
+          </Field>
         </CardContent>
       </Card>
 
@@ -134,14 +312,24 @@ export function PatientForm({ initialData, onSubmit, onCancel, saving, validatio
       <Card>
         <CardHeader className="pb-3"><CardTitle className="text-base">Convênio</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label className="text-xs">Convênio</Label>
-            <Input placeholder="Nome do convênio" value={form.insurance_plan_id} onChange={(e) => set("insurance_plan_id", e.target.value)} maxLength={100} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Nº Carteirinha</Label>
-            <Input placeholder="Número da carteirinha" value={form.insurance_card_number} onChange={(e) => set("insurance_card_number", e.target.value)} maxLength={50} />
-          </div>
+          <Field id="insurance_plan_id" label="Convênio" fieldKey="insurance_plan_id">
+            <Input
+              id="insurance_plan_id"
+              placeholder="Nome do convênio"
+              value={form.insurance_plan_id}
+              onChange={(e) => set("insurance_plan_id", e.target.value)}
+              maxLength={100}
+            />
+          </Field>
+          <Field id="insurance_card_number" label="Nº Carteirinha" fieldKey="insurance_card_number">
+            <Input
+              id="insurance_card_number"
+              placeholder="Número da carteirinha"
+              value={form.insurance_card_number}
+              onChange={(e) => set("insurance_card_number", e.target.value)}
+              maxLength={50}
+            />
+          </Field>
         </CardContent>
       </Card>
 
@@ -149,29 +337,59 @@ export function PatientForm({ initialData, onSubmit, onCancel, saving, validatio
       <Card>
         <CardHeader className="pb-3"><CardTitle className="text-base">Informações Clínicas</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label className="text-xs">Alergias</Label>
-            <Textarea placeholder="Ex: Dipirona, Penicilina, Látex" value={form.allergies} onChange={(e) => set("allergies", e.target.value)} maxLength={500} rows={2} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Alertas Clínicos</Label>
-            <Textarea placeholder="Ex: Diabético, Hipertenso, Gestante" value={form.clinical_alerts} onChange={(e) => set("clinical_alerts", e.target.value)} maxLength={500} rows={2} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Notas Clínicas</Label>
-            <Textarea placeholder="Observações clínicas" value={form.clinical_notes} onChange={(e) => set("clinical_notes", e.target.value)} maxLength={1000} rows={2} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Notas Administrativas</Label>
-            <Textarea placeholder="Observações administrativas" value={form.admin_notes} onChange={(e) => set("admin_notes", e.target.value)} maxLength={1000} rows={2} />
-          </div>
+          <Field id="allergies" label="Alergias" fieldKey="allergies">
+            <Textarea
+              id="allergies"
+              placeholder="Ex: Dipirona, Penicilina, Látex"
+              value={form.allergies}
+              onChange={(e) => set("allergies", e.target.value)}
+              maxLength={500}
+              rows={2}
+              aria-describedby="allergies-hint"
+            />
+            <p id="allergies-hint" className="text-xs text-muted-foreground">
+              Liste medicamentos ou substâncias que o paciente não pode receber.
+            </p>
+          </Field>
+          <Field id="clinical_alerts" label="Alertas Clínicos" fieldKey="clinical_alerts">
+            <Textarea
+              id="clinical_alerts"
+              placeholder="Ex: Diabético, Hipertenso, Gestante"
+              value={form.clinical_alerts}
+              onChange={(e) => set("clinical_alerts", e.target.value)}
+              maxLength={500}
+              rows={2}
+            />
+          </Field>
+          <Field id="clinical_notes" label="Notas Clínicas" fieldKey="clinical_notes">
+            <Textarea
+              id="clinical_notes"
+              placeholder="Observações clínicas"
+              value={form.clinical_notes}
+              onChange={(e) => set("clinical_notes", e.target.value)}
+              maxLength={1000}
+              rows={2}
+            />
+          </Field>
+          <Field id="admin_notes" label="Notas Administrativas" fieldKey="admin_notes">
+            <Textarea
+              id="admin_notes"
+              placeholder="Observações administrativas"
+              value={form.admin_notes}
+              onChange={(e) => set("admin_notes", e.target.value)}
+              maxLength={1000}
+              rows={2}
+            />
+          </Field>
         </CardContent>
       </Card>
 
       <div className="flex justify-end gap-3">
-        <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
-        <Button type="submit" disabled={saving}>
-          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancelar
+        </Button>
+        <Button type="submit" disabled={saving} aria-busy={saving}>
+          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
           {saving ? "Salvando..." : "Salvar Paciente"}
         </Button>
       </div>

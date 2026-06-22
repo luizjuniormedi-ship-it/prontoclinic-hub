@@ -1,115 +1,139 @@
-import { supabase } from '@/lib/supabase';
+/**
+ * priceTableService — Tabela de Preços por Convênio/Serviço
+ *
+ * Complementa o priceTableService existente. Espelha o SIGH.99pgm_medicor
+ * (3673 regras) e servicos.VL_PARTICULAR.
+ *
+ * Migration relacionada: 20260101000005_price_tables.sql
+ *
+ * Função SQL `find_price()` no banco busca com fallback:
+ * 1. Preço específico do convênio
+ * 2. Preço particular
+ * 3. services_catalog.price
+ * 4. 0
+ */
 
-export interface DbPriceEntry {
-  id: string;
-  appointment_type_id: string | null;
-  service_id: string | null;
-  insurance_plan_id: string | null;
-  price: number;
-  description: string | null;
+import { supabase } from "@/lib/supabase";
+
+export interface PriceTable {
+  id: number;
+  company_id: string;
+  appointment_type_id?: number;
+  service_id?: number;
+  insurance_plan_id?: number;
+  dt_inicio: string;
+  dt_fim?: string;
+  vl_particular: number;
+  vl_convenio: number;
+  vl_material: number;
+  vl_medicamento: number;
+  vl_taxa: number;
+  vl_diaria: number;
+  vl_gases: number;
+  tp_calculo: "FIXO" | "PERCENTUAL" | "COBRO";
+  percentual_acrescimo: number;
+  description?: string;
   active: boolean;
-  company_id: string | null;
+  cd_origem_sigh?: number;
   created_at: string;
   updated_at: string;
-  // joined
-  appointment_type_name?: string;
 }
 
-export interface PriceEntryInput {
-  appointment_type_id?: string;
-  service_id?: string;
-  insurance_plan_id?: string | null;
-  price: number;
-  description?: string;
-  active?: boolean;
-  company_id?: string;
+export interface PriceLookup {
+  vl_particular: number;
+  vl_convenio: number;
+  vl_material: number;
+  vl_medicamento: number;
+  vl_taxa: number;
+  vl_diaria: number;
+  vl_gases: number;
+  found: boolean;
 }
 
 export const priceTableService = {
-  async getAll(): Promise<DbPriceEntry[]> {
-    const { data, error } = await supabase
-      .from('price_table')
-      .select('*, appointment_types(name)')
-      .order('created_at', { ascending: false });
-    if (error) throw new Error(`Erro ao buscar preços: ${error.message}`);
-    return (data || []).map((d: any) => ({
-      ...d,
-      appointment_type_name: d.appointment_types?.name,
-      appointment_types: undefined,
-    }));
+  async getAll(filters?: {
+    serviceId?: number;
+    planId?: number | null;
+    active?: boolean;
+  }): Promise<PriceTable[]> {
+    let q = supabase
+      .from("price_tables")
+      .select(`
+        *,
+        service:services_catalog(name),
+        plan:insurance_plans(name),
+        appointment_type:appointment_types(name)
+      `)
+      .order("dt_inicio", { ascending: false });
+
+    if (filters?.serviceId) q = q.eq("service_id", filters.serviceId);
+    if (filters?.planId !== undefined) {
+      if (filters.planId === null) q = q.is("insurance_plan_id", null);
+      else q = q.eq("insurance_plan_id", filters.planId);
+    }
+    if (filters?.active !== undefined) q = q.eq("active", filters.active);
+
+    const { data, error } = await q;
+    if (error) throw new Error(`Erro: ${error.message}`);
+    return data || [];
   },
 
-  async create(input: PriceEntryInput): Promise<DbPriceEntry> {
-    const row: Record<string, any> = { ...input };
-    if (row.insurance_plan_id === '') row.insurance_plan_id = null;
-    const { data, error } = await supabase
-      .from('price_table')
-      .insert(row)
-      .select()
-      .single();
+  async findPrice(
+    serviceId: number,
+    appointmentTypeId: number,
+    insurancePlanId: number | null = null
+  ): Promise<PriceLookup> {
+    const { data, error } = await supabase.rpc("find_price", {
+      p_company_id: null,
+      p_service_id: serviceId,
+      p_appointment_type_id: appointmentTypeId,
+      p_insurance_plan_id: insurancePlanId,
+    });
     if (error) {
-      if (error.code === '23505') throw new Error('Já existe um preço para esta combinação de tipo e convênio.');
-      throw new Error(`Erro ao criar preço: ${error.message}`);
+      console.warn("find_price RPC falhou, retornando 0:", error);
+      return {
+        vl_particular: 0, vl_convenio: 0, vl_material: 0, vl_medicamento: 0,
+        vl_taxa: 0, vl_diaria: 0, vl_gases: 0, found: false,
+      };
     }
-    return data;
+    return data?.[0] || {
+      vl_particular: 0, vl_convenio: 0, vl_material: 0, vl_medicamento: 0,
+      vl_taxa: 0, vl_diaria: 0, vl_gases: 0, found: false,
+    };
   },
 
-  async update(id: string, input: Partial<PriceEntryInput>): Promise<DbPriceEntry> {
-    const row: Record<string, any> = { ...input, updated_at: new Date().toISOString() };
-    if (row.insurance_plan_id === '') row.insurance_plan_id = null;
+  async create(input: Partial<PriceTable>): Promise<PriceTable> {
     const { data, error } = await supabase
-      .from('price_table')
-      .update(row)
-      .eq('id', id)
+      .from("price_tables")
+      .insert(input)
       .select()
       .single();
-    if (error) throw new Error(`Erro ao atualizar preço: ${error.message}`);
+    if (error) throw new Error(`Erro ao criar preco: ${error.message}`);
     return data;
   },
 
-  async delete(id: string): Promise<void> {
-    const { error } = await supabase
-      .from('price_table')
-      .delete()
-      .eq('id', id);
-    if (error) throw new Error(`Erro ao excluir preço: ${error.message}`);
+  async update(id: number, input: Partial<PriceTable>): Promise<PriceTable> {
+    const { data, error } = await supabase
+      .from("price_tables")
+      .update(input)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw new Error(`Erro: ${error.message}`);
+    return data;
   },
 
-  /**
-   * Find the best price for a given appointment type and insurance.
-   * Priority:
-   *   1. Price matching appointment_type_id + insurance_plan_id
-   *   2. Price matching appointment_type_id + NULL insurance (particular)
-   *   3. Price from services_catalog.price as fallback
-   *   4. Returns 0
-   */
-  async findPrice(appointmentTypeId?: string | null, insurancePlanId?: string | null): Promise<number> {
-    if (!appointmentTypeId) return 0;
+  async delete(id: number): Promise<void> {
+    const { error } = await supabase.from("price_tables").delete().eq("id", id);
+    if (error) throw new Error(`Erro: ${error.message}`);
+  },
 
-    // 1. Try specific insurance price
-    if (insurancePlanId) {
-      const { data } = await supabase
-        .from('price_table')
-        .select('price')
-        .eq('appointment_type_id', appointmentTypeId)
-        .eq('insurance_plan_id', insurancePlanId)
-        .eq('active', true)
-        .maybeSingle();
-      if (data?.price != null && data.price > 0) return Number(data.price);
-    }
-
-    // 2. Try particular price (insurance_plan_id IS NULL)
-    const { data: particularPrice } = await supabase
-      .from('price_table')
-      .select('price')
-      .eq('appointment_type_id', appointmentTypeId)
-      .is('insurance_plan_id', null)
-      .eq('active', true)
-      .maybeSingle();
-    if (particularPrice?.price != null && particularPrice.price > 0) return Number(particularPrice.price);
-
-    // 3. Fallback: services_catalog (if appointment_type has a linked service)
-    // Not directly linked, so return 0
-    return 0;
+  async bulkCreate(inputs: Partial<PriceTable>[]): Promise<PriceTable[]> {
+    const { data, error } = await supabase
+      .from("price_tables")
+      .insert(inputs)
+      .select();
+    if (error) throw new Error(`Erro no bulk: ${error.message}`);
+    return data || [];
   },
 };

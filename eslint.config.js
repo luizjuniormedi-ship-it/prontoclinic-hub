@@ -21,6 +21,11 @@ export default tseslint.config(
       ...reactHooks.configs.recommended.rules,
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
       "@typescript-eslint/no-unused-vars": "off",
+      // Habilitado como WARN para nao quebrar o build atual (existem ~200 usos
+      // legados de `any` em services/, tests/ e migracoes). Code review deve
+      // exigir tipagem explicita para novos PRs; caso de uso justificado
+      // precisa de `eslint-disable-next-line @typescript-eslint/no-explicit-any`.
+      "@typescript-eslint/no-explicit-any": "warn",
     },
   },
 );

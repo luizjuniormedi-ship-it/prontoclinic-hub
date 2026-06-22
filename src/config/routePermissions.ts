@@ -68,6 +68,7 @@ const routePermissionMap: Record<string, PermissionEntry> = {
   "/master-data": [ROLES.ADMIN, ROLES.ADMINISTRATIVO],
   "/companies": [ROLES.ADMIN, ROLES.GESTOR, ROLES.ADMINISTRATIVO],
   "/admin": [ROLES.ADMIN, ROLES.ADMINISTRATIVO],
+  "/meus-agendamentos": "*", // portal do paciente (qualquer usuario logado)
 };
 
 /**

@@ -43,7 +43,7 @@ export default function DicomModalitiesPage() {
   const save = async () => {
     if (!form.name || !form.aetitle) { toast({ title: "Nome e AE Title obrigatórios", variant: "destructive" }); return; }
     try {
-      const payload = { ...form, port: form.port ? parseInt(form.port) : null, pacs_node_id: form.pacs_node_id || null };
+      const payload = { ...form, port: form.port ? parseInt(form.port, 10) : null, pacs_node_id: form.pacs_node_id || null };
       if (editing) await dicomModalitiesService.update(editing.id, payload);
       else await dicomModalitiesService.create(payload);
       toast({ title: editing ? "Equipamento atualizado" : "Equipamento criado" });

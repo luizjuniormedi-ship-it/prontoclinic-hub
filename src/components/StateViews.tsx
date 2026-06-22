@@ -22,6 +22,64 @@ export function EmptyState({ icon: Icon, title, description, action }: { icon?: 
   );
 }
 
+/**
+ * Ilustrações pré-definidas para `IllustratedEmptyState`.
+ * Cada entrada combina emoji + cor Tailwind para um estado comum.
+ */
+const illustrations: Record<string, { emoji: string; color: string }> = {
+  patients: { emoji: "👥", color: "text-blue-500" },
+  appointments: { emoji: "📅", color: "text-green-500" },
+  empty: { emoji: "📭", color: "text-gray-400" },
+  error: { emoji: "⚠️", color: "text-red-500" },
+  success: { emoji: "✅", color: "text-green-500" },
+  doctors: { emoji: "🩺", color: "text-emerald-500" },
+  exams: { emoji: "🧪", color: "text-purple-500" },
+  documents: { emoji: "📄", color: "text-amber-500" },
+  calendar: { emoji: "🗓️", color: "text-indigo-500" },
+  notifications: { emoji: "🔔", color: "text-yellow-500" },
+  payments: { emoji: "💳", color: "text-cyan-600" },
+  search: { emoji: "🔍", color: "text-slate-500" },
+};
+
+export type IllustratedEmptyStateVariant = keyof typeof illustrations;
+
+export interface IllustratedEmptyStateProps {
+  variant?: IllustratedEmptyStateVariant;
+  title: string;
+  description?: string;
+  action?: { label: string; onClick: () => void };
+}
+
+/**
+ * EmptyState com ilustração (emoji) por variante.
+ *
+ * Substitui o EmptyState genérico em fluxos onde uma imagem rápida
+ * reduz a sensação de "tela quebrada". Mantém fallback para a
+ * variante `empty` quando a chave não existe.
+ */
+export function IllustratedEmptyState({
+  variant = "empty",
+  title,
+  description,
+  action,
+}: IllustratedEmptyStateProps) {
+  const ill = illustrations[variant] ?? illustrations.empty;
+  return (
+    <div className="flex flex-col items-center justify-center p-12 text-center">
+      <div className={`text-6xl mb-4 ${ill.color}`} aria-hidden="true">
+        {ill.emoji}
+      </div>
+      <h3 className="text-lg font-semibold mb-2">{title}</h3>
+      {description && (
+        <p className="text-muted-foreground mb-6 max-w-md text-sm">{description}</p>
+      )}
+      {action && (
+        <Button onClick={action.onClick}>{action.label}</Button>
+      )}
+    </div>
+  );
+}
+
 export function ErrorState({ message = "Ocorreu um erro ao carregar os dados.", onRetry }: { message?: string; onRetry?: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">

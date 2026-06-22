@@ -445,6 +445,26 @@ export interface AuditLog {
   createdAt: string;
 }
 
+// Filtros para consulta à trilha de auditoria real (Supabase)
+export interface AuditFilters {
+  tabela?: string;
+  acao?: string;
+  cd_usuario?: string;
+  data_inicio?: string; // ISO 8601
+  data_fim?: string;    // ISO 8601
+  page?: number;
+  pageSize?: number;
+}
+
+// Estatísticas agregadas para dashboard de auditoria
+export interface AuditStats {
+  totalEventos: number;
+  porAcao: { acao: string; total: number }[];
+  porTabela: { tabela: string; total: number }[];
+  porUsuario: { userId: string; userName: string; total: number }[];
+  periodo: { inicio: string; fim: string };
+}
+
 // Keep legacy Doctor for backwards compat - maps to Professional
 export interface Doctor {
   id: string;

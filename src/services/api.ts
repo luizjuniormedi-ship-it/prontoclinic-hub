@@ -1,18 +1,19 @@
 import {
   Patient, Appointment, Payment, MedicalRecord, DashboardStats, ReturnControl,
-  TherapyPackage, Specialty, Doctor, AuditLog, Professional, Billing,
+  TherapyPackage, Specialty, Doctor, AuditLog, AuditFilters, Professional, Billing,
   Company, Unit, ConsultationType, ExamType, ProcedureType, TherapyService,
   HealthInsurancePlan, Room, AttendanceType, BillingProduction, ProfessionalPayment,
   CallCenterRecord, WorklistItem, PACSStudy
 } from "@/types";
 import {
   mockPatients, mockAppointments, mockPayments, mockMedicalRecords, mockDashboardStats,
-  mockReturnControls, mockTherapyPackages, mockSpecialties, mockDoctors, mockAuditLogs,
+  mockReturnControls, mockTherapyPackages, mockSpecialties, mockDoctors,
   mockProfessionals, mockBillings, mockCompanies, mockUnits, mockConsultationTypes,
   mockExamTypes, mockProcedureTypes, mockTherapyServices, mockInsurancePlans, mockRooms,
   mockAttendanceTypes, mockBillingProductions, mockProfessionalPayments,
   mockCallCenterRecords, mockWorklistItems, mockPACSStudies
 } from "./mockData";
+import { auditService } from "./auditService";
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -79,8 +80,10 @@ export const api = {
   // Therapy Packages
   async getTherapyPackages(patientId?: string): Promise<TherapyPackage[]> { await delay(300); if (patientId) return mockTherapyPackages.filter((p) => p.patientId === patientId); return mockTherapyPackages; },
 
-  // Audit Logs
-  async getAuditLogs(): Promise<AuditLog[]> { await delay(300); return mockAuditLogs; },
+  // Audit Logs — agora delega ao auditService (Supabase real, migration 20260101000007)
+  async getAuditLogs(filters?: AuditFilters): Promise<AuditLog[]> {
+    return auditService.getAll(filters);
+  },
 
   // Check 30-day interval rule
   async checkConsultaInterval(patientId: string, specialty: string): Promise<{ blocked: boolean; lastDate?: string; daysPassed?: number; availableDate?: string }> {

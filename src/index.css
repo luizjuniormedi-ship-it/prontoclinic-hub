@@ -105,3 +105,89 @@
     scrollbar-width: thin;
   }
 }
+
+/* ============================================================
+   A11y / WCAG AA utilities
+   ============================================================ */
+
+/* Skip link - aparece quando recebe foco de teclado */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: #2563eb;
+  color: white;
+  padding: 8px 16px;
+  z-index: 1000;
+  text-decoration: none;
+  font-weight: 600;
+  border-radius: 0 0 6px 0;
+  transition: top 0.2s;
+}
+.skip-link:focus,
+.skip-link:focus-visible {
+  top: 0;
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
+/* Foco visível em todos os elementos interativos (não depende só de cor) */
+*:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Foco explícito nos controles de formulário sem outline default feio */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+/* Não esconder foco em usuários de mouse (mantém só o focus-visible acima) */
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Reduzir movimento para usuários com vestibular disorders */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Alto contraste (Windows High Contrast Mode) */
+@media (prefers-contrast: more) {
+  * {
+    border-color: currentColor !important;
+  }
+}
+
+/* Screen reader only - texto visível apenas para leitores de tela */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Dark mode (a11y para baixa visão) */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+  }
+}

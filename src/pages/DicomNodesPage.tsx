@@ -38,7 +38,7 @@ export default function DicomNodesPage() {
   const save = async () => {
     if (!form.name || !form.aetitle) { toast({ title: "Nome e AE Title são obrigatórios", variant: "destructive" }); return; }
     try {
-      const payload = { ...form, port: form.port ? parseInt(form.port) : null };
+      const payload = { ...form, port: form.port ? parseInt(form.port, 10) : null };
       if (editing) await dicomNodesService.update(editing.id, payload);
       else await dicomNodesService.create(payload);
       toast({ title: editing ? "Nó atualizado" : "Nó criado" });

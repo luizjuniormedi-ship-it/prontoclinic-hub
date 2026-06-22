@@ -1,0 +1,25 @@
+# Diretório de screenshots do MANUAL.md
+
+Imagens referenciadas no [MANUAL.md](../../MANUAL.md) devem ser colocadas nesta pasta.
+
+## Lista de imagens
+
+| Arquivo | Descrição | Seção |
+|---|---|---|
+| `login.png` | Tela de login com campos de email e senha | Para Recepção |
+| `agenda.png` | Visão geral da agenda do dia com filtros laterais | Agenda do dia |
+| `agendamento-novo.png` | Formulário de criação de agendamento | Criar agendamento |
+| `busca-paciente.png` | Autocomplete de paciente com validação de CPF | Criar agendamento |
+| `checkin.png` | Tela de check-in com seleção de tipo de atendimento | Confirmar presença |
+| `prontuario.png` | Prontuário eletrônico estruturado com abas | Para Médicos |
+| `prescricao.png` | Editor de prescrição com autocomplete de medicamentos | Prescrever |
+| `dicom.png` | Visualizador DICOM com controles de zoom/pan | Visualizador DICOM |
+| `faturamento.png` | Painel de faturamento TISS 3.05 | Para Faturamento |
+| `lgpd-admin.png` | Painel LGPD com solicitações pendentes | Para Administrador |
+| `portal-paciente.png` | Portal do paciente PWA | Para Paciente |
+
+## Como gerar
+
+- Use Playwright (já configurado em `playwright.config.ts`) ou um script manual.
+- Salve em PNG 1280x800 (ou o viewport apropriado).
+- Comprima com `pngquant` ou `sharp` para manter < 200KB por imagem.
