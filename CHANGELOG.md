@@ -5,6 +5,79 @@ Todas as mudanças notáveis do ProntoMedic são documentadas aqui.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 e este projeto segue [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [1.0.0] - 2026-06-22 (RELEASE INICIAL)
+
+Primeira release estável do **ProntoMedic Hub** — sistema completo de gestão
+para clínicas e consultórios médicos. Pronto para staging e homologação ANS.
+
+### Adicionado
+
+- **24 módulos** implementados (pacientes, agendamento, prontuário, TISS,
+  DICOM/PACS, LGPD, auditoria, financeiro, etc).
+- **Pré-cadastro online PWA** com confirmação por email e wizard de 4 steps.
+- **Confirmação self-service** de agendamentos via link público.
+- **Notificações multicanal** (Email/WhatsApp/SMS) com retry automático e
+  templates configuráveis.
+- **LGPD completo**: consentimento granular, anonimização, exportação de dados
+  (art. 18 V), direito ao esquecimento, política de retenção configurável.
+- **Auditoria imutável** com partição por ano (CFM 1.821/2007).
+- **TISS 3.05.00**: geração de guias, envio em lote, retorno, glosa e recurso.
+- **DICOM/PACS** com integração Orthanc + viewer Cornerstone + templates de
+  laudo com variáveis dinâmicas.
+- **Tabela de preços** com fallback automático via `find_price` RPC.
+- **Credenciamento de profissionais** em convênios + cotas diária/mensal.
+- **Multi-tenant** com Row-Level Security em 100% das tabelas sensíveis.
+- **2FA + recovery password + audit de login** com detecção de força bruta.
+- **WCAG AA** com axe-core integrado em testes e atalhos de teclado globais.
+- **PWA** instalável (iOS + Android) com service worker, manifest e modo offline.
+- **First Login Wizard** para onboarding do primeiro admin.
+- **87 testes unitários** (Vitest) cobrindo `statusTransitions`, validações,
+  LGPD, precificação, etc.
+- **103 cenários E2E** (Playwright) em 5 browsers cobrindo auth, agendamento,
+  pré-cadastro, LGPD, financeiro, DICOM, notificações, recepção, prontuário,
+  a11y e performance.
+- **14 migrations SQL** aplicadas com 7 índices críticos, funções SECURITY
+  DEFINER e wrappers LGPD.
+- **21 documentos** `.md` (README, ARCHITECTURE, MODULES, DEPLOY, MANUAL,
+  GLOSSARY, LGPD, FAQ, MIGRATION, GUIA_PACIENTE, etc).
+- **4 scripts Python** para migração SIGH, validação de migrations, seed
+  e worker de notificações.
+
+### Segurança (P0 corrigidos)
+
+- Credenciais Orthanc default substituídas por placeholders no `.env.example`.
+- Validação Zod em `src/lib/env.ts` (Orthanc, TISS, SMTP, etc).
+- XSS em `ReportTemplateEditor` sanitizado com DOMPurify.
+- 16 CVEs npm reduzidas via `npm audit`.
+- CSP strict + headers de segurança no `index.html`.
+- 5 bugs SQL críticos corrigidos em `publish_dicom_report`,
+  `confirm_pre_cadastro`, etc.
+- View `pacientes_anonimizaveis` com filtro de tenant.
+- `anonymize_patient` restrito a `service_role` + wrapper seguro
+  `request_anonymize_patient`.
+- Migration `20260101000012_security_hardening.sql` consolidando proteções.
+
+### Modificado
+
+- `LGPDManager.tsx` (904 → 60 LoC) quebrado em 5 sub-componentes tab.
+- `TissManager.tsx` (758 → 165 LoC) quebrado em 4 sub-componentes.
+- `React.lazy` em 30+ páginas autenticadas.
+- `manualChunks` no Vite (9 vendor chunks: react, supabase, ui, chart, date,
+  form, query, pwa, utils).
+- `React.memo` em 3 componentes de lista (PatientListRow, AuditLogRow,
+  InsuranceRow).
+- Virtualização em `SchedulePage` com `@tanstack/react-virtual`.
+- ESLint `no-explicit-any` habilitado como WARN.
+
+### Notas de Upgrade
+
+- Requer Node.js >= 20, PostgreSQL 15+ (ou Supabase CLI) e Redis opcional
+  para cache de sessão.
+- Variáveis de ambiente obrigatórias: ver `.env.example`.
+- Para migrar dados do SIGH, ver `MIGRATION.md` e `scripts/migrate_sigh.py`.
+- Para deploy, ver `DEPLOY.md` (4 opções: Docker, Vercel + Supabase, VPS,
+  Kubernetes).
+
 ## [1.0.4] - 2026-06-22 (Refatoração God Classes — Agente 19)
 
 ### Modificado

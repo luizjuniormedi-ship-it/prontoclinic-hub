@@ -679,7 +679,7 @@ export const tissService = {
     if (error) throw error;
 
     // Criar XML para cada atendimento
-    let lote = Math.floor(Date.now() / 1000);
+    const lote = Math.floor(Date.now() / 1000);
     let vlTotal = 0;
     let count = 0;
     for (const apt of appointments || []) {

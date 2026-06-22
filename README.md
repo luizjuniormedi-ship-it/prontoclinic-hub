@@ -2,9 +2,15 @@
 
 > Sistema de gestão para clínicas e consultórios médicos. Agende, confirme e gerencie consultas online.
 
-![Status](https://img.shields.io/badge/status-em%20desenvolvimento-yellow)
-![License](https://img.shields.io/badge/license-propriet%C3%A1rio-red)
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+[![Status](https://img.shields.io/badge/status-v1.0.0%20released-success)](https://github.com)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-103%20E2E%20%2B%2087%20unit-success)](e2e/)
+[![Coverage](https://img.shields.io/badge/coverage-70%25%2B%20critical%20rules-success)](vitest.config.ts)
+[![WCAG](https://img.shields.io/badge/WCAG-AA-success)](SECURITY.md)
+[![LGPD](https://img.shields.io/badge/LGPD-compliant-success)](LGPD.md)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](tsconfig.json)
+[![Migrations](https://img.shields.io/badge/migrations-14-blue)](supabase/migrations/)
 
 ## ✨ Funcionalidades
 

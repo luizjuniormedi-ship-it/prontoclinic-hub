@@ -9,8 +9,8 @@ export const test = base.extend<{
   authenticatedPage: async ({ page }, use) => {
     await use(page);
   },
-  loginAs: async ({ page }, use) => {
-    await use(async (role) => {
+  loginAs: async ({ page }, useFn) => {
+    await useFn(async (role) => {
       const creds = {
         admin: { email: 'admin@prontomedic.test', password: 'TestPassword123!' },
         doctor: { email: 'doctor@prontomedic.test', password: 'TestPassword123!' },

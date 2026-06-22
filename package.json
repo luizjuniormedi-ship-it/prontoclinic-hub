@@ -1,8 +1,37 @@
 {
-  "name": "vite_react_shadcn_ts",
+  "name": "prontomedic",
+  "description": "Sistema de gestão para clínicas e consultórios médicos. Agende, confirme e gerencie consultas online com prontuário eletrônico, PACS/DICOM, faturamento TISS e conformidade LGPD.",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/seu-usuario/prontoclinic-hub.git"
+  },
+  "bugs": {
+    "url": "https://github.com/seu-usuario/prontoclinic-hub/issues"
+  },
+  "homepage": "https://github.com/seu-usuario/prontoclinic-hub#readme",
+  "keywords": [
+    "clinica",
+    "consultorio",
+    "prontuario-eletronico",
+    "agendamento",
+    "tiss",
+    "lgpd",
+    "dicom",
+    "pacs",
+    "saude",
+    "supabase",
+    "react",
+    "typescript",
+    "pwa"
+  ],
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
   "scripts": {
     "dev": "vite",
     "icons": "node scripts/generate-pwa-icons.js",
