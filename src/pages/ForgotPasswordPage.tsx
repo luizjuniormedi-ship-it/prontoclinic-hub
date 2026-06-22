@@ -39,7 +39,7 @@ export default function ForgotPasswordPage() {
       }
       setSent(true);
       toast({ title: "Se o e-mail existir, enviaremos um link de recuperação." });
-    } catch (err: any) {
+    } catch (err) {
       setErrorMsg("Não foi possível enviar o link. Tente novamente.");
     } finally {
       setLoading(false);

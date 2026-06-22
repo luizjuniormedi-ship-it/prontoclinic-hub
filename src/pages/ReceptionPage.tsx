@@ -33,7 +33,7 @@ function toDisplayAppointment(db: DbAppointment, patients: PatientRow[], profess
     specialty: specialty?.name, unitId: db.unit_id || undefined,
     date: db.appointment_date, time: db.start_time?.substring(0, 5) || "00:00", duration,
     status: (db.status as AppointmentStatus) || "scheduled",
-    type: (validTypes.includes(typeCategory) ? typeCategory : "consulta") as any,
+    type: (validTypes.includes(typeCategory) ? typeCategory : "consulta") as AppointmentTypeLiteral,
     typeLabel: appType?.name, notes: db.notes || undefined,
   };
 }
@@ -67,7 +67,7 @@ export default function ReceptionPage() {
         pats = data || [];
       }
       setProfessionals(profs); setSpecialties(specs); setAppointmentTypes(types); setPatients(pats); setDbAppointments(appts);
-    } catch (err: any) { setError(err.message || "Erro ao carregar recepção"); }
+    } catch (err) { setError((err as Error).message || "Erro ao carregar recepção"); }
     finally { setLoading(false); }
   }, [today]);
 
@@ -81,7 +81,7 @@ export default function ReceptionPage() {
       await appointmentsService.getByDate(today).then(setDbAppointments);
       const labels: Record<string, string> = { waiting: "Check-in realizado!", in_progress: "Atendimento iniciado!", completed: "Finalizado!" };
       toast({ title: labels[newStatus] || "Atualizado" });
-    } catch (err: any) { toast({ title: "Erro", description: err.message, variant: "destructive" }); }
+    } catch (err) { toast({ title: "Erro", description: (err as Error).message, variant: "destructive" }); }
   };
 
   if (loading) return <LoadingState />;
@@ -126,7 +126,7 @@ export default function ReceptionPage() {
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            <AppointmentStatusBadge status={a.status} />
+            <AppointmentStatusBadge status={a.status as AppointmentStatusForBadge} />
             {actions}
           </div>
         </CardContent>

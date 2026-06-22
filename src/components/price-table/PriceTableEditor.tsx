@@ -130,7 +130,7 @@ export function PriceTableEditor() {
                   <Select name="service_id" required>
                     <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
                     <SelectContent>
-                      {(services || []).map((s: any) => (
+                      {(services || []).map((s: { id: number | string; code: string; name: string }) => (
                         <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
                       ))}
                     </SelectContent>
@@ -141,7 +141,7 @@ export function PriceTableEditor() {
                   <Select name="appointment_type_id" required>
                     <SelectTrigger><SelectValue placeholder="..." /></SelectTrigger>
                     <SelectContent>
-                      {(appointmentTypes || []).map((t: any) => (
+                      {(appointmentTypes || []).map((t: { id: number | string; name: string }) => (
                         <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
                       ))}
                     </SelectContent>
@@ -194,7 +194,7 @@ export function PriceTableEditor() {
               <Select onValueChange={(v) => setTestServiceId(Number(v))}>
                 <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
                 <SelectContent>
-                  {(services || []).map((s: any) => (
+                  {(services || []).map((s: { id: number | string; code: string; name: string }) => (
                     <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
                   ))}
                 </SelectContent>

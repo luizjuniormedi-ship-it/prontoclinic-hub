@@ -5,6 +5,33 @@ Todas as mudanças notáveis do ProntoMedic são documentadas aqui.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 e este projeto segue [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [1.0.1] - 2026-06-22
+
+### Segurança
+- Resolvidas 11 de 14 CVEs via `npm audit fix` (8 HIGH + 3 MODERATE): react-router, @remix-run/router, lodash, glob, minimatch, picomatch, brace-expansion, ajv, js-yaml, yaml
+- 3 CVEs restantes (esbuild/vite <= 0.24.2) requerem `--force` com upgrade para Vite 8 (breaking change) — documentadas e postergadas para v1.1.0
+- Pacotes desatualizados atualizados para versões seguras
+
+### Qualidade
+- 65 ocorrências de `any` tipadas em código legado (catch blocks + map callbacks + service helpers)
+- Code quality score: ESLint warnings 224 → 159 (redução de 29%)
+- TypeScript `type-check` (`tsc --noEmit`) passa sem erros
+- 87/87 testes unitários continuam passando
+
+### Métricas
+- CVEs HIGH: 8 → 0 (auto-fixable)
+- CVEs MODERATE: 6 → 3 (restantes em devDeps)
+- `any` em produção: 17 → 1 (legitimate generic em useDebounce)
+- ESLint warnings: 224 → 159 (-29%)
+
+### Mudanças
+- `package.json`: bump 1.0.0 → 1.0.1, repository/author/bugs/homepage atualizados
+- Adicionado `CVE_FIX_REPORT.md` com detalhes de cada CVE resolvida
+- `catch (err: any)` → `catch (err)` (unknown) + helper de extração de mensagem
+- Validação de erro centralizada em `friendlyError` (já existente, agora amplamente aplicado)
+
+Ref: `CVE_FIX_REPORT.md`
+
 ## [1.0.0-RELEASE] - 2026-06-22 (Validação Final — Agente 23)
 
 Validação final via arsenal MCP completo (13 ferramentas). Sistema aprovado

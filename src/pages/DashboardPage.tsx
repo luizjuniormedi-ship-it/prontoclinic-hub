@@ -43,7 +43,7 @@ export default function DashboardPage() {
           const { data } = await supabase.from("patients").select("id, full_name, birth_date").in("id", patientIds);
           setPatients(data || []);
         }
-      } catch (err: any) { setError(err.message); }
+      } catch (err) { setError((err as Error).message); }
       finally { setLoading(false); }
     })();
   }, [today]);
@@ -110,7 +110,7 @@ export default function DashboardPage() {
                         <p className="text-xs text-muted-foreground">{prof?.full_name || "—"}</p>
                       </div>
                     </div>
-                    <AppointmentStatusBadge status={a.status as any} />
+                    <AppointmentStatusBadge status={a.status as AppointmentStatusForBadge} />
                   </div>
                 );
               })}

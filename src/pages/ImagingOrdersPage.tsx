@@ -33,6 +33,21 @@ interface NewItemForm {
   scheduled_time: string;
 }
 
+type ItemField = keyof NewItemForm;
+type NewItemFormValue = string | boolean;
+type LateralityLiteral = 'left' | 'right' | 'bilateral' | 'na' | '';
+type ImagingPriorityLiteral = 'normal' | 'urgent' | 'emergency';
+
+interface LookupPatient { id: string; full_name: string; }
+interface LookupProfessional { id: string; full_name: string; }
+interface LookupAppointment {
+  id: string;
+  appointment_date: string;
+  start_time: string;
+  status: string;
+  professionals?: { full_name?: string | null } | null;
+}
+
 const emptyItemForm = (): NewItemForm => ({
   exam_name: '', modality_type: 'CR', body_part: '', laterality: '',
   contrast_required: false, station_aetitle: '', scheduled_date: '', scheduled_time: '',
@@ -51,9 +66,9 @@ export default function ImagingOrdersPage() {
   const [saving, setSaving] = useState(false);
 
   // Lookups
-  const [patients, setPatients] = useState<any[]>([]);
-  const [professionals, setProfessionals] = useState<any[]>([]);
-  const [appointments, setAppointments] = useState<any[]>([]);
+  const [patients, setPatients] = useState<LookupPatient[]>([]);
+  const [professionals, setProfessionals] = useState<LookupProfessional[]>([]);
+  const [appointments, setAppointments] = useState<LookupAppointment[]>([]);
 
   // New order form
   const [form, setForm] = useState({
@@ -108,7 +123,7 @@ export default function ImagingOrdersPage() {
     if (itemForms.length <= 1) return;
     setItemForms(itemForms.filter((_, i) => i !== idx));
   };
-  const updateItemRow = (idx: number, field: string, value: any) => {
+  const updateItemRow = (idx: number, field: ItemField, value: NewItemFormValue) => {
     setItemForms(itemForms.map((f, i) => i === idx ? { ...f, [field]: value } : f));
   };
 
@@ -127,7 +142,7 @@ export default function ImagingOrdersPage() {
         requesting_physician_id: form.requesting_physician_id || undefined,
         referring_physician_name: physician?.full_name,
         clinical_indication: form.clinical_indication,
-        priority: form.priority as any,
+        priority: form.priority as ImagingPriorityLiteral,
         notes: form.notes,
         scheduling_id: form.scheduling_id || undefined,
       });
@@ -143,7 +158,7 @@ export default function ImagingOrdersPage() {
           exam_name: itemForm.exam_name,
           modality_type: itemForm.modality_type,
           body_part: itemForm.body_part || undefined,
-          laterality: itemForm.laterality as any || undefined,
+          laterality: (itemForm.laterality as LateralityLiteral) || undefined,
           contrast_required: itemForm.contrast_required,
           station_aetitle: itemForm.station_aetitle || undefined,
           scheduled_date: itemForm.scheduled_date || undefined,
@@ -242,7 +257,7 @@ export default function ImagingOrdersPage() {
         exam_name: newItemForm.exam_name,
         modality_type: newItemForm.modality_type,
         body_part: newItemForm.body_part || undefined,
-        laterality: newItemForm.laterality as any || undefined,
+        laterality: (newItemForm.laterality as LateralityLiteral) || undefined,
         contrast_required: newItemForm.contrast_required,
         station_aetitle: newItemForm.station_aetitle || undefined,
         scheduled_date: newItemForm.scheduled_date || undefined,
@@ -333,7 +348,7 @@ export default function ImagingOrdersPage() {
                   <SelectTrigger><SelectValue placeholder="Opcional..." /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="">Nenhum</SelectItem>
-                    {appointments.map((a: any) => (
+                    {appointments.map((a: LookupAppointment) => (
                       <SelectItem key={a.id} value={a.id}>
                         {a.appointment_date} {a.start_time} — {a.professionals?.full_name || 'Prof.'} ({a.status})
                       </SelectItem>

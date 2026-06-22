@@ -61,7 +61,7 @@ export default function AttendancePage() {
           setPatient(pat);
         }
         setLoading(false);
-      } catch (err: any) { setError(err.message); setLoading(false); }
+      } catch (err) { setError((err as Error).message); setLoading(false); }
     })();
   }, [appointmentId]);
 
@@ -140,14 +140,14 @@ export default function AttendancePage() {
         if (price === 0) {
           toast({ title: "Atenção", description: "Billing gerado com valor R$ 0,00. Configure a tabela de preços em Cadastros.", variant: "destructive" });
         }
-      } catch (billingErr: any) {
+      } catch (billingErr) {
         console.warn("Auto-billing failed (non-critical):", billingErr.message);
       }
 
       toast({ title: "Atendimento salvo e finalizado!" });
       navigate("/reception");
-    } catch (err: any) {
-      toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Erro ao salvar", description: (err as Error).message, variant: "destructive" });
     } finally {
       setSaving(false);
     }

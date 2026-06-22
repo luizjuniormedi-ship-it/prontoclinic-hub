@@ -210,7 +210,7 @@ export const auditService = {
 
     // 3) Top tabelas
     const porTabelaMap = new Map<string, number>();
-    (acoes || []).forEach((r: any) => {
+    (acoes || []).forEach((r: { tabela?: string | null }) => {
       const tab = r.tabela;
       if (tab) porTabelaMap.set(tab, (porTabelaMap.get(tab) ?? 0) + 1);
     });
@@ -230,7 +230,7 @@ export const auditService = {
       throw new Error(`Erro ao agregar usuários: ${usrErr.message}`);
     }
     const porUsuarioMap = new Map<string, { userName: string; total: number }>();
-    (usuarios || []).forEach((r: any) => {
+    (usuarios || []).forEach((r: { cd_usuario: string; cd_usuario_nome?: string | null }) => {
       const id = r.cd_usuario as string;
       const cur = porUsuarioMap.get(id);
       if (cur) cur.total += 1;

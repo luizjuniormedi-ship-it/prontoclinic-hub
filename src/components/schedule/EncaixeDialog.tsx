@@ -81,8 +81,9 @@ export function EncaixeDialog({ open, onOpenChange, professionals, specialties, 
       });
       handleClose();
       onCreated();
-    } catch (err: any) {
-      toast({ title: "Erro ao criar encaixe", description: err.message, variant: "destructive" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast({ title: "Erro ao criar encaixe", description: msg, variant: "destructive" });
     } finally {
       setSaving(false);
     }

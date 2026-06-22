@@ -82,8 +82,8 @@ export default function PatientCreatePage() {
       }
       toast({ title: "Paciente cadastrado com sucesso!" });
       navigate("/patients");
-    } catch (err: any) {
-      toast({ title: "Erro ao cadastrar", description: err.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Erro ao cadastrar", description: (err as Error).message, variant: "destructive" });
     } finally { setSaving(false); }
   };
 

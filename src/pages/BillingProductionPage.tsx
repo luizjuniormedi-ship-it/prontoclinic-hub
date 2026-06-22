@@ -58,8 +58,8 @@ export default function BillingProductionPage() {
       setBillings(b);
       setPatients(pats);
       setProfessionals(profs);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError((err as Error).message);
     } finally {
       setLoading(false);
     }
@@ -109,8 +109,8 @@ export default function BillingProductionPage() {
       setNewGross("");
       setNewDiscount("0");
       loadAll();
-    } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" });
     } finally {
       setSaving(false);
     }

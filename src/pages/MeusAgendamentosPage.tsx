@@ -44,6 +44,10 @@ import {
 
 type Filter = "todos" | "agendado" | "confirmado" | "atendido" | "cancelado" | "faltou";
 
+interface UserProfileWithPatient { id: string; patient_id?: string | null; }
+interface ErrorWithMessage { message?: string; }
+type AppointmentStatusForBadge = "scheduled" | "confirmed" | "in_progress" | "waiting" | "completed" | "cancelled" | "no_show" | string;
+
 function startOfDay(iso: string): Date {
   const d = new Date(iso + "T00:00:00");
   return d;
@@ -91,8 +95,8 @@ export default function MeusAgendamentosPage() {
             .eq("id", user.id)
             .maybeSingle();
           // Tenta campo direto na user_profiles
-          if (prof && (prof as any).patient_id) {
-            patientId = (prof as any).patient_id as string;
+          if (prof && (prof as UserProfileWithPatient).patient_id) {
+            patientId = (prof as UserProfileWithPatient).patient_id ?? null;
           } else if (user.email) {
             // Fallback: tenta casar pelo e-mail
             const { data: pat } = await supabase
@@ -123,7 +127,7 @@ export default function MeusAgendamentosPage() {
         ]);
         setAppointments(appts);
         setProfessionals(profs);
-      } catch (err: any) {
+      } catch (err) {
         setError(err?.message ?? "Erro ao carregar agendamentos.");
       } finally {
         setLoading(false);
@@ -163,8 +167,8 @@ export default function MeusAgendamentosPage() {
       toast({ title: "Agendamento cancelado." });
       setCancelTarget(null);
       setCancelReason("");
-    } catch (err: any) {
-      toast({ title: "Erro ao cancelar", description: err.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Erro ao cancelar", description: (err as Error).message, variant: "destructive" });
     } finally {
       setCancelLoading(false);
     }
@@ -178,8 +182,8 @@ export default function MeusAgendamentosPage() {
         prev.map((a) => (a.id === appt.id ? { ...a, status: "confirmed" } : a)),
       );
       toast({ title: "Presença confirmada! Até logo." });
-    } catch (err: any) {
-      toast({ title: "Erro ao confirmar", description: err.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Erro ao confirmar", description: (err as Error).message, variant: "destructive" });
     } finally {
       setConfirmingId(null);
     }
@@ -440,7 +444,7 @@ function AppointmentCard({
                 <Badge variant="outline" className="font-mono">
                   {appt.start_time?.substring(0, 5)}
                 </Badge>
-                <AppointmentStatusBadge status={appt.status as any} />
+                <AppointmentStatusBadge status={appt.status as AppointmentStatusForBadge} />
               </div>
               <div className="mt-1 text-sm text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
                 {prof && (

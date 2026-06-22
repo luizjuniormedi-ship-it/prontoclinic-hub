@@ -1,8 +1,26 @@
 import { supabase } from '@/lib/supabase';
 import { Patient } from '@/types';
 
+// Supabase row shape for patients table (only fields we touch here)
+interface DbPatientRow {
+  id: string;
+  company_id?: string | null;
+  full_name?: string | null;
+  cpf?: string | null;
+  birth_date?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  sex?: string | null;
+  insurance_plan_id?: string | null;
+  insurance_card_number?: string | null;
+  allergies?: string | null;
+  clinical_alerts?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 // Map database row to Patient type
-function mapRowToPatient(row: any): Patient {
+function mapRowToPatient(row: DbPatientRow): Patient {
   return {
     id: row.id,
     companyId: row.company_id || undefined,
@@ -23,7 +41,7 @@ function mapRowToPatient(row: any): Patient {
 
 // Map Patient fields to database columns for insert/update
 function mapPatientToRow(patient: Partial<Patient>) {
-  const row: Record<string, any> = {};
+  const row: Record<string, string | undefined> = {};
   if (patient.companyId !== undefined) row.company_id = patient.companyId;
   if (patient.name !== undefined) row.full_name = patient.name;
   if (patient.cpf !== undefined) row.cpf = patient.cpf;

@@ -224,7 +224,7 @@ export function ReportTemplateEditor() {
                     <Select name="cd_service">
                       <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
                       <SelectContent>
-                        {(services || []).map((s: any) => (
+                        {(services || []).map((s: { id: string | number; code?: string; name: string }) => (
                           <SelectItem key={s.id} value={String(s.id)}>
                             {s.code} - {s.name}
                           </SelectItem>
@@ -272,7 +272,7 @@ export function ReportTemplateEditor() {
         <TabsContent value="list" className="space-y-3">
           <div className="flex gap-2 items-center">
             <Label>Filtrar:</Label>
-            <Select value={filterType} onValueChange={(v) => setFilterType(v as any)}>
+            <Select value={filterType} onValueChange={(v) => setFilterType(v as string)}>
               <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Todas</SelectItem>

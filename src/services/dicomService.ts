@@ -677,7 +677,7 @@ export const reportService = {
     };
   },
 
-  mapRow(row: any): DicomReport {
+  mapRow(row: Record<string, unknown>): DicomReport {
     return {
       id: row.id,
       cd_dicom_exam: row.imaging_order_item_id,
@@ -713,7 +713,7 @@ export const dicomWeb = {
     const res = await fetch(url, { headers: { Authorization: orthancAuth() } });
     if (!res.ok) throw new Error(`QIDO-RS falhou: ${res.status}`);
     const arr = await res.json();
-    return (arr || []).map((s: any) => ({
+    return (arr || []).map((s: Record<string, { Value?: string[] } | undefined>) => ({
       studyInstanceUID: s["0020000D"]?.Value?.[0] || "",
       studyDate: s["00080020"]?.Value?.[0] || "",
       studyTime: s["00080030"]?.Value?.[0] || "",

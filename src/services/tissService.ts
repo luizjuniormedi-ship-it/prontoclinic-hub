@@ -381,7 +381,7 @@ export const tissService = {
    * Em homologacao: chama o endpoint configurado (VITE_TISS_ENDPOINT_<CONVENIO>)
    * Em producao: usa certificado A1 e assina o XML
    */
-  async sendToOperadora(tissXmlId: number): Promise<{ sent: boolean; protocolo?: string; response?: any }> {
+  async sendToOperadora(tissXmlId: number): Promise<{ sent: boolean; protocolo?: string; response?: unknown }> {
     const xml = await this.getById(tissXmlId);
 
     // Buscar protocolo (endpoint) da operadora
@@ -690,7 +690,7 @@ export const tissService = {
         .maybeSingle();
       if (!plan) continue;
 
-      const vlTotalApt = (apt as any).total_amount || 0;
+      const vlTotalApt = (apt as { total_amount?: number }).total_amount || 0;
       vlTotal += vlTotalApt;
       count++;
 

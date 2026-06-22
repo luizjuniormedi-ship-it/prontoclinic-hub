@@ -86,8 +86,8 @@ export default function PatientEditPage() {
       if (updateError) throw updateError;
       toast({ title: "Paciente atualizado com sucesso!" });
       navigate(`/patients/${id}`);
-    } catch (err: any) {
-      toast({ title: "Erro ao atualizar", description: err.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Erro ao atualizar", description: (err as Error).message, variant: "destructive" });
     } finally { setSaving(false); }
   };
 

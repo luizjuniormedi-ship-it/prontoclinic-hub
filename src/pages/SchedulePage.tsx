@@ -60,7 +60,7 @@ function toDisplayAppointment(
     time: db.start_time?.substring(0, 5) || "00:00",
     duration,
     status: (db.status as AppointmentStatus) || "scheduled",
-    type: type as any,
+    type: type as AppointmentTypeLiteral,
     typeLabel: appType?.name,
     notes: db.notes || undefined,
   };
@@ -125,7 +125,7 @@ export default function SchedulePage() {
         .from("patients")
         .select("id, full_name, cpf, birth_date, phone, email, sex, insurance_plan_id, insurance_card_number, allergies, clinical_alerts, created_at, updated_at")
         .in("id", patientIds);
-      setPatients((pats || []).map((row: any) => ({
+      setPatients((pats || []).map((row: PatientDbRow) => ({
         id: row.id, companyId: undefined, name: row.full_name || "", cpf: row.cpf || "",
         birthDate: row.birth_date || "", phone: row.phone || "", email: row.email || "",
         gender: row.sex || "O", healthInsurance: row.insurance_plan_id, healthInsuranceNumber: row.insurance_card_number,
@@ -143,7 +143,7 @@ export default function SchedulePage() {
       setError(null);
       await loadLookups();
       await loadAppointments(selectedDate);
-    } catch (err: any) {
+     } catch (err) {
       setError(friendlyError(err, "Carregar agenda"));
     } finally {
       setLoading(false);
@@ -243,7 +243,7 @@ export default function SchedulePage() {
         no_show: "Falta registrada",
       };
       toast({ title: labels[newStatus] || "Atualizado" });
-    } catch (err: any) {
+     } catch (err) {
       toast({ title: friendlyError(err, "Atualizar agendamento"), variant: "destructive" });
     }
   };
@@ -262,7 +262,7 @@ export default function SchedulePage() {
 
   // Map DB lookups to legacy Doctor/Specialty format for filter components
   const doctorsForFilter = professionals.map((p) => ({ id: p.id, name: p.full_name, specialty: "", specialtyId: "" }));
-  const specialtiesForFilter = specialties.map((s) => ({ id: s.id, name: s.name, code: s.code || undefined, status: (s.status as any) || "active" }));
+  const specialtiesForFilter = specialties.map((s) => ({ id: s.id, name: s.name, code: s.code || undefined, status: (s.status === "inactive" ? "inactive" : "active") }));
 
   if (loading) return <div className="space-y-4"><PageHeader title="Agenda" description="Carregando..." /><ScheduleSkeleton count={5} /></div>;
   if (error) return <ErrorState message={error} onRetry={loadAll} />;

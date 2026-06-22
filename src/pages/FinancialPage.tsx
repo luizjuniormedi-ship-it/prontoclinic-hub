@@ -62,8 +62,8 @@ export default function FinancialPage() {
       setTransactions(txns);
       setPatients(pats);
       setProfessionals(profs);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError((err as Error).message);
     } finally {
       setLoading(false);
     }
@@ -93,8 +93,8 @@ export default function FinancialPage() {
       toast({ title: "Pagamento registrado!" });
       setPaymentDialog(null);
       loadAll();
-    } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -123,8 +123,8 @@ export default function FinancialPage() {
       setNewAmount("");
       setNewNotes("");
       loadAll();
-    } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" });
     } finally {
       setSaving(false);
     }

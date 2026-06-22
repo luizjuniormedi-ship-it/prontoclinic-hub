@@ -171,7 +171,7 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
       toast({ title: "✓ Agendamento criado com sucesso!" });
       handleClose();
       onCreated();
-    } catch (err: any) {
+    } catch (err) {
       const msg = handleServiceError(err, "criar agendamento");
       toast({ title: "Erro ao criar agendamento", description: msg, variant: "destructive" });
     } finally {

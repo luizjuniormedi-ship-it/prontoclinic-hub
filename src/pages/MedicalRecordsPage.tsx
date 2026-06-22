@@ -37,7 +37,7 @@ export default function MedicalRecordsPage() {
       setPatients(data || []);
       setProfessionals(profs);
       setLoading(false);
-    }).catch((err) => { setError(err.message); setLoading(false); });
+    }).catch((err) => { setError((err as Error).message); setLoading(false); });
   }, []);
 
   const loadRecords = useCallback(async (patientId: string) => {
@@ -45,8 +45,8 @@ export default function MedicalRecordsPage() {
     try {
       const data = await medicalRecordsService.getByPatient(patientId);
       setRecords(data);
-    } catch (err: any) {
-      toast({ title: "Erro ao carregar prontuários", description: err.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Erro ao carregar prontuários", description: (err as Error).message, variant: "destructive" });
     } finally { setRecordsLoading(false); }
   }, [toast]);
 

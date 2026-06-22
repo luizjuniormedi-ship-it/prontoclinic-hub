@@ -63,7 +63,7 @@ export function InsuranceManager() {
 
   const toggleActive = useMutation({
     mutationFn: ({ id, ativo }: { id: number; ativo: boolean }) =>
-      insuranceCompanyService.update(id, { lg_ativo: !ativo } as any),
+      insuranceCompanyService.update(id, { lg_ativo: !ativo } as { lg_ativo: boolean }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["insurance-companies"] });
     },

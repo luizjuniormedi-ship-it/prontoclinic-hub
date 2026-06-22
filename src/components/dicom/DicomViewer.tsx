@@ -33,9 +33,9 @@ const ORTHANC_PASS = (import.meta.env.VITE_ORTHANC_PASS as string) || "orthanc";
 
 declare global {
   interface Window {
-    cornerstone: any;
-    cornerstoneTools: any;
-    dicomParser: any;
+    cornerstone: unknown;
+    cornerstoneTools: unknown;
+    dicomParser: unknown;
   }
 }
 

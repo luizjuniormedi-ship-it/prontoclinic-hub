@@ -50,8 +50,8 @@ export default function ResetPasswordPage() {
       setSuccess(true);
       toast({ title: "Senha redefinida com sucesso!" });
       setTimeout(() => navigate("/login"), 2000);
-    } catch (err: any) {
-      toast({ title: "Erro ao redefinir senha", description: err.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Erro ao redefinir senha", description: (err as Error).message, variant: "destructive" });
     } finally {
       setLoading(false);
     }

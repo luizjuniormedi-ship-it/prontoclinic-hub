@@ -117,7 +117,7 @@ export default function Index() {
             .limit(3);
           setNotifications((notifs as NotificationLite[]) || []);
         }
-      } catch (err: any) {
+      } catch (err) {
         setError(friendlyError(err, "Carregar painel"));
       } finally {
         setLoading(false);
@@ -248,7 +248,7 @@ export default function Index() {
                     <p className="text-2xl font-bold text-primary">
                       {nextAppointment.start_time?.substring(0, 5)}
                     </p>
-                    <AppointmentStatusBadge status={nextAppointment.status as any} />
+                    <AppointmentStatusBadge status={nextAppointment.status as AppointmentStatusForBadge} />
                   </div>
                 </div>
                 <Button
@@ -363,7 +363,7 @@ export default function Index() {
                         </p>
                       </div>
                     </div>
-                    <AppointmentStatusBadge status={a.status as any} />
+                    <AppointmentStatusBadge status={a.status as AppointmentStatusForBadge} />
                   </button>
                 );
               })}

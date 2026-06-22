@@ -48,8 +48,8 @@ export default function ProfessionalsPage() {
       ]);
       setProfessionals(profs);
       setSpecialties(specs);
-    } catch (err: any) {
-      setError(err.message || "Erro ao carregar profissionais");
+    } catch (err) {
+      setError((err as Error).message || "Erro ao carregar profissionais");
     } finally {
       setLoading(false);
     }
@@ -104,20 +104,20 @@ export default function ProfessionalsPage() {
           .from('professionals')
           .update(row)
           .eq('id', editing.id);
-        if (err) throw new Error(err.message);
+        if (err) throw new Error((err as Error).message);
         toast({ title: "Profissional atualizado!" });
       } else {
         const { error: err } = await supabase
           .from('professionals')
           .insert(row);
-        if (err) throw new Error(err.message);
+        if (err) throw new Error((err as Error).message);
         toast({ title: "Profissional cadastrado!" });
       }
       resetForm();
       setDialogOpen(false);
       await loadData();
-    } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" });
     } finally {
       setSaving(false);
     }

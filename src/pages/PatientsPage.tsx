@@ -60,7 +60,7 @@ export default function PatientsPage() {
       if (e) throw e;
       setPatients(data || []);
       setTotal(count || 0);
-    } catch (err: any) {
+    } catch (err) {
       setError(friendlyError(err, "Carregar pacientes"));
     } finally {
       setLoading(false);

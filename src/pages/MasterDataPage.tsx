@@ -101,8 +101,8 @@ export default function MasterDataPage() {
       }
       setPriceDialogOpen(false);
       await loadPrices();
-    } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" });
     } finally {
       setSavingPrice(false);
     }
@@ -113,8 +113,8 @@ export default function MasterDataPage() {
       await priceTableService.delete(id);
       toast({ title: "Preço removido" });
       await loadPrices();
-    } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" });
     }
   };
 

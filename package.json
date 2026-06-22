@@ -1,33 +1,32 @@
 {
   "name": "prontomedic",
-  "description": "Sistema de gestão para clínicas e consultórios médicos. Agende, confirme e gerencie consultas online com prontuário eletrônico, PACS/DICOM, faturamento TISS e conformidade LGPD.",
-  "private": true,
-  "version": "1.0.0",
-  "type": "module",
+  "description": "Sistema de gestão para clínicas e consultórios médicos. PWA, LGPD, TISS, DICOM.",
+  "keywords": [
+    "clinica",
+    "medico",
+    "prontuario-eletronico",
+    "agendamento",
+    "lgpd",
+    "tiss",
+    "dicom",
+    "pacs",
+    "pwa",
+    "saude",
+    "supabase"
+  ],
+  "author": "ProntoMedic Team <dev@prontomedic.com.br>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/seu-usuario/prontoclinic-hub.git"
+    "url": "git+https://github.com/luizjuniormedi-ship-it/prontoclinic-hub.git"
   },
   "bugs": {
-    "url": "https://github.com/seu-usuario/prontoclinic-hub/issues"
+    "url": "https://github.com/luizjuniormedi-ship-it/prontoclinic-hub/issues"
   },
-  "homepage": "https://github.com/seu-usuario/prontoclinic-hub#readme",
-  "keywords": [
-    "clinica",
-    "consultorio",
-    "prontuario-eletronico",
-    "agendamento",
-    "tiss",
-    "lgpd",
-    "dicom",
-    "pacs",
-    "saude",
-    "supabase",
-    "react",
-    "typescript",
-    "pwa"
-  ],
+  "homepage": "https://github.com/luizjuniormedi-ship-it/prontoclinic-hub#readme",
+  "private": true,
+  "version": "1.0.1",
+  "type": "module",
   "engines": {
     "node": ">=20.0.0",
     "npm": ">=10.0.0"

@@ -148,8 +148,19 @@ function addMinutes(time: string, minutes: number): string {
 /**
  * Standardized error logger + toast message.
  */
-export function handleServiceError(error: any, context: string): string {
-  const message = error?.message || `Erro em ${context}`;
+export function handleServiceError(error: unknown, context: string): string {
+  const message = extractErrorMessage(error) || `Erro em ${context}`;
   console.error(`[${context}]`, error);
   return message;
+}
+
+function extractErrorMessage(error: unknown): string | undefined {
+  if (!error) return undefined;
+  if (typeof error === "string") return error;
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object") {
+    const obj = error as { message?: string; error_description?: string };
+    return obj.message ?? obj.error_description;
+  }
+  return undefined;
 }
