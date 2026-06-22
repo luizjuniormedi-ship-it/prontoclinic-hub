@@ -5,6 +5,37 @@ Todas as mudanças notáveis do ProntoMedic são documentadas aqui.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 e este projeto segue [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [1.0.2] - 2026-06-22
+
+### Qualidade
+- 100+ `any` tipadas em código legado (catch blocks, map callbacks, services, page state)
+- 3 novos services com testes: `emailService`, `medicalRecordsService`, `dicomIntegrationService`
+- Thresholds de cobertura aumentados (70% → 75-80% por arquivo)
+- ESLint warnings reduzidos de 224 → ~80
+
+### TypeScript
+- Adicionado `tsconfig.strict.json` (extende `tsconfig.app.json`) habilitando:
+  - `strict: true`
+  - `noImplicitAny: true`
+  - `strictNullChecks: true`
+  - `useUnknownInCatchVariables: true`
+  - `strictFunctionTypes`, `strictBindCallApply`, `strictPropertyInitialization`
+  - `noImplicitThis`, `alwaysStrict`
+- Novo `type` aliases: `VitalSigns`, `VitalSignValue`, `AppointmentStatusForBadge`,
+  `LookupPatient`, `LookupProfessional`, `LookupAppointment`, `ItemField`, etc.
+
+### Testes
+- Total de testes: 87 → 117 (+30 novos)
+- Mocks do `fetch` global para testar `emailService` sem rede
+- Cobertura DICOM: validação de `formatDicomName` (LAST^FIRST), `formatDicomDate`
+  (YYYYMMDD), `formatWorklistForOrthanc` (estrutura completa)
+- Mocks tipados para `medicalRecordsService.create` (record_date auto-fill,
+  validação de patient_id obrigatório)
+
+### Documentação
+- Adicionado `TYPING_REPORT.md` com inventário, estratégia e métricas
+- Métricas finais: 177 → ~50 `any` em produção; cobertura 70% → ~80%
+
 ## [1.0.1] - 2026-06-22
 
 ### Segurança
