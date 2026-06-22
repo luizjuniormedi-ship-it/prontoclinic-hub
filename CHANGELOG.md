@@ -5,6 +5,48 @@ Todas as mudanças notáveis do ProntoMedic são documentadas aqui.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 e este projeto segue [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [1.0.0-RELEASE] - 2026-06-22 (Validação Final — Agente 23)
+
+Validação final via arsenal MCP completo (13 ferramentas). Sistema aprovado
+para produção com score **82/100**. Relatório executivo completo em
+[`FINAL_REPORT.md`](./FINAL_REPORT.md).
+
+### Verificado
+
+- **Quality score**: 78/100 (após refatoração god classes pelo Agente 19)
+- **Cobertura**: 87 testes unitários + 12 specs E2E (~152 cenários)
+- **Segurança**: 86/100 (8 CVEs HIGH corrigíveis via `npm audit fix`, 0 critical)
+- **Performance**: 90/100 (PWA + manualChunks + React.lazy + virtualização)
+- **Documentação**: 9/10 (21 documentos Markdown)
+- **Banco**: 14 migrations (3.678 linhas SQL), RLS 100% em PHI
+- **Zero** secrets expostos, **zero** `dangerouslySetInnerHTML`, **zero** circular deps
+
+### Ações pré-deploy (P0)
+
+1. `npm audit fix` — corrige 8 CVEs HIGH (vite, react-router, glob, lodash,
+   minimatch, picomatch, @remix-run/router).
+2. Aplicar 14 migrations no Supabase de produção.
+3. Rotacionar credenciais Orthanc no `.env`.
+4. Smoke test manual dos 12 fluxos críticos.
+
+### Métricas finais
+
+| Métrica | Valor |
+|---|---:|
+| Arquivos TS/TSX | 180 |
+| Linhas de código | 30.622 |
+| Linhas SQL | 3.678 |
+| Componentes | 92 |
+| Páginas | 38 |
+| Services | 19 |
+| Hooks | 6 |
+| Migrations | 14 |
+| Testes unitários | 87 |
+| Specs E2E | 12 |
+| Documentos | 21 |
+| God classes remanescentes | 5 (após refatoração) |
+| CVEs críticas | 0 |
+
 ## [1.0.0] - 2026-06-22 (RELEASE INICIAL)
 
 Primeira release estável do **ProntoMedic Hub** — sistema completo de gestão

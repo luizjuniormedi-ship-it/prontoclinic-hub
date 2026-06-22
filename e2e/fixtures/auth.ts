@@ -2,6 +2,11 @@ import { test as base, expect, Page } from '@playwright/test';
 
 export type UserRole = 'admin' | 'doctor' | 'reception' | 'patient';
 
+/* eslint-disable react-hooks/rules-of-hooks */
+// This file is a Playwright fixture using `use()` from @playwright/test.
+// The rule expects React components or custom hooks named `useX`,
+// but Playwright fixtures use a different convention.
+
 export const test = base.extend<{
   authenticatedPage: Page;
   loginAs: (role: UserRole) => Promise<void>;
