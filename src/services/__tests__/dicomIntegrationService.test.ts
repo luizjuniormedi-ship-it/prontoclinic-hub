@@ -143,7 +143,7 @@ describe("dicomIntegrationService — cancelOrder", () => {
     (imagingOrderItemsService.listByOrder as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(mockItems);
     (imagingOrderItemsService.updateStatus as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 
-    // Mock supabase.from('dicom_worklist_queue')
+    // Mock supabase.from('dicom_worklist_queue') — chamado 2x (um por item)
     const wlChain = {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
@@ -156,8 +156,9 @@ describe("dicomIntegrationService — cancelOrder", () => {
     };
 
     (supabase.from as unknown as ReturnType<typeof vi.fn>)
-      .mockReturnValueOnce(wlChain) // primeiro chamado: worklist
-      .mockReturnValueOnce(orderChain); // segundo: orders
+      .mockReturnValueOnce(wlChain) // primeiro item: worklist
+      .mockReturnValueOnce(wlChain) // segundo item: worklist
+      .mockReturnValueOnce(orderChain); // depois: orders
 
     (worklistQueueService.cancel as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 

@@ -106,7 +106,7 @@ describe("emailService", () => {
       });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.to).toBe("novo@example.com");
+      expect(body.to).toEqual(["novo@example.com"]);
       expect(body.subject).toMatch(/Confirme seu pré-cadastro/);
       expect(body.html).toContain(link);
       expect(body.html).toContain("Maria Silva");
