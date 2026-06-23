@@ -13,6 +13,11 @@ export default defineConfig(({ mode }) => ({
       overlay: false,
     },
   },
+  preview: {
+    // Permite que o app seja embedado em tunnels (localtunnel, ngrok, etc.)
+    // Necessário para deploy via localtunnel.loca.lt
+    allowedHosts: true,
+  },
   plugins: [
     react(),
     mode === "development" && componentTagger(),
