@@ -1,43 +1,35 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { canAccessRoute } from "@/config/routePermissions";
 import {
-  LayoutDashboard, Users, Calendar, FileText, DollarSign, Settings, LogOut,
-  Heart, UserCheck, Stethoscope, ShieldCheck, UserCog, KeyRound, Phone,
+  LayoutDashboard, Users, Calendar, FileText, DollarSign, Settings, Heart,
+  UserCheck, Stethoscope, ShieldCheck, UserCog, KeyRound, Phone,
   ClipboardList, Monitor, Receipt, Banknote, Building2, Database,
   Server, FileImage, Activity, Radio, Shield, ScrollText, Bell,
-  ListChecks, Calculator, FileSpreadsheet, ChevronRight, ListPlus, Search, Pill,
+  ListChecks, Calculator, FileSpreadsheet, ListPlus, Pill,
+  HeartPulse, BarChart3, FlaskConical, Video,
+  BedDouble, Scissors, AlertOctagon, FileSignature, Sparkles,
+  Truck, ShoppingCart, Star, Ambulance,
 } from "lucide-react";
 import {
-  Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
-  SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub,
-  SidebarMenuSubItem, SidebarMenuSubButton, SidebarFooter, useSidebar,
+  Sidebar, SidebarContent, useSidebar,
 } from "@/components/ui/sidebar";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { NavLink } from "@/components/NavLink";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { getInitials } from "@/utils/formatters";
-
-type Icon = React.ComponentType<{ className?: string }>;
-
-type MenuItem = { title: string; url: string; icon: Icon };
-type SubItem = { title: string; url: string; icon?: Icon };
-type MenuGroup = {
-  label?: string;
-  items: MenuItem[];
-  subItems?: { groupTitle: string; items: SubItem[] }[];
-};
+import { FlatSection, CollapsibleSection, MenuGroup } from "./sidebar/SidebarSection";
+import { MenuItem } from "./sidebar/SidebarItem";
+import { SidebarFooter } from "./sidebar/SidebarFooter";
 
 const mainItems: MenuGroup = {
   items: [
     { title: "Dashboard", url: "/", icon: LayoutDashboard },
     { title: "Agenda", url: "/schedule", icon: Calendar },
     { title: "Recepção", url: "/reception", icon: UserCheck },
+    { title: "Triagem", url: "/nursing/triage", icon: HeartPulse },
     { title: "Pacientes", url: "/patients", icon: Users },
     { title: "Profissionais", url: "/professionals", icon: Stethoscope },
     { title: "Prontuário", url: "/records", icon: FileText },
+    { title: "Farmácia", url: "/pharmacy", icon: Pill },
+    { title: "Laboratório", url: "/lab", icon: FlaskConical },
     { title: "Call Center", url: "/callcenter", icon: Phone },
+    { title: "Telemedicina", url: "/telemedicina", icon: Video },
   ],
 };
 
@@ -64,6 +56,12 @@ const dicomItems: MenuGroup = {
         { title: "Laudos", url: "/dicom/reports", icon: ScrollText },
       ],
     },
+    {
+      groupTitle: "Enfermagem",
+      items: [
+        { title: "Painel de Chamada", url: "/nursing/queue", icon: Monitor },
+      ],
+    },
   ],
 };
 
@@ -78,6 +76,69 @@ const financialItems: MenuGroup = {
         { title: "TISS", url: "/admin/tiss", icon: FileSpreadsheet },
         { title: "Repasse", url: "/professional-payment", icon: Banknote },
         { title: "Financeiro", url: "/financial", icon: DollarSign },
+      ],
+    },
+  ],
+};
+
+const biItems: MenuGroup = {
+  label: "Inteligência de Negócio",
+  items: [
+    { title: "BI / Indicadores", url: "/bi", icon: BarChart3 },
+  ],
+  subItems: [
+    {
+      groupTitle: "Gestão",
+      items: [
+        { title: "Metas", url: "/bi/metas", icon: ListChecks },
+        { title: "Alertas", url: "/bi/alertas", icon: Bell },
+      ],
+    },
+  ],
+};
+
+const clinicalAdvancedItems: MenuGroup = {
+  label: "Assistência Avançada",
+  items: [],
+  subItems: [
+    {
+      groupTitle: "Hospital",
+      items: [
+        { title: "Internação", url: "/internacao", icon: BedDouble },
+        { title: "Centro Cirúrgico", url: "/cirurgia", icon: Scissors },
+        { title: "Pronto Atendimento", url: "/pa", icon: AlertOctagon },
+      ],
+    },
+    {
+      groupTitle: "Documentos & IA",
+      items: [
+        { title: "Assinatura Digital", url: "/assinatura", icon: FileSignature },
+        { title: "IA Clínica", url: "/ia-clinica", icon: Sparkles },
+      ],
+    },
+  ],
+};
+
+const logisticsItems: MenuGroup = {
+  label: "Logística & Suprimentos",
+  items: [],
+  subItems: [
+    {
+      groupTitle: "Compras",
+      items: [
+        { title: "Compras", url: "/purchases", icon: ShoppingCart },
+      ],
+    },
+    {
+      groupTitle: "Operação",
+      items: [
+        { title: "Transporte", url: "/transport", icon: Truck },
+      ],
+    },
+    {
+      groupTitle: "Experiência",
+      items: [
+        { title: "NPS", url: "/nps", icon: Star },
       ],
     },
   ],
@@ -120,132 +181,6 @@ const bottomItems: MenuItem[] = [
   { title: "Configurações", url: "/settings", icon: Settings },
 ];
 
-function filterItems(items: MenuItem[], roleName: string | null | undefined): MenuItem[] {
-  return items.filter((item) => canAccessRoute(roleName, item.url));
-}
-
-function filterSubItems(items: SubItem[], roleName: string | null | undefined): SubItem[] {
-  return items.filter((item) => canAccessRoute(roleName, item.url));
-}
-
-function NavLink_({ item, collapsed }: { item: MenuItem; collapsed: boolean }) {
-  return (
-    <SidebarMenuItem>
-      <SidebarMenuButton asChild>
-        <NavLink
-          to={item.url}
-          end={item.url === "/"}
-          className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
-          activeClassName="bg-sidebar-accent text-sidebar-accent-foreground"
-        >
-          <item.icon className="h-4 w-4 shrink-0" />
-          {!collapsed && <span>{item.title}</span>}
-        </NavLink>
-      </SidebarMenuButton>
-    </SidebarMenuItem>
-  );
-}
-
-function SubGroup({ items, collapsed, roleName }: { items: SubItem[]; collapsed: boolean; roleName: string | null | undefined }) {
-  const allowed = filterSubItems(items, roleName);
-  if (allowed.length === 0) return null;
-  return (
-    <SidebarMenuSub>
-      {allowed.map((s) => (
-        <SidebarMenuSubItem key={s.title}>
-          <SidebarMenuSubButton asChild>
-            <NavLink
-              to={s.url}
-              className="flex items-center gap-2 text-xs text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md px-2 py-1.5"
-              activeClassName="bg-sidebar-accent text-sidebar-accent-foreground"
-            >
-              {s.icon && <s.icon className="h-3.5 w-3.5 shrink-0" />}
-              {!collapsed && <span>{s.title}</span>}
-            </NavLink>
-          </SidebarMenuSubButton>
-        </SidebarMenuSubItem>
-      ))}
-    </SidebarMenuSub>
-  );
-}
-
-function CollapsibleGroup({
-  group, collapsed, roleName,
-}: { group: MenuGroup; collapsed: boolean; roleName: string | null | undefined }) {
-  const allowedSub = (group.subItems ?? []).map((g) => ({
-    groupTitle: g.groupTitle,
-    items: filterSubItems(g.items, roleName),
-  })).filter((g) => g.items.length > 0);
-
-  const allowedMain = filterItems(group.items, roleName);
-
-  if (allowedSub.length === 0 && allowedMain.length === 0) return null;
-
-  if (allowedSub.length === 0) {
-    return (
-      <SidebarGroup>
-        {group.label && !collapsed && (
-          <SidebarGroupLabel className="text-[10px] uppercase tracking-wider text-sidebar-muted px-3">{group.label}</SidebarGroupLabel>
-        )}
-        <SidebarGroupContent>
-          <SidebarMenu>
-            {allowedMain.map((it) => <NavLink_ key={it.title} item={it} collapsed={collapsed} />)}
-          </SidebarMenu>
-        </SidebarGroupContent>
-      </SidebarGroup>
-    );
-  }
-
-  return (
-    <SidebarGroup>
-      {group.label && !collapsed && (
-        <SidebarGroupLabel className="text-[10px] uppercase tracking-wider text-sidebar-muted px-3">{group.label}</SidebarGroupLabel>
-      )}
-      <SidebarGroupContent>
-        <SidebarMenu>
-          <Collapsible defaultOpen className="group/collapsible">
-            <CollapsibleTrigger asChild>
-              <SidebarMenuButton className="flex items-center justify-between w-full text-sidebar-foreground/80">
-                <span className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide">
-                  <ChevronRight className="h-3.5 w-3.5 transition-transform group-data-[state=open]/collapsible:rotate-90" />
-                  {!collapsed && "Menu"}
-                </span>
-              </SidebarMenuButton>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              {allowedSub.map((sub) => (
-                <div key={sub.groupTitle} className="px-2 mt-2">
-                  {!collapsed && (
-                    <p className="px-2 py-1 text-[10px] uppercase text-sidebar-muted">{sub.groupTitle}</p>
-                  )}
-                  <SubGroup items={sub.items} collapsed={collapsed} roleName={roleName} />
-                </div>
-              ))}
-            </CollapsibleContent>
-          </Collapsible>
-        </SidebarMenu>
-      </SidebarGroupContent>
-    </SidebarGroup>
-  );
-}
-
-function FlatGroup({ group, collapsed, roleName }: { group: MenuGroup; collapsed: boolean; roleName: string | null | undefined }) {
-  const items = filterItems(group.items, roleName);
-  if (items.length === 0) return null;
-  return (
-    <SidebarGroup>
-      {group.label && !collapsed && (
-        <SidebarGroupLabel className="text-[10px] uppercase tracking-wider text-sidebar-muted px-3">{group.label}</SidebarGroupLabel>
-      )}
-      <SidebarGroupContent>
-        <SidebarMenu>
-          {items.map((it) => <NavLink_ key={it.title} item={it} collapsed={collapsed} />)}
-        </SidebarMenu>
-      </SidebarGroupContent>
-    </SidebarGroup>
-  );
-}
-
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
@@ -270,44 +205,17 @@ export function AppSidebar() {
       </div>
 
       <SidebarContent className="pt-2 scrollbar-thin">
-        <FlatGroup group={mainItems} collapsed={collapsed} roleName={roleName} />
-        <CollapsibleGroup group={dicomItems} collapsed={collapsed} roleName={roleName} />
-        <CollapsibleGroup group={financialItems} collapsed={collapsed} roleName={roleName} />
-        <CollapsibleGroup group={adminItems} collapsed={collapsed} roleName={roleName} />
-        <FlatGroup group={{ items: bottomItems }} collapsed={collapsed} roleName={roleName} />
+        <FlatSection group={mainItems} collapsed={collapsed} roleName={roleName} />
+        <CollapsibleSection group={dicomItems} collapsed={collapsed} roleName={roleName} />
+        <CollapsibleSection group={financialItems} collapsed={collapsed} roleName={roleName} />
+        <CollapsibleSection group={clinicalAdvancedItems} collapsed={collapsed} roleName={roleName} />
+        <CollapsibleSection group={logisticsItems} collapsed={collapsed} roleName={roleName} />
+        <CollapsibleSection group={biItems} collapsed={collapsed} roleName={roleName} />
+        <CollapsibleSection group={adminItems} collapsed={collapsed} roleName={roleName} />
+        <FlatSection group={{ items: bottomItems }} collapsed={collapsed} roleName={roleName} />
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border p-3">
-        {user && (
-          <div className="flex items-center gap-2">
-            <Avatar className="h-8 w-8">
-              <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
-                {getInitials(user.full_name)}
-              </AvatarFallback>
-            </Avatar>
-            {!collapsed && (
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold truncate">{user.full_name}</p>
-                <p className="text-[10px] text-sidebar-muted truncate">{user.email}</p>
-              </div>
-            )}
-            <TooltipProvider delayDuration={300}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={handleLogout}
-                    className="p-1.5 rounded-md hover:bg-sidebar-accent text-sidebar-muted hover:text-destructive transition-colors"
-                    aria-label="Sair da conta"
-                  >
-                    <LogOut className="h-4 w-4" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">Sair</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-        )}
-      </SidebarFooter>
+      <SidebarFooter user={user} collapsed={collapsed} onLogout={handleLogout} />
     </Sidebar>
   );
 }
