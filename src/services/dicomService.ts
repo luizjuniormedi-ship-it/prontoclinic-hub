@@ -750,4 +750,19 @@ export const dicomService = {
   generateUID,
 };
 
+// Aliases para compatibilidade com pages que esperam nomes diferentes
+// (migração da versão mock → produção)
+export const dicomNodesService = equipmentService;
+export const dicomModalitiesService = equipmentService;
+export const worklistQueueService = worklistService;
+export const dicomDashboardService = {
+  ...examService,
+  ...worklistService,
+  ...equipmentService,
+};
+export const radiologyReportsService = reportService;
+export const pacsStudiesService = examService;
+export const imagingOrderItemsService = examService;
+export const imagingOrdersService = examService;
+
 export default dicomService;

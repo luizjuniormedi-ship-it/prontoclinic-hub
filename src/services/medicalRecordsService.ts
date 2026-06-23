@@ -52,6 +52,9 @@ export const medicalRecordsService = {
   },
 
   async create(input: MedicalRecordInput): Promise<DbMedicalRecord> {
+    if (!input.patient_id || input.patient_id.trim() === "") {
+      throw new Error("patient_id é obrigatório");
+    }
     const row: Record<string, any> = { ...input };
     if (!row.record_date) row.record_date = new Date().toISOString();
 

@@ -269,7 +269,7 @@ async function sendPreCadastroConfirmation(
 
   return sendEmail({
     to: params.to,
-    subject: `Confirme seu pre-cadastro — ${env.VITE_APP_NAME ?? "ProntoMedic"}`,
+    subject: `Confirme seu pré-cadastro — ${env.VITE_APP_NAME ?? "ProntoMedic"}`,
     html,
     tags: [
       { name: "category", value: "pre_cadastro" },
@@ -337,7 +337,7 @@ async function sendPasswordReset(
 
   return sendEmail({
     to: email,
-    subject: `Redefinicao de senha — ${env.VITE_APP_NAME ?? "ProntoMedic"}`,
+    subject: `Redefinição de senha — ${env.VITE_APP_NAME ?? "ProntoMedic"}`,
     html,
     tags: [
       { name: "category", value: "auth" },

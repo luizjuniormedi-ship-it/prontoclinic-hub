@@ -118,10 +118,13 @@ export async function checkReturnRule(
   if (error || !data) return { blocked: false };
 
   const lastDate = data.appointment_date;
-  const last = new Date(lastDate + "T00:00:00");
+  // Parse a data em UTC para casar com o formato YYYY-MM-DD armazenado no banco
+  // (ISO date sem timezone = meia-noite UTC; usar new Date(lastDate) gera
+  //  parsing em timezone local, o que causa off-by-one com timezone brasileiro)
+  const last = new Date(lastDate + "T00:00:00Z");
   const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  const daysPassed = Math.floor((now.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
+  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const daysPassed = Math.floor((todayUtc.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
 
   if (daysPassed < 30) {
     const available = new Date(last);

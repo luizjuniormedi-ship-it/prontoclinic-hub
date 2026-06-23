@@ -83,8 +83,11 @@ function formatDicomTime(timeStr?: string): string {
 
 function formatDicomName(name: string): string {
   // Convert "João Silva" to DICOM format "SILVA^JOAO"
-  const parts = name.trim().split(/\s+/);
-  if (parts.length <= 1) return name.toUpperCase();
+  // Remove diacritics to ensure compatibility with modalities that
+  // don't support UTF-8 in DICOM PN VR (most do, but some legacy ones don't)
+  const normalized = name.normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const parts = normalized.trim().split(/\s+/);
+  if (parts.length <= 1) return normalized.toUpperCase();
   const last = parts[parts.length - 1].toUpperCase();
   const first = parts.slice(0, -1).join(' ').toUpperCase();
   return `${last}^${first}`;
