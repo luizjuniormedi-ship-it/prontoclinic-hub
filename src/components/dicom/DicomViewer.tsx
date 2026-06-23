@@ -23,6 +23,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
 import { ZoomIn, ZoomOut, Move, Sun, Ruler, Type, Download, RefreshCw, AlertCircle, Loader2 } from "lucide-react";
 import { dicomWeb, type DicomExamImage, type DicomExam } from "@/services/dicomService";
 import { supabase } from "@/lib/supabase";
@@ -31,10 +32,26 @@ const ORTHANC_URL = (import.meta.env.VITE_ORTHANC_URL as string) || "http://loca
 const ORTHANC_USER = (import.meta.env.VITE_ORTHANC_USER as string) || "orthanc";
 const ORTHANC_PASS = (import.meta.env.VITE_ORTHANC_PASS as string) || "orthanc";
 
+interface CornerstoneLike {
+  enable(el: HTMLElement): void;
+  disable(el: HTMLElement): void;
+  loadAndCacheImage(imageId: string): Promise<unknown>;
+  loadImage(imageId: string): Promise<unknown>;
+  displayImage(el: HTMLElement, image: unknown): void;
+  getViewport(el: HTMLElement): { voi: { windowCenter: number; windowWidth: number }; scale: number };
+  setViewport(el: HTMLElement, viewport: { voi: { windowCenter: number; windowWidth: number }; scale: number }): void;
+  elements: { getEnabledElement(el: HTMLElement): { element: HTMLCanvasElement } };
+}
+
+interface CornerstoneToolsLike {
+  init(): void;
+  setToolActive(tool: string, opts?: { mouseButtonMask?: number }): void;
+}
+
 declare global {
   interface Window {
-    cornerstone: unknown;
-    cornerstoneTools: unknown;
+    cornerstone: CornerstoneLike | undefined;
+    cornerstoneTools: CornerstoneToolsLike | undefined;
     dicomParser: unknown;
   }
 }

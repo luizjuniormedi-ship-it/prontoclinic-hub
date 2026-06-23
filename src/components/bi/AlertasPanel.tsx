@@ -32,7 +32,9 @@ import { friendlyError } from "@/utils/friendlyError";
 import { biService, type Alerta, type Severidade } from "@/services/biService";
 
 interface AlertasPanelProps {
-  companyId: string;
+  companyId?: string;
+  alertas?: Alerta[];
+  onResolver?: (id: number) => Promise<void>;
   limite?: number;
   onRecarregar?: () => void;
 }
@@ -51,12 +53,14 @@ const severidadeVariant: Record<Severidade, string> = {
 
 type StatusFilter = "pendente" | "resolvido" | "todos";
 
-export function AlertasPanel({ companyId, limite = 50, onRecarregar }: AlertasPanelProps) {
+export function AlertasPanel({ companyId: companyIdProp, alertas: alertasProp, onResolver: onResolverProp, limite = 50, onRecarregar }: AlertasPanelProps) {
   const [severidade, setSeveridade] = useState<Severidade | "TODOS">("TODOS");
   const [status, setStatus] = useState<StatusFilter>("pendente");
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { companyId: companyIdFromAuth } = useAuth();
+  const companyId = companyIdProp ?? companyIdFromAuth ?? "";
 
   // Pendentes (com filtro opcional de severidade)
   const { data: pendentes = [], isLoading: loadingPendentes } = useQuery({
@@ -109,6 +113,10 @@ export function AlertasPanel({ companyId, limite = 50, onRecarregar }: AlertasPa
   }, [pendentes]);
 
   const handleResolver = (alertaId: number) => {
+    if (onResolverProp) {
+      void onResolverProp(alertaId);
+      return;
+    }
     resolverMut.mutate(alertaId);
   };
 

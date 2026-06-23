@@ -90,7 +90,7 @@ const PharmacyManager = lazy(() =>
 );
 
 const MeusAgendamentosPage = lazy(() => import("@/pages/MeusAgendamentosPage"));
-const ShortcutsHelp = lazy(() => import("@/pages/ShortcutsHelp"));
+const ShortcutsHelp = lazy(() => import("@/pages/ShortcutsHelp").then((m) => ({ default: m.ShortcutsHelp })));
 const PharmacyPage = lazy(() => import("@/pages/PharmacyPage"));
 const NursingTriagePage = lazy(() => import("@/pages/NursingTriagePage"));
 const BiDashboardPage = lazy(() => import("@/pages/BiDashboardPage"));

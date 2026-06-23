@@ -31,11 +31,15 @@ export default function CallCenterPage() {
   const [records, setRecords] = useState<Array<{
     id: string;
     patientName: string;
+    patientId?: string;
     cpf?: string | null;
     phone: string;
     specialtyName: string;
     unitName: string;
+    unitId?: string;
     contactStatus: CallCenterContactStatus;
+    appointmentType?: string;
+    operatorName?: string;
     notes?: string;
     createdAt: string;
   }>>([]);
@@ -57,13 +61,14 @@ export default function CallCenterPage() {
     ]).then(([preCadastros, u, s]) => {
       const recordsFormatados = preCadastros.map((p) => ({
         id: String(p.id),
-        patientName: p.nm_paciente,
-        cpf: p.nr_cpf,
-        phone: p.nr_telefone,
-        specialtyName: p.especialidade ?? "—",
+        patientName: p.full_name,
+        cpf: p.cpf,
+        phone: p.phone ?? "",
+        specialtyName: "—",
         unitName: u[0]?.name ?? "—",
-        contactStatus: (p.tp_status === "confirmado" ? "confirmado" : p.tp_status === "cancelado" ? "cancelado" : "agendado") as CallCenterContactStatus,
-        notes: p.ds_observacao,
+        unitId: u[0]?.id,
+        contactStatus: (p.status === "CONFIRMADO" ? "confirmado" : p.status === "CANCELADO" ? "cancelado" : "agendado") as CallCenterContactStatus,
+        notes: p.motivo_cancelamento ?? null,
         createdAt: p.created_at,
       }));
       setRecords(recordsFormatados);

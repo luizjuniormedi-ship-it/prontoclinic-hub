@@ -14,7 +14,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState } from "@/components/StateViews";
 import { catalogService } from "@/services/catalogService";
 import { appointmentTypesLookup, DbAppointmentType } from "@/services/appointmentsService";
-import { priceTableService, DbPriceEntry, PriceEntryInput } from "@/services/priceTableService";
+import { priceTableService } from "@/services/priceTableService";
+import type { DbPriceEntry, PriceEntryInput } from "@/types/missing";
 import { ConsultationType, ExamType, ProcedureType, TherapyService, HealthInsurancePlan, Room, Specialty } from "@/types";
 import { formatCurrency } from "@/utils/formatters";
 import { useToast } from "@/hooks/use-toast";
@@ -44,7 +45,20 @@ export default function MasterDataPage() {
   const loadPrices = useCallback(async () => {
     try {
       const [p, at] = await Promise.all([priceTableService.getAll(), appointmentTypesLookup.getAll()]);
-      setPrices(p);
+      // Converter PriceTable[] → DbPriceEntry[]
+      const dbEntries: DbPriceEntry[] = (p || []).map((entry) => ({
+        id: entry.id,
+        company_id: entry.company_id,
+        appointment_type_id: entry.appointment_type_id ?? null,
+        service_id: entry.service_id ?? null,
+        insurance_plan_id: entry.insurance_plan_id ?? null,
+        price: entry.vl_particular,
+        description: entry.description ?? null,
+        active: entry.active,
+        created_at: entry.created_at,
+        updated_at: entry.updated_at,
+      }));
+      setPrices(dbEntries);
       setAppointmentTypes(at);
     } catch { /* table may not exist yet */ }
   }, []);
@@ -78,8 +92,8 @@ export default function MasterDataPage() {
   const openEditPrice = (p: DbPriceEntry) => {
     setEditingPrice(p);
     setPriceForm({
-      appointment_type_id: p.appointment_type_id || "",
-      insurance_plan_id: p.insurance_plan_id || "",
+      appointment_type_id: p.appointment_type_id !== null && p.appointment_type_id !== undefined ? String(p.appointment_type_id) : "",
+      insurance_plan_id: p.insurance_plan_id !== null && p.insurance_plan_id !== undefined ? String(p.insurance_plan_id) : "",
       price: String(p.price),
       description: p.description || "",
     });
@@ -93,18 +107,44 @@ export default function MasterDataPage() {
     }
     setSavingPrice(true);
     try {
-      const input: PriceEntryInput = {
-        appointment_type_id: priceForm.appointment_type_id,
-        insurance_plan_id: priceForm.insurance_plan_id || null,
-        price: Number(priceForm.price),
-        description: priceForm.description || undefined,
-        company_id: user?.company_id || undefined,
-      };
+      const appointmentTypeId = Number(priceForm.appointment_type_id);
+      const planId = priceForm.insurance_plan_id ? Number(priceForm.insurance_plan_id) : null;
+      const priceValue = Number(priceForm.price);
       if (editingPrice) {
-        await priceTableService.update(editingPrice.id, input);
+        await priceTableService.update(Number(editingPrice.id), {
+          appointment_type_id: appointmentTypeId,
+          insurance_plan_id: planId,
+          vl_particular: priceValue,
+          vl_convenio: priceValue,
+          vl_material: 0,
+          vl_medicamento: 0,
+          vl_taxa: 0,
+          vl_diaria: 0,
+          vl_gases: 0,
+          tp_calculo: "FIXO",
+          percentual_acrescimo: 0,
+          description: priceForm.description || undefined,
+          active: true,
+        });
         toast({ title: "Preço atualizado!" });
       } else {
-        await priceTableService.create(input);
+        await priceTableService.create({
+          company_id: user?.company_id || "",
+          appointment_type_id: appointmentTypeId,
+          insurance_plan_id: planId,
+          vl_particular: priceValue,
+          vl_convenio: priceValue,
+          vl_material: 0,
+          vl_medicamento: 0,
+          vl_taxa: 0,
+          vl_diaria: 0,
+          vl_gases: 0,
+          tp_calculo: "FIXO",
+          percentual_acrescimo: 0,
+          dt_inicio: new Date().toISOString().split("T")[0],
+          description: priceForm.description || undefined,
+          active: true,
+        });
         toast({ title: "Preço cadastrado!" });
       }
       setPriceDialogOpen(false);
@@ -116,9 +156,9 @@ export default function MasterDataPage() {
     }
   };
 
-  const handleDeletePrice = async (id: string) => {
+  const handleDeletePrice = async (id: string | number) => {
     try {
-      await priceTableService.delete(id);
+      await priceTableService.delete(Number(id));
       toast({ title: "Preço removido" });
       await loadPrices();
     } catch (err) {
@@ -129,7 +169,11 @@ export default function MasterDataPage() {
   if (loading) return <LoadingState />;
 
   const q = search.toLowerCase();
-  const getTypeName = (id: string | null) => appointmentTypes.find((t) => t.id === id)?.name || "—";
+  const getTypeName = (id: string | number | null) => {
+    if (id === null) return "—";
+    const found = appointmentTypes.find((t) => String(t.id) === String(id));
+    return found?.name || "—";
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">

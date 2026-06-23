@@ -95,8 +95,8 @@ export function AuditLogViewer() {
     setPage(1);
   }, [tabela, acao, cdUsuario, dataInicio, dataFim]);
 
-  const tabelasDisponiveis = auditService.getTabelasAuditaveis();
-  const acoesDisponiveis = auditService.getAcoesAuditaveis();
+  const tabelasDisponiveis: string[] = ["patients", "appointments", "medical_records", "billings"];
+  const acoesDisponiveis: string[] = ["INSERT", "UPDATE", "DELETE", "LOGIN", "LOGOUT", "EXPORT", "ANONYMIZE", "VIEW_RECORD", "PRINT"];
 
   function limparFiltros() {
     setTabela("");

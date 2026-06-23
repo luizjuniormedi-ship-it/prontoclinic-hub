@@ -13,6 +13,7 @@ import { EncaixeDialog } from "@/components/schedule/EncaixeDialog";
 import { appointmentsService, professionalsLookup, specialtiesLookup, appointmentTypesLookup, DbAppointment, DbProfessional, DbSpecialty, DbAppointmentType } from "@/services/appointmentsService";
 import { supabase } from "@/lib/supabase";
 import { Appointment, AppointmentStatus, Patient } from "@/types";
+import type { AppointmentTypeLiteral, PatientDbRow } from "@/types/missing";
 import { useToast } from "@/hooks/use-toast";
 import { useDebounce } from "@/hooks/useDebounce";
 import { friendlyError } from "@/utils/friendlyError";
@@ -126,12 +127,12 @@ export default function SchedulePage() {
         .select("id, full_name, cpf, birth_date, phone, email, sex, insurance_plan_id, insurance_card_number, allergies, clinical_alerts, created_at, updated_at")
         .in("id", patientIds);
       setPatients((pats || []).map((row: PatientDbRow) => ({
-        id: row.id, companyId: undefined, name: row.full_name || "", cpf: row.cpf || "",
+        id: String(row.id), companyId: undefined, name: row.full_name || "", cpf: row.cpf || "",
         birthDate: row.birth_date || "", phone: row.phone || "", email: row.email || "",
-        gender: row.sex || "O", healthInsurance: row.insurance_plan_id, healthInsuranceNumber: row.insurance_card_number,
-        allergies: row.allergies, clinicalAlerts: row.clinical_alerts,
+        gender: row.sex || "O", healthInsurance: row.insurance_plan_id === null || row.insurance_plan_id === undefined ? undefined : String(row.insurance_plan_id), healthInsuranceNumber: row.insurance_card_number ?? undefined,
+        allergies: row.allergies ?? undefined, clinicalAlerts: row.clinical_alerts ?? undefined,
         createdAt: row.created_at || "", updatedAt: row.updated_at || "",
-      })));
+      })) as Patient[]);
     } else {
       setPatients([]);
     }

@@ -41,12 +41,12 @@ import {
   professionalsLookup,
   DbAppointment, DbProfessional,
 } from "@/services/appointmentsService";
+import type { AppointmentStatusForBadge } from "@/types/missing";
 
 type Filter = "todos" | "agendado" | "confirmado" | "atendido" | "cancelado" | "faltou";
 
 interface UserProfileWithPatient { id: string; patient_id?: string | null; }
 interface ErrorWithMessage { message?: string; }
-type AppointmentStatusForBadge = "scheduled" | "confirmed" | "in_progress" | "waiting" | "completed" | "cancelled" | "no_show" | string;
 
 function startOfDay(iso: string): Date {
   const d = new Date(iso + "T00:00:00");
@@ -444,7 +444,7 @@ function AppointmentCard({
                 <Badge variant="outline" className="font-mono">
                   {appt.start_time?.substring(0, 5)}
                 </Badge>
-                <AppointmentStatusBadge status={appt.status as AppointmentStatusForBadge} />
+                <AppointmentStatusBadge status={appt.status as unknown as AppointmentStatusForBadge} />
               </div>
               <div className="mt-1 text-sm text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
                 {prof && (

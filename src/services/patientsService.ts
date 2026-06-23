@@ -29,7 +29,7 @@ function mapRowToPatient(row: DbPatientRow): Patient {
     birthDate: row.birth_date || '',
     phone: row.phone || '',
     email: row.email || '',
-    gender: row.sex || 'O',
+    gender: (row.sex || 'O') as 'F' | 'M' | 'O',
     healthInsurance: row.insurance_plan_id || undefined,
     healthInsuranceNumber: row.insurance_card_number || undefined,
     allergies: row.allergies || undefined,

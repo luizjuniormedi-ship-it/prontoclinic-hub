@@ -464,7 +464,7 @@ export const pedido = {
       const medico = row.medico as { full_name?: string } | null;
       const itens = row.itens as Array<{ count: number }> | null;
       return {
-        ...(row as PedidoLab),
+        ...(row as unknown as PedidoLab),
         paciente_nome: paciente?.full_name,
         medico_nome: medico?.full_name,
         itens_count: itens?.[0]?.count ?? 0,
@@ -503,7 +503,7 @@ export const pedido = {
       itens: (itens || []).map((it: Record<string, unknown>) => {
         const exame = it.exame as { ds_sigla?: string; ds_exame?: string } | null;
         return {
-          ...(it as PedidoItem),
+          ...(it as unknown as PedidoItem),
           exame_sigla: exame?.ds_sigla,
           exame_nome: exame?.ds_exame,
           resultados: (it.resultados as ResultadoLab[]) || [],
@@ -701,7 +701,7 @@ export const alerta = {
       const paciente = row.paciente as { full_name?: string } | null;
       const medico = row.medico as { full_name?: string } | null;
       return {
-        ...(row as AlertaCritico),
+        ...(row as unknown as AlertaCritico),
         paciente_nome: paciente?.full_name,
         medico_nome: medico?.full_name,
       };

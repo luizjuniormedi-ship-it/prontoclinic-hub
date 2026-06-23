@@ -134,12 +134,12 @@ export const insuranceCompanyService = {
   async search(query: string, limit = 20): Promise<InsuranceCompany[]> {
     const { data, error } = await supabase
       .from("insurance_companies")
-      .select("id, name, registro_ans")
+      .select("id, name, registro_ans, company_id, lg_ativo, percentual_desconto, lg_guia_obrigatoria, lg_cid_obrigatorio, lg_matric_obrigatorio, lg_autorizac_obrigatorio, created_at, updated_at")
       .ilike("name", `%${query}%`)
       .eq("lg_ativo", true)
       .limit(limit);
     if (error) throw new Error(`Erro: ${error.message}`);
-    return data || [];
+    return (data || []) as InsuranceCompany[];
   },
 
   async create(input: Partial<InsuranceCompany>): Promise<InsuranceCompany> {

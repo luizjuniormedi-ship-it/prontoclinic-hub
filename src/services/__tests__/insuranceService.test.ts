@@ -200,7 +200,7 @@ describe("insuranceService — getById (insuranceCompany)", () => {
       id: 1,
       name: "SulAmérica",
       registro_ans: "987654",
-      payment_source: { name: "SulAmérica Seguros", type: "CONVENIO" },
+      payment_source_id: 42,
     };
     const chain: any = {
       select: vi.fn().mockReturnThis(),
@@ -211,7 +211,7 @@ describe("insuranceService — getById (insuranceCompany)", () => {
 
     const result = await insuranceCompanyService.getById(1);
     expect(result?.name).toBe("SulAmérica");
-    expect(result?.payment_source?.type).toBe("CONVENIO");
+    expect(result?.payment_source_id).toBe(42);
   });
 });
 

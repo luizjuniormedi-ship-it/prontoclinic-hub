@@ -11,6 +11,7 @@ import { AppointmentStatusBadge, AppointmentTypeBadge } from "@/components/Statu
 import { appointmentsService, professionalsLookup, specialtiesLookup, appointmentTypesLookup, DbAppointment, DbProfessional, DbSpecialty, DbAppointmentType } from "@/services/appointmentsService";
 import { supabase } from "@/lib/supabase";
 import { Appointment, AppointmentStatus, Patient } from "@/types";
+import type { AppointmentTypeLiteral, AppointmentStatusForBadge } from "@/types/missing";
 import { useToast } from "@/hooks/use-toast";
 import { calculateAge } from "@/utils/formatters";
 import { useDebounce } from "@/hooks/useDebounce";

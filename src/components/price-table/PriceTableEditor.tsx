@@ -130,7 +130,7 @@ export function PriceTableEditor() {
                   <Select name="service_id" required>
                     <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
                     <SelectContent>
-                      {(services || []).map((s: { id: number | string; code: string; name: string }) => (
+                      {((services || []) as Array<{ id: number | string; code?: string; name: string }>).map((s) => (
                         <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
                       ))}
                     </SelectContent>
@@ -141,7 +141,7 @@ export function PriceTableEditor() {
                   <Select name="appointment_type_id" required>
                     <SelectTrigger><SelectValue placeholder="..." /></SelectTrigger>
                     <SelectContent>
-                      {(appointmentTypes || []).map((t: { id: number | string; name: string }) => (
+                      {((appointmentTypes || []) as Array<{ id: number | string; name: string }>).map((t) => (
                         <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
                       ))}
                     </SelectContent>
@@ -194,7 +194,7 @@ export function PriceTableEditor() {
               <Select onValueChange={(v) => setTestServiceId(Number(v))}>
                 <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
                 <SelectContent>
-                  {(services || []).map((s: { id: number | string; code: string; name: string }) => (
+                  {((services || []) as Array<{ id: number | string; code?: string; name: string }>).map((s) => (
                     <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -251,11 +251,17 @@ export function PriceTableEditor() {
               ) : filtered.length === 0 ? (
                 <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Nenhuma regra. Crie a primeira.</TableCell></TableRow>
               ) : (
-                filtered.slice(0, 50).map((p) => (
+                filtered.slice(0, 50).map((p) => {
+                  const joined = p as PriceTable & {
+                    service?: { name?: string } | null;
+                    appointment_type?: { name?: string } | null;
+                    plan?: { name?: string } | null;
+                  };
+                  return (
                   <TableRow key={p.id}>
-                    <TableCell className="font-medium">{p.service?.name || `Servico #${p.service_id}`}</TableCell>
-                    <TableCell>{p.appointment_type?.name || "—"}</TableCell>
-                    <TableCell>{p.plan ? p.plan.name : <Badge variant="secondary">Particular</Badge>}</TableCell>
+                    <TableCell className="font-medium">{joined.service?.name || `Servico #${p.service_id}`}</TableCell>
+                    <TableCell>{joined.appointment_type?.name || "—"}</TableCell>
+                    <TableCell>{joined.plan ? joined.plan.name : <Badge variant="secondary">Particular</Badge>}</TableCell>
                     <TableCell className="text-right">R$ {p.vl_particular.toFixed(2)}</TableCell>
                     <TableCell className="text-right">R$ {p.vl_convenio.toFixed(2)}</TableCell>
                     <TableCell>R$ {p.vl_material.toFixed(2)}</TableCell>
@@ -264,7 +270,8 @@ export function PriceTableEditor() {
                     <TableCell>{p.dt_inicio}</TableCell>
                     <TableCell><Badge variant={p.active ? "default" : "secondary"}>{p.active ? "Ativo" : "Inativo"}</Badge></TableCell>
                   </TableRow>
-                ))
+                  );
+                })
               )}
             </TableBody>
           </Table>

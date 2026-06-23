@@ -210,7 +210,7 @@ export const auditService = {
 
     // 3) Top tabelas
     const porTabelaMap = new Map<string, number>();
-    (acoes || []).forEach((r: { tabela?: string | null }) => {
+    (acoes || []).forEach((r: { acao: any; tabela?: string | null }) => {
       const tab = r.tabela;
       if (tab) porTabelaMap.set(tab, (porTabelaMap.get(tab) ?? 0) + 1);
     });

@@ -116,10 +116,11 @@ export default function AttendancePage() {
 
       // Auto-create billing with price lookup
       try {
-        const price = await priceTableService.findPrice(
-          appointment.appointment_type_id,
-          patient.insurance_plan_id
+        const priceLookup = await priceTableService.findPrice(
+          Number(appointment.appointment_type_id) || 0,
+          patient.insurance_plan_id ? Number(patient.insurance_plan_id) : null
         );
+        const price = priceLookup.vl_particular + priceLookup.vl_convenio;
         const billingType = patient.insurance_plan_id ? "convenio" : "particular";
 
         await billingsService.create({

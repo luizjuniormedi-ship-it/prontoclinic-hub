@@ -272,7 +272,7 @@ export function ReportTemplateEditor() {
         <TabsContent value="list" className="space-y-3">
           <div className="flex gap-2 items-center">
             <Label>Filtrar:</Label>
-            <Select value={filterType} onValueChange={(v) => setFilterType(v as string)}>
+            <Select value={filterType} onValueChange={(v) => setFilterType(v as ReportTemplateType | "ALL")}>
               <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Todas</SelectItem>

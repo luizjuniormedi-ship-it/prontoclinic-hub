@@ -282,7 +282,7 @@ export function PreCadastroForm({ companyId, onSuccess, onCancel }: PreCadastroF
         complemento: values.complemento,
         bairro: values.bairro,
         cidade: values.cidade,
-        uf: values.uf as FormValues["uf"] & string,
+        uf: values.uf as "AC" | "AL" | "AP" | "AM" | "BA" | "CE" | "DF" | "ES" | "GO" | "MA" | "MT" | "MS" | "MG" | "PA" | "PB" | "PR" | "PE" | "PI" | "RJ" | "RN" | "RS" | "RO" | "RR" | "SC" | "SP" | "SE" | "TO",
         lg_aceite_termo: true,
         versao_termo: versaoTermo,
       };

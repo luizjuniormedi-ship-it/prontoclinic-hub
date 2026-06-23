@@ -24,12 +24,19 @@ vi.mock("@/services/dicomService", () => ({
   imagingOrderItemsService: {
     listByOrder: vi.fn(),
     updateStatus: vi.fn(),
+  } as unknown as typeof import("@/services/dicomService").imagingOrderItemsService & {
+    listByOrder: ReturnType<typeof vi.fn>;
   },
   worklistQueueService: {
     list: vi.fn(),
     markExported: vi.fn(),
     cancel: vi.fn(),
     createFromOrderItem: vi.fn(),
+  } as unknown as typeof import("@/services/dicomService").worklistQueueService & {
+    list: ReturnType<typeof vi.fn>;
+    markExported: ReturnType<typeof vi.fn>;
+    cancel: ReturnType<typeof vi.fn>;
+    createFromOrderItem: ReturnType<typeof vi.fn>;
   },
 }));
 

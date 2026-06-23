@@ -193,7 +193,7 @@ export const notificationService = {
         ? appointment.patient?.nr_phone
           ? "SMS"
           : "EMAIL"
-        : env.features.whatsapp && appointment.patient?.nr_whatsapp
+        : env.VITE_ENABLE_WHATSAPP && appointment.patient?.nr_whatsapp
           ? "WHATSAPP"
           : "EMAIL";
 
@@ -283,7 +283,7 @@ export const notificationService = {
     const dtEnd = new Date(appointment.dt_appointment);
     dtEnd.setHours(dtEnd.getHours() + 2); // 2h após a consulta
     const channel: NotificationChannel =
-      env.features.whatsapp && appointment.patient?.nr_whatsapp ? "WHATSAPP" : "EMAIL";
+      env.VITE_ENABLE_WHATSAPP && appointment.patient?.nr_whatsapp ? "WHATSAPP" : "EMAIL";
 
     return this.enqueue({
       p_company_id: appointment.company_id,
@@ -495,7 +495,12 @@ export const notificationService = {
     }
 
     return Array.from(byChannel.values()).map((r) => ({
-      ...r,
+      channel: r.channel,
+      sent: r.enviadas,
+      failed: r.falhas,
+      cancelled: r.canceladas,
+      pending: r.pendentes,
+      delivered: r.entregues,
       total: r.enviadas + r.falhas + r.canceladas + r.pendentes + r.entregues,
       taxa_sucesso_pct:
         r.enviadas + r.falhas === 0
