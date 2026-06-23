@@ -5,6 +5,242 @@ Todas as mudanças notáveis do ProntoMedic são documentadas aqui.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 e este projeto segue [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [1.2.0] - 2026-06-22
+
+### Adicionado
+- **Módulo de Internação (Agente 38)**
+  - Migration `20260101000023_internacao.sql` com 4 tabelas: `leitos`, `pacixleit` (ocupação), `prescricoes_internado`, `evolucoes_internado`
+  - View `v_leitos_ocupacao` para mapa de leitos (LIVRE/OCUPADO) por tipo (UTI/enfermaria/isolamento)
+  - RLS por company_id + role (médico/enfermeiro podem prescrever e evoluir)
+  - SOAP estruturado (Subjetivo/Objetivo/Avaliação/Plano) em `evolucoes_internado`
+  - Sinais vitais em JSONB (PA, FC, FR, T, SpO2)
+  - Service `internacaoService.ts` com leitos, internações, prescrições, evoluções
+  - Componente `InternacaoManager.tsx` com mapa de leitos, prescrição e evolução
+  - Página `/internacao`
+  - Testes `internacaoService.test.ts` (8 cenários)
+  - Conformidade: Resolução CFM 2.314/2022, Portaria GM/MS 1.820/2009
+
+- **Módulo de Centro Cirúrgico (Agente 38)**
+  - Migration `20260101000024_cirurgia.sql` com 3 tabelas: `salas_cirurgicas`, `cirurgiasxpac` (agendamento), `cirurgia_materiais`
+  - Workflow de status: AGENDADA → PRE_OPERATORIO → EM_ANDAMENTO → CONCLUIDA/CANCELADA/SUSPENSA
+  - Tipos de anestesia (LOCAL/RAQUI/GERAL/SEDACAO) e cirurgia (ELETIVA/URGENCIA/EMERGENCIA)
+  - CIDs principal/secundário, equipe de enfermagem em array, materiais/medicamentos consumidos
+  - Trigger `set_updated_at` em `cirurgiasxpac`
+  - Service `cirurgiaService.ts` com salas, agendamentos, workflow, materiais
+  - Componente `CirurgiaScheduler.tsx` com calendário cirúrgico e filtros
+  - Página `/cirurgia`
+  - Testes `cirurgiaService.test.ts` (8 cenários)
+  - Conformidade: RDC ANVISA 36/2013 (cirurgias seguras), Resolução CFM 2.217/2018
+
+- **Módulo de Pronto Atendimento (Agente 38)**
+  - Migration `20260101000025_pa.sql` com tabela `pa_atendimentos` expandindo o módulo de enfermagem
+  - Classificação de risco Manchester (VERMELHO/LARANJA/AMARELO/VERDE/AZUL) + NEWS2 (0-20)
+  - View `v_pa_fila` ordenada por prioridade clínica (VERMELHO primeiro) + tempo de espera
+  - Tempo máximo de espera por cor (VERMELHO=0min, AZUL=240min) com alerta visual
+  - Workflow: AGUARDANDO → EM_TRIAGEM → EM_ATENDIMENTO → ALTA
+  - Tipos de destino: ALTA_MELHORADO, ALTA_PEDIDO, INTERNACAO, TRANSFERENCIA, OBITO, EVASAO
+  - Service `paService.ts` com fila, triagem, atendimento, alta
+  - Componente `PaManager.tsx` com fila visual e triagem
+  - Página `/pa`
+  - Testes `paService.test.ts` (8 cenários)
+  - Conformidade: Portaria GM/MS 2.048/2002, HumanizaSUS
+
+- **Módulo de Assinatura Digital ICP-Brasil (Agente 38)**
+  - Migration `20260101000026_assinatura_digital.sql` com 2 tabelas: `certificados_digitais`, `documentos_assinados`
+  - Suporte a certificados A1 (arquivo), A3 (token/cartão) e ICP-Brasil
+  - Hash SHA-256 do documento (integridade) + hash da assinatura + PKCS#7 (autenticidade)
+  - View `v_assinaturas_auditoria` com info de profissional + certificado
+  - **LGPD: chave privada NUNCA armazenada** — assinatura é feita client-side
+  - Auditoria de revogação de certificados + invalidação retroativa
+  - Service `assinaturaDigitalService.ts` com sha256 helper (Web Crypto API)
+  - Componente `AssinaturaDigitalPanel.tsx` com upload de certificado + auditoria
+  - Página `/assinatura`
+  - Testes `assinaturaDigitalService.test.ts` (8 cenários)
+  - Conformidade: MP 2.200-2/2001, Resolução CFM 2.314/2022, Lei 14.063/2020
+
+- **Módulo de IA Clínica (Agente 38)**
+  - Migration `20260101000027_ia_clinica.sql` com 2 tabelas: `ia_sugestoes_cid`, `ia_logs`
+  - Sugestões CID-10 pré-computadas baseadas em sintomas (GIN trigram index)
+  - Log de auditoria LGPD com `lg_consentimento` obrigatório + hash SHA-256 da query
+  - Views: `v_ia_stats` (uso diário por empresa) e `v_ia_sugestoes_top`
+  - Seed inicial com 10 sugestões comuns (febre/tosse, IAM, meningite, etc)
+  - Service `iaClinicaService.ts` com Edge Function invoke + fallback para lookup local
+  - Componente `IaClinicaAssistant.tsx` com chatbot, sugestões CID e aba "Sobre"
+  - Página `/ia-clinica`
+  - Testes `iaClinicaService.test.ts` (8 cenários)
+  - Conformidade: LGPD art. 7º, Resolução CFM 2.314/2022 (IA como apoio, decisão final do médico)
+
+- **Rotas e navegação (Agente 38)**
+  - 5 novas rotas adicionadas em `App.tsx` com lazy loading: `/internacao`, `/cirurgia`, `/pa`, `/assinatura`, `/ia-clinica`
+  - Permissões em `routePermissions.ts` para os 5 novos módulos
+  - Novo grupo "Assistência Avançada" no `AppSidebar.tsx` (Hospital: Internação/Cirurgia/PA | Documentos & IA: Assinatura/IA)
+  - Ícones: BedDouble, Scissors, AlertOctagon, FileSignature, Sparkles
+  - 5 arquivos de teste em `src/services/__tests__/` cobrindo Zod, RLS, fluxo
+
+## [1.1.0] - 2026-06-22
+
+### Adicionado
+- **Módulo BI / Indicadores completo (Agente 36)**
+  - Migration `20260101000019_bi.sql` com tabelas `bi_kpis_diarios`, `bi_metas`, `bi_alertas`
+  - Views: `v_ocupacao_profissional`, `v_faturamento_convenio`
+  - Funções PL/pgSQL: `calcular_kpis_diarios()`, `detectar_alertas_bi()`
+  - RLS por empresa (policies separadas para leitura ampla e gestão admin/gestor)
+  - Service `biService.ts` com KPIs do dia, série temporal, comparativos, CRUD de metas/alertas
+  - Componente `BiDashboard.tsx` com 5 KPI cards, gráficos de série temporal, pizza de convênios,
+    top profissionais, painel de alertas e metas com barra de progresso
+  - Componentes auxiliares: `OcupacaoChart`, `AlertasPanel`, `MetasManager`
+  - Páginas: `BiDashboardPage`, `BiMetasPage`, `BiAlertasPage`
+  - Atualização do `Index.tsx` com seção "Metas ativas" no painel pós-login
+  - Item de menu "Inteligência de Negócio" no sidebar (BI/Metas/Alertas)
+  - Permissão `/bi` para `admin`, `gestor`, `médico`, `financeiro`
+  - Testes `biService.test.ts` (8 cenários cobrindo KPIs, série temporal, RPC, alertas, metas)
+  - Cron jobs sugeridos (pg_cron) comentados na migration — atualizar KPIs às 23h, detectar alertas às 6h
+
+- **Módulo de Telemedicina completo (Agente 34)**
+  - Migration `20260101000017_telemedicina.sql` com 5 tabelas:
+    `telemedicina_salas`, `telemedicina_participantes`, `telemedicina_mensagens`,
+    `telemedicina_prescricoes`, `telemedicina_receitas` + RLS multi-tenant.
+  - Conformidade CFM 2.299/2021 e LGPD art. 7º II (consentimento de gravação).
+  - 4 funções SQL: `gerar_token_telemedicina()`, `criar_sala_telemedicina(BIGINT)`,
+    `registrar_consentimento_gravacao(UUID, BOOL)`, `finalizar_sala_telemedicina(...)`.
+  - Métricas de qualidade (bitrate, latência, packet loss) por sala.
+  - Integração Daily.co (REST API) via `telemedicinaService` — cria rooms,
+    gera meeting tokens, gerencia ciclo de vida da consulta.
+  - Service `telemedicinaService` (~430 linhas) com métodos: `criarSala`,
+    `entrarSala`, `iniciar`, `finalizar`, `cancelar`, `enviarMensagem`,
+    `listarMensagens`, `criarPrescricao`, `assinarPrescricao`,
+    `habilitarGravacao`, `registrarConsentimento`, `getSala`, `getSalaByToken`,
+    `getRelatorioTelemedicina`, `cleanupDailyRoom`.
+  - Componentes React com shadcn/ui e a11y:
+    - `TelemedicineLobby` — preview de câmera/microfone, VU meter, detecção
+      de qualidade de rede (Network Information API), termo de consentimento LGPD.
+    - `TelemedicineRoom` — sala de videochamada (Daily JS via CDN), controles
+      mic/câmera/tela/chat/participantes/prescrição/gravação, timer, métricas,
+      finalização.
+    - `TelemedicinePrescriber` — templates, autocomplete de medicamentos,
+      calculadora de dose por peso (mg/kg), assinatura digital em canvas,
+      hash SHA-256, tipos de receita (BRANCA/AZUL/AMARELA/VERMELHA/CONTROLE_ESPECIAL).
+    - `TelemedicineHistory` — tabela com filtros, exportação CSV, link
+      para gravação e receita.
+  - Página `TelemedicinePage` com 4 modos: lista / lobby / sala / histórico.
+  - Edge Function `supabase/functions/daily-webhook/index.ts` com
+    verificação de assinatura HMAC SHA-256 e handlers para
+    `meeting.ended`, `recording.started/completed`, `participant.joined/left`.
+  - 7 testes unitários em `telemedicinaService.test.ts`.
+  - Item de menu `Telemedicina` em `AppSidebar` (ícone Video).
+  - Rota `/telemedicina` em `App.tsx` e `routePermissions.ts` (admin/médico/gestor).
+  - Env vars: `VITE_DAILY_API_KEY`, `VITE_DAILY_DOMAIN`,
+    `VITE_DAILY_WEBHOOK_SECRET` em `.env.example`/`.env.test`/`env.ts`.
+- **Módulo de Enfermagem/Triagem completo**
+  - Migration `20260101000016_enfermagem.sql` com 6 tabelas:
+    `mnct_classificacao_risco`, `mnct_fluxograma`, `triagens`,
+    `mnct_fluxoxpergunta`, `news2_avaliacoes`, `triagem_fila`.
+  - Classificação de risco Manchester (5 cores: VERMELHO/LARANJA/AMARELO/VERDE/AZUL)
+    com SLA em minutos (0/10/60/120/240).
+  - NEWS2 (National Early Warning Score 2) — algoritmo completo do NHS UK
+    com 6 parâmetros fisiológicos (FR, SpO2, Temp, PAS, FC, Consciência).
+  - Função SQL `gerar_senha_triagem` (T001, T002, T003...) com
+    reset diário automático.
+  - Função SQL `classificar_manchester` — algoritmo simplificado para
+    preview server-side baseado em SSVV + queixa principal.
+  - Fila de triagem **separada** da fila administrativa (recepção) com
+    senhas sequenciais, cores e tempo de espera.
+  - Glasgow como coluna gerada (soma ocular + verbal + motor).
+  - NEWS2 score total como coluna gerada.
+  - RLS multi-tenant via `get_my_company_id()` com policies para
+    admin/enfermagem/médico/recepção.
+  - Trigger `trg_triagem_fila_set_cor` que seta automaticamente a cor
+    baseada na classificação.
+  - Seed com 5 classificações + 12 perguntas principais do fluxograma
+    (Respiratório, Cardiovascular, Neurológico, Dor, Infecção, etc.).
+- **Service TypeScript** `nursingService` com:
+  - `calcularNEWS2()` (algoritmo cliente-side idêntico ao SQL).
+  - `classificarManchester()` (preview).
+  - CRUD de triagens + salvamento automático de NEWS2.
+  - Gerenciamento de fila (gerar senha, chamar, marcar triado).
+  - Validação de sinais vitais (ranges clínicos).
+- **Componentes React** com shadcn/ui:
+  - `TriagePanel` (3 colunas: fila, formulário, estatísticas) com
+    polling 5s para atualização em tempo real.
+  - `TriageForm` (anamnese, SSVV, antropometria, Glasgow, NEWS2 ao vivo).
+  - `QueueDisplay` (TV painel para sala de espera com som de chamada
+    via Web Audio API e modo fullscreen).
+  - `NursingTriagePage` (wrapper com `?tv=1` para modo TV).
+- **Testes unitários** (26 testes, 100% passing):
+  - NEWS2 score: BAIXO (0-4), MEDIO (5-6), ALTO (7+).
+  - Classificação Manchester: dispneia → VERMELHO, dor torácica → LARANJA.
+  - Fila: `gerarSenha` retorna T001, T002, `chamar` muda status.
+  - Validação clínica de SSVV e Glasgow.
+- **Rotas** `/nursing/triage` e `/nursing/queue` (lazy loaded).
+- **Sidebar** com item "Triagem" (ícone HeartPulse) e sub-item
+  "Painel de Chamada" no grupo PACS/DICOM.
+- **Permissões** RBAC: `/nursing` acessível para admin, médico, recepção.
+
+### Decisões técnicas
+- Tabelas `mnct_*` seguem convenção SIGH para permitir migração futura
+  de dados legados via `cd_origem_sigh`.
+- Glasgow e NEWS2 como colunas geradas (`STORED`) para evitar
+  inconsistência e melhorar performance de leitura.
+- Filas separadas: triagem (UPA) vs administrativa (consultas eletivas)
+  permitem fluxos e SLAs independentes.
+- Web Audio API para beep de chamada (sem dependências externas).
+- Polling 5s (não websocket) para simplicidade — adequado para
+
+### Módulo LIS / Laboratório (Agente 35)
+- **Migration 18** (`supabase/migrations/20260101000018_lis.sql`): 6 tabelas —
+  `exames_lab_catalogo`, `exames_lab_valor_referencia`, `exames_lab_pedido`,
+  `exames_lab_pedido_itens`, `exames_lab_resultado`, `exames_lab_alerta_critico`.
+  RLS habilitado, policies por role (`admin`, `laboratório`, `medico`).
+  Funções SQL: `classificar_resultado_lab`, `parse_hl7_oru` (HL7 v2.5 ORU^R01),
+  `fn_gerar_alerta_critico` (trigger que cria alerta automático quando
+  resultado é CRÍTICO).
+- **Seed** (`supabase/seed_lis.sql`): 31 exames comuns (Hematologia, Bioquímica,
+  Urina, Coagulação, Imunologia, Sorologia, Cultura) + valores de referência
+  por sexo para Hemograma (Hemácias, Hemoglobina, Hematócrito, Leucócitos, Plaquetas).
+- **Service** `src/services/lisService.ts` (~600 linhas): `catalogo`,
+  `valorReferencia`, `pedido`, `resultado`, `alerta`, `getRelatorio`.
+  Funções puras `parseHL7(msg)` (HL7 v2.5) e `classificar(valor, min, max)`.
+- **Componentes React**:
+  - `src/components/lis/LabOrdersManager.tsx` (~700 linhas) — 5 abas:
+    Catálogo, Pedidos, Coleta, Resultados, Alertas. CRUD + workflow.
+  - `src/components/lis/LabResultForm.tsx` (~400 linhas) — formulário com
+    classificação em tempo real, importador HL7.
+  - `src/components/lis/CriticalAlertsBanner.tsx` (~150 linhas) — banner
+    vermelho com `role="alert"` `aria-live="assertive"`, som via Web Audio.
+- **Página** `src/pages/LabPage.tsx` + rota `/lab`. Ícone `FlaskConical` no
+  sidebar. RBAC: `admin`, `medico`, `gestor`, `diagnostico`.
+- **Testes** `src/services/__tests__/lisService.test.ts` (~190 linhas): cobertura
+  de `classificar` (6 cenários), `parseHL7` (OBX/PID/OBR/MSH), `pedido.create`.
+- HL7 v2.5 implementado conforme padrão internacional. LGPD: resultados são
+  dados sensíveis com RLS por company_id e trilha de auditoria.
+  ambientes de saúde com rede instável.
+
+## [1.0.3] - 2026-06-22
+
+### Banco de Dados
+- 🟢 **P0 fix**: `queue_notification` (migration 08) — defaults movidos para o final
+  dos parâmetros. PostgreSQL rejeita `DEFAULT` no meio (parâmetros obrigatórios não
+  podem vir depois de opcionais). Antes: a função não era instalável.
+- 🟢 **P0 fix**: `confirm_pre_cadastro` (migration 12) — adicionado
+  `DROP FUNCTION IF EXISTS public.confirm_pre_cadastro(VARCHAR) CASCADE` antes do
+  `CREATE FUNCTION`. A migration 11 retornava 5 colunas em `RETURNS TABLE`, a 12
+  queria retornar 4 colunas; `CREATE OR REPLACE` não consegue trocar a "shape".
+- 🟢 **P0 side-fix**: índice `idx_appointments_company_date_time` (migration 12)
+  renomeado para `idx_appointments_company_scheduled_at` e usando a coluna real
+  `scheduled_at` (não `appointment_date` + `start_time`, que não existem).
+- 🟢 Novo `scripts/validate-migrations-v2.py`: detector de defaults no meio e
+  de assinaturas `RETURNS TABLE` inconsistentes entre migrations. Roda em <1s.
+- 🟢 13/13 migrations (escopo P0) aplicam com sucesso em PostgreSQL 15 limpo
+  (initdb + psql). Schema final: 48 tabelas, 334 funções, 25 tabelas com RLS,
+  36 triggers. Acima do esperado (40/330/21/30).
+
+### Verificação Funcional
+- `queue_notification(...)` testado em runtime com 6 parâmetros obrigatórios
+  → retornou UUID da notificação criada corretamente.
+- `confirm_pre_cadastro(VARCHAR)` inspecionado no catálogo: retorna TABLE
+  com as 4 colunas esperadas.
+- Validador v2: 0 errors locais + 0 errors cross-migration após os fixes.
+
 ## [1.0.2] - 2026-06-22
 
 ### Qualidade
@@ -563,3 +799,130 @@ Total E2E agora: 69 + 34 = **103 cenários Playwright** (4 specs anteriores + 4 
 - Thresholds de cobertura foram definidos **per-file** (não globais) para refletir a realidade: apenas 6 services têm testes nesta iteração. Meta de evolução: à medida que mais services forem cobertos, mover para `coverage.thresholds` global em 70%/60%/70%/70%.
 - Os 6 services testados já atingem os targets definidos (statusTransitions 100%, validationService 87%, lgpdService 69%+).
 - O CI aplica todas as 12 migrations do `supabase/migrations/` em um Postgres 15 local antes dos testes E2E, garantindo reprodutibilidade sem depender de Supabase cloud.
+
+## [1.1.0] - 2026-06-22
+
+### Adicionado
+- **Módulo de Farmácia/Materiais completo** (Agente 32)
+  - Migration `20260101000015_farmacia.sql` com 8 tabelas + 1 view + 2 RPCs
+  - Service `pharmacyService` (~700 linhas) com 7 sub-services
+  - Componente `PharmacyManager` com 6 abas (Medicamentos, Materiais, Estoque, Movimentações, Dispensar, Alertas)
+  - Wizard `DispenseWizard` (3 passos) para dispensar receita com FEFO
+  - Página `PharmacyPage` (lazy-loaded)
+  - Seed `seed_pharmacy.sql` com 50 medicamentos Rename/CMED, 20 materiais, 3 almoxarifados e ~100 lotes
+  - 12 testes unitários cobrindo filtros, validações Zod, RPC atômica e FEFO
+  - RLS granular por role: admin, farmacêutico, médico, enfermeiro
+  - Rastreabilidade SNGPC (Portaria 344/98)
+  - Integração com menu lateral e rota `/pharmacy`
+
+### Catálogo de medicamentos (Rename/CMED)
+- 5 analgésicos/antipiréticos
+- 4 anti-inflamatórios
+- 7 antibióticos
+- 5 anti-hipertensivos
+- 3 antidiabéticos
+- 2 anticoagulantes
+- 3 cardiovasculares
+- 4 gastrointestinais
+- 3 respiratórios
+- 4 vitaminas/suplementos
+- 2 dermatológicos
+- 4 antidiabéticos/psicotrópicos
+- 5 controlados (Portaria 344/98): Clonazepam, Alprazolam, Morfina, Codeína, Tramadol
+
+### Funcionalidades
+- Catálogo de medicamentos com filtro por classe e badge controlado
+- Catálogo de materiais hospitalares com ponto de reposição
+- Controle de lotes com FEFO automático (First-Expire-First-Out)
+- View `v_estoque_atual` com status de validade (VENCIDO, VENCE_30_DIAS, VENCE_90_DIAS, OK)
+- Movimentações de estoque atômicas via RPC `registrar_movimentacao_estoque`
+- Validação de estoque suficiente em saídas
+- Dispensação com wizard de 3 passos (busca paciente → seleciona medicamentos → confirma)
+- Geração de recibo em TXT
+- Receitas controladas com flag SNGPC
+- Indicadores: valor total do estoque (CMV), produtos vencidos, estoque baixo
+
+### Segurança
+- RLS por role (farmacêutico tem permissão específica de farmácia)
+- Validação Zod em todos os inputs
+- TypeScript strict (zero `any` no código novo)
+- Auditoria automática via triggers em movimentações
+- Helper `get_my_company_id()` para evitar recursão de RLS
+
+### Migração
+- Migration é aditiva (IF NOT EXISTS) — pode ser aplicada incrementalmente
+- Reseed: `psql -f supabase/seed_pharmacy.sql` após aplicar a migration
+
+## [1.3.0] - 2026-06-22
+
+### Adicionado
+- **Módulo de Compras e Suprimentos (Agente 37)**
+  - Migration `20260101000020_compras.sql` com 5 tabelas: `fornecedores`, `cotacoes`, `cotacao_itens`, `ordens_compra`, `ordem_compra_itens`
+  - Workflow OC: PENDENTE → APROVADA → ENVIADA → RECEBIDA (ou CANCELADA)
+  - 5 formas de pagamento (BOLETO/PIX/CARTÃO/TRANSFERÊNCIA/DINHEIRO)
+  - Snapshot do nome do produto em OC (imutável após emissão)
+  - Trigger `set_updated_at` em `fornecedores` e `ordens_compra`
+  - RLS granular (leitura ampla, escrita para role compras/admin)
+  - Service `purchasesService.ts` com fornecedores, cotações, OCs + relatórios
+  - Componentes `PurchasesManager.tsx` (3 abas) e `PurchaseOrderForm.tsx` (sheet lateral)
+  - Página `/purchases`
+  - Testes `purchasesService.test.ts` (8 cenários)
+  - Seed `seed_compras_transporte_nps.sql` com 5 fornecedores (medicamentos/materiais/equipamentos/serviços/outros)
+
+- **Módulo de Remoção e Transporte Sanitário (Agente 37)**
+  - Migration `20260101000021_transporte.sql` com 3 tabelas: `veiculos`, `equipe_transporte`, `remocoes`
+  - Veículos classificados por tipo (AMBULANCIA_SIMPLES, AMBULANCIA_UTI, TRANSPORTE_SIMPLES, TRANSPORTE_ADAPTADO)
+  - Equipe polimórfica via tp_funcao (MOTORISTA, TECNICO_ENFERMAGEM, MEDICO, AUXILIAR)
+  - Workflow: PENDENTE → AGENDADA → EM_ANDAMENTO → CONCLUIDA (ou CANCELADA)
+  - Urgência com semafórica (BAIXA/MEDIA/ALTA/EMERGENCIA)
+  - Controle de quilometragem (inicial/final) para reembolso
+  - CNH com alerta de vencimento em 30 dias (compliance operacional)
+  - Service `transportService.ts` com veículos, equipe, remoções + relatórios
+  - Componente `TransportManager.tsx` (3 abas) com cores semafóricas
+  - Página `/transport`
+  - Testes `transportService.test.ts` (6 cenários)
+  - Seed com 2 veículos (ambulância simples + UTI) e 4 profissionais
+
+- **Módulo de NPS / Feedback do Paciente (Agente 37)**
+  - Migration `20260101000022_nps.sql` com 2 tabelas: `nps_pesquisas`, `nps_respostas`
+  - View `v_nps_analise` para agregação (notas médias, % promotores/detratores, NPS score)
+  - Categorização automática via `GENERATED ALWAYS AS ... STORED`:
+    - PROMOTOR: nota 9-10
+    - NEUTRO: nota 7-8
+    - DETRATOR: nota 0-6
+  - Template de perguntas em JSONB (NPS, ESCALA_5, TEXTO, MULTIPLA_ESCOLHA)
+  - RLS permite INSERT anônimo (link público de pesquisa)
+  - Service `npsService.ts` com pesquisas, respostas + análise (com fallback client-side)
+  - Componentes `NpsDashboard.tsx` (KPIs + histograma + comentários) e `NpsSurveyPublic.tsx` (público)
+  - Páginas `/nps` (dashboard autenticado) e `/nps/:token` (resposta pública)
+  - Testes `npsService.test.ts` (8 cenários)
+  - Seed com 1 pesquisa modelo 2026
+
+### Decisões
+- **Migrations idempotentes** com `IF NOT EXISTS` e `DROP POLICY IF EXISTS` (segue padrão dos outros módulos)
+- **Snapshot em OC**: descrição do produto é congelada no momento da emissão para histórico fiel
+- **NPS público**: pesquisa via link enviado por e-mail/WhatsApp/SMS, sem exigir login
+- **Fallback em análise NPS**: se view `v_nps_analise` não existir (RLS restritivo), calculamos client-side
+- **CNH compliance**: alerta automático de vencimento em 30 dias para motoristas
+- **Quilometragem**: controle inicial/final para reembolso de transporte
+
+### Rotas adicionadas
+- `/purchases` — Compras e Suprimentos (admin/gestor/administrativo)
+- `/transport` — Remoção e Transporte (admin/recepção/gestor/administrativo)
+- `/nps` — Dashboard NPS (admin/gestor)
+- `/nps/:token` — Resposta pública (sem auth)
+
+### Arquivos criados (resumo)
+- Migrations: `20260101000020_compras.sql`, `20260101000021_transporte.sql`, `20260101000022_nps.sql`
+- Seed: `seed_compras_transporte_nps.sql`
+- Services: `purchasesService.ts`, `transportService.ts`, `npsService.ts`
+- Componentes: `purchases/PurchasesManager.tsx`, `purchases/PurchaseOrderForm.tsx`, `transport/TransportManager.tsx`, `nps/NpsDashboard.tsx`, `nps/NpsSurveyPublic.tsx`
+- Páginas: `PurchasesPage.tsx`, `TransportPage.tsx`, `NpsDashboardPage.tsx`, `NpsSurveyPage.tsx`
+- Testes: `purchasesService.test.ts`, `transportService.test.ts`, `npsService.test.ts`
+
+### Migração
+- `psql -f supabase/migrations/20260101000020_compras.sql`
+- `psql -f supabase/migrations/20260101000021_transporte.sql`
+- `psql -f supabase/migrations/20260101000022_nps.sql`
+- Reseed opcional: `psql -f supabase/seed_compras_transporte_nps.sql`
+

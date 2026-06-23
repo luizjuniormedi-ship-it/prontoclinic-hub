@@ -866,3 +866,35 @@ Recepção / PA → Internação → [Médico + Enfermagem + Farmácia + LIS/PAC
 ### Princípios da Arquitetura
 
 Cada módulo deve gerar rastreabilidade, faturamento correto, dados para BI, conformidade com LGPD, prevenção de glosas, histórico clínico completo, comunicação automática com o paciente e auditoria operacional e assistencial.
+
+---
+
+## Status de Implementação (v1.1.0)
+
+| # | Módulo | Status | Migration | Service | UI |
+|---|--------|--------|-----------|---------|-----|
+| 1 | Agendamento | Parcial | - | - | ✅ |
+| 2 | Recepção | Parcial | - | - | ✅ |
+| 3 | Cadastro de Pacientes | ✅ | - | `patientsService` | ✅ |
+| 4 | Atendimento / Prontuário | ✅ | - | `medicalRecordsService` | ✅ |
+| 5 | Enfermagem / Triagem | ✅ | 16 | `nursingService` | ✅ |
+| **6** | **Farmácia / Materiais** | **✅** | **15** | **`pharmacyService`** | **✅** |
+| 7 | Pronto Atendimento | Pendente | - | - | - |
+| 8 | Internação | Pendente | - | - | - |
+| 9 | Centro Cirúrgico | Pendente | - | - | - |
+| 10 | LIS / Laboratório | Pendente | - | - | - |
+| 11 | PACS / DICOM / RIS | ✅ | 9 | `dicomService` | ✅ |
+| 12 | Convênios | ✅ | 1-4 | `insuranceService` | ✅ |
+| 13 | Faturamento TISS | ✅ | 10 | `tissService` | ✅ |
+| 14 | Financeiro | ✅ | - | `financialService` | ✅ |
+| 15 | Administrativo | ✅ | - | `api.ts` | ✅ |
+| 16 | LGPD / Auditoria | ✅ | 6, 7, 12 | `lgpdService`, `auditService` | ✅ |
+| 17 | Telemedicina | ✅ | 17 | `telemedicinaService` | ✅ |
+| 18 | WhatsApp / Comunicação | ✅ | 8 | `notificationService` | ✅ |
+| 19 | Feedback / NPS | Pendente | - | - | - |
+| 20 | BI / Indicadores | Pendente | - | - | - |
+| 21 | IA Clínica | Pendente | - | - | - |
+| 22 | Remoção / Transporte | Pendente | - | - | - |
+| 23 | Compras | Pendente | - | - | - |
+| 24 | Assinatura Digital | Pendente | - | - | - |
+

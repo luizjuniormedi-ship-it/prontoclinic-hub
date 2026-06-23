@@ -69,6 +69,22 @@ const routePermissionMap: Record<string, PermissionEntry> = {
   "/companies": [ROLES.ADMIN, ROLES.GESTOR, ROLES.ADMINISTRATIVO],
   "/admin": [ROLES.ADMIN, ROLES.ADMINISTRATIVO],
   "/meus-agendamentos": "*", // portal do paciente (qualquer usuario logado)
+  "/nursing": [ROLES.ADMIN, ROLES.MEDICO, ROLES.RECEPCAO], // triagem (admin, médico, recepção)
+  "/pharmacy": [ROLES.ADMIN, ROLES.MEDICO, ROLES.GESTOR, ROLES.ADMINISTRATIVO],
+  "/bi": [ROLES.ADMIN, ROLES.GESTOR, ROLES.MEDICO, ROLES.FINANCEIRO],
+  "/telemedicina": [ROLES.ADMIN, ROLES.MEDICO, ROLES.GESTOR],
+  "/lab": [ROLES.ADMIN, ROLES.MEDICO, ROLES.GESTOR, ROLES.DIAGNOSTICO],
+  // Agente 38
+  "/internacao": [ROLES.ADMIN, ROLES.MEDICO, ROLES.GESTOR],
+  "/cirurgia": [ROLES.ADMIN, ROLES.MEDICO, ROLES.GESTOR],
+  "/pa": [ROLES.ADMIN, ROLES.RECEPCAO, ROLES.MEDICO, ROLES.GESTOR],
+  "/assinatura": [ROLES.ADMIN, ROLES.MEDICO],
+  "/ia-clinica": [ROLES.ADMIN, ROLES.MEDICO, ROLES.GESTOR],
+  // Agente 37: Compras + Transporte + NPS
+  "/purchases": [ROLES.ADMIN, ROLES.GESTOR, ROLES.ADMINISTRATIVO],
+  "/transport": [ROLES.ADMIN, ROLES.RECEPCAO, ROLES.GESTOR, ROLES.ADMINISTRATIVO],
+  "/nps": [ROLES.ADMIN, ROLES.GESTOR],
+  // /nps/:token é público (link enviado a pacientes); não passa por este gate.
 };
 
 /**

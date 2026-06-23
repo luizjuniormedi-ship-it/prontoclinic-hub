@@ -18,12 +18,34 @@
  */
 
 import { supabase } from '@/lib/supabase';
-import type { DicomWorklistItem, ImagingOrderItem, ImagingOrder, PacsStudy } from '@/types/dicom';
+import type { DicomWorklistItem, ImagingOrderItem, ImagingOrder, ImagingOrderStatus, PacsStudy } from '@/types/dicom';
 import { imagingOrderItemsService, worklistQueueService } from './dicomService';
 
 // ── Orthanc REST API contract ──────────────────────────
 // These interfaces define the data contract for Orthanc integration.
 // The actual HTTP calls would go through an Edge Function or local bridge service.
+
+export interface OrthancConfig {
+  Name: string;
+  DicomAet: string;
+  DicomPort: number;
+  HttpPort: number;
+  Worklists: {
+    Enable: boolean;
+    Database: string;
+  };
+  DicomModalities: {
+    [aet: string]: [string, string, number] | string;
+  };
+  RegisteredUsers: Record<string, string>;
+  StableStudyTimeout: number;
+  LuaScripts: string[];
+  [key: string]: unknown;
+}
+
+export interface OrthancStats {
+  [key: string]: unknown;
+}
 
 export interface OrthancWorklistEntry {
   // Mapped from DICOM Worklist tags
@@ -195,7 +217,7 @@ export const dicomIntegrationService = {
     if (error) throw error;
 
     // 3. Update item status
-    await imagingOrderItemsService.updateStatus(wlItem.imaging_order_item_id, 'recebido_pacs');
+    await imagingOrderItemsService.updateStatus(wlItem.imaging_order_item_id, 'recebido_pacs' as ImagingOrderStatus);
 
     // 4. Update worklist queue
     await supabase
@@ -236,7 +258,7 @@ export const dicomIntegrationService = {
       }
 
       // Cancel item
-      await imagingOrderItemsService.updateStatus(item.id, 'cancelado');
+      await imagingOrderItemsService.updateStatus(item.id, 'cancelado' as ImagingOrderStatus);
     }
 
     // Cancel order
@@ -283,7 +305,7 @@ export const dicomIntegrationService = {
    * Generate the Orthanc configuration snippet for connecting to this system.
    * This is informational — helps the admin set up Orthanc correctly.
    */
-  getOrthancConfigTemplate(pacsNodeAeTitle: string, worlistScpPort: number): object {
+  getOrthancConfigTemplate(pacsNodeAeTitle: string, worlistScpPort: number): OrthancConfig {
     return {
       Name: 'ProntoMedic PACS',
       DicomAet: pacsNodeAeTitle,

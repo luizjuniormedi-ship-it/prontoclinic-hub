@@ -23,7 +23,7 @@ export default function DicomDashboardPage() {
       dicomDashboardService.getStats(),
       dicomModalitiesService.list(),
       dicomNodesService.list(),
-    ]).then(([s, m, n]) => { setStats(s); setModalities(m); setNodes(n); })
+    ]).then(([s, m, n]) => { setStats(s); setModalities(m as unknown as DicomModality[]); setNodes(n as unknown as DicomNode[]); })
       .catch(() => toast({ title: "Erro ao carregar dashboard", variant: "destructive" }))
       .finally(() => setLoading(false));
   };

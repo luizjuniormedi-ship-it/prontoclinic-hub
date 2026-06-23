@@ -19,6 +19,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Calendar, Clock, CheckCircle2, UserPlus, Search, Pill,
   Bell, ArrowRight, Stethoscope, Heart, Mail, MessageSquare, Smartphone,
+  Target, BarChart3,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { StatsCard } from "@/components/StatsCard";
@@ -28,11 +29,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { appointmentsService, professionalsLookup, DbAppointment, DbProfessional } from "@/services/appointmentsService";
+import { biService, type Meta } from "@/services/biService";
 import { friendlyError } from "@/utils/friendlyError";
+import type { AppointmentStatusForBadge } from "@/types/missing";
 
 interface PatientLite { id: string; full_name: string; }
 interface NotificationLite {
@@ -78,6 +82,16 @@ function timeAgo(iso: string): string {
   return `${Math.floor(diff / 86400)}d atrás`;
 }
 
+function calcularProgressoMeta(m: Meta): number {
+  if (!m.vl_meta || m.vl_meta === 0) return 0;
+  const ratio = (m.vl_atual / m.vl_meta) * 100;
+  if (m.tp_comparacao === "IGUAL_MENOR") {
+    if (m.vl_atual === 0) return 100;
+    return Math.min(100, Math.max(0, 100 - ratio));
+  }
+  return Math.min(100, Math.max(0, ratio));
+}
+
 export default function Index() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -87,6 +101,7 @@ export default function Index() {
   const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
   const [patients, setPatients] = useState<PatientLite[]>([]);
   const [notifications, setNotifications] = useState<NotificationLite[]>([]);
+  const [metas, setMetas] = useState<Meta[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const today = new Date().toISOString().split("T")[0];
@@ -116,6 +131,17 @@ export default function Index() {
             .order("dt_queued", { ascending: false })
             .limit(3);
           setNotifications((notifs as NotificationLite[]) || []);
+
+          // Metas ativas (best-effort)
+          if (user.company_id) {
+            try {
+              const metasAtivas = await biService.getMetas(user.company_id);
+              setMetas(metasAtivas.slice(0, 3));
+            } catch {
+              // silencioso — tabela pode não existir ainda
+              setMetas([]);
+            }
+          }
         }
       } catch (err) {
         setError(friendlyError(err, "Carregar painel"));
@@ -317,6 +343,44 @@ export default function Index() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Metas ativas (resumo) */}
+      {metas.length > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Target className="h-4 w-4 text-primary" />
+                Metas ativas
+              </CardTitle>
+              <CardDescription>Acompanhe o progresso dos objetivos da clínica.</CardDescription>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => navigate("/bi/metas")}>
+              <BarChart3 className="mr-1.5 h-3.5 w-3.5" />
+              Ver BI
+              <ArrowRight className="ml-1 h-3 w-3" />
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-3">
+              {metas.map((m) => {
+                const progresso = calcularProgressoMeta(m);
+                return (
+                  <li key={m.id} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium">{m.cd_kpi}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {m.vl_atual} / {m.vl_meta}
+                      </span>
+                    </div>
+                    <Progress value={progresso} className="h-2" />
+                  </li>
+                );
+              })}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Próximos atendimentos (resumo) */}
       <Card>

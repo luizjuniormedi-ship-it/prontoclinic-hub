@@ -11,6 +11,7 @@ import { supabase } from "@/lib/supabase";
 import { appointmentsService, professionalsLookup, DbAppointment, DbProfessional } from "@/services/appointmentsService";
 import { calculateAge } from "@/utils/formatters";
 import { useAuth } from "@/hooks/useAuth";
+import type { AppointmentStatusForBadge } from "@/types/missing";
 
 interface PatientRow { id: string; full_name: string; birth_date: string | null; }
 

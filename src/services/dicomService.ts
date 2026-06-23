@@ -304,6 +304,56 @@ export const worklistService = {
     return (data || []) as DicomWorklistItem[];
   },
 
+  /**
+   * Lista todos os itens da worklist (alias para WorklistPage).
+   * Retorna uma estrutura flat com campos derivados mapeados.
+   */
+  async list(): Promise<Array<{
+    id: number;
+    cd_patient?: number;
+    cd_unit?: number;
+    ds_procedure?: string;
+    modality?: string;
+    requesting_physician?: string;
+    scheduled_at?: string;
+    priority?: string;
+    status?: string;
+    created_at?: string;
+  }>> {
+    const { data, error } = await supabase
+      .from("dicom_worklist")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (error) {
+      if ((error as { code?: string }).code === "PGRST116") return [];
+      throw error;
+    }
+    return (data || []) as Array<{
+      id: number;
+      cd_patient?: number;
+      cd_unit?: number;
+      ds_procedure?: string;
+      modality?: string;
+      requesting_physician?: string;
+      scheduled_at?: string;
+      priority?: string;
+      status?: string;
+      created_at?: string;
+    }>;
+  },
+
+  /**
+   * Atualiza um item da worklist (alias para WorklistPage).
+   */
+  async update(id: number, updates: { status?: string; [key: string]: unknown }): Promise<void> {
+    const { error } = await supabase
+      .from("dicom_worklist")
+      .update(updates)
+      .eq("id", id);
+    if (error) throw error;
+  },
+
   async addWorklistTag(
     equipmentId: number,
     companyId: string,
@@ -343,6 +393,23 @@ export const examService = {
       .eq("cd_patient", patientId)
       .order("dt_exame", { ascending: false })
       .limit(limit);
+    if (error) throw error;
+    return (data || []) as DicomExam[];
+  },
+
+  /**
+   * Lista exames de imagem com filtros opcionais.
+   * Wrapper para PACSPage: aceita { status, company_id }.
+   */
+  async list(filters?: { status?: DicomExamStatus; company_id?: string }): Promise<DicomExam[]> {
+    let q = supabase
+      .from("dicom_exams")
+      .select("*, dicom_equipment(ds_equipment, ds_aetitle, ds_type)")
+      .order("dt_exame", { ascending: false })
+      .limit(200);
+    if (filters?.status) q = q.eq("ds_status", filters.status);
+    if (filters?.company_id) q = q.eq("company_id", filters.company_id);
+    const { data, error } = await q;
     if (error) throw error;
     return (data || []) as DicomExam[];
   },
@@ -650,6 +717,22 @@ export const reportService = {
     return data ? this.mapRow(data) : null;
   },
 
+  /**
+   * Lista laudos de radiologia (wrapper para PACSPage / RadiologyReportsPage).
+   */
+  async list(filters?: { company_id?: string; status?: string }): Promise<DicomReport[]> {
+    let q = supabase
+      .from("radiology_reports")
+      .select("*")
+      .order("updated_at", { ascending: false })
+      .limit(200);
+    if (filters?.company_id) q = q.eq("company_id", filters.company_id);
+    if (filters?.status) q = q.eq("status", filters.status);
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data || []).map((r: Record<string, unknown>) => this.mapRow(r));
+  },
+
   /** Publica laudo no app do paciente (SIGH.LG_LIBERAR_APP_SITE) via RPC */
   async publishReport(examId: number, publishToApp: boolean): Promise<{
     examId: number;
@@ -678,19 +761,20 @@ export const reportService = {
   },
 
   mapRow(row: Record<string, unknown>): DicomReport {
+    const r = row as Record<string, any>;
     return {
-      id: row.id,
-      cd_dicom_exam: row.imaging_order_item_id,
-      cd_patient: row.patient_id,
-      cd_laudo: row.imaging_order_item_id,
-      ds_content: row.content || "",
-      ds_status: (row.status || "draft").toUpperCase(),
-      ds_signed_by: row.radiologist_name,
-      dt_signed_at: row.signed_at,
+      id: (r.id as number) ?? 0,
+      cd_dicom_exam: (r.imaging_order_item_id as number) ?? 0,
+      cd_patient: (r.patient_id as number) ?? undefined,
+      cd_laudo: (r.imaging_order_item_id as number) ?? undefined,
+      ds_content: (r.content as string) || "",
+      ds_status: ((r.status as string) || "draft").toUpperCase() as DicomReport["ds_status"],
+      ds_signed_by: r.radiologist_name as string | undefined,
+      dt_signed_at: r.signed_at as string | undefined,
       lg_published_app: false,
-      cd_origem_sigh: row.cd_origem_sigh,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
+      cd_origem_sigh: r.cd_origem_sigh as number | undefined,
+      created_at: (r.created_at as string) ?? "",
+      updated_at: (r.updated_at as string) ?? "",
     };
   },
 };
@@ -736,6 +820,502 @@ export const dicomWeb = {
   },
 };
 
+// ── DICOM Nodes (PACS/MWL/Viewer) Service ──────────────────────────
+// Persistido em `dicom_nodes` (novo alias da tabela dicom_equipment ou
+// tabela dedicada `dicom_nodes`). Para este projeto, reaproveitamos o
+// storage da tabela `dicom_equipment` mapeando os campos.
+
+export const nodesService = {
+  async list(companyId?: string): Promise<Array<{
+    id: string;
+    name: string;
+    node_type: string;
+    aetitle: string;
+    ip_address?: string;
+    port?: number;
+    description?: string;
+    active: boolean;
+  }>> {
+    // Se houver companyId, filtra; senão retorna todos
+    let q = supabase.from("dicom_equipment").select("*").order("ds_equipment");
+    if (companyId) q = q.eq("company_id", companyId);
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data || []).map((r: Record<string, unknown>) => ({
+      id: String(r.id),
+      name: (r.ds_equipment as string) ?? "",
+      node_type: (r.ds_type as string) ?? "pacs",
+      aetitle: (r.ds_aetitle as string) ?? "",
+      ip_address: r.ds_ip as string | undefined,
+      port: r.ds_port as number | undefined,
+      description: r.ds_observacao as string | undefined,
+      active: (r.lg_active as boolean) ?? true,
+    }));
+  },
+
+  async create(payload: {
+    name: string;
+    node_type: string;
+    aetitle: string;
+    ip_address?: string;
+    port?: number;
+    description?: string;
+    active?: boolean;
+  }): Promise<{ id: string }> {
+    const { data, error } = await supabase
+      .from("dicom_equipment")
+      .insert({
+        ds_equipment: payload.name,
+        ds_aetitle: payload.aetitle,
+        ds_type: (payload.node_type as DicomModality) || "US",
+        ds_ip: payload.ip_address,
+        ds_port: payload.port || 104,
+        ds_observacao: payload.description,
+        lg_active: payload.active ?? true,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    return { id: String(data.id) };
+  },
+
+  async update(id: string, payload: Partial<{
+    name: string;
+    node_type: string;
+    aetitle: string;
+    ip_address?: string;
+    port?: number;
+    description?: string;
+    active?: boolean;
+  }>): Promise<void> {
+    const updates: Record<string, unknown> = {};
+    if (payload.name !== undefined) updates.ds_equipment = payload.name;
+    if (payload.aetitle !== undefined) updates.ds_aetitle = payload.aetitle;
+    if (payload.node_type !== undefined) updates.ds_type = payload.node_type;
+    if (payload.ip_address !== undefined) updates.ds_ip = payload.ip_address;
+    if (payload.port !== undefined) updates.ds_port = payload.port;
+    if (payload.description !== undefined) updates.ds_observacao = payload.description;
+    if (payload.active !== undefined) updates.lg_active = payload.active;
+    const { error } = await supabase
+      .from("dicom_equipment")
+      .update(updates)
+      .eq("id", Number(id));
+    if (error) throw error;
+  },
+};
+
+// ── DICOM Modalities (worklist SCP) Service ────────────────────────
+// View derivada de dicom_equipment filtrada por lg_worklist=true.
+export const modalitiesService = {
+  async list(companyId?: string): Promise<Array<{
+    id: string;
+    name: string;
+    modality_type: string;
+    aetitle: string;
+    manufacturer?: string;
+    model?: string;
+    ip_address?: string;
+    port?: number;
+    worklist_enabled: boolean;
+    pacs_node_id?: string;
+    room_name?: string;
+    active: boolean;
+  }>> {
+    let q = supabase
+      .from("dicom_equipment")
+      .select("*")
+      .order("ds_equipment");
+    if (companyId) q = q.eq("company_id", companyId);
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data || []).map((r: Record<string, unknown>) => ({
+      id: String(r.id),
+      name: (r.ds_equipment as string) ?? "",
+      modality_type: (r.ds_type as string) ?? "US",
+      aetitle: (r.ds_aetitle as string) ?? "",
+      manufacturer: r.ds_manufacturer as string | undefined,
+      model: r.ds_model as string | undefined,
+      ip_address: r.ds_ip as string | undefined,
+      port: r.ds_port as number | undefined,
+      worklist_enabled: (r.lg_worklist as boolean) ?? false,
+      pacs_node_id: r.cd_pacs_node ? String(r.cd_pacs_node) : undefined,
+      room_name: r.ds_location as string | undefined,
+      active: (r.lg_active as boolean) ?? true,
+    }));
+  },
+
+  async create(payload: {
+    name: string;
+    modality_type: string;
+    aetitle: string;
+    manufacturer?: string;
+    model?: string;
+    ip_address?: string;
+    port?: number | null;
+    worklist_enabled?: boolean;
+    pacs_node_id?: string | null;
+    room_name?: string;
+    active?: boolean;
+  }): Promise<{ id: string }> {
+    const { data, error } = await supabase
+      .from("dicom_equipment")
+      .insert({
+        ds_equipment: payload.name,
+        ds_aetitle: payload.aetitle,
+        ds_type: (payload.modality_type as DicomModality) || "US",
+        ds_manufacturer: payload.manufacturer,
+        ds_model: payload.model,
+        ds_ip: payload.ip_address,
+        ds_port: payload.port || 104,
+        ds_location: payload.room_name,
+        lg_worklist: payload.worklist_enabled ?? false,
+        cd_pacs_node: payload.pacs_node_id ? Number(payload.pacs_node_id) : null,
+        lg_active: payload.active ?? true,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    return { id: String(data.id) };
+  },
+
+  async update(id: string, payload: Partial<{
+    name: string;
+    modality_type: string;
+    aetitle: string;
+    manufacturer?: string;
+    model?: string;
+    ip_address?: string;
+    port?: number | null;
+    worklist_enabled?: boolean;
+    pacs_node_id?: string | null;
+    room_name?: string;
+    active?: boolean;
+  }>): Promise<void> {
+    const updates: Record<string, unknown> = {};
+    if (payload.name !== undefined) updates.ds_equipment = payload.name;
+    if (payload.aetitle !== undefined) updates.ds_aetitle = payload.aetitle;
+    if (payload.modality_type !== undefined) updates.ds_type = payload.modality_type;
+    if (payload.manufacturer !== undefined) updates.ds_manufacturer = payload.manufacturer;
+    if (payload.model !== undefined) updates.ds_model = payload.model;
+    if (payload.ip_address !== undefined) updates.ds_ip = payload.ip_address;
+    if (payload.port !== undefined) updates.ds_port = payload.port;
+    if (payload.room_name !== undefined) updates.ds_location = payload.room_name;
+    if (payload.worklist_enabled !== undefined) updates.lg_worklist = payload.worklist_enabled;
+    if (payload.pacs_node_id !== undefined) updates.cd_pacs_node = payload.pacs_node_id ? Number(payload.pacs_node_id) : null;
+    if (payload.active !== undefined) updates.lg_active = payload.active;
+    const { error } = await supabase
+      .from("dicom_equipment")
+      .update(updates)
+      .eq("id", Number(id));
+    if (error) throw error;
+  },
+};
+
+// ── Worklist Queue (legacy DICOM MWL) Service ─────────────────────
+// Esta tabela física é `dicom_worklist_queue`. Cria/atualiza registros
+// a partir de imaging_order_items.
+
+import type { WorklistQueueStatus, DicomWorklistItem as DicomWorklistItemAlias } from "@/types/dicom";
+
+export const worklistQueueServiceRaw = {
+  async list(filters?: { status?: string }): Promise<DicomWorklistItemAlias[]> {
+    let q = supabase
+      .from("dicom_worklist_queue")
+      .select("*")
+      .order("scheduled_datetime", { ascending: false });
+    if (filters?.status) q = q.eq("status", filters.status);
+    const { data, error } = await q;
+    if (error) {
+      // Se a tabela não existir (404), retorna array vazio silenciosamente
+      if ((error as { code?: string }).code === "PGRST116" || (error as { message?: string }).message?.includes("does not exist")) {
+        return [];
+      }
+      throw error;
+    }
+    return (data || []) as unknown as DicomWorklistItemAlias[];
+  },
+
+  async markExported(id: string): Promise<void> {
+    const { error } = await supabase
+      .from("dicom_worklist_queue")
+      .update({
+        status: "exported" as WorklistQueueStatus,
+        exported_to_worklist: true,
+        last_export_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+    if (error) throw error;
+  },
+
+  async cancel(id: string): Promise<void> {
+    const { error } = await supabase
+      .from("dicom_worklist_queue")
+      .update({
+        status: "cancelled" as WorklistQueueStatus,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+    if (error) throw error;
+  },
+
+  async createFromOrderItem(
+    item: import("@/types/dicom").ImagingOrderItem,
+    order: import("@/types/dicom").ImagingOrder,
+    patient: { id: string; full_name: string; birth_date?: string; sex?: string; cpf?: string }
+  ): Promise<DicomWorklistItemAlias> {
+    const { data, error } = await supabase
+      .from("dicom_worklist_queue")
+      .insert({
+        imaging_order_item_id: item.id,
+        patient_id: order.patient_id,
+        patient_name: patient.full_name,
+        patient_birth_date: patient.birth_date,
+        patient_sex: patient.sex,
+        patient_identifier: patient.cpf,
+        accession_number: order.accession_number,
+        requested_procedure_description: item.exam_name,
+        requested_procedure_id: item.requested_procedure_id,
+        scheduled_procedure_step_id: item.scheduled_procedure_step_id,
+        modality_type: item.modality_type,
+        scheduled_station_aetitle: item.station_aetitle,
+        scheduled_datetime: item.scheduled_datetime,
+        referring_physician_name: order.referring_physician_name,
+        status: "pending" as WorklistQueueStatus,
+        exported_to_worklist: false,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data as unknown as DicomWorklistItemAlias;
+  },
+};
+
+// ── Imaging Order Items Service ────────────────────────────────────
+
+import type { ImagingOrder, ImagingOrderItem, ImagingOrderStatus } from "@/types/dicom";
+
+export const imagingOrderItemsServiceReal = {
+  async listByOrder(orderId: string): Promise<ImagingOrderItem[]> {
+    const { data, error } = await supabase
+      .from("imaging_order_items")
+      .select("*")
+      .eq("imaging_order_id", orderId)
+      .order("created_at");
+    if (error) {
+      if ((error as { code?: string }).code === "PGRST116") return [];
+      throw error;
+    }
+    return (data || []) as unknown as ImagingOrderItem[];
+  },
+
+  async create(payload: Partial<ImagingOrderItem>): Promise<ImagingOrderItem> {
+    const { data, error } = await supabase
+      .from("imaging_order_items")
+      .insert(payload)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as unknown as ImagingOrderItem;
+  },
+
+  async updateStatus(id: string, status: ImagingOrderStatus): Promise<void> {
+    const { error } = await supabase
+      .from("imaging_order_items")
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) throw error;
+  },
+};
+
+// ── Imaging Orders Service ─────────────────────────────────────────
+
+export const imagingOrdersServiceReal = {
+  async list(filters?: { status?: string }): Promise<ImagingOrder[]> {
+    let q = supabase
+      .from("imaging_orders")
+      .select("*, patients(full_name)")
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (filters?.status) q = q.eq("status", filters.status);
+    const { data, error } = await q;
+    if (error) {
+      if ((error as { code?: string }).code === "PGRST116") return [];
+      throw error;
+    }
+    return (data || []).map((r: Record<string, unknown>) => {
+      const patient = r.patients as { full_name?: string } | null;
+      return {
+        ...(r as unknown as ImagingOrder),
+        patient_name: patient?.full_name,
+      } as ImagingOrder;
+    });
+  },
+
+  async create(payload: Partial<ImagingOrder>): Promise<ImagingOrder> {
+    const { data, error } = await supabase
+      .from("imaging_orders")
+      .insert(payload)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as unknown as ImagingOrder;
+  },
+};
+
+// ── DICOM Exam Service (wrapper para listar estudos) ──────────────
+
+import type { PacsStudy } from "@/types/dicom";
+
+export const pacsStudiesServiceReal = {
+  async list(filters?: { status?: DicomExamStatus; company_id?: string }): Promise<DicomExam[]> {
+    let q = supabase
+      .from("dicom_exams")
+      .select("*, dicom_equipment(ds_equipment, ds_aetitle, ds_type)")
+      .order("dt_exame", { ascending: false })
+      .limit(200);
+    if (filters?.status) q = q.eq("ds_status", filters.status);
+    if (filters?.company_id) q = q.eq("company_id", filters.company_id);
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data || []) as DicomExam[];
+  },
+};
+
+// ── Worklist Service (legacy "dicom_worklist" — manter alias) ──────
+
+export const worklistServiceAlias = {
+  async list(): Promise<Array<{
+    id: number;
+    cd_patient?: number;
+    cd_unit?: number;
+    ds_procedure?: string;
+    modality?: string;
+    requesting_physician?: string;
+    scheduled_at?: string;
+    priority?: string;
+    status?: string;
+    created_at?: string;
+  }>> {
+    const { data, error } = await supabase
+      .from("dicom_worklist")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (error) {
+      if ((error as { code?: string }).code === "PGRST116") return [];
+      throw error;
+    }
+    return (data || []) as Array<{
+      id: number;
+      cd_patient?: number;
+      cd_unit?: number;
+      ds_procedure?: string;
+      modality?: string;
+      requesting_physician?: string;
+      scheduled_at?: string;
+      priority?: string;
+      status?: string;
+      created_at?: string;
+    }>;
+  },
+
+  async update(id: number, updates: { status?: string }): Promise<void> {
+    const { error } = await supabase
+      .from("dicom_worklist")
+      .update(updates)
+      .eq("id", id);
+    if (error) throw error;
+  },
+};
+
+// ── Radiology Reports Service (wrapper) ────────────────────────────
+
+import type { RadiologyReport } from "@/types/dicom";
+
+export const radiologyReportsServiceReal = {
+  async list(filters?: { status?: string; company_id?: string }): Promise<RadiologyReport[]> {
+    let q = supabase
+      .from("radiology_reports")
+      .select("*, patients(full_name)")
+      .order("updated_at", { ascending: false })
+      .limit(200);
+    if (filters?.status) q = q.eq("status", filters.status);
+    if (filters?.company_id) q = q.eq("company_id", filters.company_id);
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data || []).map((r: Record<string, unknown>) => {
+      const patient = r.patients as { full_name?: string } | null;
+      return {
+        ...(r as unknown as RadiologyReport),
+        patient_name: patient?.full_name,
+      } as RadiologyReport;
+    });
+  },
+
+  async update(id: string, updates: Partial<RadiologyReport>): Promise<void> {
+    const { error } = await supabase
+      .from("radiology_reports")
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+    if (error) throw error;
+  },
+
+  async sign(id: string, radiologistName: string): Promise<void> {
+    const { error } = await supabase
+      .from("radiology_reports")
+      .update({
+        radiologist_name: radiologistName,
+        status: "final",
+        signed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+    if (error) throw error;
+  },
+};
+
+// ── DICOM Dashboard Stats ──────────────────────────────────────────
+
+export const dicomDashboardServiceReal = {
+  async getStats(): Promise<{
+    activeModalities: number;
+    worklistEnabled: number;
+    worklistPending: number;
+    worklistExported: number;
+    pendingReports: number;
+    completedReports: number;
+    ordersInAcquisition: number;
+    ordersSentPacs: number;
+  }> {
+    const [eqRes, wlRes, repRes, ordRes] = await Promise.all([
+      supabase.from("dicom_equipment").select("id, lg_worklist, lg_active", { count: "exact" }),
+      supabase.from("dicom_worklist_queue").select("status", { count: "exact" }),
+      supabase.from("radiology_reports").select("status", { count: "exact" }),
+      supabase.from("imaging_orders").select("status", { count: "exact" }),
+    ]);
+
+    const eq = (eqRes.data || []) as Array<{ lg_worklist?: boolean; lg_active?: boolean }>;
+    const wl = (wlRes.data || []) as Array<{ status?: string }>;
+    const rep = (repRes.data || []) as Array<{ status?: string }>;
+    const ord = (ordRes.data || []) as Array<{ status?: string }>;
+
+    return {
+      activeModalities: eq.filter(e => e.lg_active !== false).length,
+      worklistEnabled: eq.filter(e => e.lg_worklist === true).length,
+      worklistPending: wl.filter(w => w.status === "pending").length,
+      worklistExported: wl.filter(w => w.status === "exported").length,
+      pendingReports: rep.filter(r => r.status === "draft" || r.status === "preliminary").length,
+      completedReports: rep.filter(r => r.status === "final" || r.status === "amended").length,
+      ordersInAcquisition: ord.filter(o => o.status === "em_aquisicao").length,
+      ordersSentPacs: ord.filter(o => o.status === "enviado_pacs" || o.status === "recebido_pacs").length,
+    };
+  },
+};
+
 // ── Backward-compat: exporta o servico agregado (substitui o mock) ──
 
 export const dicomService = {
@@ -752,17 +1332,14 @@ export const dicomService = {
 
 // Aliases para compatibilidade com pages que esperam nomes diferentes
 // (migração da versão mock → produção)
-export const dicomNodesService = equipmentService;
-export const dicomModalitiesService = equipmentService;
-export const worklistQueueService = worklistService;
-export const dicomDashboardService = {
-  ...examService,
-  ...worklistService,
-  ...equipmentService,
-};
-export const radiologyReportsService = reportService;
-export const pacsStudiesService = examService;
-export const imagingOrderItemsService = examService;
-export const imagingOrdersService = examService;
+export const dicomNodesService = nodesService;
+export const dicomModalitiesService = modalitiesService;
+export const worklistQueueService = worklistQueueServiceRaw;
+export const dicomDashboardService = dicomDashboardServiceReal;
+export const radiologyReportsService = radiologyReportsServiceReal;
+export const pacsStudiesService = pacsStudiesServiceReal;
+export const imagingOrderItemsService = imagingOrderItemsServiceReal;
+export const imagingOrdersService = imagingOrdersServiceReal;
+export { worklistServiceAlias as worklistServiceLegacy };
 
 export default dicomService;

@@ -35,6 +35,7 @@ const envSchema = z.object({
   VITE_TWILIO_FROM_NUMBER: z.string().optional(),
   VITE_DAILY_API_KEY: z.string().optional(),
   VITE_DAILY_DOMAIN: z.string().optional(),
+  VITE_DAILY_WEBHOOK_SECRET: z.string().optional(),
   VITE_S3_BUCKET: z.string().optional(),
   VITE_S3_REGION: z.string().default("us-east-1"),
   VITE_ENABLE_TELEMEDICINE: z.string().transform((v) => v === "true").default("false"),

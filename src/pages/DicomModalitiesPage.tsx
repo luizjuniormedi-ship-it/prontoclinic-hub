@@ -28,7 +28,7 @@ export default function DicomModalitiesPage() {
   const load = () => {
     setLoading(true);
     Promise.all([dicomModalitiesService.list(), dicomNodesService.list()])
-      .then(([m, n]) => { setModalities(m); setNodes(n.filter(x => x.node_type === 'pacs')); })
+      .then(([m, n]) => { setModalities(m as unknown as DicomModality[]); setNodes((n.filter(x => x.node_type === 'pacs')) as unknown as DicomNode[]); })
       .catch(() => toast({ title: "Erro ao carregar", variant: "destructive" }))
       .finally(() => setLoading(false));
   };

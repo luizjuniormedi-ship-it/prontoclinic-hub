@@ -107,7 +107,11 @@ export default function ImagingOrdersPage() {
       .in('status', ['scheduled', 'confirmed', 'in_progress'])
       .order('appointment_date', { ascending: false })
       .limit(20);
-    setAppointments(data || []);
+    const normalized = (data || []).map((d) => ({
+      ...d,
+      professionals: Array.isArray(d.professionals) ? d.professionals[0] ?? null : d.professionals,
+    }));
+    setAppointments(normalized as unknown as LookupAppointment[]);
   };
 
   const openNew = () => {

@@ -27,7 +27,7 @@ export default function DicomNodesPage() {
 
   const load = () => {
     setLoading(true);
-    dicomNodesService.list().then(setNodes).catch(() => toast({ title: "Erro ao carregar nós DICOM", variant: "destructive" })).finally(() => setLoading(false));
+    dicomNodesService.list().then((data) => setNodes(data as unknown as DicomNode[])).catch(() => toast({ title: "Erro ao carregar nós DICOM", variant: "destructive" })).finally(() => setLoading(false));
   };
 
   useEffect(load, []);

@@ -44,6 +44,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
     "/admin/profiles": "Perfis",
     "/admin/permissions": "Permissões",
     "/settings": "Configurações",
+    "/purchases": "Compras",
+    "/transport": "Transporte",
+    "/nps": "NPS",
   };
   const currentPage = pathLabels[location.pathname] || "Página";
 

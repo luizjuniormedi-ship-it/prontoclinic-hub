@@ -189,10 +189,14 @@ CREATE OR REPLACE FUNCTION public.queue_notification(
   p_recipient_type VARCHAR,
   p_recipient_id BIGINT,
   p_recipient_name VARCHAR,
+  p_template_code VARCHAR,
+  -- IMPORTANTE: PostgreSQL exige que parâmetros com DEFAULT venham APÓS
+  -- os parâmetros obrigatórios. Outrora esta função tinha defaults no meio
+  -- (p_recipient_email/phone/whatsapp DEFAULT NULL antes de p_template_code,
+  -- que não tinha default) — o que é rejeitado pelo parser. (Issue P0 fix 2026-06-22)
   p_recipient_email VARCHAR DEFAULT NULL,
   p_recipient_phone VARCHAR DEFAULT NULL,
   p_recipient_whatsapp VARCHAR DEFAULT NULL,
-  p_template_code VARCHAR,
   p_variables JSONB DEFAULT '{}'::JSONB,
   p_appointment_id BIGINT DEFAULT NULL,
   p_medical_record_id BIGINT DEFAULT NULL,

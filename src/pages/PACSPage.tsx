@@ -31,27 +31,30 @@ import {
   type DicomReport,
   type DicomExamStatus,
 } from "@/services/dicomService";
+import type { DicomReportPublic } from "@/types/missing";
 import { toast } from "@/hooks/use-toast";
 import { formatDate } from "@/utils/formatters";
 
 const STATUS_LABELS: Record<DicomExamStatus, string> = {
-  AGENDADO: "Agendado",
-  EM_ANDAMENTO: "Em andamento",
-  REALIZADO: "Realizado",
-  IMAGEM_RECEBIDA: "Imagem recebida",
+  REQUESTED: "Solicitado",
+  SCHEDULED: "Agendado",
+  IN_PROGRESS: "Em andamento",
+  RECEIVED: "Imagem recebida",
   LAUDANDO: "Laudando",
-  LAUDO_LIBERADO: "Laudo liberado",
-  CANCELADO: "Cancelado",
+  LAUDADO: "Laudo liberado",
+  ENTREGUE: "Entregue",
+  CANCELLED: "Cancelado",
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  AGENDADO: "bg-warning/10 text-warning",
-  EM_ANDAMENTO: "bg-primary/10 text-primary",
-  REALIZADO: "bg-success/10 text-success",
-  IMAGEM_RECEBIDA: "bg-success/10 text-success",
+  REQUESTED: "bg-warning/10 text-warning",
+  SCHEDULED: "bg-warning/10 text-warning",
+  IN_PROGRESS: "bg-primary/10 text-primary",
+  RECEIVED: "bg-success/10 text-success",
   LAUDANDO: "bg-primary/10 text-primary",
-  LAUDO_LIBERADO: "bg-success/10 text-success",
-  CANCELADO: "bg-muted text-muted-foreground",
+  LAUDADO: "bg-success/10 text-success",
+  ENTREGUE: "bg-success/10 text-success",
+  CANCELLED: "bg-muted text-muted-foreground",
 };
 
 export default function PACSPage() {
@@ -60,7 +63,7 @@ export default function PACSPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<DicomExamStatus | "all">("all");
   const [selectedStudy, setSelectedStudy] = useState<DicomExam | null>(null);
-  const [report, setReport] = useState<DicomReport | null>(null);
+  const [report, setReport] = useState<DicomReportPublic | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
 
   const load = () => {
@@ -91,7 +94,7 @@ export default function PACSPage() {
         const linked = reports.find(
           (r) => (r as unknown as { cd_dicom_exame?: number }).cd_dicom_exame === study.id,
         );
-        setReport(linked || null);
+        setReport((linked || null) as unknown as DicomReportPublic | null);
       } catch {
         setReport(null);
       }
@@ -287,12 +290,18 @@ export default function PACSPage() {
                     <div>
                       <span className="text-muted-foreground">Status:</span>{" "}
                       <Badge variant="outline" className="text-[10px]">
-                        {report.tp_status}
+                        {(report as unknown as { ds_status?: string }).ds_status
+                          || (report as unknown as { tp_status?: string }).tp_status
+                          || "—"}
                       </Badge>
                     </div>
-                    {report.ds_laudo && (
+                    {((report as unknown as { ds_content?: string }).ds_content
+                      || (report as unknown as { ds_laudo?: string }).ds_laudo
+                      || (report as unknown as { ds_conteudo?: string }).ds_conteudo) && (
                       <div className="whitespace-pre-wrap text-xs bg-muted/50 rounded p-3 mt-2">
-                        {report.ds_laudo}
+                        {(report as unknown as { ds_content?: string }).ds_content
+                          || (report as unknown as { ds_laudo?: string }).ds_laudo
+                          || (report as unknown as { ds_conteudo?: string }).ds_conteudo}
                       </div>
                     )}
                   </div>

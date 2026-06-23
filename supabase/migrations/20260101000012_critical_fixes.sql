@@ -129,7 +129,13 @@ GRANT EXECUTE ON FUNCTION public.publish_dicom_report(BIGINT, BOOLEAN) TO authen
 --                  silenciosamente re-confirmado, bypassando a checagem de
 --                  expiração. Falta throttling de tentativas.
 -- =============================================================================
-CREATE OR REPLACE FUNCTION public.confirm_pre_cadastro(p_token VARCHAR)
+-- IMPORTANTE: migration 11 definiu RETURNS TABLE com 5 colunas
+-- (id, full_name, email, status, company_id); esta migration precisa
+-- retornar 4 colunas. CREATE OR REPLACE falha silenciosamente quando a
+-- assinatura RETURNS difere. Solução: DROP FUNCTION IF EXISTS + CREATE.
+DROP FUNCTION IF EXISTS public.confirm_pre_cadastro(VARCHAR) CASCADE;
+
+CREATE FUNCTION public.confirm_pre_cadastro(p_token VARCHAR)
 RETURNS TABLE(id UUID, full_name VARCHAR, email VARCHAR, status VARCHAR)
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -587,8 +593,10 @@ CREATE INDEX IF NOT EXISTS idx_patients_full_name_trgm
   ON public.patients USING gin(full_name gin_trgm_ops);
 
 -- 9.2. Agenda: queries por company + data + hora
-CREATE INDEX IF NOT EXISTS idx_appointments_company_date_time
-  ON public.appointments(company_id, appointment_date, start_time)
+-- Ajustado em 2026-06-22: schema real usa `scheduled_at` (timestamp with time zone)
+-- e nao `appointment_date` + `start_time`. P0 fix de validacao.
+CREATE INDEX IF NOT EXISTS idx_appointments_company_scheduled_at
+  ON public.appointments(company_id, scheduled_at)
   WHERE status NOT IN ('cancelled', 'no_show');
 
 -- 9.3. Busca de paciente por CPF (parcial — só não-nulos)
