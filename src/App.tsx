@@ -14,6 +14,7 @@ import ForgotPasswordPage from "@/pages/ForgotPasswordPage";
 import ResetPasswordPage from "@/pages/ResetPasswordPage";
 import PreCadastroPage from "@/pages/PreCadastroPage";
 import ConfirmarEmailPage from "@/pages/ConfirmarEmailPage";
+import NpsSurveyPage from "@/pages/NpsSurveyPage";
 import NotFound from "@/pages/NotFound";
 
 // Authenticated pages — lazy loaded (code-split per route)
@@ -84,11 +85,54 @@ const DicomViewer = lazy(() =>
 const NotificationCenter = lazy(() =>
   import("@/components/notifications/NotificationCenter").then((m) => ({ default: m.NotificationCenter })),
 );
+const PharmacyManager = lazy(() =>
+  import("@/components/pharmacy/PharmacyManager").then((m) => ({ default: m.PharmacyManager })),
+);
 
 const MeusAgendamentosPage = lazy(() => import("@/pages/MeusAgendamentosPage"));
 const ShortcutsHelp = lazy(() => import("@/pages/ShortcutsHelp"));
+const PharmacyPage = lazy(() => import("@/pages/PharmacyPage"));
+const NursingTriagePage = lazy(() => import("@/pages/NursingTriagePage"));
+const BiDashboardPage = lazy(() => import("@/pages/BiDashboardPage"));
+const BiMetasPage = lazy(() => import("@/pages/BiMetasPage"));
+const BiAlertasPage = lazy(() => import("@/pages/BiAlertasPage"));
+const LabPage = lazy(() => import("@/pages/LabPage"));
 
-const queryClient = new QueryClient();
+// Telemedicina
+const TelemedicinePage = lazy(() => import("@/pages/TelemedicinePage"));
+
+// Agente 38: IA + Internação + Centro Cirúrgico + PA + Assinatura Digital
+const InternacaoPage = lazy(() => import("@/pages/InternacaoPage"));
+const CirurgiaPage = lazy(() => import("@/pages/CirurgiaPage"));
+const PaPage = lazy(() => import("@/pages/PaPage"));
+const AssinaturaDigitalPage = lazy(() => import("@/pages/AssinaturaDigitalPage"));
+const IaClinicaPage = lazy(() => import("@/pages/IaClinicaPage"));
+
+// Agente 37: Compras + Transporte + NPS
+const PurchasesPage = lazy(() => import("@/pages/PurchasesPage"));
+const TransportPage = lazy(() => import("@/pages/TransportPage"));
+const NpsDashboardPage = lazy(() => import("@/pages/NpsDashboardPage"));
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Dados clínicos mudam com frequência moderada — 30s é o sweet spot.
+      // Sem isso, o default (0ms) faz refetch a cada navegação/foco.
+      staleTime: 30_000,
+      // Mantém em cache por 5min para evitar refetch em navegação rápida
+      gcTime: 5 * 60_000,
+      // Desabilita refetch em window focus — economiza requests
+      // (cada aba aberta = 1 refetch desnecessário por foco)
+      refetchOnWindowFocus: false,
+      // Retry 1x em caso de erro (default é 3 — muito agressivo para clínica)
+      retry: 1,
+    },
+    mutations: {
+      // Sem retry em mutações — pode causar duplicação de receita/dispensação
+      retry: 0,
+    },
+  },
+});
 
 /** Suspense fallback used while a lazy chunk is being fetched. */
 function LoadingFallback() {
@@ -178,8 +222,40 @@ const App = () => (
             <Route path="/admin/audit" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><AuditLogViewer /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/admin/notifications" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><NotificationCenter /></LazyRoute></ProtectedRoute></AppLayout>} />
 
+            {/* LIS / Laboratório */}
+            <Route path="/lab" element={<AppLayout><ProtectedRoute path="/lab"><LazyRoute><LabPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+
             {/* Patient portal */}
             <Route path="/meus-agendamentos" element={<AppLayout><ProtectedRoute path="/meus-agendamentos"><LazyRoute><MeusAgendamentosPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+
+            {/* Telemedicina */}
+            <Route path="/telemedicina" element={<AppLayout><ProtectedRoute path="/telemedicina"><LazyRoute><TelemedicinePage /></LazyRoute></ProtectedRoute></AppLayout>} />
+
+            {/* Pharmacy */}
+            <Route path="/pharmacy" element={<AppLayout><ProtectedRoute path="/pharmacy"><LazyRoute><PharmacyPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+
+            {/* Nursing / Triage */}
+            <Route path="/nursing/triage" element={<AppLayout><ProtectedRoute path="/nursing"><LazyRoute><NursingTriagePage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/nursing/queue" element={<AppLayout><ProtectedRoute path="/nursing"><LazyRoute><NursingTriagePage /></LazyRoute></ProtectedRoute></AppLayout>} />
+
+            {/* BI / Indicadores */}
+            <Route path="/bi" element={<AppLayout><ProtectedRoute path="/bi"><LazyRoute><BiDashboardPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/bi/metas" element={<AppLayout><ProtectedRoute path="/bi"><LazyRoute><BiMetasPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/bi/alertas" element={<AppLayout><ProtectedRoute path="/bi"><LazyRoute><BiAlertasPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+
+            {/* Agente 38: Módulos clínicos avançados */}
+            <Route path="/internacao" element={<AppLayout><ProtectedRoute path="/internacao"><LazyRoute><InternacaoPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/cirurgia" element={<AppLayout><ProtectedRoute path="/cirurgia"><LazyRoute><CirurgiaPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/pa" element={<AppLayout><ProtectedRoute path="/pa"><LazyRoute><PaPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/assinatura" element={<AppLayout><ProtectedRoute path="/assinatura"><LazyRoute><AssinaturaDigitalPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/ia-clinica" element={<AppLayout><ProtectedRoute path="/ia-clinica"><LazyRoute><IaClinicaPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+
+            {/* Agente 37: Compras + Transporte + NPS */}
+            <Route path="/purchases" element={<AppLayout><ProtectedRoute path="/purchases"><LazyRoute><PurchasesPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/transport" element={<AppLayout><ProtectedRoute path="/transport"><LazyRoute><TransportPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/nps" element={<AppLayout><ProtectedRoute path="/nps"><LazyRoute><NpsDashboardPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            {/* NPS público — sem auth, sem layout */}
+            <Route path="/nps/:token" element={<NpsSurveyPage />} />
 
             {/* 404 */}
             <Route path="*" element={<NotFound />} />
