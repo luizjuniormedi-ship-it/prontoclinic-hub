@@ -281,16 +281,24 @@ async function resolveCompanyId(explicitCompanyId?: string): Promise<string> {
   if (explicitCompanyId) return explicitCompanyId;
 
   // Fallback: pega primeira empresa ativa (dev/single-tenant)
+  // Schema real da tabela `companies` (migration 00000) usa `lg_ativo`,
+  // NAO `status`. Filtro corrigido para casar com a coluna existente.
   const { data, error } = await supabase
     .from("companies")
     .select("id")
-    .eq("status", "active")
+    .eq("lg_ativo", true)
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
 
-  if (error || !data) {
-    throw new Error("Nenhuma empresa ativa encontrada para pre-cadastro");
+  if (error) {
+    throw new Error(`Erro ao buscar empresa ativa: ${error.message}`);
+  }
+  if (!data) {
+    throw new Error(
+      "Nenhuma empresa ativa encontrada para pre-cadastro. " +
+        "Cadastre uma empresa com lg_ativo=true ou passe companyId explicito.",
+    );
   }
   return (data as { id: string }).id;
 }
