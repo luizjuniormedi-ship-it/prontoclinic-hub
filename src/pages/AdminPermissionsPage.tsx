@@ -1,172 +1,139 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Shield, User, Save, AlertTriangle, Plus, Minus } from "lucide-react";
-import { mockPermissionProfiles, mockSystemUsers, mockUserOverrides } from "@/services/adminMockData";
-import { PERMISSION_MODULES } from "@/types/admin";
+import { Badge } from "@/components/ui/badge";
+import { AlertTriangle, Shield, Info } from "lucide-react";
+import { userProfilesService, type UserProfileWithEmail } from "@/services/userProfilesService";
 import { useToast } from "@/hooks/use-toast";
+
+/**
+ * AdminPermissionsPage — Visualização da matriz de permissões.
+ *
+ * NOTA: A matriz granular de permissões (módulo × ação) ainda está em
+ * desenvolvimento. Quando o módulo permission_matrix for criado (migration
+ * dedicada), esta página listará todas as regras com checkboxes editáveis.
+ *
+ * Por ora, esta página mostra:
+ *   - Lista de perfis disponíveis (com descrição)
+ *   - Quantidade de usuários por perfil
+ *   - Aviso que a gestão granular depende da tabela permission_matrix
+ */
+
+interface ProfileWithStats {
+  id: string;
+  name: string;
+  description: string;
+  userCount: number;
+  isSystem: boolean;
+}
 
 export default function AdminPermissionsPage() {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState("profiles");
-  const [selectedProfile, setSelectedProfile] = useState(mockPermissionProfiles[0]?.id || "");
-  const [selectedUser, setSelectedUser] = useState(mockSystemUsers[0]?.id || "");
+  const [profiles, setProfiles] = useState<ProfileWithStats[]>([]);
+  const [users, setUsers] = useState<UserProfileWithEmail[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const profile = mockPermissionProfiles.find((p) => p.id === selectedProfile);
-  const user = mockSystemUsers.find((u) => u.id === selectedUser);
-  const userProfile = user ? mockPermissionProfiles.find((p) => p.id === user.profileId) : null;
-  const userOverride = user ? mockUserOverrides.find((o) => o.userId === user.id) : null;
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const [profs, usrs] = await Promise.all([
+          userProfilesService.getProfiles(),
+          userProfilesService.getAll(),
+        ]);
+        const enriched: ProfileWithStats[] = profs.map((p) => ({
+          ...p,
+          userCount: usrs.filter((u) => (u.role_name ?? "") === p.id).length,
+          isSystem: p.id === "admin",
+        }));
+        setProfiles(enriched);
+        setUsers(usrs);
+      } catch (err) {
+        toast({
+          title: "Erro ao carregar matriz",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+    void load();
+  }, [toast]);
 
-  const hasProfilePermission = (moduleKey: string, actionKey: string) =>
-    profile?.permissions[moduleKey]?.includes(actionKey) || false;
-
-  const getUserEffective = (moduleKey: string, actionKey: string) => {
-    if (userOverride?.blocks[moduleKey]?.includes(actionKey)) return "blocked";
-    if (userProfile?.permissions[moduleKey]?.includes(actionKey)) return "profile";
-    if (userOverride?.grants[moduleKey]?.includes(actionKey)) return "granted";
-    return "none";
-  };
-
-  const handleSave = () => toast({ title: "Permissões salvas com sucesso" });
+  if (loading) return <div className="p-6 text-muted-foreground">Carregando...</div>;
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Matriz de Permissões" description="Configure permissões por perfil e exceções individuais" />
+      <PageHeader
+        title="Matriz de Permissões"
+        description="Visualize perfis e o número de usuários atribuídos. Edição granular via permission_matrix (em breve)."
+      />
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="profiles" className="gap-1"><Shield className="h-4 w-4" />Por Perfil</TabsTrigger>
-          <TabsTrigger value="users" className="gap-1"><User className="h-4 w-4" />Exceções por Usuário</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="profiles" className="space-y-4 mt-4">
-          <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-            <Select value={selectedProfile} onValueChange={setSelectedProfile}>
-              <SelectTrigger className="w-[240px]"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {mockPermissionProfiles.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            {profile && <p className="text-sm text-muted-foreground">{profile.description}</p>}
-            <Button className="ml-auto" onClick={handleSave}><Save className="h-4 w-4 mr-1" />Salvar</Button>
+      <Card className="border-amber-300 bg-amber-50">
+        <CardContent className="p-4 flex items-start gap-3">
+          <Info className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+          <div className="text-sm">
+            <p className="font-medium text-amber-900">Matriz granular em desenvolvimento</p>
+            <p className="text-amber-800 mt-1">
+              A gestão de permissões por ação (criar/editar/excluir por módulo) será habilitada
+              quando a tabela <code className="bg-amber-100 px-1 rounded">permission_matrix</code> for
+              criada. Por enquanto, as permissões são derivadas de <code className="bg-amber-100 px-1 rounded">role_name</code> no <code className="bg-amber-100 px-1 rounded">user_profiles</code>, e o controle granular é feito via RLS nas policies do Supabase.
+            </p>
           </div>
+        </CardContent>
+      </Card>
 
-          {profile && (
-            <div className="space-y-4">
-              {PERMISSION_MODULES.map((mod) => (
-                <Card key={mod.moduleKey}>
-                  <CardHeader className="py-3">
-                    <CardTitle className="text-sm font-semibold">{mod.moduleLabel}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    <div className="flex flex-wrap gap-x-6 gap-y-2">
-                      {mod.actions.map((action) => {
-                        const checked = hasProfilePermission(mod.moduleKey, action.key);
-                        return (
-                          <label key={action.key} className="flex items-center gap-2 text-sm cursor-pointer">
-                            <Checkbox checked={checked} />
-                            <span>{action.label}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="users" className="space-y-4 mt-4">
-          <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-            <Select value={selectedUser} onValueChange={setSelectedUser}>
-              <SelectTrigger className="w-[280px]"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {mockSystemUsers.filter((u) => u.status === "active").map((u) => (
-                  <SelectItem key={u.id} value={u.id}>{u.name} — {u.profileName}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button className="ml-auto" onClick={handleSave}><Save className="h-4 w-4 mr-1" />Salvar</Button>
-          </div>
-
-          {user && userProfile && (
-            <>
-              <div className="flex items-center gap-4 p-3 bg-muted/50 rounded-lg text-sm">
-                <span>Perfil base: <strong>{userProfile.name}</strong></span>
-                {userOverride && (
-                  <Badge variant="outline" className="gap-1 text-amber-600 border-amber-300">
-                    <AlertTriangle className="h-3 w-3" />Possui exceções
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {profiles.map((p) => (
+          <Card key={p.id}>
+            <CardHeader className="pb-3">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-primary" />
+                  <CardTitle className="text-base">{p.name}</CardTitle>
+                </div>
+                {p.isSystem && (
+                  <Badge variant="secondary" className="text-[10px] gap-1">
+                    <AlertTriangle className="h-3 w-3" />Sistema
                   </Badge>
                 )}
               </div>
-
-              <div className="border rounded-lg overflow-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[160px]">Módulo</TableHead>
-                      <TableHead>Permissão</TableHead>
-                      <TableHead className="w-[100px] text-center">Perfil</TableHead>
-                      <TableHead className="w-[100px] text-center">Efetivo</TableHead>
-                      <TableHead className="w-[120px] text-center">Exceção</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {PERMISSION_MODULES.map((mod) =>
-                      mod.actions.map((action, idx) => {
-                        const eff = getUserEffective(mod.moduleKey, action.key);
-                        return (
-                          <TableRow key={`${mod.moduleKey}-${action.key}`}>
-                            {idx === 0 && (
-                              <TableCell rowSpan={mod.actions.length} className="font-medium text-sm align-top border-r">
-                                {mod.moduleLabel}
-                              </TableCell>
-                            )}
-                            <TableCell className="text-sm">{action.label}</TableCell>
-                            <TableCell className="text-center">
-                              {userProfile.permissions[mod.moduleKey]?.includes(action.key)
-                                ? <Badge variant="outline" className="bg-green-50 text-green-700 text-[10px]">Sim</Badge>
-                                : <span className="text-muted-foreground text-xs">—</span>}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {eff === "blocked" ? (
-                                <Badge className="bg-red-100 text-red-700 text-[10px] hover:bg-red-100">Bloqueado</Badge>
-                              ) : eff === "granted" ? (
-                                <Badge className="bg-blue-100 text-blue-700 text-[10px] hover:bg-blue-100">Liberado</Badge>
-                              ) : eff === "profile" ? (
-                                <Badge variant="outline" className="bg-green-50 text-green-700 text-[10px]">Sim</Badge>
-                              ) : (
-                                <span className="text-muted-foreground text-xs">—</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <div className="flex justify-center gap-1">
-                                <Button variant="ghost" size="icon" className="h-6 w-6" title="Liberar">
-                                  <Plus className="h-3 w-3 text-blue-600" />
-                                </Button>
-                                <Button variant="ghost" size="icon" className="h-6 w-6" title="Bloquear">
-                                  <Minus className="h-3 w-3 text-red-600" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })
-                    )}
-                  </TableBody>
-                </Table>
+              <p className="text-sm text-muted-foreground">{p.description}</p>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-4 text-sm">
+                <span>
+                  <strong className="text-2xl">{p.userCount}</strong>{" "}
+                  <span className="text-muted-foreground">usuários</span>
+                </span>
               </div>
-            </>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Usuários sem perfil definido</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {users.filter((u) => !u.role_name).length === 0 ? (
+            <p className="text-sm text-muted-foreground">Todos os usuários possuem perfil.</p>
+          ) : (
+            <ul className="space-y-2">
+              {users
+                .filter((u) => !u.role_name)
+                .map((u) => (
+                  <li key={u.id} className="text-sm">
+                    <strong>{u.full_name}</strong> —{" "}
+                    <span className="text-muted-foreground">sem role_name</span>
+                  </li>
+                ))}
+            </ul>
           )}
-        </TabsContent>
-      </Tabs>
+        </CardContent>
+      </Card>
     </div>
   );
 }

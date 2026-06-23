@@ -12,7 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState } from "@/components/StateViews";
-import { api } from "@/services/api";
+import { catalogService } from "@/services/catalogService";
 import { appointmentTypesLookup, DbAppointmentType } from "@/services/appointmentsService";
 import { priceTableService, DbPriceEntry, PriceEntryInput } from "@/services/priceTableService";
 import { ConsultationType, ExamType, ProcedureType, TherapyService, HealthInsurancePlan, Room, Specialty } from "@/types";
@@ -51,12 +51,20 @@ export default function MasterDataPage() {
 
   useEffect(() => {
     Promise.all([
-      api.getSpecialties(), api.getConsultationTypes(), api.getExamTypes(),
-      api.getProcedureTypes(), api.getTherapyServices(), api.getInsurancePlans(), api.getRooms(),
+      catalogService.specialties.getAll(),
+      catalogService.appointmentTypes.getConsultations(),
+      catalogService.appointmentTypes.getExams(),
+      catalogService.appointmentTypes.getProcedures(),
+      catalogService.appointmentTypes.getTherapies(),
+      catalogService.insurancePlans.getAll(),
+      catalogService.rooms.getAllWithUnits(),
       loadPrices(),
     ]).then(([sp, ct, ex, pr, th, ins, rm]) => {
       setSpecialties(sp); setConsultations(ct); setExams(ex);
       setProcedures(pr); setTherapies(th); setInsurances(ins); setRooms(rm);
+      setLoading(false);
+    }).catch((err) => {
+      console.error("Erro ao carregar cadastros:", err);
       setLoading(false);
     });
   }, [loadPrices]);

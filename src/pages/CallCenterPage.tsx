@@ -11,8 +11,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState } from "@/components/StateViews";
-import { api } from "@/services/api";
-import { CallCenterRecord, CallCenterContactStatus, Patient, Specialty, Unit } from "@/types";
+import { catalogService } from "@/services/catalogService";
+import { patientsService } from "@/services/patientsService";
+import { preCadastroService } from "@/services/preCadastroService";
+import { CallCenterContactStatus, Specialty } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 
 const contactStatusLabels: Record<CallCenterContactStatus, string> = {
@@ -26,9 +28,18 @@ const contactStatusColors: Record<CallCenterContactStatus, string> = {
 };
 
 export default function CallCenterPage() {
-  const [records, setRecords] = useState<CallCenterRecord[]>([]);
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [units, setUnits] = useState<Unit[]>([]);
+  const [records, setRecords] = useState<Array<{
+    id: string;
+    patientName: string;
+    cpf?: string | null;
+    phone: string;
+    specialtyName: string;
+    unitName: string;
+    contactStatus: CallCenterContactStatus;
+    notes?: string;
+    createdAt: string;
+  }>>([]);
+  const [units, setUnits] = useState<{ id: string; name: string }[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -38,10 +49,33 @@ export default function CallCenterPage() {
   const { toast } = useToast();
 
   useEffect(() => {
-    Promise.all([api.getCallCenterRecords(), api.getPatients(), api.getUnits(), api.getSpecialties()]).then(([r, p, u, s]) => {
-      setRecords(r); setPatients(p); setUnits(u); setSpecialties(s); setLoading(false);
+    // Call Center trabalha com pré-cadastros (leads) — fonte real no Supabase
+    Promise.all([
+      preCadastroService.listar(),
+      catalogService.units.getAll(),
+      catalogService.specialties.getAll(),
+    ]).then(([preCadastros, u, s]) => {
+      const recordsFormatados = preCadastros.map((p) => ({
+        id: String(p.id),
+        patientName: p.nm_paciente,
+        cpf: p.nr_cpf,
+        phone: p.nr_telefone,
+        specialtyName: p.especialidade ?? "—",
+        unitName: u[0]?.name ?? "—",
+        contactStatus: (p.tp_status === "confirmado" ? "confirmado" : p.tp_status === "cancelado" ? "cancelado" : "agendado") as CallCenterContactStatus,
+        notes: p.ds_observacao,
+        createdAt: p.created_at,
+      }));
+      setRecords(recordsFormatados);
+      setUnits(u.map((unit) => ({ id: unit.id, name: unit.name })));
+      setSpecialties(s);
+      setLoading(false);
+    }).catch((err) => {
+      console.error("Erro ao carregar call center:", err);
+      toast({ title: "Erro ao carregar dados", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
+      setLoading(false);
     });
-  }, []);
+  }, [toast]);
 
   const filtered = records.filter((r) => {
     const q = search.toLowerCase();

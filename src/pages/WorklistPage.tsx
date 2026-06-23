@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ClipboardList, Search, Plus, AlertTriangle, Clock, CheckCircle, XCircle, Send, FileText } from "lucide-react";
+import { ClipboardList, Search, Plus, AlertTriangle, Clock, CheckCircle, XCircle, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -8,28 +8,37 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState } from "@/components/StateViews";
-import { api } from "@/services/api";
-import { WorklistItem, WorklistStatus, WorklistPriority, Unit } from "@/types";
+import { dicomService, worklistService } from "@/services/dicomService";
+import { catalogService } from "@/services/catalogService";
+import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
-import { formatDate } from "@/utils/formatters";
 
-const statusLabels: Record<WorklistStatus, string> = {
-  solicitado: "Solicitado", agendado: "Agendado", aguardando: "Aguardando",
-  em_execucao: "Em Execução", concluido: "Concluído", cancelado: "Cancelado",
-  enviado_pacs: "Enviado PACS", laudado: "Laudado",
+const statusLabels: Record<string, string> = {
+  pendente: "Solicitado", agendado: "Agendado", em_andamento: "Em Execução",
+  concluido: "Concluído", cancelado: "Cancelado", enviado_pacs: "Enviado PACS",
 };
-const statusColors: Record<WorklistStatus, string> = {
-  solicitado: "bg-muted text-muted-foreground", agendado: "bg-primary/10 text-primary",
-  aguardando: "bg-warning/10 text-warning", em_execucao: "bg-success/10 text-success",
-  concluido: "bg-muted text-muted-foreground", cancelado: "bg-destructive/10 text-destructive",
-  enviado_pacs: "bg-secondary/10 text-secondary", laudado: "bg-primary/10 text-primary",
+const statusColors: Record<string, string> = {
+  pendente: "bg-muted text-muted-foreground", agendado: "bg-primary/10 text-primary",
+  em_andamento: "bg-success/10 text-success", concluido: "bg-muted text-muted-foreground",
+  cancelado: "bg-destructive/10 text-destructive", enviado_pacs: "bg-secondary/10 text-secondary",
 };
-const priorityLabels: Record<WorklistPriority, string> = { normal: "Normal", urgent: "Urgente", emergency: "Emergência" };
-const priorityColors: Record<WorklistPriority, string> = { normal: "bg-muted text-muted-foreground", urgent: "bg-warning/10 text-warning", emergency: "bg-destructive/10 text-destructive" };
+const modalityLabels: Record<string, string> = {
+  CR: "RX", CT: "TC", MR: "RM", US: "US", XA: "XA", MG: "MG", NM: "MN", PT: "PT",
+};
 
 export default function WorklistPage() {
-  const [items, setItems] = useState<WorklistItem[]>([]);
-  const [units, setUnits] = useState<Unit[]>([]);
+  const [items, setItems] = useState<Array<{
+    id: number;
+    patientName: string;
+    examName: string;
+    modality: string;
+    requestingDoctorName: string;
+    unitName: string;
+    scheduledAt: string;
+    priority: string;
+    status: string;
+  }>>([]);
+  const [units, setUnits] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -37,42 +46,84 @@ export default function WorklistPage() {
   const [unitFilter, setUnitFilter] = useState("all");
   const { toast } = useToast();
 
-  useEffect(() => {
-    Promise.all([api.getWorklistItems(), api.getUnits()]).then(([w, u]) => {
-      setItems(w); setUnits(u); setLoading(false);
-    });
-  }, []);
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [raw, u] = await Promise.all([
+        worklistService.list(),
+        catalogService.units.getAll(),
+      ]);
+      const unitMap = new Map(u.map((unit) => [String(unit.id), unit.name]));
+      // Mapear para estrutura flat com campos derivados
+      const mapped = await Promise.all(raw.map(async (r) => {
+        // Tenta enriquecer com nome do paciente se houver patient_id
+        let patientName = "—";
+        if (r.cd_patient) {
+          const { data: p } = await supabase
+            .from("patients")
+            .select("full_name")
+            .eq("id", r.cd_patient)
+            .maybeSingle();
+          if (p) patientName = p.full_name;
+        }
+        return {
+          id: Number(r.id),
+          patientName,
+          examName: r.ds_procedure ?? "—",
+          modality: r.modality ?? "—",
+          requestingDoctorName: r.requesting_physician ?? "—",
+          unitName: r.cd_unit ? unitMap.get(String(r.cd_unit)) ?? "—" : "—",
+          scheduledAt: r.scheduled_at ?? r.created_at,
+          priority: r.priority ?? "normal",
+          status: r.status ?? "pendente",
+        };
+      }));
+      setItems(mapped);
+      setUnits(u.map((unit) => ({ id: unit.id, name: unit.name })));
+    } catch (err) {
+      console.error("Erro ao carregar worklist:", err);
+      toast({ title: "Erro ao carregar worklist", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  const handleAction = async (id: number, action: string) => {
+    try {
+      const statusMap: Record<string, string> = {
+        confirm: "agendado", start: "em_andamento", complete: "concluido",
+        cancel: "cancelado", send_pacs: "enviado_pacs",
+      };
+      const newStatus = statusMap[action];
+      if (!newStatus) return;
+      await worklistService.update(id, { status: newStatus });
+      toast({ title: `Status atualizado para ${statusLabels[newStatus]}` });
+      void load();
+    } catch (err) {
+      toast({ title: "Erro ao atualizar", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
+    }
+  };
 
   const filtered = items.filter((w) => {
     const q = search.toLowerCase();
     const matchSearch = !search || w.patientName.toLowerCase().includes(q) || w.examName.toLowerCase().includes(q) || w.requestingDoctorName.toLowerCase().includes(q);
     const matchStatus = statusFilter === "all" || w.status === statusFilter;
     const matchPriority = priorityFilter === "all" || w.priority === priorityFilter;
-    const matchUnit = unitFilter === "all" || w.unitId === unitFilter;
+    const matchUnit = unitFilter === "all" || w.unitName === unitFilter;
     return matchSearch && matchStatus && matchPriority && matchUnit;
   });
 
-  const pending = items.filter((i) => ["solicitado", "agendado", "aguardando"].includes(i.status)).length;
-  const inExec = items.filter((i) => i.status === "em_execucao").length;
-  const done = items.filter((i) => ["concluido", "enviado_pacs", "laudado"].includes(i.status)).length;
-
-  const handleAction = (item: WorklistItem, action: string) => {
-    const statusMap: Record<string, WorklistStatus> = {
-      confirm: "agendado", start: "em_execucao", complete: "concluido",
-      cancel: "cancelado", send_pacs: "enviado_pacs",
-    };
-    const newStatus = statusMap[action];
-    if (newStatus) {
-      setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, status: newStatus } : i));
-      toast({ title: `Status atualizado para ${statusLabels[newStatus]}` });
-    }
-  };
+  const pending = items.filter((i) => ["pendente", "agendado"].includes(i.status)).length;
+  const inExec = items.filter((i) => i.status === "em_andamento").length;
+  const done = items.filter((i) => ["concluido", "enviado_pacs"].includes(i.status)).length;
 
   if (loading) return <LoadingState />;
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <PageHeader title="Worklist" description="Solicitações de exames e procedimentos" actions={
+      <PageHeader title="Worklist" description="Solicitações de exames DICOM (Integração PACS)" actions={
         <Button><Plus className="mr-2 h-4 w-4" />Nova Solicitação</Button>
       } />
 
@@ -91,14 +142,16 @@ export default function WorklistPage() {
           <SelectTrigger className="w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
-            {(Object.keys(statusLabels) as WorklistStatus[]).map((s) => <SelectItem key={s} value={s}>{statusLabels[s]}</SelectItem>)}
+            {Object.entries(statusLabels).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={priorityFilter} onValueChange={setPriorityFilter}>
           <SelectTrigger className="w-[120px]"><SelectValue placeholder="Prioridade" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas</SelectItem>
-            {(Object.keys(priorityLabels) as WorklistPriority[]).map((p) => <SelectItem key={p} value={p}>{priorityLabels[p]}</SelectItem>)}
+            <SelectItem value="normal">Normal</SelectItem>
+            <SelectItem value="urgent">Urgente</SelectItem>
+            <SelectItem value="emergency">Emergência</SelectItem>
           </SelectContent>
         </Select>
         <Select value={unitFilter} onValueChange={setUnitFilter}>
@@ -110,7 +163,7 @@ export default function WorklistPage() {
         </Select>
       </div>
 
-      {filtered.length === 0 ? <EmptyState icon={ClipboardList} title="Nenhum item na worklist" /> : (
+      {filtered.length === 0 ? <EmptyState icon={ClipboardList} title="Nenhum item na worklist" description="Itens aparecerão aqui quando exames forem agendados." /> : (
         <div className="rounded-lg border bg-card overflow-auto">
           <Table>
             <TableHeader><TableRow>
@@ -121,19 +174,19 @@ export default function WorklistPage() {
                 <TableRow key={w.id} className={w.priority === "urgent" ? "bg-warning/5" : w.priority === "emergency" ? "bg-destructive/5" : ""}>
                   <TableCell className="font-medium text-sm">{w.patientName}</TableCell>
                   <TableCell className="text-sm">{w.examName}</TableCell>
-                  <TableCell><Badge variant="outline" className="border-0 bg-primary/10 text-primary text-[10px]">{w.modality}</Badge></TableCell>
+                  <TableCell><Badge variant="outline" className="border-0 bg-primary/10 text-primary text-[10px]">{modalityLabels[w.modality] ?? w.modality}</Badge></TableCell>
                   <TableCell className="text-xs text-muted-foreground">{w.requestingDoctorName}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{w.unitName}</TableCell>
-                  <TableCell className="text-xs">{formatDate(w.date)}{w.time ? ` ${w.time}` : ""}</TableCell>
-                  <TableCell><Badge variant="outline" className={`border-0 text-[10px] ${priorityColors[w.priority]}`}>{priorityLabels[w.priority]}</Badge></TableCell>
-                  <TableCell><Badge variant="outline" className={`border-0 text-[10px] ${statusColors[w.status]}`}>{statusLabels[w.status]}</Badge></TableCell>
+                  <TableCell className="text-xs">{w.scheduledAt ? new Date(w.scheduledAt).toLocaleDateString("pt-BR") : "—"}</TableCell>
+                  <TableCell><Badge variant="outline" className={`border-0 text-[10px] ${w.priority === "urgent" ? "bg-warning/10 text-warning" : w.priority === "emergency" ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"}`}>{w.priority}</Badge></TableCell>
+                  <TableCell><Badge variant="outline" className={`border-0 text-[10px] ${statusColors[w.status] ?? ""}`}>{statusLabels[w.status] ?? w.status}</Badge></TableCell>
                   <TableCell>
                     <div className="flex gap-1">
-                      {w.status === "solicitado" && <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => handleAction(w, "confirm")}>Confirmar</Button>}
-                      {(w.status === "agendado" || w.status === "aguardando") && <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => handleAction(w, "start")}>Iniciar</Button>}
-                      {w.status === "em_execucao" && <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => handleAction(w, "complete")}>Concluir</Button>}
-                      {w.status === "concluido" && <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => handleAction(w, "send_pacs")}><Send className="h-3 w-3 mr-1" />PACS</Button>}
-                      {!["concluido", "cancelado", "enviado_pacs", "laudado"].includes(w.status) && <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-destructive" onClick={() => handleAction(w, "cancel")}><XCircle className="h-3 w-3" /></Button>}
+                      {w.status === "pendente" && <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => void handleAction(w.id, "confirm")}>Confirmar</Button>}
+                      {w.status === "agendado" && <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => void handleAction(w.id, "start")}>Iniciar</Button>}
+                      {w.status === "em_andamento" && <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => void handleAction(w.id, "complete")}>Concluir</Button>}
+                      {w.status === "concluido" && <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => void handleAction(w.id, "send_pacs")}><Send className="h-3 w-3 mr-1" />PACS</Button>}
+                      {!["concluido", "cancelado", "enviado_pacs"].includes(w.status) && <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-destructive" onClick={() => void handleAction(w.id, "cancel")}><XCircle className="h-3 w-3" /></Button>}
                     </div>
                   </TableCell>
                 </TableRow>

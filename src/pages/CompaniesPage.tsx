@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState } from "@/components/StateViews";
-import { api } from "@/services/api";
+import { catalogService } from "@/services/catalogService";
 import { Company, Unit, UnitType } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 
@@ -26,10 +26,16 @@ export default function CompaniesPage() {
   const { toast } = useToast();
 
   useEffect(() => {
-    Promise.all([api.getCompanies(), api.getUnits()]).then(([c, u]) => {
-      setCompanies(c); setUnits(u); setLoading(false);
-    });
-  }, []);
+    Promise.all([catalogService.companies.getAll(), catalogService.units.getAll()])
+      .then(([c, u]) => {
+        setCompanies(c); setUnits(u); setLoading(false);
+      })
+      .catch((err) => {
+        console.error("Erro ao carregar empresas/unidades:", err);
+        toast({ title: "Erro ao carregar dados", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
+        setLoading(false);
+      });
+  }, [toast]);
 
   if (loading) return <LoadingState />;
 
