@@ -1,0 +1,74 @@
+name: Deploy ProntoClinic to Vercel
+
+# Workflow alternativo ao Vercel CLI.
+# Usa GitHub Actions + Surge.sh como fallback (não requer credenciais).
+# Quando você configurar o deploy no Vercel via GitHub App, este workflow
+# pode ser removido em favor do workflow nativo do Vercel.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build SPA
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_APP_NAME: ProntoClinic Hub
+          VITE_APP_ENV: production
+          VITE_ENABLE_TELEMEDICINE: 'false'
+          VITE_ENABLE_WHATSAPP: 'false'
+          VITE_TISS_AMBIENTE: HOMOLOGACAO
+          VITE_TISS_VERSION: '3.05.00'
+          VITE_DICOM_BUCKET: dicom
+        run: |
+          if [ -z "$VITE_SUPABASE_URL" ]; then
+            echo "::warning::VITE_SUPABASE_URL não configurado, usando fallback"
+            echo "VITE_SUPABASE_URL=https://rhqgwrarkotjzdcrkbgn.supabase.co" >> $GITHUB_ENV
+            echo "VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJocWd3cmFya290anpkY3JrYmduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMDEyMDksImV4cCI6MjA5Nzg3NzIwOX0.hwaGsz3wK1nq6aNXZDYJ_fOxpHI14eIvYB6ObQqx5gE" >> $GITHUB_ENV
+          fi
+
+      - name: Build
+        run: npm run build
+
+      - name: Create SPA fallback
+        run: cp dist/index.html dist/200.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages
+          publication_branch: gh-pages
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "## ✅ Deploy ProntoClinic concluído" >> $GITHUB_STEP_SUMMARY
+          echo "- URL: ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
