@@ -17,3 +17,4 @@
     "VITE_ENABLE_WHATSAPP": "false"
   }
 }
+# Vercel env vars inline
