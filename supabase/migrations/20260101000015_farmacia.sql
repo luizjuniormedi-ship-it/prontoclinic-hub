@@ -243,7 +243,6 @@ SELECT
   COALESCE(m.cd_principio_ativo, mat.ds_nome) AS ds_produto,
   m.cd_nome_comercial,
   m.ds_concentracao,
-  l.cd_lote,
   l.dt_validade,
   l.qt_atual,
   l.vl_custo_unitario,

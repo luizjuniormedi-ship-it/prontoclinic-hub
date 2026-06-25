@@ -190,7 +190,7 @@ COMMENT ON COLUMN public.triagem_fila.cd_senha IS 'Formato T001, T002, T003... (
 
 CREATE INDEX idx_triagem_fila_company_status ON public.triagem_fila(company_id, tp_status);
 CREATE INDEX idx_triagem_fila_chegada        ON public.triagem_fila(company_id, dt_chegada);
-CREATE UNIQUE INDEX idx_triagem_fila_senha_dia ON public.triagem_fila(company_id, cd_senha, DATE(dt_chegada));
+-- index dropped (DATE() on timestamptz is not immutable in Postgres)
 
 -- =============================================================================
 -- 1.7. RLS — Row Level Security

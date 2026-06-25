@@ -91,7 +91,7 @@ CREATE INDEX idx_bi_alertas_pendente ON public.bi_alertas(company_id, tp_severid
 CREATE OR REPLACE VIEW public.v_ocupacao_profissional AS
 SELECT
   p.id AS cd_profissional,
-  p.name AS nm_profissional,
+  p.full_name AS nm_profissional,
   p.specialty AS ds_especialidade,
   COUNT(*) AS nr_agendamentos_total,
   COUNT(*) FILTER (WHERE a.status IN ('confirmed', 'waiting', 'in_progress', 'completed')) AS nr_confirmados,
@@ -105,7 +105,7 @@ FROM public.professionals p
 LEFT JOIN public.appointments a ON a.professional_id = p.id
   AND a.appointment_date >= CURRENT_DATE - INTERVAL '30 days'
 WHERE p.lg_ativo = TRUE
-GROUP BY p.id, p.name, p.specialty;
+GROUP BY p.id, p.full_name, p.specialty;
 
 -- 1.5. View: Faturamento por convênio
 CREATE OR REPLACE VIEW public.v_faturamento_convenio AS

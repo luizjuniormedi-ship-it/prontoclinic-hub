@@ -1,70 +1,141 @@
-name: Deploy ProntoClinic Hub
+name: Deploy ProntoClinic Hub to Vercel
+
+# Deploy automatico para Vercel em cada push em main.
+# Secrets necessarios (Settings > Secrets and variables > Actions):
+#   - VERCEL_TOKEN        (https://vercel.com/account/tokens)
+#   - VERCEL_ORG_ID       (times/_/settings)
+#   - VERCEL_PROJECT_ID   (project settings > General)
+#   - VITE_SUPABASE_URL
+#   - VITE_SUPABASE_ANON_KEY
+#
+# Variaveis Vercel (Settings > Environment Variables no dashboard Vercel):
+#   VITE_APP_NAME, VITE_APP_ENV, VITE_TISS_AMBIENTE, VITE_TISS_VERSION,
+#   VITE_DICOM_BUCKET, VITE_ENABLE_TELEMEDICINE, VITE_ENABLE_WHATSAPP,
+#   VITE_RESEND_API_KEY (opcional).
 
 on:
   push:
     branches: [main]
-    paths:
-      - 'package.json'
-      - 'vite.config.ts'
-      - 'src/**'
-      - 'public/**'
   workflow_dispatch:
+    inputs:
+      environment:
+        description: "Vercel environment (production | preview)"
+        required: false
+        default: "production"
 
 permissions:
   contents: read
-  pages: write
   id-token: write
 
 concurrency:
-  group: pages
+  group: vercel-deploy
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  build-and-deploy:
+    name: Build + Deploy Vercel
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+
+    env:
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      VITE_APP_NAME: ProntoClinic Hub
+      VITE_APP_ENV: production
+      VITE_TISS_AMBIENTE: HOMOLOGACAO
+      VITE_TISS_VERSION: '3.05.00'
+      VITE_DICOM_BUCKET: dicom
+      VITE_ENABLE_TELEMEDICINE: 'false'
+      VITE_ENABLE_WHATSAPP: 'false'
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'npm'
 
+      - name: Show environment
+        run: |
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Actor:  ${{ github.actor }}"
+          echo "Supabase URL configured: $([ -n "$VITE_SUPABASE_URL" ] && echo yes || echo NO)"
+
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate PWA icons
+        run: npm run icons
+
+      - name: Type check
+        run: npm run type-check || npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint || true
+
       - name: Build SPA
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_APP_NAME: ProntoClinic Hub
-          VITE_APP_ENV: production
-          VITE_ENABLE_TELEMEDICINE: 'false'
-          VITE_ENABLE_WHATSAPP: 'false'
-          VITE_TISS_AMBIENTE: HOMOLOGACAO
-          VITE_TISS_VERSION: '3.05.00'
-          VITE_DICOM_BUCKET: dicom
+        run: npm run build
+
+      - name: Verify build output
         run: |
-          cp .env.example .env.production
-          # Permitir build sem secrets (usa defaults do .env.example)
-          npm run build
+          if [ ! -f dist/index.html ]; then
+            echo "::error::dist/index.html not found - build failed"
+            exit 1
+          fi
+          echo "Build artifacts:"
+          ls -lah dist/ | head -20
 
-      - name: Create SPA fallback (React Router)
-        run: cp dist/index.html dist/200.html
+      - name: Install Vercel CLI
+        run: npm install --no-save vercel@latest
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
+      - name: Pull Vercel project info
+        id: vercel-info
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          echo "## Vercel Deploy" >> $GITHUB_STEP_SUMMARY
+          echo "- Project: ${{ secrets.VERCEL_PROJECT_ID }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Org: ${{ secrets.VERCEL_ORG_ID }}" >> $GITHUB_STEP_SUMMARY
 
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Deploy to Vercel (Production)
+        id: deploy
+        if: github.event_name == 'push' || github.event.inputs.environment == 'production'
+        uses: amondnet/vercel-action@v25
         with:
-          path: './dist'
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod --yes'
+          working-directory: ./
+          github-comment: false
 
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Deploy to Vercel (Preview)
+        id: deploy-preview
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'preview'
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--yes'
+          working-directory: ./
+          github-comment: false
+
+      - name: Summary
+        if: success() || failure()
+        run: |
+          echo "## Deploy Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Branch: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Actor:  ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.deploy.outputs.url }}" != "" ]; then
+            echo "- URL:    ${{ steps.deploy.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "- Time:   $(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_STEP_SUMMARY

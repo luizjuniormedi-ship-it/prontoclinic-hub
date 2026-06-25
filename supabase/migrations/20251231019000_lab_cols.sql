@@ -1,0 +1,11 @@
+ALTER TABLE public.exames_lab_pedido_itens ADD COLUMN IF NOT EXISTS cd_pedido BIGINT;
+ALTER TABLE public.exames_lab_resultado ADD COLUMN IF NOT EXISTS cd_pedido BIGINT;
+ALTER TABLE public.exames_lab_pedido ADD COLUMN IF NOT EXISTS cd_paciente BIGINT;
+ALTER TABLE public.exames_lab_pedido ADD COLUMN IF NOT EXISTS cd_medico BIGINT;
+ALTER TABLE public.exames_lab_pedido ADD COLUMN IF NOT EXISTS cd_exame BIGINT;
+ALTER TABLE public.exames_lab_pedido ADD COLUMN IF NOT EXISTS dt_pedido TIMESTAMPTZ;
+ALTER TABLE public.exames_lab_pedido_itens ADD COLUMN IF NOT EXISTS cd_exame BIGINT;
+ALTER TABLE public.exames_lab_resultado ADD COLUMN IF NOT EXISTS cd_exame BIGINT;
+ALTER TABLE public.exames_lab_resultado ADD COLUMN IF NOT EXISTS vl_resultado TEXT;
+ALTER TABLE public.exames_lab_resultado ADD COLUMN IF NOT EXISTS ds_unidade VARCHAR(30);
+ALTER TABLE public.exames_lab_resultado ADD COLUMN IF NOT EXISTS tp_resultado VARCHAR(20);
