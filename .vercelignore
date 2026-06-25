@@ -1,0 +1,9 @@
+# .vercelignore
+# Arquivos/pastas ignorados no deploy do Vercel
+
+# Scripts de debug/teste locais
+debug-*.cjs
+test-*.cjs
+
+# Arquivos de documentação interna (não necessários no deploy)
+# Manter .md no deploy para serví-los como conteúdo se necessário
