@@ -100,3 +100,20 @@ supabase/.env
 .history/
 .tmp/
 .tmp-*
+# -----------------------------------------------------------------------------
+# Artefatos locais ProntoMedic / Codex
+# -----------------------------------------------------------------------------
+.local-runtime/
+.claude/
+backups/
+*.bak
+MEMORY_*.md
+
+# Scripts locais de debug com risco de credenciais
+/debug-*.cjs
+/test-login.cjs
+/teste-login.ps1
+
+# Python local
+__pycache__/
+*.py[cod]
