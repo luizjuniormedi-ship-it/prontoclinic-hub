@@ -110,6 +110,7 @@ function tableToModule(table) {
     [/^insurance|^convenio|^plano|^fonte_pagadora/, 'faturamento'],
     // recepção: check-in, autorização, elegibilidade, guias, senhas, documentos
     [/^reception_|^senhas_atendimento/, 'recepcao'],
+    [/^scheduling_contact_logs|^scheduling_call_center_tasks/, 'recepcao'],
     [/^bi_|^nps_|^dashboard/, 'bi'],
     [/^telemedicina/, 'telemedicina'],
     [/^internacao|^leito/, 'internacao'],

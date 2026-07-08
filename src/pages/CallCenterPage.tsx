@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Phone, Search, Plus, UserPlus, Calendar, CheckCircle, XCircle, PhoneMissed, MessageSquare } from "lucide-react";
+import { Phone, Search, Plus, Calendar, CheckCircle, PhoneMissed, ListTodo } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,158 +11,147 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState } from "@/components/StateViews";
-import { catalogService } from "@/services/catalogService";
+import { callCenterService, CallCenterContactLog, CallCenterResult, CallCenterChannel, CallCenterDirection, CallCenterTask } from "@/services/callCenterService";
 import { patientsService } from "@/services/patientsService";
-import { preCadastroService } from "@/services/preCadastroService";
-import { CallCenterContactStatus, Specialty } from "@/types";
+import { Patient } from "@/types";
 import { useToast } from "@/hooks/use-toast";
+import { friendlyError } from "@/utils/friendlyError";
 
-const contactStatusLabels: Record<CallCenterContactStatus, string> = {
-  agendado: "Agendado", confirmado: "Confirmado", cancelado: "Cancelado",
-  remarcado: "Remarcado", nao_atendeu: "Não Atendeu", recado: "Recado",
+const resultLabels: Record<CallCenterResult, string> = {
+  agendado: "Agendado",
+  confirmado: "Confirmado",
+  cancelado: "Cancelado",
+  remarcado: "Remarcado",
+  nao_atendeu: "Não atendeu",
+  recado: "Recado",
+  sem_interesse: "Sem interesse",
+  numero_invalido: "Número inválido",
+  retornar_depois: "Retornar depois",
 };
-const contactStatusColors: Record<CallCenterContactStatus, string> = {
-  agendado: "bg-primary/10 text-primary", confirmado: "bg-success/10 text-success",
-  cancelado: "bg-destructive/10 text-destructive", remarcado: "bg-warning/10 text-warning",
-  nao_atendeu: "bg-muted text-muted-foreground", recado: "bg-secondary/10 text-secondary",
+
+const resultColors: Record<CallCenterResult, string> = {
+  agendado: "bg-primary/10 text-primary",
+  confirmado: "bg-success/10 text-success",
+  cancelado: "bg-destructive/10 text-destructive",
+  remarcado: "bg-warning/10 text-warning",
+  nao_atendeu: "bg-muted text-muted-foreground",
+  recado: "bg-secondary/10 text-secondary",
+  sem_interesse: "bg-muted text-muted-foreground",
+  numero_invalido: "bg-destructive/10 text-destructive",
+  retornar_depois: "bg-warning/10 text-warning",
+};
+
+const channelLabels: Record<CallCenterChannel, string> = {
+  telefone: "Telefone",
+  whatsapp: "WhatsApp",
+  email: "E-mail",
+  portal: "Portal",
+  presencial: "Presencial",
+  campanha: "Campanha",
+  instagram: "Instagram",
+  google: "Google",
+  site: "Site",
+  convenio: "Convênio",
+  indicacao: "Indicação",
 };
 
 export default function CallCenterPage() {
-  const [records, setRecords] = useState<Array<{
-    id: string;
-    patientName: string;
-    patientId?: string;
-    cpf?: string | null;
-    phone: string;
-    specialtyName: string;
-    unitName: string;
-    unitId?: string;
-    contactStatus: CallCenterContactStatus;
-    appointmentType?: string;
-    operatorName?: string;
-    notes?: string;
-    createdAt: string;
-  }>>([]);
-  const [units, setUnits] = useState<{ id: string; name: string }[]>([]);
-  const [specialties, setSpecialties] = useState<Specialty[]>([]);
+  const [contacts, setContacts] = useState<CallCenterContactLog[]>([]);
+  const [tasks, setTasks] = useState<CallCenterTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [unitFilter, setUnitFilter] = useState("all");
+  const [resultFilter, setResultFilter] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const { toast } = useToast();
 
-  useEffect(() => {
-    // Call Center trabalha com pré-cadastros (leads) — fonte real no Supabase
-    Promise.all([
-      preCadastroService.listar(),
-      catalogService.units.getAll(),
-      catalogService.specialties.getAll(),
-    ]).then(([preCadastros, u, s]) => {
-      const recordsFormatados = preCadastros.map((p) => ({
-        id: String(p.id),
-        patientName: p.full_name,
-        cpf: p.cpf,
-        phone: p.phone ?? "",
-        specialtyName: "—",
-        unitName: u[0]?.name ?? "—",
-        unitId: u[0]?.id,
-        contactStatus: (p.status === "CONFIRMADO" ? "confirmado" : p.status === "CANCELADO" ? "cancelado" : "agendado") as CallCenterContactStatus,
-        notes: p.motivo_cancelamento ?? null,
-        createdAt: p.created_at,
-      }));
-      setRecords(recordsFormatados);
-      setUnits(u.map((unit) => ({ id: unit.id, name: unit.name })));
-      setSpecialties(s);
+  const reload = async () => {
+    try {
+      setLoading(true);
+      const [contactRows, taskRows] = await Promise.all([
+        callCenterService.listContacts(),
+        callCenterService.listTasks("pending"),
+      ]);
+      setContacts(contactRows);
+      setTasks(taskRows);
+    } catch (err) {
+      toast({ title: friendlyError(err, "Carregar call center"), variant: "destructive" });
+    } finally {
       setLoading(false);
-    }).catch((err) => {
-      console.error("Erro ao carregar call center:", err);
-      toast({ title: "Erro ao carregar dados", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
-      setLoading(false);
-    });
-  }, [toast]);
+    }
+  };
 
-  const filtered = records.filter((r) => {
-    const q = search.toLowerCase();
-    const matchSearch = !search || r.patientName.toLowerCase().includes(q) || (r.cpf && r.cpf.includes(q)) || r.phone.includes(q);
-    const matchStatus = statusFilter === "all" || r.contactStatus === statusFilter;
-    const matchUnit = unitFilter === "all" || r.unitId === unitFilter;
-    return matchSearch && matchStatus && matchUnit;
+  useEffect(() => { void reload(); }, []);
+
+  const filtered = contacts.filter((r) => {
+    const q = search.trim().toLowerCase();
+    const matchSearch = !q ||
+      (r.patient_name || "").toLowerCase().includes(q) ||
+      (r.patient_cpf || "").includes(q.replace(/\D/g, "")) ||
+      (r.patient_phone || "").includes(q.replace(/\D/g, "")) ||
+      r.contact_reason.toLowerCase().includes(q);
+    const matchResult = resultFilter === "all" || r.result === resultFilter;
+    return matchSearch && matchResult;
   });
 
   const stats = {
-    total: records.length,
-    agendados: records.filter((r) => r.contactStatus === "agendado").length,
-    confirmados: records.filter((r) => r.contactStatus === "confirmado").length,
-    naoAtendeu: records.filter((r) => r.contactStatus === "nao_atendeu").length,
+    total: contacts.length,
+    agendados: contacts.filter((r) => r.result === "agendado").length,
+    confirmados: contacts.filter((r) => r.result === "confirmado").length,
+    naoAtendeu: contacts.filter((r) => r.result === "nao_atendeu").length,
+    pendencias: tasks.length,
   };
 
   if (loading) return <LoadingState />;
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <PageHeader title="Call Center" description="Pré-cadastro, agendamento e confirmação" actions={
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setDialogOpen(true)}><UserPlus className="mr-2 h-4 w-4" />Pré-Cadastro</Button>
-          <Button onClick={() => setDialogOpen(true)}><Plus className="mr-2 h-4 w-4" />Novo Contato</Button>
-        </div>
+      <PageHeader title="Call Center" description="Contatos, retornos e tarefas operacionais" actions={
+        <Button onClick={() => setDialogOpen(true)}><Plus className="mr-2 h-4 w-4" />Novo Contato</Button>
       } />
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <Card><CardContent className="p-3 flex items-center gap-2"><Phone className="h-4 w-4 text-primary" /><div><p className="text-lg font-bold">{stats.total}</p><p className="text-[10px] text-muted-foreground">Total contatos</p></div></CardContent></Card>
-        <Card><CardContent className="p-3 flex items-center gap-2"><Calendar className="h-4 w-4 text-primary" /><div><p className="text-lg font-bold text-primary">{stats.agendados}</p><p className="text-[10px] text-muted-foreground">Agendados</p></div></CardContent></Card>
-        <Card><CardContent className="p-3 flex items-center gap-2"><CheckCircle className="h-4 w-4 text-success" /><div><p className="text-lg font-bold text-success">{stats.confirmados}</p><p className="text-[10px] text-muted-foreground">Confirmados</p></div></CardContent></Card>
-        <Card><CardContent className="p-3 flex items-center gap-2"><PhoneMissed className="h-4 w-4 text-muted-foreground" /><div><p className="text-lg font-bold text-muted-foreground">{stats.naoAtendeu}</p><p className="text-[10px] text-muted-foreground">Não atendeu</p></div></CardContent></Card>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+        <Stat icon={<Phone className="h-4 w-4 text-primary" />} label="Total contatos" value={stats.total} />
+        <Stat icon={<Calendar className="h-4 w-4 text-primary" />} label="Agendados" value={stats.agendados} color="text-primary" />
+        <Stat icon={<CheckCircle className="h-4 w-4 text-success" />} label="Confirmados" value={stats.confirmados} color="text-success" />
+        <Stat icon={<PhoneMissed className="h-4 w-4 text-muted-foreground" />} label="Não atendeu" value={stats.naoAtendeu} color="text-muted-foreground" />
+        <Stat icon={<ListTodo className="h-4 w-4 text-warning" />} label="Pendências" value={stats.pendencias} color="text-warning" />
       </div>
 
-      {/* Filters */}
       <div className="flex gap-2 flex-wrap">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
+        <div className="relative flex-1 min-w-[220px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Buscar por nome, CPF ou telefone..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Input placeholder="Buscar por paciente, CPF, telefone ou motivo..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
+        <Select value={resultFilter} onValueChange={setResultFilter}>
+          <SelectTrigger className="w-[180px]"><SelectValue placeholder="Resultado" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
-            {(Object.keys(contactStatusLabels) as CallCenterContactStatus[]).map((s) => <SelectItem key={s} value={s}>{contactStatusLabels[s]}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={unitFilter} onValueChange={setUnitFilter}>
-          <SelectTrigger className="w-[150px]"><SelectValue placeholder="Unidade" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas</SelectItem>
-            {units.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+            {(Object.keys(resultLabels) as CallCenterResult[]).map((s) => <SelectItem key={s} value={s}>{resultLabels[s]}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
 
-      {/* Table */}
-      {filtered.length === 0 ? <EmptyState icon={Phone} title="Nenhum registro" description="Nenhum contato encontrado." /> : (
+      {filtered.length === 0 ? <EmptyState icon={Phone} title="Nenhum contato" description="Registre o primeiro contato real do call center." /> : (
         <div className="rounded-lg border bg-card overflow-auto">
           <Table>
             <TableHeader><TableRow>
-              <TableHead>Paciente</TableHead><TableHead>Telefone</TableHead><TableHead>Unidade</TableHead><TableHead>Especialidade</TableHead><TableHead>Tipo</TableHead><TableHead>Status</TableHead><TableHead>Operador</TableHead><TableHead>Observações</TableHead><TableHead></TableHead>
+              <TableHead>Paciente</TableHead><TableHead>Canal</TableHead><TableHead>Direção</TableHead><TableHead>Motivo</TableHead><TableHead>Resultado</TableHead><TableHead>Próxima ação</TableHead><TableHead>Observações</TableHead><TableHead>Data</TableHead>
             </TableRow></TableHeader>
             <TableBody>
               {filtered.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell>
-                    <div>
-                      <p className="font-medium text-sm">{r.patientName}</p>
-                      {r.cpf && <p className="text-[10px] text-muted-foreground">{r.cpf}</p>}
-                      {r.patientId && <Badge variant="outline" className="text-[9px] bg-success/10 text-success border-0 mt-0.5">Cadastrado</Badge>}
-                    </div>
+                    <p className="font-medium text-sm">{r.patient_name || "Paciente não vinculado"}</p>
+                    {r.patient_cpf && <p className="text-[10px] text-muted-foreground">{r.patient_cpf}</p>}
+                    {r.patient_phone && <p className="text-[10px] text-muted-foreground">{r.patient_phone}</p>}
                   </TableCell>
-                  <TableCell className="text-xs">{r.phone}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{r.unitName || "—"}</TableCell>
-                  <TableCell className="text-xs">{r.specialtyName || "—"}</TableCell>
-                  <TableCell className="text-xs">{r.appointmentType || "—"}</TableCell>
-                  <TableCell><Badge variant="outline" className={`border-0 text-[10px] ${contactStatusColors[r.contactStatus]}`}>{contactStatusLabels[r.contactStatus]}</Badge></TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{r.operatorName}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground max-w-[120px] truncate">{r.notes || "—"}</TableCell>
-                  <TableCell><Button variant="ghost" size="sm" className="h-7 text-xs">Ações</Button></TableCell>
+                  <TableCell className="text-xs">{channelLabels[r.channel]}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{r.direction === "inbound" ? "Recebido" : "Ativo"}</TableCell>
+                  <TableCell className="text-xs">{r.contact_reason}</TableCell>
+                  <TableCell><Badge variant="outline" className={`border-0 text-[10px] ${resultColors[r.result]}`}>{resultLabels[r.result]}</Badge></TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{r.next_action || "—"}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground max-w-[180px] truncate">{r.notes || "—"}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleString("pt-BR")}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -170,47 +159,159 @@ export default function CallCenterPage() {
         </div>
       )}
 
-      {/* New contact dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Novo Contato / Pré-Cadastro</DialogTitle><DialogDescription>Registre um contato ou pré-cadastre um paciente.</DialogDescription></DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2"><Label>Nome do Paciente *</Label><Input placeholder="Nome completo" /></div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2"><Label>CPF</Label><Input placeholder="000.000.000-00" /></div>
-              <div className="space-y-2"><Label>Telefone *</Label><Input placeholder="(00) 00000-0000" /></div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2"><Label>Data Nascimento</Label><Input type="date" /></div>
-              <div className="space-y-2"><Label>Convênio</Label><Input placeholder="Convênio" /></div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2"><Label>Unidade</Label>
-                <Select><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                  <SelectContent>{units.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2"><Label>Especialidade</Label>
-                <Select><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                  <SelectContent>{specialties.map((s) => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-2"><Label>Status do Contato</Label>
-              <Select><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+      <NewContactDialog open={dialogOpen} onOpenChange={setDialogOpen} onCreated={reload} />
+    </div>
+  );
+}
+
+function Stat({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: number; color?: string }) {
+  return <Card><CardContent className="p-3 flex items-center gap-2">{icon}<div><p className={`text-lg font-bold ${color || ""}`}>{value}</p><p className="text-[10px] text-muted-foreground">{label}</p></div></CardContent></Card>;
+}
+
+interface NewContactDialogProps {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onCreated: () => void;
+}
+
+function NewContactDialog({ open, onOpenChange, onCreated }: NewContactDialogProps) {
+  const [patientSearch, setPatientSearch] = useState("");
+  const [patientResults, setPatientResults] = useState<Patient[]>([]);
+  const [patientId, setPatientId] = useState("");
+  const [channel, setChannel] = useState<CallCenterChannel>("telefone");
+  const [direction, setDirection] = useState<CallCenterDirection>("inbound");
+  const [contactReason, setContactReason] = useState("");
+  const [result, setResult] = useState<CallCenterResult>("recado");
+  const [notes, setNotes] = useState("");
+  const [nextAction, setNextAction] = useState("");
+  const [nextActionAt, setNextActionAt] = useState("");
+  const [saving, setSaving] = useState(false);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    const term = patientSearch.trim();
+    if (term.length < 2) {
+      setPatientResults([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const rows = await patientsService.search(term);
+        if (!cancelled) setPatientResults(rows.slice(0, 20));
+      } catch {
+        if (!cancelled) setPatientResults([]);
+      }
+    }, 250);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [patientSearch]);
+
+  const reset = () => {
+    setPatientSearch(""); setPatientResults([]); setPatientId("");
+    setChannel("telefone"); setDirection("inbound"); setContactReason("");
+    setResult("recado"); setNotes(""); setNextAction(""); setNextActionAt("");
+  };
+
+  const handleSubmit = async () => {
+    if (!patientId) {
+      toast({ title: "Paciente obrigatório", description: "Busque e selecione um paciente antes de registrar o contato.", variant: "destructive" });
+      return;
+    }
+    if (!contactReason.trim()) {
+      toast({ title: "Motivo obrigatório", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      await callCenterService.createContact({
+        patient_id: patientId,
+        channel,
+        direction,
+        contact_reason: contactReason,
+        result,
+        notes,
+        next_action: nextAction || null,
+        next_action_at: nextActionAt || null,
+        create_task: Boolean(nextAction),
+      });
+      toast({ title: "Contato registrado" });
+      reset();
+      onOpenChange(false);
+      onCreated();
+    } catch (err) {
+      toast({ title: friendlyError(err, "Registrar contato"), variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Novo contato</DialogTitle>
+          <DialogDescription>Registre canal, motivo, resultado e próxima ação do atendimento.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Paciente *</Label>
+            <Input placeholder="Buscar por nome, CPF, telefone ou e-mail" value={patientSearch} onChange={(e) => setPatientSearch(e.target.value)} />
+            {patientResults.length > 0 && (
+              <Select value={patientId} onValueChange={setPatientId}>
+                <SelectTrigger><SelectValue placeholder="Selecione o paciente" /></SelectTrigger>
                 <SelectContent>
-                  {(Object.keys(contactStatusLabels) as CallCenterContactStatus[]).map((s) => <SelectItem key={s} value={s}>{contactStatusLabels[s]}</SelectItem>)}
+                  {patientResults.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}{p.cpf ? ` — ${p.cpf}` : ""}{p.phone ? ` — ${p.phone}` : ""}</SelectItem>)}
                 </SelectContent>
               </Select>
-            </div>
-            <div className="space-y-2"><Label>Observações</Label><Textarea placeholder="Notas do contato..." rows={2} /></div>
+            )}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={() => { toast({ title: "Contato registrado!" }); setDialogOpen(false); }}>Registrar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="space-y-2">
+              <Label>Canal</Label>
+              <Select value={channel} onValueChange={(v) => setChannel(v as CallCenterChannel)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{(Object.keys(channelLabels) as CallCenterChannel[]).map((c) => <SelectItem key={c} value={c}>{channelLabels[c]}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Direção</Label>
+              <Select value={direction} onValueChange={(v) => setDirection(v as CallCenterDirection)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="inbound">Recebido</SelectItem><SelectItem value="outbound">Ativo</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Resultado</Label>
+              <Select value={result} onValueChange={(v) => setResult(v as CallCenterResult)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{(Object.keys(resultLabels) as CallCenterResult[]).map((r) => <SelectItem key={r} value={r}>{resultLabels[r]}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Motivo *</Label>
+            <Input placeholder="Ex.: marcação de consulta, confirmação, remarcação, retorno de campanha" value={contactReason} onChange={(e) => setContactReason(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Próxima ação</Label>
+              <Input placeholder="Ex.: retornar ligação, enviar preparo, confirmar autorização" value={nextAction} onChange={(e) => setNextAction(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Quando</Label>
+              <Input type="datetime-local" value={nextActionAt} onChange={(e) => setNextActionAt(e.target.value)} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Observações</Label>
+            <Textarea placeholder="Resumo objetivo do contato..." rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancelar</Button>
+          <Button onClick={handleSubmit} disabled={saving}>{saving ? "Salvando..." : "Registrar contato"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
