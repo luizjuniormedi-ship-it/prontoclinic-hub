@@ -186,72 +186,61 @@ describe("appointmentsService — getPatientLastCompleted (filtro por patient_id
 describe("appointmentsService — create", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("cria agendamento com status default 'scheduled' quando não informado", async () => {
-    const insertSpy = vi.fn().mockReturnThis();
-    const chain: Record<string, unknown> = {
-      insert: insertSpy,
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({
-        data: makeAppointment({ status: "scheduled" }),
-        error: null,
-      }),
-    };
-    (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue(chain);
+  it("cria agendamento via RPC transacional com status default 'scheduled'", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: makeAppointment({ status: "scheduled" }),
+      error: null,
+    });
 
     const result = await appointmentsService.create({
-      patient_id: "patient-1",
-      professional_id: "prof-1",
+      patient_id: "1",
+      professional_id: "1",
       appointment_date: "2026-06-23",
       start_time: "09:00",
     });
 
     expect(result.status).toBe("scheduled");
-    expect(insertSpy).toHaveBeenCalled();
-    const inserted = insertSpy.mock.calls[0][0] as Record<string, unknown>;
-    expect(inserted.status).toBe("scheduled");
+    expect(supabase.rpc).toHaveBeenCalledWith("create_appointment_secure", expect.objectContaining({
+      p_status: "scheduled",
+      p_patient_id: expect.any(Number),
+      p_professional_id: 1,
+    }));
   });
 
-  it("respeita status customizado quando informado", async () => {
-    const insertSpy = vi.fn().mockReturnThis();
-    const chain: Record<string, unknown> = {
-      insert: insertSpy,
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({
-        data: makeAppointment({ status: "confirmed" }),
-        error: null,
-      }),
-    };
-    (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue(chain);
+  it("respeita status customizado quando informado na RPC", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: makeAppointment({ status: "confirmed" }),
+      error: null,
+    });
 
     const result = await appointmentsService.create({
-      patient_id: "patient-1",
-      professional_id: "prof-1",
+      patient_id: "1",
+      professional_id: "1",
       appointment_date: "2026-06-23",
       start_time: "09:00",
       status: "confirmed",
     });
 
     expect(result.status).toBe("confirmed");
-    const inserted = insertSpy.mock.calls[0][0] as Record<string, unknown>;
-    expect(inserted.status).toBe("confirmed");
+    expect(supabase.rpc).toHaveBeenCalledWith("create_appointment_secure", expect.objectContaining({
+      p_status: "confirmed",
+    }));
   });
 
-  it("lança erro quando Supabase falha ao inserir", async () => {
-    const chain: Record<string, unknown> = {
-      insert: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: null, error: { message: "FK violation" } }),
-    };
-    (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue(chain);
+  it("lança erro quando RPC falha ao criar", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: null,
+      error: { message: "Conflito de horário" },
+    });
 
     await expect(
       appointmentsService.create({
-        patient_id: "patient-1",
-        professional_id: "prof-1",
+        patient_id: "1",
+        professional_id: "1",
         appointment_date: "2026-06-23",
         start_time: "09:00",
       })
-    ).rejects.toThrow(/FK violation/);
+    ).rejects.toThrow(/Conflito de horário/);
   });
 });
 
@@ -293,60 +282,64 @@ describe("appointmentsService — update", () => {
   });
 });
 
-describe("appointmentsService — cancel (updateStatus para cancelled)", () => {
+describe("appointmentsService — updateStatus", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("marca agendamento como cancelled com motivo", async () => {
-    // 1ª chamada: select status atual
-    const fetchChain: Record<string, unknown> = {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({
-        data: { status: "scheduled" },
-        error: null,
-      }),
-    };
-    // 2ª chamada: update
-    const updateSpy = vi.fn().mockReturnThis();
-    const updateChain: Record<string, unknown> = {
-      update: updateSpy,
-      eq: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({
-        data: makeAppointment({ status: "cancelled", notes: "Paciente desmarcou" }),
-        error: null,
-      }),
-    };
-    const fromMock = supabase.from as unknown as ReturnType<typeof vi.fn>;
-    fromMock.mockReturnValueOnce(fetchChain).mockReturnValueOnce(updateChain);
+  it("marca agendamento como cancelled via RPC com motivo", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: makeAppointment({ status: "cancelled", notes: "Paciente desmarcou" }),
+      error: null,
+    });
 
     const result = await appointmentsService.updateStatus(
-      "appt-1",
+      "1",
       "cancelled",
       "Paciente desmarcou"
     );
     expect(result.status).toBe("cancelled");
     expect(result.notes).toBe("Paciente desmarcou");
-    const updated = updateSpy.mock.calls[0][0] as Record<string, unknown>;
-    expect(updated.status).toBe("cancelled");
-    expect(updated.notes).toBe("Paciente desmarcou");
-    expect(updated.updated_at).toBeDefined();
+    expect(supabase.rpc).toHaveBeenCalledWith("update_appointment_status_secure", {
+      p_appointment_id: 1,
+      p_new_status: "cancelled",
+      p_reason: "Paciente desmarcou",
+    });
   });
 
-  it("rejeita transição inválida (ex: completed → cancelled)", async () => {
-    const fetchChain: Record<string, unknown> = {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({
-        data: { status: "completed" },
-        error: null,
-      }),
-    };
-    (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue(fetchChain);
+  it("propaga erro de transição inválida retornado pela RPC", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: null,
+      error: { message: "Transição inválida" },
+    });
 
     await expect(
-      appointmentsService.updateStatus("appt-1", "cancelled", "motivo")
+      appointmentsService.updateStatus("1", "cancelled", "motivo")
     ).rejects.toThrow(/Transição inválida/);
+  });
+});
+
+describe("appointmentsService — reschedule", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("remarca agendamento via RPC com motivo", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: makeAppointment({ appointment_date: "2026-06-24", start_time: "10:00" }),
+      error: null,
+    });
+
+    const result = await appointmentsService.reschedule("1", {
+      appointment_date: "2026-06-24",
+      start_time: "10:00",
+      reason: "Paciente solicitou",
+    });
+
+    expect(result.appointment_date).toBe("2026-06-24");
+    expect(supabase.rpc).toHaveBeenCalledWith("reschedule_appointment_secure", {
+      p_appointment_id: 1,
+      p_new_appointment_date: "2026-06-24",
+      p_new_start_time: "10:00",
+      p_new_end_time: null,
+      p_reason: "Paciente solicitou",
+    });
   });
 });
 
@@ -375,24 +368,27 @@ describe("appointmentsService — canTransitionAppointment (validação de confl
 describe("appointmentsService — delete", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("deleta agendamento sem erro", async () => {
-    const chain: Record<string, unknown> = {
-      delete: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockResolvedValue({ error: null }),
-    };
-    (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue(chain);
+  it("faz cancelamento lógico em vez de DELETE físico", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: makeAppointment({ status: "cancelled" }),
+      error: null,
+    });
 
-    await expect(appointmentsService.delete("appt-1")).resolves.toBeUndefined();
+    await expect(appointmentsService.delete("1")).resolves.toBeUndefined();
+    expect(supabase.rpc).toHaveBeenCalledWith("update_appointment_status_secure", {
+      p_appointment_id: 1,
+      p_new_status: "cancelled",
+      p_reason: "Cancelamento lógico solicitado",
+    });
   });
 
-  it("lança erro quando Supabase falha", async () => {
-    const chain: Record<string, unknown> = {
-      delete: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockResolvedValue({ error: { message: "FK constraint" } }),
-    };
-    (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue(chain);
+  it("lança erro quando cancelamento lógico falha", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: null,
+      error: { message: "Motivo obrigatório" },
+    });
 
-    await expect(appointmentsService.delete("appt-1")).rejects.toThrow(/FK constraint/);
+    await expect(appointmentsService.delete("1")).rejects.toThrow(/Motivo obrigatório/);
   });
 });
 

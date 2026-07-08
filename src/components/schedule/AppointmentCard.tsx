@@ -42,7 +42,7 @@ function AppointmentCardImpl({
   rowIndex,
 }: AppointmentCardProps) {
   const age = patient?.birthDate ? calculateAge(patient.birthDate) : null;
-  const insurance = patient?.healthInsurance || "Particular";
+  const insurance = patient?.healthInsurance || (a as any).insuranceName || "Particular";
   const allergies = patient?.allergies;
 
   return (
@@ -80,6 +80,9 @@ function AppointmentCardImpl({
               )}
             </div>
             <p className="text-xs text-muted-foreground truncate">
+              {a.serviceName || a.typeLabel || ""}
+            </p>
+            <p className="text-xs text-muted-foreground/70 truncate">
               {a.doctorName}{a.specialty ? ` • ${a.specialty}` : ""}
             </p>
             <div className="flex items-center gap-2 flex-wrap">

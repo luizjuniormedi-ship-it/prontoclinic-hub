@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { DbProfessional, DbSpecialty, DbAppointmentType, appointmentsService } from "@/services/appointmentsService";
+import { patientsService } from "@/services/patientsService";
 import { validateAppointmentFields, checkOverlap, checkReturnRule, handleServiceError } from "@/services/validationService";
 import { Patient } from "@/types";
 import { useToast } from "@/hooks/use-toast";
@@ -36,6 +37,9 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
   const [isReturn, setIsReturn] = useState(false);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [patientSearch, setPatientSearch] = useState("");
+  const [patientResults, setPatientResults] = useState<Patient[]>([]);
+  const [patientSearchLoading, setPatientSearchLoading] = useState(false);
 
   // Validation states
   const [overlapWarning, setOverlapWarning] = useState<string | null>(null);
@@ -50,6 +54,7 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
     setPatientId(""); setProfessionalId(""); setSpecialtyId("");
     setAppointmentTypeId(""); setDate(selectedDate); setStartTime("");
     setEndTime(""); setIsReturn(false); setNotes(""); setSaving(false);
+    setPatientSearch(""); setPatientResults([]); setPatientSearchLoading(false);
     setOverlapWarning(null); setReturnWarning(null);
     setReturnOverrideConfirmed(false); setValidationErrors([]);
   };
@@ -121,6 +126,35 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
     }, 500);
     return () => clearTimeout(timer);
   }, [patientId, specialtyId, specialties]);
+
+  useEffect(() => {
+    const term = patientSearch.trim();
+    if (term.length < 2) {
+      setPatientResults([]);
+      setPatientSearchLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        setPatientSearchLoading(true);
+        const result = await patientsService.search(term);
+        if (!cancelled) setPatientResults(result.slice(0, 50));
+      } catch {
+        if (!cancelled) setPatientResults([]);
+      } finally {
+        if (!cancelled) setPatientSearchLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [patientSearch]);
+
+  const patientOptions = patientSearch.trim().length >= 2 ? patientResults : patients;
 
   const handleSubmit = async () => {
     // Validate fields
@@ -237,10 +271,17 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
 
           <div className="space-y-2">
             <Label>Paciente *</Label>
+            <Input
+              placeholder="Buscar por nome, CPF ou telefone..."
+              value={patientSearch}
+              onChange={(e) => setPatientSearch(e.target.value)}
+            />
             <Select value={patientId} onValueChange={setPatientId}>
-              <SelectTrigger><SelectValue placeholder="Selecione o paciente" /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue placeholder={patientSearchLoading ? "Buscando..." : "Selecione o paciente"} />
+              </SelectTrigger>
               <SelectContent>
-                {patients.map((p) => (
+                {patientOptions.map((p) => (
                   <SelectItem key={p.id} value={p.id}>{p.name}{p.cpf ? ` — ${p.cpf}` : ""}</SelectItem>
                 ))}
               </SelectContent>

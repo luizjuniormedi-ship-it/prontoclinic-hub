@@ -57,12 +57,14 @@ function toDisplayAppointment(
     doctorName: professional?.full_name || "Profissional não encontrado",
     specialty: specialty?.name,
     unitId: db.unit_id || undefined,
+    insuranceCompanyId: (db as any).insurance_company_id || undefined,
     date: db.appointment_date,
     time: db.start_time?.substring(0, 5) || "00:00",
     duration,
     status: (db.status as AppointmentStatus) || "scheduled",
     type: type as AppointmentTypeLiteral,
-    typeLabel: appType?.name,
+    typeLabel: appType?.name || undefined,
+    serviceName: db.service_name || undefined,
     notes: db.notes || undefined,
   };
 }
@@ -73,6 +75,8 @@ export default function SchedulePage() {
   const [specialties, setSpecialties] = useState<DbSpecialty[]>([]);
   const [appointmentTypes, setAppointmentTypes] = useState<DbAppointmentType[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [insuranceNames, setInsuranceNames] = useState<Record<string, string>>({});
+  const [units, setUnits] = useState<Array<{ id: string; name: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
@@ -88,6 +92,7 @@ export default function SchedulePage() {
   const [specialtyFilter, setSpecialtyFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [unitFilter, setUnitFilter] = useState("all");
 
   // Quick action
   const [quickAction, setQuickAction] = useState("");
@@ -103,6 +108,21 @@ export default function SchedulePage() {
     setProfessionals(profs);
     setSpecialties(specs);
     setAppointmentTypes(types);
+
+    try {
+      const [{ data: ins }, { data: unitRows }] = await Promise.all([
+        supabase.from("insurance_companies").select("id, name"),
+        supabase.from("units").select("id, name").order("name"),
+      ]);
+      if (ins) {
+        setInsuranceNames(Object.fromEntries(ins.map((i: any) => [String(i.id), i.name])));
+      }
+      if (unitRows) {
+        setUnits(unitRows.map((u: any) => ({ id: String(u.id), name: u.name })));
+      }
+    } catch {
+      setUnits([]);
+    }
   }, []);
 
   const loadAppointments = useCallback(async (date: string) => {
@@ -126,10 +146,23 @@ export default function SchedulePage() {
         .from("patients")
         .select("id, full_name, cpf, birth_date, phone, email, sex, insurance_plan_id, insurance_card_number, allergies, clinical_alerts, created_at, updated_at")
         .in("id", patientIds);
+
+      // Load insurance names for display
+      const insuranceIds = [...new Set((pats || []).map((p: any) => p.insurance_plan_id).filter(Boolean))];
+      let insuranceMap: Record<string, string> = {};
+      if (insuranceIds.length > 0) {
+        const { data: insurances } = await supabase
+          .from("insurance_companies")
+          .select("id, name")
+          .in("id", insuranceIds);
+        if (insurances) {
+          insuranceMap = Object.fromEntries(insurances.map((i: any) => [String(i.id), i.name]));
+        }
+      }
       setPatients((pats || []).map((row: PatientDbRow) => ({
         id: String(row.id), companyId: undefined, name: row.full_name || "", cpf: row.cpf || "",
         birthDate: row.birth_date || "", phone: row.phone || "", email: row.email || "",
-        gender: row.sex || "O", healthInsurance: row.insurance_plan_id === null || row.insurance_plan_id === undefined ? undefined : String(row.insurance_plan_id), healthInsuranceNumber: row.insurance_card_number ?? undefined,
+        gender: row.sex || "O", healthInsurance: row.insurance_plan_id ? (insuranceMap[String(row.insurance_plan_id)] || "Convênio #" + row.insurance_plan_id) : undefined, healthInsuranceNumber: row.insurance_card_number ?? undefined,
         allergies: row.allergies ?? undefined, clinicalAlerts: row.clinical_alerts ?? undefined,
         createdAt: row.created_at || "", updatedAt: row.updated_at || "",
       })) as Patient[]);
@@ -164,11 +197,19 @@ export default function SchedulePage() {
 
   // Convert all DB appointments to display format
   const appointments = useMemo(() =>
-    dbAppointments.map((db) => toDisplayAppointment(db, patients, professionals, specialties, appointmentTypes)),
-    [dbAppointments, patients, professionals, specialties, appointmentTypes]
+    dbAppointments.map((db) => {
+      const appt = toDisplayAppointment(db, patients, professionals, specialties, appointmentTypes);
+      // Resolve insurance name from appointment's insurance_company_id
+      const icId = (db as any).insurance_company_id;
+      if (icId && insuranceNames[String(icId)]) {
+        (appt as any).insuranceName = insuranceNames[String(icId)];
+      }
+      return appt;
+    }),
+    [dbAppointments, patients, professionals, specialties, appointmentTypes, insuranceNames]
   );
 
-  const hasFilters = debouncedSearch !== "" || doctorFilter !== "all" || specialtyFilter !== "all" || typeFilter !== "all" || statusFilter !== "all";
+  const hasFilters = debouncedSearch !== "" || doctorFilter !== "all" || specialtyFilter !== "all" || typeFilter !== "all" || statusFilter !== "all" || unitFilter !== "all";
 
   const clearFilters = () => {
     setSearch("");
@@ -176,6 +217,7 @@ export default function SchedulePage() {
     setSpecialtyFilter("all");
     setTypeFilter("all");
     setStatusFilter("all");
+    setUnitFilter("all");
   };
 
   const dayAppointments = appointments
@@ -191,6 +233,7 @@ export default function SchedulePage() {
       if (specialtyFilter !== "all" && a.specialty !== specialtyFilter) return false;
       if (typeFilter !== "all" && a.type !== typeFilter) return false;
       if (statusFilter !== "all" && a.status !== statusFilter) return false;
+      if (unitFilter !== "all" && a.unitId !== unitFilter) return false;
       return true;
     })
     .sort((a, b) => a.time.localeCompare(b.time));
@@ -232,9 +275,21 @@ export default function SchedulePage() {
     setQuickActionOpen(true);
   };
 
-  const handleQuickActionConfirm = async (appointment: Appointment, newStatus: AppointmentStatus, notes?: string) => {
+  const handleQuickActionConfirm = async (
+    appointment: Appointment,
+    newStatus: AppointmentStatus,
+    details?: { reason?: string; newDate?: string; newTime?: string }
+  ) => {
     try {
-      await appointmentsService.updateStatus(appointment.id, newStatus, notes);
+      if (details?.newDate && details?.newTime) {
+        await appointmentsService.reschedule(appointment.id, {
+          appointment_date: details.newDate,
+          start_time: details.newTime,
+          reason: details.reason || "Remarcação solicitada",
+        });
+      } else {
+        await appointmentsService.updateStatus(appointment.id, newStatus, details?.reason);
+      }
       await loadAppointments(selectedDate);
       const labels: Record<string, string> = {
         waiting: "Check-in realizado",
@@ -316,6 +371,7 @@ export default function SchedulePage() {
             className="h-8 w-8"
             onClick={() => changeDate(-1)}
             aria-label={`Dia anterior${view === "week" ? " (voltar uma semana)" : ""}`}
+            title={view === "week" ? "Semana anterior" : "Dia anterior"}
           >
             <ChevronLeft className="h-4 w-4" aria-hidden="true" />
           </Button>
@@ -328,6 +384,7 @@ export default function SchedulePage() {
             className="h-8 w-8"
             onClick={() => changeDate(1)}
             aria-label={`Próximo dia${view === "week" ? " (avançar uma semana)" : ""}`}
+            title={view === "week" ? "Próxima semana" : "Próximo dia"}
           >
             <ChevronRight className="h-4 w-4" aria-hidden="true" />
           </Button>
@@ -368,7 +425,9 @@ export default function SchedulePage() {
         specialtyFilter={specialtyFilter} onSpecialtyFilter={setSpecialtyFilter}
         typeFilter={typeFilter} onTypeFilter={setTypeFilter}
         statusFilter={statusFilter} onStatusFilter={setStatusFilter}
+        unitFilter={unitFilter} onUnitFilter={setUnitFilter}
         doctors={doctorsForFilter} specialties={specialtiesForFilter}
+        units={units}
         onClearFilters={clearFilters} hasFilters={hasFilters}
       />
 

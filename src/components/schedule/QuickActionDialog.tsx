@@ -12,15 +12,19 @@ interface QuickActionDialogProps {
   onOpenChange: (open: boolean) => void;
   action: string;
   appointment: Appointment | null;
-  onConfirm: (appointment: Appointment, newStatus: AppointmentStatus, notes?: string) => void;
+  onConfirm: (
+    appointment: Appointment,
+    newStatus: AppointmentStatus,
+    details?: { reason?: string; newDate?: string; newTime?: string }
+  ) => void;
 }
 
 const actionConfig: Record<string, { title: string; description: string; status: AppointmentStatus; needsDate?: boolean; needsReason?: boolean }> = {
   checkin: { title: "Check-in", description: "Confirmar chegada do paciente.", status: "waiting" },
   start: { title: "Iniciar Atendimento", description: "Iniciar o atendimento do paciente.", status: "in_progress" },
-  reschedule: { title: "Remarcar", description: "Selecione nova data e horário.", status: "scheduled", needsDate: true },
+  reschedule: { title: "Remarcar", description: "Selecione nova data e horário.", status: "scheduled", needsDate: true, needsReason: true },
   cancel: { title: "Cancelar Agendamento", description: "Esta ação não pode ser desfeita.", status: "cancelled", needsReason: true },
-  no_show: { title: "Registrar Falta", description: "Registrar que o paciente não compareceu.", status: "no_show" },
+  no_show: { title: "Registrar Falta", description: "Registrar que o paciente não compareceu.", status: "no_show", needsReason: true },
 };
 
 export function QuickActionDialog({ open, onOpenChange, action, appointment, onConfirm }: QuickActionDialogProps) {
@@ -41,7 +45,11 @@ export function QuickActionDialog({ open, onOpenChange, action, appointment, onC
       toast({ title: "Informe o motivo", variant: "destructive" });
       return;
     }
-    onConfirm(appointment, config.status, reason);
+    onConfirm(appointment, config.status, {
+      reason: reason.trim() || undefined,
+      newDate: newDate || undefined,
+      newTime: newTime || undefined,
+    });
     setNewDate("");
     setNewTime("");
     setReason("");

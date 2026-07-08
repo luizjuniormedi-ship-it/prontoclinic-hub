@@ -161,14 +161,23 @@ export const patientsService = {
   async search(query: string): Promise<Patient[]> {
     const sanitized = query.trim();
     if (!sanitized) return this.getAll();
+    const digits = stripNonDigits(sanitized);
+    const safeText = sanitized.replace(/[%,()]/g, ' ');
+    const filters = [
+      'full_name.ilike.%' + safeText + '%',
+      'cpf.ilike.%' + (digits || safeText) + '%',
+      'phone.ilike.%' + (digits || safeText) + '%',
+      'email.ilike.%' + safeText + '%',
+    ].join(',');
 
     const { data, error } = await supabase
       .from('patients')
       .select('*')
-      .or(`full_name.ilike.%${sanitized}%,cpf.ilike.%${sanitized}%,phone.ilike.%${sanitized}%`)
-      .order('full_name');
+      .or(filters)
+      .order('full_name')
+      .limit(50);
 
-    if (error) throw new Error(`Erro ao buscar pacientes: ${error.message}`);
+    if (error) throw new Error('Erro ao buscar pacientes: ' + error.message);
     return (data || []).map(mapRowToPatient);
   },
 

@@ -191,6 +191,8 @@ export interface Appointment {
   status: AppointmentStatus;
   type: AppointmentType;
   typeLabel?: string;
+  serviceName?: string;
+  insuranceCompanyId?: string | number;
   notes?: string;
   returnOriginId?: string;
   therapyPackageId?: string;
