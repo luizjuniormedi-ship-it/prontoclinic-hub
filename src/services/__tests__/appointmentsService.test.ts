@@ -200,7 +200,7 @@ describe("appointmentsService — create", () => {
     });
 
     expect(result.status).toBe("scheduled");
-    expect(supabase.rpc).toHaveBeenCalledWith("create_appointment_secure", expect.objectContaining({
+    expect(supabase.rpc).toHaveBeenCalledWith("create_appointment_with_requirements_secure", expect.objectContaining({
       p_status: "scheduled",
       p_patient_id: expect.any(Number),
       p_professional_id: 1,
@@ -222,7 +222,7 @@ describe("appointmentsService — create", () => {
     });
 
     expect(result.status).toBe("confirmed");
-    expect(supabase.rpc).toHaveBeenCalledWith("create_appointment_secure", expect.objectContaining({
+    expect(supabase.rpc).toHaveBeenCalledWith("create_appointment_with_requirements_secure", expect.objectContaining({
       p_status: "confirmed",
     }));
   });

@@ -37,6 +37,7 @@ import {
   biService,
   type Meta, type PeriodoTipo, type ComparacaoTipo, type KpiCodigo,
 } from "@/services/biService";
+import { useConfirm } from "@/hooks/useConfirm";
 
 interface MetasPanelProps {
   companyId: string;
@@ -86,6 +87,7 @@ const initialForm: FormState = {
 };
 
 export function MetasPanel({ companyId }: MetasPanelProps) {
+  const { confirm } = useConfirm();
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -179,8 +181,8 @@ export function MetasPanel({ companyId }: MetasPanelProps) {
     });
   };
 
-  const excluir = (m: Meta) => {
-    if (!window.confirm(`Excluir meta "${m.cd_kpi}"?`)) return;
+  const excluir = async (m: Meta) => {
+    if (!await confirm({ title: `Excluir meta "${m.cd_kpi}"?`, destructive: true, confirmText: "Excluir" })) return;
     excluirMut.mutate(m.id);
   };
 

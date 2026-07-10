@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, Navigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Heart, Loader2, Eye, EyeOff, AlertCircle, UserPlus, ArrowRight, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -42,8 +42,7 @@ export default function LoginPage() {
   const { toast } = useToast();
 
   if (isAuthenticated) {
-    navigate("/", { replace: true });
-    return null;
+    return <Navigate to="/" replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {

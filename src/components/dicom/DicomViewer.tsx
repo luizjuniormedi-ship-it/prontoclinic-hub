@@ -27,6 +27,7 @@ import { Label } from "@/components/ui/label";
 import { ZoomIn, ZoomOut, Move, Sun, Ruler, Type, Download, RefreshCw, AlertCircle, Loader2 } from "lucide-react";
 import { dicomWeb, type DicomExamImage, type DicomExam } from "@/services/dicomService";
 import { supabase } from "@/lib/supabase";
+import { toast } from "@/hooks/use-toast";
 
 const ORTHANC_URL = (import.meta.env.VITE_ORTHANC_URL as string) || "http://localhost:8042";
 const ORTHANC_USER = (import.meta.env.VITE_ORTHANC_USER as string) || "orthanc";
@@ -204,7 +205,7 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
 
   const handleSnapshot = useCallback(() => {
     if (status !== "ready" || !elementRef.current || !window.cornerstone) {
-      alert("Viewer nao inicializado");
+      toast({ title: "Viewer não inicializado", variant: "destructive" });
       return;
     }
     try {
@@ -218,10 +219,10 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
         a.download = `${exam.cd_dicom_exame || exam.id}_${displayImage.nr_instance || 0}.png`;
         a.click();
       } else {
-        alert("Snapshot gerado, mas o download foi bloqueado (LGPD: paciente sem consentimento PUSH).");
+        toast({ title: "Download bloqueado", description: "LGPD: paciente sem consentimento PUSH.", variant: "destructive" });
       }
     } catch (e) {
-      alert("Falha ao gerar snapshot: " + (e instanceof Error ? e.message : ""));
+      toast({ title: "Falha ao gerar snapshot", description: e instanceof Error ? e.message : "", variant: "destructive" });
     }
   }, [status, exam, displayImage, lgpdConsentPush, onSnapshot]);
 

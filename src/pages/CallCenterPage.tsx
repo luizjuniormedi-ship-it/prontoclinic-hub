@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Phone, Search, Plus, Calendar, CheckCircle, PhoneMissed, ListTodo } from "lucide-react";
+import { Phone, Search, Plus, Calendar, CheckCircle, PhoneMissed, ListTodo, RefreshCw, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState } from "@/components/StateViews";
-import { callCenterService, CallCenterContactLog, CallCenterResult, CallCenterChannel, CallCenterDirection, CallCenterTask } from "@/services/callCenterService";
+import { callCenterService, CallCenterContactLog, CallCenterResult, CallCenterChannel, CallCenterDirection, CallCenterTask, ConfirmationQueueItem } from "@/services/callCenterService";
 import { patientsService } from "@/services/patientsService";
 import { Patient } from "@/types";
 import { useToast } from "@/hooks/use-toast";
@@ -58,6 +58,7 @@ const channelLabels: Record<CallCenterChannel, string> = {
 export default function CallCenterPage() {
   const [contacts, setContacts] = useState<CallCenterContactLog[]>([]);
   const [tasks, setTasks] = useState<CallCenterTask[]>([]);
+  const [confirmations, setConfirmations] = useState<ConfirmationQueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [resultFilter, setResultFilter] = useState("all");
@@ -67,12 +68,15 @@ export default function CallCenterPage() {
   const reload = async () => {
     try {
       setLoading(true);
-      const [contactRows, taskRows] = await Promise.all([
+      await callCenterService.refreshConfirmationQueue(3);
+      const [contactRows, taskRows, confirmationRows] = await Promise.all([
         callCenterService.listContacts(),
         callCenterService.listTasks("pending"),
+        callCenterService.listConfirmationQueue(),
       ]);
       setContacts(contactRows);
       setTasks(taskRows);
+      setConfirmations(confirmationRows);
     } catch (err) {
       toast({ title: friendlyError(err, "Carregar call center"), variant: "destructive" });
     } finally {
@@ -101,6 +105,18 @@ export default function CallCenterPage() {
     pendencias: tasks.length,
   };
 
+  const registerConfirmation = async (item: ConfirmationQueueItem, outcome: "confirmed" | "cancelled" | "no_answer" | "invalid_number") => {
+    const notes = outcome === "cancelled" ? window.prompt("Motivo do cancelamento:") : undefined;
+    if (outcome === "cancelled" && !notes?.trim()) return;
+    try {
+      await callCenterService.recordConfirmation(item.id, outcome, notes);
+      toast({ title: outcome === "confirmed" ? "Presença confirmada" : "Tentativa registrada" });
+      await reload();
+    } catch (error) {
+      toast({ title: friendlyError(error, "Registrar confirmação"), variant: "destructive" });
+    }
+  };
+
   if (loading) return <LoadingState />;
 
   return (
@@ -116,6 +132,13 @@ export default function CallCenterPage() {
         <Stat icon={<PhoneMissed className="h-4 w-4 text-muted-foreground" />} label="Não atendeu" value={stats.naoAtendeu} color="text-muted-foreground" />
         <Stat icon={<ListTodo className="h-4 w-4 text-warning" />} label="Pendências" value={stats.pendencias} color="text-warning" />
       </div>
+
+      <Card>
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Fila de confirmação</h2><p className="text-xs text-muted-foreground">Próximos 3 dias · envio automático externo ainda não configurado</p></div><Badge variant="outline">{confirmations.length} pendentes</Badge></div>
+          {confirmations.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma confirmação pendente.</p> : confirmations.slice(0, 20).map((item) => <div key={item.id} className="flex items-center justify-between gap-3 border-b py-2 last:border-0"><div><p className="text-sm font-medium">{item.patient_name || `Paciente #${item.patient_id || "-"}`}</p><p className="text-xs text-muted-foreground">{item.patient_phone || "Sem telefone"} · Agendamento #{item.appointment_id} · {item.attempt_count} tentativa(s)</p></div><div className="flex gap-1"><Button size="sm" variant="outline" onClick={() => void registerConfirmation(item, "no_answer")}><RefreshCw className="mr-1 h-3 w-3" />Não atendeu</Button><Button size="sm" onClick={() => void registerConfirmation(item, "confirmed")}><CheckCircle className="mr-1 h-3 w-3" />Confirmar</Button><Button size="icon" variant="ghost" title="Cancelar agendamento" onClick={() => void registerConfirmation(item, "cancelled")}><XCircle className="h-4 w-4 text-destructive" /></Button></div></div>)}
+        </CardContent>
+      </Card>
 
       <div className="flex gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[220px] max-w-sm">

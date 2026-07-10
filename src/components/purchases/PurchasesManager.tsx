@@ -36,6 +36,7 @@ import {
   type Cotacao,
 } from "@/services/purchasesService";
 import { PurchaseOrderForm } from "./PurchaseOrderForm";
+import { useConfirm } from "@/hooks/useConfirm";
 
 const STATUS_OC_BADGE: Record<OrdemCompra["tp_status"], "default" | "secondary" | "destructive" | "outline"> = {
   PENDENTE: "outline",
@@ -316,6 +317,7 @@ function CotacoesTab() {
 }
 
 function OCsTab() {
+  const { promptText } = useConfirm();
   const [statusFiltro, setStatusFiltro] = useState<string>("");
   const [selected, setSelected] = useState<OrdemCompra | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -397,8 +399,8 @@ function OCsTab() {
                           <Button size="sm" variant="outline" onClick={() => updateStatusMut.mutate({ id: oc.id, status: "ENVIADA" })}>Marcar Enviada</Button>
                         )}
                         {oc.tp_status === "ENVIADA" && (
-                          <Button size="sm" variant="outline" onClick={() => {
-                            const nf = prompt("Número da Nota Fiscal:");
+                          <Button size="sm" variant="outline" onClick={async () => {
+                            const nf = await promptText({ title: "Receber ordem de compra", label: "Número da Nota Fiscal", required: true });
                             if (nf) updateStatusMut.mutate({ id: oc.id, status: "RECEBIDA" });
                           }}>Receber</Button>
                         )}

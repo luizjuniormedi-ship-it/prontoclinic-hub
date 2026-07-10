@@ -1237,20 +1237,27 @@ export const radiologyReportsServiceReal = {
   async list(filters?: { status?: string; company_id?: string }): Promise<RadiologyReport[]> {
     let q = supabase
       .from("radiology_reports")
-      .select("*, patients(full_name)")
+      .select("*")
       .order("updated_at", { ascending: false })
       .limit(200);
     if (filters?.status) q = q.eq("status", filters.status);
     if (filters?.company_id) q = q.eq("company_id", filters.company_id);
     const { data, error } = await q;
     if (error) throw error;
-    return (data || []).map((r: Record<string, unknown>) => {
-      const patient = r.patients as { full_name?: string } | null;
-      return {
-        ...(r as unknown as RadiologyReport),
-        patient_name: patient?.full_name,
-      } as RadiologyReport;
-    });
+    const rows = (data || []) as unknown as RadiologyReport[];
+    // Resolve nomes de pacientes numa 2a query (proxy REST local nao faz embedding)
+    const patientIds = [...new Set(rows.map((r) => r.patient_id).filter(Boolean))];
+    const nameById: Record<string, string> = {};
+    if (patientIds.length > 0) {
+      const { data: pats } = await supabase
+        .from("patients")
+        .select("id, full_name")
+        .in("id", patientIds as string[]);
+      for (const p of (pats || []) as Array<{ id: string; full_name: string }>) {
+        nameById[String(p.id)] = p.full_name;
+      }
+    }
+    return rows.map((r) => ({ ...r, patient_name: nameById[String(r.patient_id)] }));
   },
 
   async update(id: string, updates: Partial<RadiologyReport>): Promise<void> {

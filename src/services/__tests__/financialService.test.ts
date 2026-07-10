@@ -11,6 +11,7 @@ vi.mock("@/lib/supabase", () => {
     eq: vi.fn().mockReturnThis(),
     neq: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockReturnThis(),
     or: vi.fn().mockReturnThis(),
     gte: vi.fn().mockReturnThis(),
     lte: vi.fn().mockReturnThis(),
@@ -44,9 +45,9 @@ describe("billingsService — getAll", () => {
         professional_id: null,
         appointment_id: null,
         billing_type: "consulta",
-        gross_amount: 300,
+        amount: 300,
         discount: 50,
-        net_amount: 250,
+        total: 250,
         status: "em_aberto",
         notes: null,
         created_at: "2026-01-01T00:00:00Z",
@@ -59,9 +60,9 @@ describe("billingsService — getAll", () => {
         professional_id: "prof-uuid",
         appointment_id: null,
         billing_type: "exame",
-        gross_amount: 500,
+        amount: 500,
         discount: 0,
-        net_amount: 500,
+        total: 500,
         status: "pago",
         notes: "Exame de sangue",
         created_at: "2026-01-02T00:00:00Z",
@@ -70,7 +71,8 @@ describe("billingsService — getAll", () => {
 
     const chain: any = {
       select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockResolvedValue({ data: rows, error: null }),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: rows, error: null }),
     };
     (supabase.from as any).mockReturnValue(chain);
 
@@ -86,7 +88,8 @@ describe("billingsService — getAll", () => {
   it("retorna array vazio quando não há dados", async () => {
     const chain: any = {
       select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockResolvedValue({ data: null, error: null }),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: null, error: null }),
     };
     (supabase.from as any).mockReturnValue(chain);
 
@@ -97,7 +100,8 @@ describe("billingsService — getAll", () => {
   it("lança erro quando supabase retorna error", async () => {
     const chain: any = {
       select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockResolvedValue({ data: null, error: { message: "boom" } }),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: null, error: { message: "boom" } }),
     };
     (supabase.from as any).mockReturnValue(chain);
 
@@ -111,7 +115,18 @@ describe("billingsService — create", () => {
   });
 
   it("cria faturamento com status padrão 'em_aberto' e discount=0", async () => {
-    const inserted: any = { id: "b-99" };
+    const inserted: any = {
+      id: "b-99",
+      company_id: null,
+      patient_id: "patient-uuid",
+      professional_id: null,
+      amount: 200,
+      discount: 0,
+      total: 200,
+      status: "em_aberto",
+      notes: null,
+      created_at: "2026-01-01T00:00:00Z",
+    };
     const chain: any = {
       insert: vi.fn().mockReturnThis(),
       select: vi.fn().mockReturnThis(),
@@ -131,7 +146,14 @@ describe("billingsService — create", () => {
     expect(insertedArg.status).toBe("em_aberto");
     expect(insertedArg.discount).toBe(0);
     expect(insertedArg.patient_id).toBe("patient-uuid");
-    expect(result).toEqual(inserted);
+    expect(result).toEqual(expect.objectContaining({
+      id: "b-99",
+      patient_id: "patient-uuid",
+      gross_amount: 200,
+      discount: 0,
+      net_amount: 200,
+      status: "em_aberto",
+    }));
   });
 
   it("preserva status e discount quando fornecidos", async () => {
@@ -240,7 +262,8 @@ describe("financialService — getAll", () => {
 
     const chain: any = {
       select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockResolvedValue({ data: rows, error: null }),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: rows, error: null }),
     };
     (supabase.from as any).mockReturnValue(chain);
 
@@ -255,7 +278,8 @@ describe("financialService — getAll", () => {
   it("retorna array vazio quando data=null", async () => {
     const chain: any = {
       select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockResolvedValue({ data: null, error: null }),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: null, error: null }),
     };
     (supabase.from as any).mockReturnValue(chain);
 
@@ -266,7 +290,8 @@ describe("financialService — getAll", () => {
   it("lança erro quando supabase retorna error", async () => {
     const chain: any = {
       select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockResolvedValue({ data: null, error: { message: "x" } }),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: null, error: { message: "x" } }),
     };
     (supabase.from as any).mockReturnValue(chain);
 

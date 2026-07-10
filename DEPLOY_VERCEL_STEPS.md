@@ -1,22 +1,22 @@
-# 🚀 DEPLOY VERCEL - PASSO A PASSO PARA O USUÁRIO
+﻿# ðŸš€ DEPLOY VERCEL - PASSO A PASSO PARA O USUÃRIO
 
-**Status atual (2026-06-25):** ✅ Site NO AR em https://prontoclinic-hub.vercel.app/ (HTTP 200)
-**Bloqueio:** Env vars não configuradas → login não funciona
+**Status atual (2026-06-25):** âœ… Site NO AR em https://prontoclinic-hub.vercel.app/ (HTTP 200)
+**Bloqueio:** Env vars nÃ£o configuradas â†’ login nÃ£o funciona
 
 ---
 
-## ⚙️ 1. CONFIGURAR ENV VARS (CRÍTICO - 3 min)
+## âš™ï¸ 1. CONFIGURAR ENV VARS (CRÃTICO - 3 min)
 
-### Opção A: Via Dashboard (MAIS FÁCIL)
+### OpÃ§Ã£o A: Via Dashboard (MAIS FÃCIL)
 1. Abrir https://vercel.com/dashboard
 2. Clicar no projeto **prontoclinic-hub**
-3. **Settings** → **Environment Variables**
-4. Adicionar as 10 variáveis abaixo (Production):
+3. **Settings** â†’ **Environment Variables**
+4. Adicionar as 10 variÃ¡veis abaixo (Production):
 
 | Key | Value |
 |---|---|
 | `VITE_SUPABASE_URL` | `https://rhqgwrarkotjzdcrkbgn.supabase.co` |
-| `VITE_SUPABASE_ANON_KEY` | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJocWd3cmFya290anpkY3JrYmduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMDEyMDksImV4cCI6MjA5Nzg3NzIwOX0.hwaGsz3wK1nq6aNXZDYJ_fOxpHI14eIvYB6ObQqx5gE` |
+| `VITE_SUPABASE_ANON_KEY=<SUPABASE_ANON_OR_PUBLISHABLE_KEY>
 | `VITE_APP_NAME` | `ProntoClinic Hub` |
 | `VITE_APP_ENV` | `production` |
 | `VITE_TISS_AMBIENTE` | `HOMOLOGACAO` |
@@ -27,18 +27,18 @@
 | `VITE_RESEND_API_KEY` | `(em branco ou dummy)` |
 
 5. Clicar **"Save"**
-6. **Deployments** → clicar nos 3 pontos do último → **"Redeploy"**
-7. Aguardar 2-3 min → site recarregado com env vars
+6. **Deployments** â†’ clicar nos 3 pontos do Ãºltimo â†’ **"Redeploy"**
+7. Aguardar 2-3 min â†’ site recarregado com env vars
 
 ---
 
-## 🌐 2. ADICIONAR DOMÍNIO CUSTOMIZADO (10 min)
+## ðŸŒ 2. ADICIONAR DOMÃNIO CUSTOMIZADO (10 min)
 
-### Opção A: Comprar domínio .com.br
+### OpÃ§Ã£o A: Comprar domÃ­nio .com.br
 1. Acessar https://registro.br/dominio/pesquisa/
-2. Buscar `prontoclinic.com.br` (ou variações: `prontoclinic.med.br`, `medilife.app.br`)
-3. Comprar por R$ 40/ano via PIX (aprovação em ~10 min)
-4. Após aprovado, ir em **DNS** no painel Registro.br
+2. Buscar `prontoclinic.com.br` (ou variaÃ§Ãµes: `prontoclinic.med.br`, `medilife.app.br`)
+3. Comprar por R$ 40/ano via PIX (aprovaÃ§Ã£o em ~10 min)
+4. ApÃ³s aprovado, ir em **DNS** no painel Registro.br
 
 ### Configurar DNS (no painel Registro.br)
 | Tipo | Host | Valor |
@@ -47,79 +47,80 @@
 | CNAME | www | `cname.vercel-dns.com` |
 
 ### Adicionar no Vercel
-1. https://vercel.com/dashboard → projeto `prontoclinic-hub`
-2. **Settings** → **Domains** → **Add** `prontoclinic.com.br`
+1. https://vercel.com/dashboard â†’ projeto `prontoclinic-hub`
+2. **Settings** â†’ **Domains** â†’ **Add** `prontoclinic.com.br`
 3. Vercel valida DNS automaticamente
 4. SSL/TLS provisionado (Let's Encrypt) automaticamente
 5. **Pronto!** URL final: **https://prontoclinic.com.br**
 
 ---
 
-## ✅ 3. VALIDAÇÃO FINAL
+## âœ… 3. VALIDAÃ‡ÃƒO FINAL
 
-Após configurar env vars e redeployar:
+ApÃ³s configurar env vars e redeployar:
 1. Acessar https://prontoclinic-hub.vercel.app
 2. Tela de login deve aparecer com form completo
-3. Login: `luizjuniormedi@gmail.com` / `07114575`
+3. Login: `luizjuniormedi@gmail.com` / `<ADMIN_TEMP_PASSWORD>`
 4. Dashboard deve carregar com nome real "POLICLINICA MEDILIFE DIAGNOSTICOS LTDA"
 5. Listas devem mostrar: 8 unidades, 50k+ pacientes, 144 profissionais
 
-Se a UI **NÃO** carregar dados:
-- Abrir DevTools (F12) → Console
-- Verificar se há erro CORS, env var faltando, ou 401/403
+Se a UI **NÃƒO** carregar dados:
+- Abrir DevTools (F12) â†’ Console
+- Verificar se hÃ¡ erro CORS, env var faltando, ou 401/403
 - Me avisar para corrigir
 
 ---
 
-## 🛒 COMPRAR DOMÍNIO .COM (alternativa)
+## ðŸ›’ COMPRAR DOMÃNIO .COM (alternativa)
 
-Se preferir domínio internacional (não brasileiro):
+Se preferir domÃ­nio internacional (nÃ£o brasileiro):
 - **Cloudflare Registrar**: $9-10/ano (~R$ 50)
 - **Namecheap**: $9-13/ano
 - **Porkbun**: $8-10/ano
 
-DNS no Vercel é o mesmo (`A` apex + `CNAME` www).
+DNS no Vercel Ã© o mesmo (`A` apex + `CNAME` www).
 
 ---
 
-## 📊 PRÓXIMOS PASSOS DEPOIS DO DEPLOY
+## ðŸ“Š PRÃ“XIMOS PASSOS DEPOIS DO DEPLOY
 
-1. **Configurar CI/CD** (já feito automaticamente pelo Vercel via GitHub App)
-2. **Habilitar Vercel Analytics** (Settings → Analytics → Enable) - grátis
-3. **Configurar branch protection** no GitHub (Settings → Branches → main → Require 1 review)
-4. **Adicionar domínio próprio** (seção 2 acima)
+1. **Configurar CI/CD** (jÃ¡ feito automaticamente pelo Vercel via GitHub App)
+2. **Habilitar Vercel Analytics** (Settings â†’ Analytics â†’ Enable) - grÃ¡tis
+3. **Configurar branch protection** no GitHub (Settings â†’ Branches â†’ main â†’ Require 1 review)
+4. **Adicionar domÃ­nio prÃ³prio** (seÃ§Ã£o 2 acima)
 5. **Configurar email** (Resend API) - 5 min
-6. **Provisionar Orthanc PACS** em produção (VPS ou cloud) - 30 min
-7. **Upgrade Supabase para Pro** ($25/mês) - para suportar 555k+ registros
+6. **Provisionar Orthanc PACS** em produÃ§Ã£o (VPS ou cloud) - 30 min
+7. **Upgrade Supabase para Pro** ($25/mÃªs) - para suportar 555k+ registros
 
 ---
 
-## 🔄 RESUMO DE TIMELINE
+## ðŸ”„ RESUMO DE TIMELINE
 
-- **AGORA**: Site no ar em vercel.app (3 min de import) ✅
-- **+3 min**: Configurar env vars → login funcional
-- **+30 min**: Comprar + configurar domínio próprio → produção completa
+- **AGORA**: Site no ar em vercel.app (3 min de import) âœ…
+- **+3 min**: Configurar env vars â†’ login funcional
+- **+30 min**: Comprar + configurar domÃ­nio prÃ³prio â†’ produÃ§Ã£o completa
 
-**Custo total:** R$ 0 (Vercel Hobby) + R$ 40/ano (domínio .com.br) = R$ 40/ano
+**Custo total:** R$ 0 (Vercel Hobby) + R$ 40/ano (domÃ­nio .com.br) = R$ 40/ano
 
 ---
 
-## ❓ PERGUNTAS FREQUENTES
+## â“ PERGUNTAS FREQUENTES
 
-**P: Por que o site mostra "ProntoMedic" e não "ProntoClinic"?**
-R: O título do HTML está em `index.html` linha 32 como `<title>ProntoMedic</title>`. Para mudar, edite o arquivo e faça commit.
+**P: Por que o site mostra "ProntoMedic" e nÃ£o "ProntoClinic"?**
+R: O tÃ­tulo do HTML estÃ¡ em `index.html` linha 32 como `<title>ProntoMedic</title>`. Para mudar, edite o arquivo e faÃ§a commit.
 
-**P: Posso usar domínio .app.br ou .med.br?**
-R: Sim! Registro.br vende qualquer extensão. .app.br e .med.br custam o mesmo (~R$ 40/ano).
+**P: Posso usar domÃ­nio .app.br ou .med.br?**
+R: Sim! Registro.br vende qualquer extensÃ£o. .app.br e .med.br custam o mesmo (~R$ 40/ano).
 
 **P: E se eu quiser usar Cloudflare em vez de Registro.br?**
-R: Cloudflare Registrar cobra ~US$ 9/ano em .com (preço de custo). Mesma configuração de DNS.
+R: Cloudflare Registrar cobra ~US$ 9/ano em .com (preÃ§o de custo). Mesma configuraÃ§Ã£o de DNS.
 
 **P: Como testar localmente antes de fazer deploy?**
-R: `cd` no projeto e `npm run dev` → http://localhost:8080
+R: `cd` no projeto e `npm run dev` â†’ http://localhost:8080
 
 ---
 
-## 📞 SUPORTE
+## ðŸ“ž SUPORTE
 
-Se tiver dúvidas durante o processo, me chame!
+Se tiver dÃºvidas durante o processo, me chame!
+

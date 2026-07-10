@@ -31,6 +31,7 @@ import {
   type DicomModality,
 } from "@/services/dicomService";
 import { useAuth } from "@/hooks/useAuth";
+import { useConfirm } from "@/hooks/useConfirm";
 
 const MODALITIES: DicomModality[] = ["US", "CT", "MR", "CR", "XA", "PT", "NM", "MG", "DX", "ECG"];
 
@@ -51,6 +52,7 @@ function modalityBadge(mod: DicomModality): { label: string; cls: string } {
 }
 
 export function DicomEquipmentManager() {
+  const { confirm } = useConfirm();
   const { companyId } = useAuth();
   const queryClient = useQueryClient();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -323,9 +325,9 @@ export function DicomEquipmentManager() {
                               </Button>
                               <Button
                                 variant="ghost" size="sm"
-                                onClick={(e) => {
+                                onClick={async (e) => {
                                   e.stopPropagation();
-                                  if (confirm(`Remover equipamento ${eq.ds_equipment}?`)) {
+                                  if (await confirm({ title: `Remover equipamento ${eq.ds_equipment}?`, destructive: true, confirmText: "Remover" })) {
                                     deleteMutation.mutate(eq.id);
                                   }
                                 }}

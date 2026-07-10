@@ -18,7 +18,13 @@ export function QuickActionsMenu({ appointment, onAction }: QuickActionsMenuProp
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-8 w-8" title="Mais ações">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          title="Mais ações"
+          aria-label={`Mais ações para ${appointment.patientName} às ${appointment.time}`}
+        >
           <MoreHorizontal className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>

@@ -5,7 +5,7 @@
 --
 -- Credenciais:
 --   Email:    luizjuniormedi@gmail.com
---   Senha:    07114575
+--   Senha:    <ADMIN_TEMP_PASSWORD>
 --   Role:     admin
 --   Company:  Clinica Demo ProntoMedic
 --
@@ -44,7 +44,7 @@ INSERT INTO auth.users (
   'authenticated',
   'authenticated',
   'luizjuniormedi@gmail.com',
-  crypt('07114575', gen_salt('bf')),
+  crypt('<ADMIN_TEMP_PASSWORD>', gen_salt('bf')),
   NOW(),
   '{"provider":"email","providers":["email"]}',
   '{"full_name":"Luiz Junior"}',
@@ -56,7 +56,7 @@ INSERT INTO auth.users (
   ''
 )
 ON CONFLICT (id) DO UPDATE SET
-  encrypted_password = crypt('07114575', gen_salt('bf')),
+  encrypted_password = crypt('<ADMIN_TEMP_PASSWORD>', gen_salt('bf')),
   email_confirmed_at = COALESCE(auth.users.email_confirmed_at, NOW()),
   updated_at = NOW();
 

@@ -4,9 +4,9 @@ test.describe('Performance', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/login');
     await page.getByLabel('E-mail').fill('admin@prontomedic.test');
-    await page.getByLabel('Senha').fill('TestPassword123!');
+    await page.getByRole('textbox', { name: 'Senha' }).fill('TestPassword123!');
     await page.getByRole('button', { name: /entrar/i }).click();
-    await page.waitForURL(/\/(?!login)/);
+    await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
   });
 
   test('dashboard carrega em menos de 3 segundos', async ({ page }) => {

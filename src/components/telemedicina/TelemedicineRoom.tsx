@@ -77,7 +77,7 @@ interface TelemedicineRoomProps {
   onSair: () => void;
 }
 
-interface ChatMsg extends TelemedMensagem {}
+type ChatMsg = TelemedMensagem;
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);

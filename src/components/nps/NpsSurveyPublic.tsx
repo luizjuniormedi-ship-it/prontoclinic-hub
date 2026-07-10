@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Heart, Star, CheckCircle2, Loader2 } from "lucide-react";
 import { pesquisasService, respostasService, type Pesquisa, type Pergunta } from "@/services/npsService";
+import { toast } from "@/hooks/use-toast";
 
 export function NpsSurveyPublic() {
   const { token } = useParams<{ token: string }>();
@@ -53,7 +54,7 @@ export function NpsSurveyPublic() {
     if (notaNps === null) return;
     const id = Number(pacienteId);
     if (!id || id <= 0) {
-      alert("Por favor informe o ID do paciente (fornecido no e-mail/SMS).");
+      toast({ title: "Informe o ID do paciente", description: "Fornecido no e-mail/SMS.", variant: "destructive" });
       return;
     }
     enviarMut.mutate({

@@ -84,9 +84,9 @@ test.describe('Pré-cadastro público (PWA)', () => {
     // Login como admin e verificar lista de pré-cadastros pendentes
     await page.goto('/login');
     await page.getByLabel('E-mail').fill('admin@prontomedic.test');
-    await page.getByLabel('Senha').fill('TestPassword123!');
+    await page.getByRole('textbox', { name: 'Senha' }).fill('TestPassword123!');
     await page.getByRole('button', { name: /entrar/i }).click();
-    await page.waitForURL(/\/(?!login)/);
+    await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
 
     await page.goto('/admin/pre-cadastros');
     await page.getByRole('row', { name: /pendente/i }).first().getByRole('button', { name: /promover/i }).click();

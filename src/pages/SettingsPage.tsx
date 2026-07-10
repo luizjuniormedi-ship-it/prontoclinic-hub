@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { systemSettingsService } from "@/services/systemSettingsService";
 import { Calendar, Clock, Package, RotateCcw, Shield, Banknote, Receipt } from "lucide-react";
 
 const roles = [
@@ -40,7 +41,73 @@ export default function SettingsPage() {
   const [defaultChValue, setDefaultChValue] = useState("12");
   const [defaultFixedConsulta, setDefaultFixedConsulta] = useState("200");
 
-  const handleSave = () => { toast({ title: "Configurações salvas com sucesso!" }); };
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [agenda, financeiro, notif] = await Promise.all([
+          systemSettingsService.getByCategory("agenda"),
+          systemSettingsService.getByCategory("financeiro"),
+          systemSettingsService.getByCategory("notificacao"),
+        ]);
+        if (agenda.intervalo_minimo_consulta != null) setConsultaInterval(String(agenda.intervalo_minimo_consulta));
+        if (agenda.validade_retorno != null) setReturnValidity(String(agenda.validade_retorno));
+        if (agenda.permitir_pacotes != null) setAllowPackages(Boolean(agenda.permitir_pacotes));
+        if (agenda.controlar_saldo_pacote != null) setControlBalance(Boolean(agenda.controlar_saldo_pacote));
+        if (agenda.validade_pacote != null) setPackageValidity(String(agenda.validade_pacote));
+        if (agenda.auto_confirmar != null) setAutoConfirm(Boolean(agenda.auto_confirmar));
+        if (agenda.duracao_consulta != null) setDurationConsulta(String(agenda.duracao_consulta));
+        if (agenda.duracao_retorno != null) setDurationRetorno(String(agenda.duracao_retorno));
+        if (agenda.duracao_exame != null) setDurationExame(String(agenda.duracao_exame));
+        if (agenda.duracao_terapia != null) setDurationTerapia(String(agenda.duracao_terapia));
+        if (agenda.duracao_procedimento != null) setDurationProcedimento(String(agenda.duracao_procedimento));
+        if (financeiro.tipo_remuneracao_padrao != null) setDefaultRemType(String(financeiro.tipo_remuneracao_padrao));
+        if (financeiro.valor_ch_padrao != null) setDefaultChValue(String(financeiro.valor_ch_padrao));
+        if (financeiro.valor_fixo_consulta != null) setDefaultFixedConsulta(String(financeiro.valor_fixo_consulta));
+        if (notif.email_ativo != null) setEmailNotifications(Boolean(notif.email_ativo));
+      } catch (err) {
+        toast({ title: "Erro ao carregar configuracoes", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [toast]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await systemSettingsService.setBulk("agenda", {
+        intervalo_minimo_consulta: Number(consultaInterval),
+        validade_retorno: Number(returnValidity),
+        permitir_pacotes: allowPackages,
+        controlar_saldo_pacote: controlBalance,
+        validade_pacote: Number(packageValidity),
+        auto_confirmar: autoConfirm,
+        duracao_consulta: Number(durationConsulta),
+        duracao_retorno: Number(durationRetorno),
+        duracao_exame: Number(durationExame),
+        duracao_terapia: Number(durationTerapia),
+        duracao_procedimento: Number(durationProcedimento),
+      });
+      await systemSettingsService.setBulk("financeiro", {
+        tipo_remuneracao_padrao: defaultRemType,
+        valor_ch_padrao: Number(defaultChValue),
+        valor_fixo_consulta: Number(defaultFixedConsulta),
+      });
+      await systemSettingsService.setBulk("notificacao", { email_ativo: emailNotifications });
+      toast({ title: "Configurações salvas com sucesso!" });
+    } catch (err) {
+      toast({
+        title: "Erro ao salvar",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -178,7 +245,9 @@ export default function SettingsPage() {
         </Card>
       </div>
 
-      <Button onClick={handleSave} className="w-full max-w-md">Salvar Configurações</Button>
+      <Button onClick={handleSave} disabled={saving || loading} className="w-full max-w-md">
+        {saving ? "Salvando..." : loading ? "Carregando..." : "Salvar Configurações"}
+      </Button>
     </div>
   );
 }

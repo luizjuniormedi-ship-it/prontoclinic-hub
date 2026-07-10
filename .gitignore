@@ -1,11 +1,11 @@
+﻿# =============================================================================
+# ProntoMedic â€” .gitignore
 # =============================================================================
-# ProntoMedic — .gitignore
-# =============================================================================
-# Migrado de .gitignore original (commit 949c59c) + melhorias de segurança
+# Migrado de .gitignore original (commit 949c59c) + melhorias de seguranÃ§a
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# Dependências
+# DependÃªncias
 # -----------------------------------------------------------------------------
 node_modules/
 .pnp
@@ -13,7 +13,7 @@ node_modules/
 .yarn/install-state.gz
 
 # -----------------------------------------------------------------------------
-# Ambiente (CRÍTICO — NUNCA COMMITAR)
+# Ambiente (CRÃTICO â€” NUNCA COMMITAR)
 # -----------------------------------------------------------------------------
 .env
 .env.local
@@ -117,3 +117,28 @@ MEMORY_*.md
 # Python local
 __pycache__/
 *.py[cod]
+# -----------------------------------------------------------------------------
+# Artefatos operacionais locais / sensiveis ProntoMedic
+# -----------------------------------------------------------------------------
+*.dump
+*.backup
+*.tar.gz
+*.zip
+*.7z
+.codex/
+.gateway-sync.json
+outputs/
+deploy-local/
+DEPLOY_VPS_COMANDO.txt
+DEPLOY_VPS_CORRETO.txt
+AUDITORIA_*.md
+ENTREGA_FINAL_VPS.md
+CHECKLIST_VPS_SEGURANCA.md
+BUGFIX_RLS_POLICIES.md
+scripts/*.json
+scripts/*.out.json
+scripts/.env.*
+
+# -----------------------------------------------------------------------------
+# Artefatos operacionais locais / sensiveis ProntoMedic - complementos
+# -----------------------------------------------------------------------------scripts/__pycache__/

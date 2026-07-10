@@ -404,6 +404,7 @@ export function DispenseWizard() {
                           size="icon"
                           onClick={() => removerItem(idx)}
                           aria-label={`Remover ${it.ds_produto}`}
+                          title="Remover item"
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>

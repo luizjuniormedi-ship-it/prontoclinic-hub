@@ -1,4 +1,4 @@
-# RUNBOOK DE DEPLOY EM PRODUCAO — ProntoClinic Hub v1.1.0
+﻿# RUNBOOK DE DEPLOY EM PRODUCAO â€” ProntoClinic Hub v1.1.0
 
 **Cliente**: POLICLINICA MEDILIFE DIAGNOSTICOS LTDA
 **Sistema**: ProntoClinic Hub v1.1.0
@@ -110,7 +110,7 @@ Este runbook descreve o deploy em **producao real** do ProntoClinic Hub no servi
 
 ---
 
-## 3. FASE 1 — PREPARACAO (3 dias antes)
+## 3. FASE 1 â€” PREPARACAO (3 dias antes)
 
 ### 3.1 Validar servidor fisico
 
@@ -205,7 +205,7 @@ Servicos ativos:
 
 ```bash
 cd /opt/prontoclinic/supabase/migrations
-PGPASSWORD=$DB_PASSWORD psql -h localhost -U postgres -d postgres -f 00000_extensions.sql
+PGPASSWORD=<DEFINIR_FORA_DO_GIT>
 # ... aplicar todas as 60 migrations em ordem ...
 
 # Ou via CLI
@@ -214,7 +214,7 @@ supabase db push --include-all --db-url "postgresql://postgres:$DB_PASSWORD@loca
 
 ---
 
-## 4. FASE 2 — BUILD E DEPLOY DO FRONTEND (Dia 1)
+## 4. FASE 2 â€” BUILD E DEPLOY DO FRONTEND (Dia 1)
 
 ### 4.1 Gerar build de producao
 
@@ -311,7 +311,7 @@ sudo systemctl reload nginx
 
 ---
 
-## 5. FASE 3 — MIGRACAO DE DADOS (Dia 2-3)
+## 5. FASE 3 â€” MIGRACAO DE DADOS (Dia 2-3)
 
 ### 5.1 Backup FINAL do SIGH
 
@@ -358,7 +358,7 @@ Comparar com os totais do SIGH:
 
 ---
 
-## 6. FASE 4 — VALIDACAO (Dia 4-5)
+## 6. FASE 4 â€” VALIDACAO (Dia 4-5)
 
 ### 6.1 Smoke tests em PRODUCAO
 
@@ -397,7 +397,7 @@ Metas:
 
 ---
 
-## 7. FASE 5 — GO-LIVE (Sabado 22:00 - 02:00)
+## 7. FASE 5 â€” GO-LIVE (Sabado 22:00 - 02:00)
 
 ### 7.1 Comunicacao pre-cutover (6h antes)
 
@@ -420,7 +420,7 @@ cd /opt/prontoclinic
 python3 scripts/migrate_sigh_to_postgres.py --incremental --last-sync=2026-07-03T20:00:00
 
 # 23:30 - Validar contagens finais
-PGPASSWORD=$DB_PASSWORD psql -h localhost -U postgres -d postgres -c "
+PGPASSWORD=<DEFINIR_FORA_DO_GIT>
   SELECT 'patients' AS tabela, COUNT(*) FROM patients
   UNION ALL SELECT 'appointments', COUNT(*) FROM appointments
   UNION ALL SELECT 'professionals', COUNT(*) FROM professionals
@@ -463,7 +463,7 @@ Se algo der errado nas primeiras 2h:
 
 ---
 
-## 8. FASE 6 — POS GO-LIVE (Semana seguinte)
+## 8. FASE 6 â€” POS GO-LIVE (Semana seguinte)
 
 ### 8.1 Monitoramento
 
@@ -478,19 +478,19 @@ Se algo der errado nas primeiras 2h:
 ```
 
 Alertas:
-- Site offline > 2 min → SMS para TI
-- Backup falhou → email para DPO + TI
-- Disco > 80% → email para TI
-- Disco > 90% → SMS para TI
-- Erro 5xx recorrente → SMS para Tech Lead
+- Site offline > 2 min â†’ SMS para TI
+- Backup falhou â†’ email para DPO + TI
+- Disco > 80% â†’ email para TI
+- Disco > 90% â†’ SMS para TI
+- Erro 5xx recorrente â†’ SMS para Tech Lead
 
 ### 8.2 Backup diario (ja configurado)
 
-- 02:00 — `backup-diario.sh` → `/backup/postgres_diario/`
-- 03:00 — `backup-replica-offsite.sh` → NAS secundario
+- 02:00 â€” `backup-diario.sh` â†’ `/backup/postgres_diario/`
+- 03:00 â€” `backup-replica-offsite.sh` â†’ NAS secundario
 - Retencao: 30 dias local, 90 dias off-site
 
-### 8.3 Sincronizacao SIGH → ProntoClinic (dual-run)
+### 8.3 Sincronizacao SIGH â†’ ProntoClinic (dual-run)
 
 Durante 2 semanas apos go-live, manter SIGH em modo somente-leitura para consulta historica. Dados novos sao escritos APENAS no ProntoClinic.
 

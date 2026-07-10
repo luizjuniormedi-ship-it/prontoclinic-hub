@@ -12,6 +12,7 @@ import { chromium, FullConfig } from '@playwright/test';
 export default async function globalSetup(config: FullConfig) {
   const supabaseUrl = process.env.VITE_SUPABASE_URL;
   const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY;
+  const isLocalAuth = /^https?:\/\/(127\.0\.0\.1|localhost):8000\b/.test(supabaseUrl || '');
 
   if (!supabaseUrl || !supabaseKey) {
     throw new Error(
@@ -19,14 +20,22 @@ export default async function globalSetup(config: FullConfig) {
     );
   }
 
-  // 1. Verificar que Supabase está acessível
-  const response = await fetch(`${supabaseUrl}/rest/v1/`, {
+  // 1. Verificar que o backend de auth/rest está acessível.
+  // Em staging, validamos o endpoint REST do Supabase. No ambiente local,
+  // o servidor customizado expõe /auth/v1/settings como health check.
+  const healthUrl = isLocalAuth ? `${supabaseUrl}/auth/v1/settings` : `${supabaseUrl}/rest/v1/`;
+  const response = await fetch(healthUrl, {
     headers: { apikey: supabaseKey }
   });
   if (!response.ok) {
     throw new Error(
-      `[global-setup] Supabase não está acessível: HTTP ${response.status}`
+      `[global-setup] Backend de autenticação não está acessível: HTTP ${response.status}`
     );
+  }
+
+  if (isLocalAuth) {
+    console.log('[global-setup] Local auth OK — usando usuários já migrados/seedados no PostgreSQL.');
+    return;
   }
 
   console.log('[global-setup] Supabase OK — verificando usuários de teste...');

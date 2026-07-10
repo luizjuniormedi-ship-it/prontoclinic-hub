@@ -1,7 +1,7 @@
-# DEPLOY TESTE E PRODUCAO — Plano Completo
+﻿# DEPLOY TESTE E PRODUCAO â€” Plano Completo
 
 **Sistema**: ProntoClinic Hub v1.1.0
-**Cliente**: POLICLINICA MEDILIFE DIAGNOSTICOS LTDA — Sao Goncalo/RJ
+**Cliente**: POLICLINICA MEDILIFE DIAGNOSTICOS LTDA â€” Sao Goncalo/RJ
 **Versao documento**: 1.0
 **Data**: 03/07/2026
 **Status**: APROVADO PARA EXECUCAO
@@ -62,7 +62,7 @@ Este documento descreve o plano completo de deploy em DUAS fases: TESTE (homolog
 
 ---
 
-## 2. FASE 1: HOMONOG (HOMOLOG) — 1-2 semanas
+## 2. FASE 1: HOMONOG (HOMOLOG) â€” 1-2 semanas
 
 ### 2.1 Objetivo
 Validar o sistema ProntoClinic Hub em ambiente controlado com dados do SIGH (anonimizados), acessivel pela equipe MEDILIFE para testes finais antes do go-live.
@@ -82,7 +82,7 @@ Validar o sistema ProntoClinic Hub em ambiente controlado com dados do SIGH (ano
 
 ### 2.3 Plano de execucao (dia a dia)
 
-#### DIA 1 (segunda) — Provisionamento (4h)
+#### DIA 1 (segunda) â€” Provisionamento (4h)
 - [ ] Criar projeto Supabase `medilife-homolog` (sa-east-1)
 - [ ] Criar projeto Vercel `prontoclinic-hub-homolog`
 - [ ] Linkar projeto Supabase: `supabase link --project-ref <REF>`
@@ -91,7 +91,7 @@ Validar o sistema ProntoClinic Hub em ambiente controlado com dados do SIGH (ano
 - [ ] Configurar env vars no Vercel (9 vars)
 - [ ] Fazer primeiro deploy: `vercel deploy --yes`
 
-#### DIA 1 (continuacao) — DNS e dominio (1h)
+#### DIA 1 (continuacao) â€” DNS e dominio (1h)
 - [ ] Adicionar dominio: `vercel domains add homolog.medilife.com.br`
 - [ ] Configurar CNAME no Cloudflare:
   - Tipo: CNAME
@@ -100,7 +100,7 @@ Validar o sistema ProntoClinic Hub em ambiente controlado com dados do SIGH (ano
   - Proxy: Desligado (DNS only) na Vercel
 - [ ] Aguardar propagacao DNS (ate 48h)
 
-#### DIA 2 (terca) — Smoke tests (2h)
+#### DIA 2 (terca) â€” Smoke tests (2h)
 - [ ] Rodar smoke tests: `bash scripts/smoke-test.sh --env=homolog`
 - [ ] Validar login com usuario demo (admin@test.local / admin123)
 - [ ] Verificar endpoints REST do Supabase
@@ -108,7 +108,7 @@ Validar o sistema ProntoClinic Hub em ambiente controlado com dados do SIGH (ano
 - [ ] Testar geracao de relatorio TISS em homologacao
 - [ ] Validar LGPD: logs de auditoria gravando
 
-#### DIA 3-4 (quarta-quinta) — Carga de dados reais (anonimizados) (4h)
+#### DIA 3-4 (quarta-quinta) â€” Carga de dados reais (anonimizados) (4h)
 - [ ] Backup do SIGH (ja temos o backup completo)
 - [ ] Rodar script de anonimizacao:
   - `scripts/migrate_sigh_to_postgres.py --anonymize --target=homolog`
@@ -118,29 +118,29 @@ Validar o sistema ProntoClinic Hub em ambiente controlado com dados do SIGH (ano
   - 555k+ prontuarios
 - [ ] Validar performance: latencia p95 < 300ms
 
-#### DIA 5 (sexta) — Treinamento da equipe MEDILIFE (8h)
+#### DIA 5 (sexta) â€” Treinamento da equipe MEDILIFE (8h)
 - [ ] Recepcao (2 pessoas): agendamento, busca de paciente, check-in
 - [ ] Medicos (3 pessoas): prontuario, evolucao SOAP, prescricao
 - [ ] Laboratorio (2 pessoas): LIS, pedidos de exame, resultados
 - [ ] Coordenacao (1 pessoa): relatorios TISS, BI, faturamento
 - [ ] TI MEDILIFE (2 pessoas): backup, restore, gestao de usuarios
 
-#### DIA 6-7 (sabado-domingo) — Testes autonomos
+#### DIA 6-7 (sabado-domingo) â€” Testes autonomos
 - [ ] Equipe MEDILIFE testa livremente
 - [ ] Equipe TI monitora logs e metricas
 - [ ] Reportar bugs via canal Slack/Teams
 
-#### DIA 8-10 (segunda a quarta) — Ajustes finos
-- [ ] Corrigir bugs criticos (P0) — sem excecao
+#### DIA 8-10 (segunda a quarta) â€” Ajustes finos
+- [ ] Corrigir bugs criticos (P0) â€” sem excecao
 - [ ] Corrigir bugs medios (P1) se possivel
 - [ ] Adicionar melhorias solicitadas pela equipe MEDILIFE (se faceis)
 
-#### DIA 11-12 (quinta-sexta) — Segunda rodada de testes
+#### DIA 11-12 (quinta-sexta) â€” Segunda rodada de testes
 - [ ] Validar correcoes
 - [ ] Testes de carga: 50 usuarios simultaneos
 - [ ] Validar backup automatizado
 
-#### DIA 13 (sexta) — Aprovacao formal
+#### DIA 13 (sexta) â€” Aprovacao formal
 - [ ] Coordenador medico assina termo de aceite
 - [ ] DPO valida logs de auditoria
 - [ ] Equipe TI valida backups
@@ -161,10 +161,10 @@ A fase de homolog so termina quando:
 
 ---
 
-## 3. FASE 2: PRODUCAO — 1 semana
+## 3. FASE 2: PRODUCAO â€” 1 semana
 
 ### 3.1 Objetivo
-Realizar o cutover SIGH → ProntoClinic em ambiente de producao real, com plano de rollback caso algo falhe.
+Realizar o cutover SIGH â†’ ProntoClinic em ambiente de producao real, com plano de rollback caso algo falhe.
 
 ### 3.2 Componentes do ambiente
 
@@ -182,26 +182,26 @@ Realizar o cutover SIGH → ProntoClinic em ambiente de producao real, com plano
 
 ### 3.3 Plano de execucao (dia a dia)
 
-#### DIA -3 (quarta) — Preparacao final
+#### DIA -3 (quarta) â€” Preparacao final
 - [ ] Servidor fisico ja entregue e operacional
 - [ ] Verificar hardware: `lshw -short`, `df -h`, `free -h`
 - [ ] Validar rede: `ping 8.8.8.8`, `nslookup google.com`
 - [ ] Confirmar DNS do Cloudflare Tunnel funcionando
 
-#### DIA -2 (quinta) — Setup do backend
+#### DIA -2 (quinta) â€” Setup do backend
 - [ ] `docker compose up -d` (Supabase stack)
 - [ ] Aplicar migrations: `supabase db push --include-all`
 - [ ] Aplicar seed inicial minimo (apenas empresa MEDILIFE + admin)
 - [ ] Validar REST API: `curl http://localhost:8000/rest/v1/`
 
-#### DIA -1 (sexta) — Build e deploy do frontend
+#### DIA -1 (sexta) â€” Build e deploy do frontend
 - [ ] Gerar build com .env.production (VITE_SUPABASE_URL=https://api.medilife.com.br)
 - [ ] SCP para servidor: `scp dist-prod.tar.gz admin@prontoclinic.medilife.local:/tmp/`
 - [ ] Extrair: `tar -xzf dist-prod.tar.gz -C /var/www/prontoclinic/`
 - [ ] Configurar Nginx: ver runbook
 - [ ] Validar HTTP 200 em localhost
 
-#### DIA 0 (sabado) — CUTOVER (janela 22:00 - 02:00)
+#### DIA 0 (sabado) â€” CUTOVER (janela 22:00 - 02:00)
 
 | Horario | Acao | Responsavel |
 |---|---|---|
@@ -210,7 +210,7 @@ Realizar o cutover SIGH → ProntoClinic em ambiente de producao real, com plano
 | 20:00 | Recepcao para de aceitar novos cadastros no SIGH | Recepcao |
 | 21:00 | Backup FINAL SIGH (mysqldump completo) | DBA SIGH |
 | 22:00 | Bloquear SIGH para novos cadastros | DBA SIGH |
-| 22:30 | Sync incremental SIGH → ProntoClinic (dados das ultimas 4h) | Tech Lead |
+| 22:30 | Sync incremental SIGH â†’ ProntoClinic (dados das ultimas 4h) | Tech Lead |
 | 23:00 | Validar contagens (psql + script) | Tech Lead + DBA |
 | 23:30 | Sinalizar DNS (Cloudflare) | Tech Lead |
 | 23:45 | Validar DNS (dig medilife.com.br) | Tech Lead |
@@ -222,13 +222,13 @@ Realizar o cutover SIGH → ProntoClinic em ambiente de producao real, com plano
 | 02:00 | Recepcao reabri para uso normal | Recepcao |
 | 06:00 | Fim do plantao presencial, equipe dorme | - |
 
-#### DIA +1 (domingo) — Monitoramento intensivo
+#### DIA +1 (domingo) â€” Monitoramento intensivo
 - [ ] Verificar logs a cada 1h
 - [ ] Responder chamados de usuarios em < 30min
 - [ ] Validar backup das 02:00 foi executado
 - [ ] Checar disco (< 50% esperado)
 
-#### DIA +2..+7 (segunda a sabado) — Acompanhamento diario
+#### DIA +2..+7 (segunda a sabado) â€” Acompanhamento diario
 - [ ] Reuniao diaria 10:00 com equipe MEDILIFE (15min)
 - [ ] Coletar feedback dos usuarios
 - [ ] Aplicar hot-fixes se necessario
@@ -237,7 +237,7 @@ Realizar o cutover SIGH → ProntoClinic em ambiente de producao real, com plano
 
 ---
 
-## 4. FASE 3: ESTABILIZACAO — 2 semanas
+## 4. FASE 3: ESTABILIZACAO â€” 2 semanas
 
 ### 4.1 Objetivo
 Acompanhar o uso em producao real, ajustar finos, e descomissionar o SIGH.
@@ -367,7 +367,7 @@ Semana 0          Semana 1          Semana 2          Semana 3          Semana 4
 
 #### Laboratorio (3 cenarios)
 - [ ] Cenario 1: Receber pedido de exame
-- [ ] Cenario 2: Lançar resultado HL7
+- [ ] Cenario 2: LanÃ§ar resultado HL7
 - [ ] Cenario 3: Validar resultado (bioquimico)
 
 #### Coordenacao (3 cenarios)
@@ -488,7 +488,7 @@ curl https://api.medilife.com.br/rest/v1/patients \
   | head
 
 # Banco tem dados?
-PGPASSWORD=$DB_PASSWORD psql -h localhost -U postgres -d postgres \
+PGPASSWORD=<DEFINIR_FORA_DO_GIT>
   -c "SELECT COUNT(*) FROM patients;"
 ```
 
@@ -496,11 +496,11 @@ PGPASSWORD=$DB_PASSWORD psql -h localhost -U postgres -d postgres \
 
 ```bash
 # Backup completo
-PGPASSWORD=$DB_PASSWORD pg_dump -U postgres -h localhost \
+PGPASSWORD=<DEFINIR_FORA_DO_GIT>
   -F c -b -v -f /backup/emergency_$(date +%Y%m%d_%H%M).dump postgres
 
 # Restore (em caso de desastre)
-PGPASSWORD=$DB_PASSWORD pg_restore -U postgres -h localhost \
+PGPASSWORD=<DEFINIR_FORA_DO_GIT>
   -d postgres -v /backup/emergency_XXXXXXXX.dump
 ```
 
@@ -512,7 +512,7 @@ PGPASSWORD=$DB_PASSWORD pg_restore -U postgres -h localhost \
 
 | # | Risco | Fase | Probab | Impacto | Mitigacao |
 |---|---|---|---|---|---|
-| R1 | Bug critico nao pego em homolog | 1→2 | Media | Critico | Testes E2E + smoke tests + 7 dias em homolog |
+| R1 | Bug critico nao pego em homolog | 1â†’2 | Media | Critico | Testes E2E + smoke tests + 7 dias em homolog |
 | R2 | Servidor fisico falha | 2 | Baixa | Critico | NAS + replica off-site + dual-run SIGH |
 | R3 | Dados SIGH incompletos | 2 | Baixa | Critico | Backup final 22:30 + sync incremental + validacao |
 | R4 | Cloudflare Tunnel cai | 2 | Muito baixa | Alto | IP fixo documentado como fallback |
@@ -584,16 +584,16 @@ Se o problema for grave (> 4h de indisponibilidade ou perda de dados):
 
 ## ANEXOS
 
-- `scripts/setup_teste_homolog.sh` — Script de deploy de homolog
-- `scripts/setup_vercel_env.sh` — Script de env vars Vercel
-- `scripts/seed-test-data.sql` — Seed de dados de teste
-- `docs/deploy_producao_medilife.md` — Runbook detalhado de producao
-- `docs/DEPLOY_TESTE_VS_PRODUCAO.md` — Comparativo lado a lado
-- `DEPLOY_VERCEL_AUTO.md` — Guia de deploy Vercel
-- `DOMAIN_SETUP.md` — Guia de dominios
-- `CUTOVER_RUNBOOK.md` — Runbook de cutover SIGH
-- `infra/GUIA_100_LOCAL_MEDILIFE.md` — Justificativa do modelo local
-- `infra/setup-local-server.sh` — Script de setup do servidor
+- `scripts/setup_teste_homolog.sh` â€” Script de deploy de homolog
+- `scripts/setup_vercel_env.sh` â€” Script de env vars Vercel
+- `scripts/seed-test-data.sql` â€” Seed de dados de teste
+- `docs/deploy_producao_medilife.md` â€” Runbook detalhado de producao
+- `docs/DEPLOY_TESTE_VS_PRODUCAO.md` â€” Comparativo lado a lado
+- `DEPLOY_VERCEL_AUTO.md` â€” Guia de deploy Vercel
+- `DOMAIN_SETUP.md` â€” Guia de dominios
+- `CUTOVER_RUNBOOK.md` â€” Runbook de cutover SIGH
+- `infra/GUIA_100_LOCAL_MEDILIFE.md` â€” Justificativa do modelo local
+- `infra/setup-local-server.sh` â€” Script de setup do servidor
 
 ---
 

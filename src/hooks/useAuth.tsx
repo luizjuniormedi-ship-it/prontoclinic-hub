@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext, ReactNode, useCallback } from "react";
+import { useState, useEffect, createContext, useContext, ReactNode, useCallback, useRef } from "react";
 import { Session, User as SupabaseUser } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 
@@ -28,7 +28,7 @@ async function fetchUserProfile(supabaseUser: SupabaseUser): Promise<UserProfile
   try {
     const { data, error } = await supabase
       .from("user_profiles")
-      .select("id, full_name, role_id, company_id, primary_unit_id")
+      .select("id, full_name, role_id, role_name, company_id, primary_unit_id")
       .eq("id", supabaseUser.id)
       .maybeSingle();
 
@@ -51,14 +51,14 @@ async function fetchUserProfile(supabaseUser: SupabaseUser): Promise<UserProfile
     }
 
     // Try to fetch role name
-    let role_name: string | null = null;
+    let role_name: string | null = data.role_name ?? null;
     if (data.role_id) {
       const { data: roleData } = await supabase
         .from("roles")
         .select("name")
         .eq("id", data.role_id)
         .maybeSingle();
-      role_name = roleData?.name || null;
+      role_name = roleData?.name || role_name;
     }
 
     return {
@@ -76,12 +76,33 @@ async function fetchUserProfile(supabaseUser: SupabaseUser): Promise<UserProfile
   }
 }
 
+const PROFILE_TIMEOUT_MS = 12_000;
+
+async function fetchUserProfileWithTimeout(supabaseUser: SupabaseUser): Promise<UserProfile | null> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      fetchUserProfile(supabaseUser),
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error("Tempo limite excedido ao carregar o perfil do usuário")),
+          PROFILE_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const profileRequestId = useRef(0);
 
   const loadProfile = useCallback(async (sess: Session | null) => {
+    const requestId = ++profileRequestId.current;
     if (!sess?.user) {
       setUser(null);
       setSession(null);
@@ -89,33 +110,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     setSession(sess);
-    const profile = await fetchUserProfile(sess.user);
-    setUser(profile);
-    setIsLoading(false);
+    setIsLoading(true);
+    try {
+      const profile = await fetchUserProfileWithTimeout(sess.user);
+      if (requestId !== profileRequestId.current) return null;
+      setUser(profile);
+      return profile;
+    } catch (error) {
+      if (requestId !== profileRequestId.current) return null;
+      console.error("Failed to initialize authenticated user:", error);
+      setUser(null);
+      setSession(null);
+      return null;
+    } finally {
+      if (requestId === profileRequestId.current) setIsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    // Set up listener FIRST — do NOT await inside callback to avoid deadlocks
+    let active = true;
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, sess) => {
-        loadProfile(sess);
+        if (active) void loadProfile(sess);
       }
     );
 
-    // Then restore existing session
-    supabase.auth.getSession().then(({ data: { session: sess } }) => {
-      loadProfile(sess);
-    });
+    const initializationTimeout = setTimeout(() => {
+      if (!active) return;
+      console.error("Authentication initialization timed out");
+      setIsLoading(false);
+    }, PROFILE_TIMEOUT_MS + 3_000);
 
-    return () => subscription.unsubscribe();
+    void supabase.auth.getSession()
+      .then(({ data: { session: sess } }) => active && loadProfile(sess))
+      .catch((error) => {
+        console.error("Failed to restore authentication session:", error);
+        if (active) setIsLoading(false);
+      })
+      .finally(() => clearTimeout(initializationTimeout));
+
+    return () => {
+      active = false;
+      clearTimeout(initializationTimeout);
+      subscription.unsubscribe();
+    };
   }, [loadProfile]);
 
   const login = async (email: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      setIsLoading(true);
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
+        setIsLoading(false);
         console.error("Login error:", error.message);
         return { success: false, error: error.message };
+      }
+      const profile = await loadProfile(data.session);
+      if (!profile) {
+        await supabase.auth.signOut();
+        return { success: false, error: "Não foi possível carregar o perfil e as permissões do usuário." };
       }
       return { success: true };
     } catch (err) {

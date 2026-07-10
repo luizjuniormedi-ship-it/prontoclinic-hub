@@ -1,4 +1,4 @@
-# Script PowerShell para configurar ProntoClinic Hub em Windows Server 2022
+﻿# Script PowerShell para configurar ProntoClinic Hub em Windows Server 2022
 # Instala WSL2 + Ubuntu + Docker + Node.js + PostgreSQL + clona o repo
 
 # Requer: Windows Server 2022 (com Hyper-V)
@@ -31,7 +31,7 @@ Start-Service com.docker.service
 Write-Host "=== Instalando PostgreSQL 16 ===" -ForegroundColor Green
 $PG_INSTALLER = "$env:TEMP\postgresql-16.3-1-windows-x64.exe"
 Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-16.3-1-windows-x64.exe" -OutFile $PG_INSTALLER
-$pgArgs = "--mode unattended --superpassword ProntoClinic@2026 --port 5432 --locale Portuguese_Brasil"
+$pgArgs = "--mode unattended --superpassword <LOCAL_DB_PASSWORD> --port 5432 --locale Portuguese_Brasil"
 Start-Process $PG_INSTALLER -ArgumentList $pgArgs -Wait
 
 # ETAPA 5: Clonar o repositorio ProntoClinic Hub
@@ -45,7 +45,7 @@ if (-not (Test-Path $DEST_DIR)) {
 
 # ETAPA 6: Setup do banco de dados
 Write-Host "=== Configurando banco de dados ===" -ForegroundColor Green
-$env:PGPASSWORD = "ProntoClinic@2026"
+$env:PGPASSWORD = "<DEFINIR_FORA_DO_GIT>"
 & "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE DATABASE prontoclinic_hub;"
 & "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 & "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"

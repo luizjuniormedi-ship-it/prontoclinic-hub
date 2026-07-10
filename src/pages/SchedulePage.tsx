@@ -10,7 +10,8 @@ import { AppointmentCard } from "@/components/schedule/AppointmentCard";
 import { NewAppointmentDialog } from "@/components/schedule/NewAppointmentDialog";
 import { QuickActionDialog } from "@/components/schedule/QuickActionDialog";
 import { EncaixeDialog } from "@/components/schedule/EncaixeDialog";
-import { appointmentsService, professionalsLookup, specialtiesLookup, appointmentTypesLookup, DbAppointment, DbProfessional, DbSpecialty, DbAppointmentType } from "@/services/appointmentsService";
+import { SchedulingOperationsPanel } from "@/components/schedule/SchedulingOperationsPanel";
+import { appointmentsService, professionalsLookup, specialtiesLookup, appointmentTypesLookup, servicesCatalogLookup, DbAppointment, DbProfessional, DbSpecialty, DbAppointmentType, DbServiceCatalog } from "@/services/appointmentsService";
 import { supabase } from "@/lib/supabase";
 import { Appointment, AppointmentStatus, Patient } from "@/types";
 import type { AppointmentTypeLiteral, PatientDbRow } from "@/types/missing";
@@ -74,6 +75,8 @@ export default function SchedulePage() {
   const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
   const [specialties, setSpecialties] = useState<DbSpecialty[]>([]);
   const [appointmentTypes, setAppointmentTypes] = useState<DbAppointmentType[]>([]);
+  const [services, setServices] = useState<DbServiceCatalog[]>([]);
+  const [insurances, setInsurances] = useState<Array<{ id: string; name: string }>>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [insuranceNames, setInsuranceNames] = useState<Record<string, string>>({});
   const [units, setUnits] = useState<Array<{ id: string; name: string }>>([]);
@@ -100,14 +103,16 @@ export default function SchedulePage() {
   const [quickActionOpen, setQuickActionOpen] = useState(false);
 
   const loadLookups = useCallback(async () => {
-    const [profs, specs, types] = await Promise.all([
+    const [profs, specs, types, serviceRows] = await Promise.all([
       professionalsLookup.getAll(),
       specialtiesLookup.getAll(),
       appointmentTypesLookup.getAll(),
+      servicesCatalogLookup.getAll(),
     ]);
     setProfessionals(profs);
     setSpecialties(specs);
     setAppointmentTypes(types);
+    setServices(serviceRows);
 
     try {
       const [{ data: ins }, { data: unitRows }] = await Promise.all([
@@ -116,6 +121,7 @@ export default function SchedulePage() {
       ]);
       if (ins) {
         setInsuranceNames(Object.fromEntries(ins.map((i: any) => [String(i.id), i.name])));
+        setInsurances(ins.map((i: any) => ({ id: String(i.id), name: i.name })).sort((a, b) => a.name.localeCompare(b.name)));
       }
       if (unitRows) {
         setUnits(unitRows.map((u: any) => ({ id: String(u.id), name: u.name })));
@@ -431,6 +437,14 @@ export default function SchedulePage() {
         onClearFilters={clearFilters} hasFilters={hasFilters}
       />
 
+      <SchedulingOperationsPanel
+        professionals={professionals}
+        specialties={specialties}
+        appointmentTypes={appointmentTypes}
+        selectedDate={selectedDate}
+        onAppointmentCreated={() => loadAppointments(selectedDate)}
+      />
+
       {/* Content */}
       {view === "week" ? (
         <div
@@ -497,6 +511,8 @@ export default function SchedulePage() {
         professionals={professionals}
         specialties={specialties}
         appointmentTypes={appointmentTypes}
+        services={services}
+        insurances={insurances}
         patients={patients}
         selectedDate={selectedDate}
         onCreated={handleAppointmentCreated}

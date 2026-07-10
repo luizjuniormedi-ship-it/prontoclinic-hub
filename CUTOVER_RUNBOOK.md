@@ -97,7 +97,7 @@ Reunião 48h antes do cutover. Todos devem marcar OK:
 ```bash
 # No Supabase SQL Editor
 INSERT INTO auth.users (email, encrypted_password, email_confirmed_at)
-VALUES ('piloto.admin@hospital.com', crypt('SENHA_TEMPORARIA', gen_salt('bf')), NOW());
+VALUES ('piloto.admin@hospital.com', crypt('<ADMIN_TEMP_PASSWORD>', gen_salt('bf')), NOW());
 
 INSERT INTO user_company_roles (user_id, company_id, role)
 VALUES ('UUID_PILOTO', 'EMPRESA_REAL_ID', 'admin');
@@ -403,3 +403,4 @@ mysql -h 6083041e1bde.sn.mynetname.net -P 47777 -u root -p DataSIGH \
 **FIM DO RUNBOOK**
 
 Para qualquer dúvida, consultar `ARCHITECTURE.md` ou abrir issue no repositório.
+

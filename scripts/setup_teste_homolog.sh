@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 # =============================================================================
 # setup_teste_homolog.sh
 # -----------------------------------------------------------------------------
@@ -152,7 +152,7 @@ step_seed_data() {
     warn "$seed_file nao encontrado, pulando seed"
     return 0
   fi
-  PGPASSWORD="$HOMOLOG_SUPABASE_DB_PASSWORD" \
+  PGPASSWORD=<DEFINIR_FORA_DO_GIT>
     psql -h "db.${HOMOLOG_SUPABASE_PROJECT_REF}.supabase.co" \
          -p 5432 \
          -U postgres \

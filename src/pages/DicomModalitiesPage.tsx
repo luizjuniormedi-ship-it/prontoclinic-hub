@@ -115,10 +115,10 @@ export default function DicomModalitiesPage() {
             </div>
             <div><Label>Sala</Label><Input value={form.room_name} onChange={(e) => setForm({ ...form, room_name: e.target.value })} /></div>
             <div><Label>Servidor PACS</Label>
-              <Select value={form.pacs_node_id} onValueChange={(v) => setForm({ ...form, pacs_node_id: v })}>
+              <Select value={form.pacs_node_id || "none"} onValueChange={(v) => setForm({ ...form, pacs_node_id: v === "none" ? "" : v })}>
                 <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Nenhum</SelectItem>
+                  <SelectItem value="none">Nenhum</SelectItem>
                   {nodes.map(n => <SelectItem key={n.id} value={n.id}>{n.name} ({n.aetitle})</SelectItem>)}
                 </SelectContent>
               </Select>

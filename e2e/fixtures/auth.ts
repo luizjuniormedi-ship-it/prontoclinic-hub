@@ -25,9 +25,9 @@ export const test = base.extend<{
 
       await page.goto('/login');
       await page.getByLabel('E-mail').fill(creds.email);
-      await page.getByLabel('Senha').fill(creds.password);
+      await page.getByRole('textbox', { name: 'Senha' }).fill(creds.password);
       await page.getByRole('button', { name: /entrar/i }).click();
-      await page.waitForURL(/\/(?!login)/);
+      await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
     });
   }
 });

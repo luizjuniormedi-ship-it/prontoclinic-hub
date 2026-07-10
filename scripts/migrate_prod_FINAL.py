@@ -19,12 +19,12 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=".env.production")
 
 SIGH_CONFIG = {
-    "host": "6083041e1bde.sn.mynetname.net", "port": 47777,
-    "user": "42533813000197", "password": "42533813000197@connect56MF",
-    "database": "DataSIGH", "charset": "utf8", "connect_timeout": 30,
+    "host": os.environ["SIGH_HOST"], "port": int(os.getenv("SIGH_PORT", "3306")),
+    "user": os.environ["SIGH_USER"], "password": os.environ["SIGH_PASSWORD"],
+    "database": os.getenv("SIGH_DATABASE", "DataSIGH"), "charset": "utf8", "connect_timeout": 30,
 }
-SUPABASE_URL = "https://rhqgwrarkotjzdcrkbgn.supabase.co"
-SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJocWd3cmFya290anpkY3JrYmduIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MjMwMTIwOSwiZXhwIjoyMDk3ODc3MjA5fQ.3WhaTnlwP_4tKFhM57O7japgwvP_03v2C7zlQaWDfW8"
+SUPABASE_URL = os.environ["VITE_SUPABASE_URL"]
+SERVICE_ROLE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 COMPANY_ID = "de0007c4-d688-4e89-aeb4-32f5ec96e558"
 
 print(f"[INIT] Supabase: {SUPABASE_URL}")
@@ -563,3 +563,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

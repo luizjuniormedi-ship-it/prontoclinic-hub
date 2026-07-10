@@ -1,5 +1,5 @@
-/**
- * Local Auth Server — substitui GoTrue/Supabase Cloud
+﻿/**
+ * Local Auth Server â€” substitui GoTrue/Supabase Cloud
  * Simula os endpoints que o supabase-js usa:
  *   POST /auth/v1/token?grant_type=password
  *   GET  /auth/v1/user
@@ -14,9 +14,9 @@ import pg from 'pg';
 const { Pool } = pg;
 
 const PORT = Number(process.env.LOCAL_AUTH_PORT || 8000);
-const JWT_SECRET = process.env.LOCAL_AUTH_JWT_SECRET || 'local-dev-insecure-secret-change-me';
+const JWT_SECRET =<DEFINIR_FORA_DO_GIT>
 
-// Fix: pg retorna Date objects pra colunas 'date' — forçar string YYYY-MM-DD
+// Fix: pg retorna Date objects pra colunas 'date' â€” forÃ§ar string YYYY-MM-DD
 const types = pg.types;
 types.setTypeParser(1082, (val) => val); // date -> string as-is
 types.setTypeParser(1114, (val) => val); // timestamp without tz -> string
@@ -25,8 +25,8 @@ types.setTypeParser(1184, (val) => val); // timestamptz -> string
 const pool = new Pool({
   host: process.env.PGHOST || '127.0.0.1',
   port: Number(process.env.PGPORT || 5432),
-  user: process.env.PGUSER || 'postgres',
-  password: process.env.PGPASSWORD || 'postgres',
+  user: process.env.PGUSER || 'app_prontomedic',
+  password: process.env.PGPASSWORD,
   database: process.env.PGDATABASE || 'prontoclinic',
 });
 
@@ -50,7 +50,7 @@ function verifyJwt(token) {
     const expected = createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
     if (sig !== expected) return null;
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString());
-    // SEGURANÇA: rejeita token expirado
+    // SEGURANÃ‡A: rejeita token expirado
     if (payload.exp && Date.now() / 1000 > payload.exp) return null;
     return payload;
   } catch { return null; }
@@ -82,35 +82,35 @@ async function getUserProfile(userId) {
   return res.rows[0] || null;
 }
 
-// ─────────────────────────────────────────────────────────────
-// AUTORIZAÇÃO SERVER-SIDE (RBAC por role × módulo × ação)
-// Mapeia tabela física → módulo lógico da matriz role_permissions.
-// ─────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// AUTORIZAÃ‡ÃƒO SERVER-SIDE (RBAC por role Ã— mÃ³dulo Ã— aÃ§Ã£o)
+// Mapeia tabela fÃ­sica â†’ mÃ³dulo lÃ³gico da matriz role_permissions.
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function tableToModule(table) {
   const t = table.toLowerCase();
   // match por prefixo/nome exato
   const map = [
-    // prontuário/clínico ANTES de pacientes (patient_allergies, patient_problem_list, patient_medications são atos clínicos)
-    // NOTA: 'cid' (catálogo CID-10) é tabela de REFERÊNCIA universal — NÃO entra aqui,
-    // cai no default (leitura livre p/ qualquer perfil autenticado, escrita só admin).
+    // prontuÃ¡rio/clÃ­nico ANTES de pacientes (patient_allergies, patient_problem_list, patient_medications sÃ£o atos clÃ­nicos)
+    // NOTA: 'cid' (catÃ¡logo CID-10) Ã© tabela de REFERÃŠNCIA universal â€” NÃƒO entra aqui,
+    // cai no default (leitura livre p/ qualquer perfil autenticado, escrita sÃ³ admin).
     [/^encounters?$|^encounter_|^medical_records|^clinical_|^prescricoes|^prontuar|^diagnos|^patient_allergies|^patient_problem|^patient_medication|^alergias/, 'prontuario'],
     [/^patients$|^paciente|^patient_phones|^telxpac/, 'pacientes'],
     [/^appointments$|^agenda|^professional_schedules|^escala/, 'agenda'],
-    // Evolução/procedimentos/incidentes de enfermagem = conteúdo clínico sensível → módulo prontuario (recepção bloqueada por LGPD)
+    // EvoluÃ§Ã£o/procedimentos/incidentes de enfermagem = conteÃºdo clÃ­nico sensÃ­vel â†’ mÃ³dulo prontuario (recepÃ§Ã£o bloqueada por LGPD)
     [/^nursing_notes|^nursing_procedures|^nursing_incidents|^nursing_medication|^nursing_evolution/, 'prontuario'],
-    // Fila de triagem e classificação de risco = módulo enfermagem (recepção pode ver p/ chamar paciente)
+    // Fila de triagem e classificaÃ§Ã£o de risco = mÃ³dulo enfermagem (recepÃ§Ã£o pode ver p/ chamar paciente)
     [/^triagens?$|^triagem_|^nursing_|^mnct_/, 'enfermagem'],
     [/^exames_lab|^lab_/, 'laboratorio'],
     [/^dicom|^report|^radiolog|^imaging|^pacs/, 'dicom'],
     [/^dispensa|^brasindice|^simpro|^medicament|^farmac|^estoque|^lote/, 'farmacia'],
-    // caixa/contas/movimento bancário = financeiro (recebe/paga dinheiro)
+    // caixa/contas/movimento bancÃ¡rio = financeiro (recebe/paga dinheiro)
     [/^contas_|^movimento|^caixa/, 'financeiro'],
-    // financial_transactions/billing/tiss/fatura = faturamento (gera a conta/cobrança). SoD: faturamento cria, financeiro recebe.
+    // financial_transactions/billing/tiss/fatura = faturamento (gera a conta/cobranÃ§a). SoD: faturamento cria, financeiro recebe.
     [/^financial_|^billing|^tiss|^fatura|^valores|^commission|^price_tab|^servxlanc/, 'faturamento'],
     [/^insurance|^convenio|^plano|^fonte_pagadora/, 'faturamento'],
-    // recepção: check-in, autorização, elegibilidade, guias, senhas, documentos
+    // recepÃ§Ã£o: check-in, autorizaÃ§Ã£o, elegibilidade, guias, senhas, documentos
     [/^reception_|^senhas_atendimento/, 'recepcao'],
-    [/^scheduling_contact_logs|^scheduling_call_center_tasks/, 'recepcao'],
+    [/^scheduling_contact_logs|^scheduling_call_center_tasks|^scheduling_confirmation_/, 'recepcao'],
     [/^bi_|^nps_|^dashboard/, 'bi'],
     [/^telemedicina/, 'telemedicina'],
     [/^internacao|^leito/, 'internacao'],
@@ -121,12 +121,15 @@ function tableToModule(table) {
     [/^whatsapp|^notification|^pre_cadastro/, 'recepcao'],
   ];
   for (const [re, mod] of map) if (re.test(t)) return mod;
-  return null; // tabela de referência (bairros, cbos, municipios...) → liberada p/ leitura
+  return null; // tabela de referÃªncia (bairros, cbos, municipios...) â†’ liberada p/ leitura
 }
 
 const METHOD_TO_ACTION = { GET: 'can_view', HEAD: 'can_view', POST: 'can_create', PATCH: 'can_edit', PUT: 'can_edit', DELETE: 'can_delete' };
+const IDENT = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+const isIdentifier = (value) => IDENT.test(value);
+const quoteIdent = (value) => `"${value}"`;
 
-// cache de permissões por role (evita query a cada request)
+// cache de permissÃµes por role (evita query a cada request)
 const permCache = new Map();
 async function loadRolePerms(role) {
   if (permCache.has(role)) return permCache.get(role);
@@ -143,19 +146,58 @@ async function loadRolePerms(role) {
 /** Retorna {ok:true} ou {ok:false, reason}. admin tem bypass total. */
 async function authorize(profile, table, method) {
   if (!profile) return { ok: false, reason: 'sem perfil' };
-  if (!profile.lg_ativo) return { ok: false, reason: 'usuário inativo' };
+  if (!profile.lg_ativo) return { ok: false, reason: 'usuÃ¡rio inativo' };
   const role = (profile.role_name || '').toLowerCase();
   if (role === 'admin' || role === 'adm_medicos' || role === 'diretoria' || role === 'administracao') return { ok: true };
   const module = tableToModule(table);
   if (module === null) {
-    // tabelas de referência: leitura liberada, escrita só admin (já retornou acima)
-    return METHOD_TO_ACTION[method] === 'can_view' ? { ok: true } : { ok: false, reason: 'escrita em tabela de referência exige admin' };
+    // tabelas de referÃªncia: leitura liberada, escrita sÃ³ admin (jÃ¡ retornou acima)
+    return METHOD_TO_ACTION[method] === 'can_view' ? { ok: true } : { ok: false, reason: 'escrita em tabela de referÃªncia exige admin' };
   }
   const perms = await loadRolePerms(role);
   const rule = perms[module];
-  if (!rule) return { ok: false, reason: `role '${role}' sem acesso ao módulo '${module}'` };
+  if (!rule) return { ok: false, reason: `role '${role}' sem acesso ao mÃ³dulo '${module}'` };
   const action = METHOD_TO_ACTION[method] || 'can_view';
-  if (!rule[action]) return { ok: false, reason: `role '${role}' não pode '${action}' em '${module}'` };
+  if (!rule[action]) return { ok: false, reason: `role '${role}' nÃ£o pode '${action}' em '${module}'` };
+  return { ok: true };
+}
+
+const RPC_PERMISSIONS = {
+  create_appointment_secure: { module: 'agenda', action: 'can_create' },
+  update_appointment_status_secure: { module: 'agenda', action: 'can_edit' },
+  reschedule_appointment_secure: { module: 'agenda', action: 'can_edit' },
+  create_waitlist_entry_secure: { module: 'agenda', action: 'can_create' },
+  close_waitlist_entry_secure: { module: 'agenda', action: 'can_edit' },
+  convert_waitlist_to_appointment_secure: { module: 'agenda', action: 'can_edit' },
+  create_schedule_block_secure: { module: 'agenda', action: 'can_edit' },
+  cancel_schedule_block_secure: { module: 'agenda', action: 'can_edit' },
+  get_professional_available_slots: { module: 'agenda', action: 'can_view' },
+  get_scheduling_requirements: { module: 'agenda', action: 'can_view' },
+  create_appointment_with_requirements_secure: { module: 'agenda', action: 'can_create' },
+  refresh_confirmation_queue_secure: { module: 'agenda', action: 'can_edit' },
+  record_confirmation_attempt_secure: { module: 'agenda', action: 'can_edit' },
+  mark_overdue_appointments_no_show_secure: { module: 'agenda', action: 'can_edit' },
+  get_reception_checkin_readiness: { module: 'recepcao', action: 'can_view' },
+  perform_reception_checkin_secure: { module: 'recepcao', action: 'can_create' },
+  update_reception_authorization_secure: { module: 'recepcao', action: 'can_edit' },
+  update_reception_eligibility_secure: { module: 'recepcao', action: 'can_edit' },
+};
+
+async function authorizeRpc(profile, functionName) {
+  const required = RPC_PERMISSIONS[functionName];
+  if (!required) return { ok: true };
+  if (!profile || !profile.lg_ativo) return { ok: false, reason: 'usuario invalido/inativo' };
+
+  const role = (profile.role_name || '').toLowerCase();
+  if (role === 'admin' || role === 'adm_medicos' || role === 'diretoria' || role === 'administracao') {
+    return { ok: true };
+  }
+
+  const permissions = await loadRolePerms(role);
+  const rule = permissions[required.module];
+  if (!rule?.[required.action]) {
+    return { ok: false, reason: `role '${role}' nao pode '${required.action}' em '${required.module}'` };
+  }
   return { ok: true };
 }
 
@@ -193,11 +235,11 @@ const server = createServer(async (req, res) => {
   // Support HEAD with count (supabase-js uses HEAD for count)
   if (req.method === 'HEAD' && path.startsWith('/rest/v1/')) {
     const table = path.replace('/rest/v1/', '').split('?')[0];
-    // SEGURANÇA: HEAD count exige JWT válido + autorização (antes vazava contagem sem auth)
+    // SEGURANÃ‡A: HEAD count exige JWT vÃ¡lido + autorizaÃ§Ã£o (antes vazava contagem sem auth)
     const hAuth = req.headers.authorization?.replace('Bearer ', '');
     const hPayload = verifyJwt(hAuth);
     if (!hPayload || !hPayload.sub) { res.writeHead(401); res.end(); return; }
-    // valida nome de tabela (anti-injection) e permissão
+    // valida nome de tabela (anti-injection) e permissÃ£o
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(table)) { res.writeHead(400); res.end(); return; }
     const hProfile = await getUserProfile(hPayload.sub);
     const hDecision = await authorize(hProfile, table, 'GET');
@@ -214,7 +256,7 @@ const server = createServer(async (req, res) => {
   }
 
   try {
-    // ─── AUTH: Refresh Token (MUST come before login) ────────
+    // â”€â”€â”€ AUTH: Refresh Token (MUST come before login) â”€â”€â”€â”€â”€â”€â”€â”€
     if (path === '/auth/v1/token' && req.method === 'POST' && url.searchParams.get('grant_type') === 'refresh_token') {
       const body = await parseBody(req);
       const tokenValue = body.refresh_token || '';
@@ -244,7 +286,7 @@ const server = createServer(async (req, res) => {
       });
     }
 
-    // ─── AUTH: Login ───────────────────────────────────────────
+    // â”€â”€â”€ AUTH: Login â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (path === '/auth/v1/token' && req.method === 'POST') {
       const body = await parseBody(req);
       const user = await verifyPassword(body.email, body.password);
@@ -286,7 +328,7 @@ const server = createServer(async (req, res) => {
       });
     }
 
-    // ─── AUTH: Get user ───────────────────────────────────────
+    // â”€â”€â”€ AUTH: Get user â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (path === '/auth/v1/user' && req.method === 'GET') {
       const auth = req.headers.authorization?.replace('Bearer ', '');
       const payload = verifyJwt(auth);
@@ -303,61 +345,86 @@ const server = createServer(async (req, res) => {
       });
     }
 
-    // ─── AUTH: Logout ─────────────────────────────────────────
+    // â”€â”€â”€ AUTH: Logout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (path === '/auth/v1/logout' && req.method === 'POST') {
       return json(res, {});
     }
 
     // (refresh token handler moved to top of chain)
 
-    // ─── AUTH: Settings ───────────────────────────────────────
+    // â”€â”€â”€ AUTH: Settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (path === '/auth/v1/settings') {
       return json(res, { external: {}, disable_signup: false, mailer_autoconfirm: true });
     }
 
-    // ─── RPC: chamada de funcao Postgres (supabase.rpc) ───────
+    // â”€â”€â”€ RPC: chamada de funcao Postgres (supabase.rpc) â”€â”€â”€â”€â”€â”€â”€
     if (path.startsWith('/rest/v1/rpc/') && req.method === 'POST') {
       const auth = req.headers.authorization?.replace('Bearer ', '');
       const payload = verifyJwt(auth);
-      if (!payload || !payload.sub) return json(res, { error: 'unauthorized', message: 'JWT válido obrigatório' }, 401);
+      if (!payload || !payload.sub) return json(res, { error: 'unauthorized', message: 'JWT vÃ¡lido obrigatÃ³rio' }, 401);
       const profile = await getUserProfile(payload.sub);
-      if (!profile || !profile.lg_ativo) return json(res, { error: 'forbidden', message: 'usuário inválido/inativo' }, 403);
+      if (!profile || !profile.lg_ativo) return json(res, { error: 'forbidden', message: 'usuÃ¡rio invÃ¡lido/inativo' }, 403);
       const fnName = decodeURIComponent(path.replace('/rest/v1/rpc/', '').split('?')[0]);
       const IDENT = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
       if (!IDENT.test(fnName)) {
-        return json(res, { error: 'bad_request', message: `função RPC inválida: ${fnName}` }, 400);
+        return json(res, { error: 'bad_request', message: `funÃ§Ã£o RPC invÃ¡lida: ${fnName}` }, 400);
+      }
+      const rpcDecision = await authorizeRpc(profile, fnName);
+      if (!rpcDecision.ok) {
+        return json(res, { error: 'forbidden', message: rpcDecision.reason }, 403);
       }
       const body = await parseBody(req);
       const keys = Object.keys(body);
       for (const key of keys) {
         if (!IDENT.test(key)) {
-          return json(res, { error: 'bad_request', message: `parâmetro RPC inválido: ${key}` }, 400);
+          return json(res, { error: 'bad_request', message: `parÃ¢metro RPC invÃ¡lido: ${key}` }, 400);
         }
       }
       // monta SELECT fn(p1 => $1, p2 => $2) com params nomeados
       const namedArgs = keys.map((k, i) => `"${k}" => $${i + 1}`).join(', ');
       const vals = keys.map((k) => body[k]);
+      const client = await pool.connect();
       try {
-        const result = await pool.query(`SELECT public."${fnName}"(${namedArgs}) AS result`, vals);
-        const val = result.rows[0]?.result;
+        await client.query('BEGIN');
+        await client.query(
+          `SELECT set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claims', $2, true)`,
+          [payload.sub, JSON.stringify(payload)],
+        );
+        const result = await client.query(`SELECT public."${fnName}"(${namedArgs}) AS result`, vals);
+        await client.query('COMMIT');
+        const val = result.rows.length === 0
+          ? []
+          : result.rows.length > 1
+            ? result.rows.map((row) => row.result)
+            : result.rows[0].result;
         return json(res, val);
       } catch (e) {
+        await client.query('ROLLBACK');
         return json(res, { error: e.message, code: 'PGRST202' }, 400);
+      } finally {
+        client.release();
       }
     }
 
-    // ─── REST: PostgREST-compatible proxy ─────────────────────
+    // â”€â”€â”€ REST: PostgREST-compatible proxy â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (path.startsWith('/rest/v1/')) {
       const table = path.replace('/rest/v1/', '').split('?')[0];
+      if (!isIdentifier(table)) {
+        return json(res, { error: 'bad_request', message: `tabela invÃ¡lida: ${table}` }, 400);
+      }
       const auth = req.headers.authorization?.replace('Bearer ', '');
       const payload = verifyJwt(auth);
 
-      // Exige JWT válido (apikey sozinho NÃO autentica mais)
-      if (!payload || !payload.sub) return json(res, { error: 'unauthorized', message: 'JWT válido obrigatório' }, 401);
+      // Exige JWT vÃ¡lido (apikey sozinho NÃƒO autentica mais)
+      if (!payload || !payload.sub) return json(res, { error: 'unauthorized', message: 'JWT vÃ¡lido obrigatÃ³rio' }, 401);
 
-      // Enforcement RBAC: role × módulo × ação
+      // Enforcement RBAC: role Ã— mÃ³dulo Ã— aÃ§Ã£o
       const profile = await getUserProfile(payload.sub);
-      const decision = await authorize(profile, table, req.method);
+      const isSelfProfileRead =
+        req.method === 'GET' &&
+        table === 'user_profiles' &&
+        url.searchParams.get('id') === `eq.${payload.sub}`;
+      const decision = isSelfProfileRead ? { ok: true } : await authorize(profile, table, req.method);
       if (!decision.ok) return json(res, { error: 'forbidden', message: decision.reason }, 403);
 
       if (req.method === 'GET') {
@@ -369,15 +436,14 @@ const server = createServer(async (req, res) => {
           const withoutAliasEmbeds = selectParam.replace(/,?\s*\w+:\w+\([^)]*\)/g, '');
           const withoutEmbeds = withoutAliasEmbeds.replace(/,?\s*\w+\([^)]*\)/g, '');
           const rawCols = withoutEmbeds.split(',').map(c => c.trim()).filter(c => c.length > 0);
-          // SEGURANÇA: cada coluna DEVE ser um identificador SQL simples (anti SQL-injection).
-          // Rejeita subqueries, parênteses, espaços, aspas, operadores — bloqueia select=id,(SELECT ...).
-          const IDENT = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+          // SEGURANÃ‡A: cada coluna DEVE ser um identificador SQL simples (anti SQL-injection).
+          // Rejeita subqueries, parÃªnteses, espaÃ§os, aspas, operadores â€” bloqueia select=id,(SELECT ...).
           for (const col of rawCols) {
-            if (!IDENT.test(col)) {
-              return json(res, { error: 'bad_request', message: `coluna inválida no select: ${col}` }, 400);
+            if (!isIdentifier(col)) {
+              return json(res, { error: 'bad_request', message: `coluna invÃ¡lida no select: ${col}` }, 400);
             }
           }
-          const safe = rawCols.map(c => `"${c}"`).join(', ');
+          const safe = rawCols.map(quoteIdent).join(', ');
           columns = safe || '*';
         }
 
@@ -387,14 +453,14 @@ const server = createServer(async (req, res) => {
         let paramIdx = 1;
 
         // Parse PostgREST filters (eq, neq, gt, gte, lt, lte, like, ilike, is, or, in)
-        const IDENT_COL = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+        const IDENT_COL = IDENT;
         for (const [key, val] of url.searchParams) {
           if (['select', 'limit', 'offset', 'order'].includes(key)) continue;
 
-          // SEGURANÇA: nome de coluna (key) deve ser identificador simples (anti SQL-injection).
-          // 'or' é palavra reservada de filtro, tratada abaixo.
+          // SEGURANÃ‡A: nome de coluna (key) deve ser identificador simples (anti SQL-injection).
+          // 'or' Ã© palavra reservada de filtro, tratada abaixo.
           if (key !== 'or' && !IDENT_COL.test(key)) {
-            return json(res, { error: 'bad_request', message: `coluna de filtro inválida: ${key}` }, 400);
+            return json(res, { error: 'bad_request', message: `coluna de filtro invÃ¡lida: ${key}` }, 400);
           }
 
           // Support .or() filter: or=(col1.ilike.%val%,col2.ilike.%val%)
@@ -406,7 +472,7 @@ const server = createServer(async (req, res) => {
               if (dotIdx === -1) continue;
               const col = part.substring(0, dotIdx);
               const rest = part.substring(dotIdx + 1);
-              if (!IDENT_COL.test(col)) continue; // ignora coluna inválida (anti-injection)
+              if (!IDENT_COL.test(col)) continue; // ignora coluna invÃ¡lida (anti-injection)
               if (rest.startsWith('ilike.')) {
                 orConditions.push(`"${col}" ILIKE $${paramIdx}`);
                 values.push(rest.slice(6).replace(/\*/g, '%'));
@@ -456,10 +522,10 @@ const server = createServer(async (req, res) => {
                 v = v.replace(/\*/g, '%');
               }
               if (op === 'IS') {
-                // IS só aceita null/true/false (anti-injection: nada de valor cru interpolado)
+                // IS sÃ³ aceita null/true/false (anti-injection: nada de valor cru interpolado)
                 const isVal = v === 'null' ? 'NULL' : v === 'true' ? 'TRUE' : v === 'false' ? 'FALSE' : null;
                 if (isVal === null) {
-                  return json(res, { error: 'bad_request', message: `valor IS inválido: ${v}` }, 400);
+                  return json(res, { error: 'bad_request', message: `valor IS invÃ¡lido: ${v}` }, 400);
                 }
                 conditions.push(`"${key}" IS ${isVal}`);
               } else if (v === 'true' || v === 'false') {
@@ -476,14 +542,14 @@ const server = createServer(async (req, res) => {
 
         if (conditions.length > 0) query += ' WHERE ' + conditions.join(' AND ');
 
-        // Order (coluna validada — anti-injection)
+        // Order (coluna validada â€” anti-injection)
         const orderParam = url.searchParams.get('order');
         if (orderParam) {
           const parts = [];
           for (const p of orderParam.split(',')) {
             const [col, dir] = p.split('.');
             if (!IDENT_COL.test(col)) {
-              return json(res, { error: 'bad_request', message: `coluna de order inválida: ${col}` }, 400);
+              return json(res, { error: 'bad_request', message: `coluna de order invÃ¡lida: ${col}` }, 400);
             }
             parts.push(`"${col}" ${dir === 'desc' ? 'DESC' : 'ASC'}`);
           }
@@ -541,11 +607,18 @@ const server = createServer(async (req, res) => {
       if (req.method === 'POST') {
         const body = await parseBody(req);
         const keys = Object.keys(body);
+        if (keys.length === 0) return json(res, { error: 'bad_request', message: 'body vazio' }, 400);
+        for (const key of keys) {
+          if (!isIdentifier(key)) {
+            return json(res, { error: 'bad_request', message: `coluna invÃ¡lida: ${key}` }, 400);
+          }
+        }
         const vals = Object.values(body);
         const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
+        const columns = keys.map(quoteIdent).join(', ');
         try {
           const result = await pool.query(
-            `INSERT INTO public."${table}" (${keys.join(', ')}) VALUES (${placeholders}) RETURNING *`,
+            `INSERT INTO public."${table}" (${columns}) VALUES (${placeholders}) RETURNING *`,
             vals
           );
           const prefer = req.headers.prefer || '';
@@ -561,8 +634,14 @@ const server = createServer(async (req, res) => {
       if (req.method === 'PATCH') {
         const body = await parseBody(req);
         const keys = Object.keys(body);
+        if (keys.length === 0) return json(res, { error: 'bad_request', message: 'body vazio' }, 400);
+        for (const key of keys) {
+          if (!isIdentifier(key)) {
+            return json(res, { error: 'bad_request', message: `coluna invÃ¡lida: ${key}` }, 400);
+          }
+        }
         const vals = Object.values(body);
-        const setClause = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
+        const setClause = keys.map((k, i) => `${quoteIdent(k)} = $${i + 1}`).join(', ');
         // Get ID from query params
         const idParam = url.searchParams.get('id');
         const id = idParam?.replace('eq.', '');
@@ -579,7 +658,7 @@ const server = createServer(async (req, res) => {
       }
     }
 
-    // ─── Fallback: 404 ───────────────────────────────────────
+    // â”€â”€â”€ Fallback: 404 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     json(res, { error: 'not found', path }, 404);
 
   } catch (err) {
@@ -590,11 +669,11 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(``);
-  console.log(`  ┌──────────────────────────────────────────────┐`);
-  console.log(`  │  ProntoClinic Local Auth Server               │`);
-  console.log(`  │  http://localhost:${PORT}                       │`);
-  console.log(`  │  Postgres: 127.0.0.1:5432/prontoclinic       │`);
-  console.log(`  │  Admin: use usuario seedado no banco local     │`);
-  console.log(`  └──────────────────────────────────────────────┘`);
+  console.log(`  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”`);
+  console.log(`  â”‚  ProntoClinic Local Auth Server               â”‚`);
+  console.log(`  â”‚  http://localhost:${PORT}                       â”‚`);
+  console.log(`  â”‚  Postgres: 127.0.0.1:5432/prontoclinic       â”‚`);
+  console.log(`  â”‚  Admin: use usuario seedado no banco local     â”‚`);
+  console.log(`  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜`);
   console.log(``);
 });

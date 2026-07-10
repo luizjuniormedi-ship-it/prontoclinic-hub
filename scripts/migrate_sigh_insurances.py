@@ -51,7 +51,7 @@ if ENV_PATH.exists():
             SUPABASE_KEY = line.split("=", 1)[1].strip()
 
 # service_role key (bypass RLS)
-SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhjZXltZ2RrdG1ob3Z6cmVlcnZoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MjIzMzI2NywiZXhwIjoyMDk3ODA5MjY3fQ.Qb_D2g890PYKhBTPmbmlwoF6IoZOTwrOCkLk2FksYCA"
+SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "<SUPABASE_SERVICE_ROLE_KEY>"
 
 # company_id da empresa demo (única cadastrada)
 COMPANY_ID = "00000000-0000-0000-0000-000000000001"

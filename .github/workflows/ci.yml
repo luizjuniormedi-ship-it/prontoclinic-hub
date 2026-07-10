@@ -1,4 +1,4 @@
-name: CI
+﻿name: CI
 
 on:
   push:
@@ -44,7 +44,7 @@ jobs:
       - name: Apply database migrations
         run: |
           DATABASE_URL=postgresql://postgres:postgres@localhost:54322/postgres
-          export PGPASSWORD=postgres
+          export PGPASSWORD=<DEFINIR_FORA_DO_GIT>
           for f in supabase/migrations/*.sql; do
             echo "Applying $f..."
             psql -h localhost -U postgres -d postgres -f "$f" || echo "Migration $f failed - continuing"
@@ -60,7 +60,7 @@ jobs:
             -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Content-Type: application/json" \
-            -d '{}' || echo "RPC reset_e2e_data indisponível — seguindo"
+            -d '{}' || echo "RPC reset_e2e_data indisponÃ­vel â€” seguindo"
         continue-on-error: true
 
       - name: Type check
@@ -120,6 +120,6 @@ jobs:
         if: always()
         run: |
           if [ -f test-results/results.json ]; then
-            node scripts/check-a11y-violations.mjs || echo "Script opcional não implementado"
+            node scripts/check-a11y-violations.mjs || echo "Script opcional nÃ£o implementado"
           fi
         continue-on-error: true

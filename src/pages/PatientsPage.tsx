@@ -37,8 +37,20 @@ export default function PatientsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [insuranceNames, setInsuranceNames] = useState<Record<string, string>>({});
   const navigate = useNavigate();
   const debouncedSearch = useDebounce(search, 300);
+
+  // Load insurance names once
+  useEffect(() => {
+    supabase.from("insurance_companies").select("id, name").limit(2000).then(({ data }) => {
+      if (data) {
+        const map: Record<string, string> = {};
+        data.forEach((i: any) => { map[String(i.id)] = i.name; });
+        setInsuranceNames(map);
+      }
+    });
+  }, []);
 
   const loadPatients = useCallback(async () => {
     try {
@@ -50,7 +62,12 @@ export default function PatientsPage() {
 
       if (debouncedSearch.trim()) {
         const q = debouncedSearch.trim();
-        query = query.or(`full_name.ilike.%${q}%,cpf.ilike.%${q.replace(/\D/g, "")}%,phone.ilike.%${q.replace(/\D/g, "")}%`);
+        const digits = q.replace(/\D/g, "");
+        if (digits.length >= 3 && digits.length === q.replace(/\s/g, "").length) {
+          query = query.or(`cpf.ilike.%${digits}%,phone.ilike.%${digits}%`);
+        } else {
+          query = query.ilike("full_name", `%${q.replace(/[%_]/g, "")}%`);
+        }
       }
 
       const { data, error: e, count } = await query
@@ -121,7 +138,7 @@ export default function PatientsPage() {
                     <TableCell className="text-muted-foreground text-xs">{p.cpf ? formatCPF(p.cpf) : "—"}</TableCell>
                     <TableCell>{p.birth_date ? `${calculateAge(p.birth_date)}a` : "—"}</TableCell>
                     <TableCell className="text-xs">{p.phone ? maskPhone(p.phone) : "—"}</TableCell>
-                    <TableCell className="text-xs">{p.insurance_plan_id || <span className="text-muted-foreground">Particular</span>}</TableCell>
+                    <TableCell className="text-xs">{p.insurance_plan_id ? (insuranceNames[String(p.insurance_plan_id)] || "Conv. #" + p.insurance_plan_id) : <span className="text-muted-foreground">Particular</span>}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={`text-[10px] border-0 ${p.status === "inactive" ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success"}`}>
                         {p.status === "inactive" ? "Inativo" : "Ativo"}
@@ -137,10 +154,10 @@ export default function PatientsPage() {
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground">Página {page + 1} de {totalPages}</p>
               <div className="flex gap-1">
-                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page === 0} onClick={() => setPage(page - 1)}>
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page === 0} onClick={() => setPage(page - 1)} title="Página anterior">
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)} title="Próxima página">
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>

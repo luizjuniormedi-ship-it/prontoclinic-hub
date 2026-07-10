@@ -1,8 +1,8 @@
-name: Deploy ProntoClinic to Vercel
+﻿name: Deploy ProntoClinic to Vercel
 
 # Workflow alternativo ao Vercel CLI.
-# Usa GitHub Actions + Surge.sh como fallback (não requer credenciais).
-# Quando você configurar o deploy no Vercel via GitHub App, este workflow
+# Usa GitHub Actions + Surge.sh como fallback (nÃ£o requer credenciais).
+# Quando vocÃª configurar o deploy no Vercel via GitHub App, este workflow
 # pode ser removido em favor do workflow nativo do Vercel.
 
 on:
@@ -42,9 +42,9 @@ jobs:
           VITE_DICOM_BUCKET: dicom
         run: |
           if [ -z "$VITE_SUPABASE_URL" ]; then
-            echo "::warning::VITE_SUPABASE_URL não configurado, usando fallback"
+            echo "::warning::VITE_SUPABASE_URL nÃ£o configurado, usando fallback"
             echo "VITE_SUPABASE_URL=https://rhqgwrarkotjzdcrkbgn.supabase.co" >> $GITHUB_ENV
-            echo "VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJocWd3cmFya290anpkY3JrYmduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMDEyMDksImV4cCI6MjA5Nzg3NzIwOX0.hwaGsz3wK1nq6aNXZDYJ_fOxpHI14eIvYB6ObQqx5gE" >> $GITHUB_ENV
+            echo "VITE_SUPABASE_ANON_KEY=<SUPABASE_ANON_OR_PUBLISHABLE_KEY>" >> $GITHUB_ENV
           fi
 
       - name: Build
@@ -68,7 +68,7 @@ jobs:
       - name: Summary
         if: success()
         run: |
-          echo "## ✅ Deploy ProntoClinic concluído" >> $GITHUB_STEP_SUMMARY
+          echo "## âœ… Deploy ProntoClinic concluÃ­do" >> $GITHUB_STEP_SUMMARY
           echo "- URL: ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
           echo "- Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
           echo "- Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

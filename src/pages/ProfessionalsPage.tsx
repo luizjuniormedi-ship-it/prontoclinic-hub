@@ -60,7 +60,8 @@ export default function ProfessionalsPage() {
   const filtered = professionals.filter((p) => {
     const q = search.toLowerCase();
     const matchesSearch = !search || p.full_name.toLowerCase().includes(q) || (p.category || "").toLowerCase().includes(q) || (p.council_type || "").toLowerCase().includes(q) || (p.council_number || "").toLowerCase().includes(q);
-    const matchesStatus = statusFilter === "all" || p.status === statusFilter;
+    const isActive = p.status === "active" || (p.status == null && p.lg_ativo !== false) || p.lg_ativo === true;
+    const matchesStatus = statusFilter === "all" || (statusFilter === "active" ? isActive : !isActive);
     return matchesSearch && matchesStatus;
   });
 
@@ -128,7 +129,7 @@ export default function ProfessionalsPage() {
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={loadData} />;
 
-  const activeCount = professionals.filter((p) => p.status === "active").length;
+  const activeCount = professionals.filter((p) => p.status === "active" || p.lg_ativo === true || (p.status == null && p.lg_ativo !== false)).length;
 
   return (
     <div className="space-y-6 animate-fade-in">

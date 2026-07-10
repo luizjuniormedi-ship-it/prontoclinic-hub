@@ -11,6 +11,7 @@ vi.mock("@/lib/supabase", () => {
     eq: vi.fn().mockReturnThis(),
     is: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockReturnThis(),
     single: vi.fn(),
     maybeSingle: vi.fn(),
   };
@@ -137,6 +138,7 @@ describe("priceTableService — getAll com filtros", () => {
     const chain: any = {
       select: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
       eq: eqSpy,
     };
     (chain as any).then = (resolve: any) => resolve({ data: [], error: null });
@@ -151,6 +153,7 @@ describe("priceTableService — getAll com filtros", () => {
     const chain: any = {
       select: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
       is: isSpy,
     };
     (chain as any).then = (resolve: any) => resolve({ data: [], error: null });
@@ -165,6 +168,7 @@ describe("priceTableService — getAll com filtros", () => {
     const chain: any = {
       select: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
       eq: eqSpy,
     };
     (chain as any).then = (resolve: any) => resolve({ data: [], error: null });
@@ -178,6 +182,7 @@ describe("priceTableService — getAll com filtros", () => {
     const chain: any = {
       select: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
     };
     (chain as any).then = (resolve: any) =>
       resolve({ data: null, error: { message: "DB down" } });

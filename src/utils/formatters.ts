@@ -5,7 +5,10 @@ export function formatCurrency(value: number): string {
 }
 
 export function formatDate(date: string): string {
-  return new Date(date + "T00:00:00").toLocaleDateString("pt-BR");
+  if (!date) return "—";
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date}T00:00:00` : date;
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? "—" : parsed.toLocaleDateString("pt-BR");
 }
 
 export function formatCPF(cpf: string): string {

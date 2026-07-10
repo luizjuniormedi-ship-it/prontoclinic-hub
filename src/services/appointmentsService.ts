@@ -13,6 +13,7 @@ export interface DbProfessional {
   phone: string | null;
   email: string | null;
   status: string | null;
+  lg_ativo?: boolean | null;
   default_duration_minutes: number | null;
   created_at: string;
   updated_at: string;
@@ -37,10 +38,15 @@ export interface DbAppointmentType {
 
 export interface DbServiceCatalog {
   id: string;
+  code?: string | null;
   name: string;
   specialty_id: string | null;
   default_duration_minutes: number | null;
   price: number | null;
+  lg_ativo?: boolean | null;
+  vl_particular?: number | null;
+  lg_autorizacao?: number | null;
+  ds_preparo?: string | null;
   created_at: string;
 }
 
@@ -127,6 +133,22 @@ export interface AppointmentCreateInput {
   is_return?: boolean;
   is_walkin?: boolean;
   notes?: string;
+  insurance_id?: string;
+  card_number?: string;
+  authorization_number?: string;
+}
+
+export interface SchedulingRequirements {
+  insurance_id: number | null;
+  insurance_name: string | null;
+  card_number: string | null;
+  professional_credentialed: boolean;
+  requires_authorization: boolean;
+  requires_eligibility: boolean;
+  preparation: string | null;
+  service_name: string | null;
+  private_price: number | null;
+  errors: string[];
 }
 
 export interface AppointmentRescheduleInput {
@@ -171,7 +193,7 @@ export const appointmentsService = {
   },
 
   async create(input: AppointmentCreateInput): Promise<DbAppointment> {
-    const { data, error } = await supabase.rpc('create_appointment_secure', {
+    const { data, error } = await supabase.rpc('create_appointment_with_requirements_secure', {
       p_patient_id: requiredBigIntParam(input.patient_id, 'Paciente'),
       p_professional_id: requiredBigIntParam(input.professional_id, 'Profissional'),
       p_appointment_date: input.appointment_date,
@@ -186,9 +208,30 @@ export const appointmentsService = {
       p_is_return: !!input.is_return,
       p_is_walkin: !!input.is_walkin,
       p_notes: input.notes || null,
+      p_insurance_id: toBigIntParam(input.insurance_id, 'Convênio'),
+      p_card_number: input.card_number || null,
+      p_authorization_number: input.authorization_number || null,
     });
     if (error) throw new Error('Erro ao criar agendamento: ' + error.message);
     return data as DbAppointment;
+  },
+
+  async getRequirements(input: {
+    patientId: string;
+    professionalId: string;
+    serviceId?: string;
+    insuranceId?: string;
+    cardNumber?: string;
+  }): Promise<SchedulingRequirements> {
+    const { data, error } = await supabase.rpc('get_scheduling_requirements', {
+      p_patient_id: requiredBigIntParam(input.patientId, 'Paciente'),
+      p_professional_id: requiredBigIntParam(input.professionalId, 'Profissional'),
+      p_service_id: toBigIntParam(input.serviceId, 'Serviço'),
+      p_insurance_id: toBigIntParam(input.insuranceId, 'Convênio'),
+      p_card_number: input.cardNumber || null,
+    });
+    if (error) throw new Error('Erro ao validar requisitos: ' + error.message);
+    return data as SchedulingRequirements;
   },
 
   async updateStatus(id: string, newStatus: string, notes?: string): Promise<DbAppointment> {

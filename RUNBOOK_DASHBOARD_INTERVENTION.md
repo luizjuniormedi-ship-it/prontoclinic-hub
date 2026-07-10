@@ -48,7 +48,7 @@ Após o reinício, valide:
 
 ```bash
 curl -s "https://rhqgwrarkotjzdcrkbgn.supabase.co/rest/v1/units?select=count" \
-  -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJocWd3cmFya290anpkY3JrYmduIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MjMwMTIwOSwiZXhwIjoyMDk3ODc3MjA5fQ.3WhaTnlwP_4tKFhM57O7japgwvP_03v2C7zlQaWDfW8"
+  -H "apikey: <SUPABASE_SERVICE_ROLE_KEY>"
 ```
 
 Esperado: `HTTP/1.1 200 OK` com `[{"count":0}]` ou similar.
@@ -171,3 +171,4 @@ Quando você terminar os passos acima, me chame e eu:
 1. Confirmo que a API voltou (HTTP 200).
 2. Concluo a migração das 312k appointments.
 3. Atualizo o relatório final.
+

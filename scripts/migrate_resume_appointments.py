@@ -21,9 +21,9 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=".env.production")
 
 SIGH = {
-    "host": "6083041e1bde.sn.mynetname.net", "port": 47777,
-    "user": "42533813000197", "password": "42533813000197@connect56MF",
-    "database": "DataSIGH", "charset": "utf8", "connect_timeout": 60,
+    "host": os.environ["SIGH_HOST"], "port": int(os.getenv("SIGH_PORT", "3306")),
+    "user": os.environ["SIGH_USER"], "password": os.environ["SIGH_PASSWORD"],
+    "database": os.getenv("SIGH_DATABASE", "DataSIGH"), "charset": "utf8", "connect_timeout": 60,
 }
 SUPABASE_URL = os.getenv("VITE_SUPABASE_URL", "https://rhqgwrarkotjzdcrkbgn.supabase.co")
 SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
@@ -142,3 +142,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

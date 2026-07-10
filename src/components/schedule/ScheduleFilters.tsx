@@ -51,7 +51,13 @@ export function ScheduleFilters({
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Buscar por nome, CPF ou telefone..." value={search} onChange={(e) => onSearchChange(e.target.value)} className="pl-10" />
+          <Input
+            aria-label="Buscar agendamento por nome, CPF ou telefone"
+            placeholder="Buscar por nome, CPF ou telefone..."
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+            className="pl-10"
+          />
         </div>
         <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)}>
           <Filter className="h-4 w-4 mr-1" />Filtros
@@ -66,7 +72,7 @@ export function ScheduleFilters({
             <TooltipTrigger asChild>
               <div>
                 <Select value={doctorFilter} onValueChange={onDoctorFilter}>
-                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Profissional" /></SelectTrigger>
+                  <SelectTrigger aria-label="Filtrar por profissional" className="h-9 text-xs"><SelectValue placeholder="Profissional" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todos</SelectItem>
                     {doctors.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
@@ -80,7 +86,7 @@ export function ScheduleFilters({
             <TooltipTrigger asChild>
               <div>
                 <Select value={specialtyFilter} onValueChange={onSpecialtyFilter}>
-                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Especialidade" /></SelectTrigger>
+                  <SelectTrigger aria-label="Filtrar por especialidade" className="h-9 text-xs"><SelectValue placeholder="Especialidade" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todas</SelectItem>
                     {specialties.map((s) => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
@@ -94,7 +100,7 @@ export function ScheduleFilters({
             <TooltipTrigger asChild>
               <div>
                 <Select value={typeFilter} onValueChange={onTypeFilter}>
-                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Tipo" /></SelectTrigger>
+                  <SelectTrigger aria-label="Filtrar por tipo de atendimento" className="h-9 text-xs"><SelectValue placeholder="Tipo" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todos</SelectItem>
                     {allTypes.map((t) => <SelectItem key={t} value={t}>{getAppointmentTypeLabel(t)}</SelectItem>)}
@@ -108,7 +114,7 @@ export function ScheduleFilters({
             <TooltipTrigger asChild>
               <div>
                 <Select value={statusFilter} onValueChange={onStatusFilter}>
-                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
+                  <SelectTrigger aria-label="Filtrar por status" className="h-9 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todos</SelectItem>
                     {allStatuses.map((s) => <SelectItem key={s} value={s}>{getAppointmentStatusLabel(s)}</SelectItem>)}
@@ -123,7 +129,7 @@ export function ScheduleFilters({
               <TooltipTrigger asChild>
                 <div>
                   <Select value={unitFilter || "all"} onValueChange={onUnitFilter}>
-                    <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Unidade" /></SelectTrigger>
+                    <SelectTrigger aria-label="Filtrar por unidade" className="h-9 text-xs"><SelectValue placeholder="Unidade" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">Todas</SelectItem>
                       {units.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}

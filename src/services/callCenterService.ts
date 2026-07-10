@@ -57,6 +57,18 @@ export interface CreateContactLogInput {
   create_task?: boolean;
 }
 
+export interface ConfirmationQueueItem {
+  id: number;
+  appointment_id: number;
+  patient_id: number | null;
+  due_at: string;
+  status: "pending" | "contacting" | "confirmed" | "cancelled" | "no_response" | "expired";
+  attempt_count: number;
+  last_attempt_at: string | null;
+  patient_name?: string;
+  patient_phone?: string;
+}
+
 function nullableNumber(value: string | number | null | undefined, field: string): number | null {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
@@ -85,6 +97,27 @@ async function currentActor() {
 }
 
 export const callCenterService = {
+  async refreshConfirmationQueue(daysAhead = 3): Promise<number> {
+    const { data, error } = await supabase.rpc("refresh_confirmation_queue_secure", { p_days_ahead: daysAhead });
+    if (error) throw new Error(`Erro ao atualizar fila de confirmação: ${error.message}`);
+    return Number(data || 0);
+  },
+
+  async listConfirmationQueue(): Promise<ConfirmationQueueItem[]> {
+    const { data, error } = await supabase.from("scheduling_confirmation_queue").select("*").in("status", ["pending", "contacting", "no_response"]).order("due_at").limit(300);
+    if (error) throw new Error(`Erro ao listar confirmações: ${error.message}`);
+    const rows = (data || []) as ConfirmationQueueItem[];
+    const ids = [...new Set(rows.map((row) => row.patient_id).filter(Boolean))] as number[];
+    const patients = ids.length ? await supabase.from("patients").select("id, full_name, phone").in("id", ids) : { data: [] as any[] };
+    const map = new Map((patients.data || []).map((row: any) => [Number(row.id), row]));
+    return rows.map((row) => ({ ...row, patient_name: row.patient_id ? map.get(Number(row.patient_id))?.full_name : undefined, patient_phone: row.patient_id ? map.get(Number(row.patient_id))?.phone : undefined }));
+  },
+
+  async recordConfirmation(id: number, outcome: "confirmed" | "cancelled" | "no_answer" | "message_sent" | "invalid_number" | "callback_requested", notes?: string): Promise<void> {
+    const { error } = await supabase.rpc("record_confirmation_attempt_secure", { p_queue_id: id, p_channel: "telefone", p_outcome: outcome, p_notes: notes || null });
+    if (error) throw new Error(`Erro ao registrar confirmação: ${error.message}`);
+  },
+
   async listContacts(limit = 100): Promise<CallCenterContactLog[]> {
     const { data, error } = await supabase
       .from("scheduling_contact_logs")
