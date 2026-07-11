@@ -47,14 +47,20 @@ function signJwt(payload) {
 
 function verifyJwt(token) {
   try {
+    if (typeof token !== 'string') return null;
     const [header, body, sig] = token.split('.');
+    if (!header || !body || !sig) return null;
+    const parsedHeader = JSON.parse(Buffer.from(header, 'base64url').toString());
+    if (parsedHeader.alg !== 'HS256' || parsedHeader.typ !== 'JWT') return null;
     const expected = createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
     const actualBuffer = Buffer.from(sig || '', 'utf8');
     const expectedBuffer = Buffer.from(expected, 'utf8');
     if (actualBuffer.length !== expectedBuffer.length || !timingSafeEqual(actualBuffer, expectedBuffer)) return null;
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString());
-    // SEGURANÃ‡A: rejeita token expirado
-    if (payload.exp && Date.now() / 1000 > payload.exp) return null;
+    if (typeof payload.sub !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.sub)) return null;
+    if (payload.aud !== 'authenticated') return null;
+    if (!Number.isFinite(payload.exp) || Date.now() / 1000 >= payload.exp) return null;
+    if (!Number.isFinite(payload.iat) || payload.iat > Date.now() / 1000 + 60) return null;
     return payload;
   } catch { return null; }
 }
@@ -89,6 +95,11 @@ async function getUserProfile(userId) {
 // AUTORIZAÃ‡ÃƒO SERVER-SIDE (RBAC por role Ã— mÃ³dulo Ã— aÃ§Ã£o)
 // Mapeia tabela fÃ­sica â†’ mÃ³dulo lÃ³gico da matriz role_permissions.
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const REFERENCE_TABLES = new Set([
+  'bairros', 'cbos', 'cids', 'cid', 'municipios', 'profissoes',
+  'countries', 'states', 'racas', 'etnias', 'nacionalidades',
+]);
+
 function tableToModule(table) {
   const t = table.toLowerCase();
   // match por prefixo/nome exato
@@ -124,7 +135,7 @@ function tableToModule(table) {
     [/^whatsapp|^notification|^pre_cadastro/, 'recepcao'],
   ];
   for (const [re, mod] of map) if (re.test(t)) return mod;
-  return null; // tabela de referÃªncia (bairros, cbos, municipios...) â†’ liberada p/ leitura
+  return REFERENCE_TABLES.has(t) ? null : '__unmapped__';
 }
 
 const METHOD_TO_ACTION = { GET: 'can_view', HEAD: 'can_view', POST: 'can_create', PATCH: 'can_edit', PUT: 'can_edit', DELETE: 'can_delete' };
@@ -178,6 +189,9 @@ async function authorize(profile, table, method) {
   const role = (profile.role_name || '').toLowerCase();
   if (role === 'admin') return { ok: true };
   const module = tableToModule(table);
+  if (module === '__unmapped__') {
+    return { ok: false, reason: `tabela '${table}' nao esta explicitamente autorizada` };
+  }
   if (module === null) {
     // tabelas de referÃªncia: leitura liberada, escrita sÃ³ admin (jÃ¡ retornou acima)
     return METHOD_TO_ACTION[method] === 'can_view' ? { ok: true } : { ok: false, reason: 'escrita em tabela de referÃªncia exige admin' };
@@ -454,7 +468,13 @@ const server = createServer(async (req, res) => {
       const auth = req.headers.authorization?.replace('Bearer ', '');
       const payload = verifyJwt(auth);
       if (!payload) return json(res, { error: 'unauthorized' }, 401);
-      const userRes = await pool.query('SELECT * FROM auth.users WHERE id = $1', [payload.sub]);
+      const userRes = await pool.query(
+        `SELECT u.*
+           FROM auth.users u
+           JOIN public.user_profiles p ON p.id = u.id
+          WHERE u.id = $1 AND p.lg_ativo IS TRUE`,
+        [payload.sub],
+      );
       if (userRes.rows.length === 0) return json(res, { error: 'user not found' }, 404);
       const u = userRes.rows[0];
       return json(res, {
