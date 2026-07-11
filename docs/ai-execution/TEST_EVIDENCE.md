@@ -7,6 +7,7 @@
 - Lint: 0 erros e 430 warnings.
 - Sintaxe do backend: `node --check local-auth-server.mjs` aprovado.
 - Testes de invariantes de seguranca: 5 aprovados.
+- Healthcheck local: PostgreSQL respondeu; auth em `127.0.0.1:8000` indisponivel. A execucao direta do Node retornou `EPERM` no caminho Windows com espaco dentro deste sandbox.
 
 ## Evidencia VPS registrada pelo usuario
 

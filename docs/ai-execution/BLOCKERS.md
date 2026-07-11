@@ -6,6 +6,7 @@
 2. O CI precisa ser revalidado apos deixar falhas de migracao em modo fail-closed.
 3. A reconciliacao TISS depende de credenciais DataSIGH fornecidas em ambiente seguro e com grants somente leitura verificaveis.
 4. A VPS nao pode ser operada diretamente por esta sessao; os comandos SSH/deploy precisam ser executados no PowerShell do usuario.
+5. O healthcheck local encontrou PostgreSQL ativo, mas o processo Node do auth nao abriu a porta 8000 neste ambiente; a execucao direta retornou `EPERM` ao resolver `C:\Users\Meu Computador`. Validar no PowerShell fora do sandbox.
 
 ## P1
 
