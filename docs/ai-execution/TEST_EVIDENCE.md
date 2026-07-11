@@ -2,7 +2,7 @@
 
 ## Ultima evidencia local registrada
 
-- Testes: 32 arquivos, 445 testes aprovados.
+- Testes: 32 arquivos, 446 testes aprovados.
 - Build: aprovado pelo `tsc -b` e `vite build`.
 - Lint: 0 erros e 430 warnings.
 - Sintaxe do backend: `node --check local-auth-server.mjs` aprovado.
