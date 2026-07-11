@@ -21,6 +21,13 @@ import { friendlyError } from "@/utils/friendlyError";
 
 const weekDays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
+function localDateKey(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 // Convert DB appointment to display format
 function toDisplayAppointment(
   db: DbAppointment,
@@ -82,7 +89,7 @@ export default function SchedulePage() {
   const [units, setUnits] = useState<Array<{ id: string; name: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [selectedDate, setSelectedDate] = useState(() => localDateKey());
   const [view, setView] = useState<"day" | "week">("day");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [encaixeOpen, setEncaixeOpen] = useState(false);
@@ -398,7 +405,7 @@ export default function SchedulePage() {
             variant="ghost"
             size="sm"
             className="text-xs"
-            onClick={() => setSelectedDate(new Date().toISOString().split("T")[0])}
+            onClick={() => setSelectedDate(localDateKey())}
             aria-label="Ir para hoje"
           >
             Hoje
@@ -457,7 +464,7 @@ export default function SchedulePage() {
           {getWeekDates().map((date, i) => {
             const dayApps = appointments.filter((a) => a.date === date);
             const isSelected = date === selectedDate;
-            const isToday = date === new Date().toISOString().split("T")[0];
+            const isToday = date === localDateKey();
             const waiting = dayApps.filter((a) => a.status === "waiting").length;
             return (
               <Card

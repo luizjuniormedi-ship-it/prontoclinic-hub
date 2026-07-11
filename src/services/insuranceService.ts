@@ -114,7 +114,7 @@ export const insuranceCompanyService = {
   async getAll(): Promise<InsuranceCompany[]> {
     const { data, error } = await supabase
       .from("insurance_companies")
-      .select("*, payment_source:payment_sources(name, type)")
+      .select("*")
       .eq("lg_ativo", true)
       .order("name");
     if (error) throw new Error(`Erro ao listar convenios: ${error.message}`);

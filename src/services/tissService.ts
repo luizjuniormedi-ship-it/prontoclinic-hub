@@ -199,13 +199,19 @@ export const tissService = {
   ): Promise<TissXml[]> {
     let q = supabase
       .from("tiss_xml")
-      .select("*, insurance_companies(name, registro_ans)")
+      .select("*")
       .eq("company_id", companyId)
       .eq("lg_deletado", false)
       .order("dt_fatura", { ascending: false });
     if (filters?.status) q = q.eq("status", filters.status);
     if (filters?.cd_convenio) q = q.eq("cd_convenio", filters.cd_convenio);
-    if (filters?.mes) q = q.eq("dt_fatura", `${filters.ano}-${String(filters.mes).padStart(2, "0")}-01`);
+    if (filters?.mes && filters?.ano) {
+      const month = String(filters.mes).padStart(2, "0");
+      const lastDay = String(new Date(filters.ano, filters.mes, 0).getDate()).padStart(2, "0");
+      q = q
+        .gte("dt_fatura", `${filters.ano}-${month}-01`)
+        .lte("dt_fatura", `${filters.ano}-${month}-${lastDay}`);
+    }
     if (filters?.ano && !filters?.mes) {
       q = q.gte("dt_fatura", `${filters.ano}-01-01`).lte("dt_fatura", `${filters.ano}-12-31`);
     }
