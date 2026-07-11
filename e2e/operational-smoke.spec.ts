@@ -13,6 +13,7 @@ const criticalRoutes = [
   { path: '/professional-payment', name: 'Repasse medico' },
   { path: '/admin/users', name: 'Usuarios' },
   { path: '/admin/insurances', name: 'Convenios' },
+  { path: '/admin/tiss', name: 'TISS' },
   { path: '/admin/price-tables', name: 'Tabelas de preco' },
   { path: '/lab', name: 'Laboratorio' },
 ];
