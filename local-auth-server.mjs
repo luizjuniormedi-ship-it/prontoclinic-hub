@@ -9,7 +9,7 @@
  * Roda em http://localhost:8000
  */
 import { createServer } from 'http';
-import { createHash, randomUUID } from 'crypto';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import pg from 'pg';
 const { Pool } = pg;
 
@@ -38,8 +38,6 @@ function base64url(str) {
   return Buffer.from(str).toString('base64url');
 }
 
-import { createHmac } from 'crypto';
-
 function signJwt(payload) {
   const header = base64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const body = base64url(JSON.stringify(payload));
@@ -51,7 +49,9 @@ function verifyJwt(token) {
   try {
     const [header, body, sig] = token.split('.');
     const expected = createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
-    if (sig !== expected) return null;
+    const actualBuffer = Buffer.from(sig || '', 'utf8');
+    const expectedBuffer = Buffer.from(expected, 'utf8');
+    if (actualBuffer.length !== expectedBuffer.length || !timingSafeEqual(actualBuffer, expectedBuffer)) return null;
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString());
     // SEGURANÃ‡A: rejeita token expirado
     if (payload.exp && Date.now() / 1000 > payload.exp) return null;
@@ -229,13 +229,26 @@ async function authorizeRpc(profile, functionName) {
   return { ok: true };
 }
 
+const configuredOrigins = new Set(
+  (process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
+
 function cors(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  // Reflete QUALQUER header que o cliente pedir (wildcard CORS)
-  const requestedHeaders = req.headers['access-control-request-headers'] || '*';
-  res.setHeader('Access-Control-Allow-Headers', requestedHeaders);
+  const origin = req.headers.origin;
+  const host = req.headers.host;
+  const sameOrigin = !origin || origin === `http://${host}` || origin === `https://${host}`;
+  if (!sameOrigin && !configuredOrigins.has(origin)) return false;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
+  res.setHeader('Access-Control-Allow-Headers', 'authorization, apikey, content-type, prefer, range, x-client-info');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Expose-Headers', 'content-range');
+  return true;
 }
 
 function json(res, data, status = 200) {
@@ -263,8 +276,43 @@ function parseBody(req, maxBytes = 1024 * 1024) {
   });
 }
 
+const loginAttempts = new Map();
+const LOGIN_MAX_ATTEMPTS = Number(process.env.LOGIN_MAX_ATTEMPTS || 5);
+const LOGIN_WINDOW_MS = Number(process.env.LOGIN_WINDOW_MS || 15 * 60 * 1000);
+const LOGIN_BLOCK_MS = Number(process.env.LOGIN_BLOCK_MS || 15 * 60 * 1000);
+
+function loginAttemptKey(req, email) {
+  const forwarded = process.env.TRUST_PROXY === 'true' ? req.headers['x-forwarded-for'] : null;
+  const ip = String(forwarded || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
+  return `${ip}:${String(email || '').trim().toLowerCase()}`;
+}
+
+function loginBlocked(key, now = Date.now()) {
+  const attempt = loginAttempts.get(key);
+  if (!attempt) return false;
+  if (attempt.blockedUntil > now) return true;
+  if (now - attempt.firstAttempt > LOGIN_WINDOW_MS) loginAttempts.delete(key);
+  return false;
+}
+
+function recordLoginFailure(key, now = Date.now()) {
+  const previous = loginAttempts.get(key);
+  const attempt = !previous || now - previous.firstAttempt > LOGIN_WINDOW_MS
+    ? { count: 0, firstAttempt: now, blockedUntil: 0 }
+    : previous;
+  attempt.count += 1;
+  if (attempt.count >= LOGIN_MAX_ATTEMPTS) attempt.blockedUntil = now + LOGIN_BLOCK_MS;
+  loginAttempts.set(key, attempt);
+  if (loginAttempts.size > 10000) {
+    for (const [entryKey, entry] of loginAttempts) {
+      if (entry.blockedUntil <= now && now - entry.firstAttempt > LOGIN_WINDOW_MS) loginAttempts.delete(entryKey);
+    }
+  }
+}
+
 const server = createServer(async (req, res) => {
-  cors(req, res);
+  const corsAllowed = cors(req, res);
+  if (!corsAllowed) return json(res, { error: 'forbidden_origin' }, 403);
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
@@ -356,10 +404,16 @@ const server = createServer(async (req, res) => {
     // â”€â”€â”€ AUTH: Login â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (path === '/auth/v1/token' && req.method === 'POST') {
       const body = await parseBody(req);
+      const attemptKey = loginAttemptKey(req, body.email);
+      if (loginBlocked(attemptKey)) {
+        return json(res, { error: 'rate_limit', error_description: 'Too many login attempts' }, 429);
+      }
       const user = await verifyPassword(body.email, body.password);
       if (!user) {
+        recordLoginFailure(attemptKey);
         return json(res, { error: 'invalid_grant', error_description: 'Invalid login credentials' }, 400);
       }
+      loginAttempts.delete(attemptKey);
       const now = Math.floor(Date.now() / 1000);
       const accessToken = signJwt({
         sub: user.id,

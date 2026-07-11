@@ -29,4 +29,12 @@ describe("local auth server security invariants", () => {
     expect(source).toContain("request body excede o limite de 1 MB");
     expect(source).toContain("WHERE user_id = $1 AND revoked = false");
   });
+
+  it("restringe origem, compara JWT em tempo constante e limita tentativas", () => {
+    expect(source).toContain("timingSafeEqual(actualBuffer, expectedBuffer)");
+    expect(source).toContain("CORS_ALLOWED_ORIGINS");
+    expect(source).not.toContain("Access-Control-Allow-Origin', '*'");
+    expect(source).toContain("LOGIN_MAX_ATTEMPTS");
+    expect(source).toContain("Too many login attempts");
+  });
 });
