@@ -37,4 +37,10 @@ describe("local auth server security invariants", () => {
     expect(source).toContain("LOGIN_MAX_ATTEMPTS");
     expect(source).toContain("Too many login attempts");
   });
+
+  it("nao concede bypass total a cargos administrativos secundarios", () => {
+    expect(source).toContain("if (role === 'admin') return { ok: true };");
+    expect(source).not.toContain("role === 'admin' || role === 'adm_medicos'");
+    expect(source).not.toContain("role === 'admin' || role === 'diretoria'");
+  });
 });

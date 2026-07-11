@@ -171,12 +171,12 @@ async function loadRolePerms(role) {
   return m;
 }
 
-/** Retorna {ok:true} ou {ok:false, reason}. admin tem bypass total. */
+/** Retorna {ok:true} ou {ok:false, reason}. Somente admin tem bypass total. */
 async function authorize(profile, table, method) {
   if (!profile) return { ok: false, reason: 'sem perfil' };
   if (!profile.lg_ativo) return { ok: false, reason: 'usuÃ¡rio inativo' };
   const role = (profile.role_name || '').toLowerCase();
-  if (role === 'admin' || role === 'adm_medicos' || role === 'diretoria' || role === 'administracao') return { ok: true };
+  if (role === 'admin') return { ok: true };
   const module = tableToModule(table);
   if (module === null) {
     // tabelas de referÃªncia: leitura liberada, escrita sÃ³ admin (jÃ¡ retornou acima)
@@ -217,7 +217,7 @@ async function authorizeRpc(profile, functionName) {
   if (!profile || !profile.lg_ativo) return { ok: false, reason: 'usuario invalido/inativo' };
 
   const role = (profile.role_name || '').toLowerCase();
-  if (role === 'admin' || role === 'adm_medicos' || role === 'diretoria' || role === 'administracao') {
+  if (role === 'admin') {
     return { ok: true };
   }
 
