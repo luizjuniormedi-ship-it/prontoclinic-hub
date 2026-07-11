@@ -14,8 +14,6 @@ name: Deploy ProntoClinic Hub to Vercel
 #   VITE_RESEND_API_KEY (opcional).
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       environment:
@@ -75,10 +73,10 @@ jobs:
         run: npm run icons
 
       - name: Type check
-        run: npm run type-check || npx tsc --noEmit
+        run: npm run type-check
 
       - name: Lint
-        run: npm run lint || true
+        run: npm run lint
 
       - name: Build SPA
         run: npm run build

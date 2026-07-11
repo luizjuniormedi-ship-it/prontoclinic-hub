@@ -17,7 +17,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:15
+        image: postgres:18
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -44,27 +44,16 @@ jobs:
       - name: Apply database migrations
         run: |
           DATABASE_URL=postgresql://postgres:postgres@localhost:54322/postgres
-          export PGPASSWORD=<DEFINIR_FORA_DO_GIT>
+          export PGPASSWORD=postgres
           for f in supabase/migrations/*.sql; do
             echo "Applying $f..."
-            psql -h localhost -U postgres -d postgres -f "$f" || echo "Migration $f failed - continuing"
+            psql -v ON_ERROR_STOP=1 -1 -h localhost -U postgres -d postgres -f "$f"
           done
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:54322/postgres
 
-      - name: Reset Supabase staging database (legacy)
-        run: |
-          echo "Resetando banco de staging (idempotente)..."
-          curl -X POST \
-            "${VITE_SUPABASE_URL}/rest/v1/rpc/reset_e2e_data" \
-            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
-            -H "Content-Type: application/json" \
-            -d '{}' || echo "RPC reset_e2e_data indisponÃ­vel â€” seguindo"
-        continue-on-error: true
-
       - name: Type check
-        run: npm run type-check || npx tsc --noEmit
+        run: npm run type-check
 
       - name: Lint
         run: npm run lint
@@ -120,6 +109,6 @@ jobs:
         if: always()
         run: |
           if [ -f test-results/results.json ]; then
-            node scripts/check-a11y-violations.mjs || echo "Script opcional nÃ£o implementado"
+            test -f scripts/check-a11y-violations.mjs
+            node scripts/check-a11y-violations.mjs
           fi
-        continue-on-error: true

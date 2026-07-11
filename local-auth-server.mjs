@@ -132,6 +132,31 @@ const IDENT = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 const isIdentifier = (value) => IDENT.test(value);
 const quoteIdent = (value) => `"${value}"`;
 
+const companyScopedTableCache = new Map();
+async function tableHasCompanyId(table) {
+  if (companyScopedTableCache.has(table)) return companyScopedTableCache.get(table);
+  const result = await pool.query(
+    `SELECT EXISTS (
+       SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = $1 AND column_name = 'company_id'
+     ) AS scoped`,
+    [table],
+  );
+  const scoped = result.rows[0]?.scoped === true;
+  companyScopedTableCache.set(table, scoped);
+  return scoped;
+}
+
+async function requiredCompanyScope(profile, table) {
+  if (!(await tableHasCompanyId(table))) return null;
+  if (!profile?.company_id) {
+    const error = new Error(`perfil sem company_id para acessar tabela '${table}'`);
+    error.statusCode = 403;
+    throw error;
+  }
+  return profile.company_id;
+}
+
 // cache de permissÃµes por role (evita query a cada request)
 const permCache = new Map();
 async function loadRolePerms(role) {
@@ -188,7 +213,7 @@ const RPC_PERMISSIONS = {
 
 async function authorizeRpc(profile, functionName) {
   const required = RPC_PERMISSIONS[functionName];
-  if (!required) return { ok: true };
+  if (!required) return { ok: false, reason: `RPC '${functionName}' nao autorizada` };
   if (!profile || !profile.lg_ativo) return { ok: false, reason: 'usuario invalido/inativo' };
 
   const role = (profile.role_name || '').toLowerCase();
@@ -218,10 +243,20 @@ function json(res, data, status = 200) {
   res.end(JSON.stringify(data));
 }
 
-function parseBody(req) {
-  return new Promise((resolve) => {
+function parseBody(req, maxBytes = 1024 * 1024) {
+  return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', c => body += c);
+    let size = 0;
+    req.on('data', c => {
+      size += c.length;
+      if (size > maxBytes) {
+        const error = new Error('request body excede o limite de 1 MB');
+        error.statusCode = 413;
+        reject(error);
+        return;
+      }
+      body += c;
+    });
     req.on('end', () => {
       try { resolve(JSON.parse(body)); } catch { resolve({}); }
     });
@@ -248,7 +283,10 @@ const server = createServer(async (req, res) => {
     const hDecision = await authorize(hProfile, table, 'GET');
     if (!hDecision.ok) { res.writeHead(403); res.end(); return; }
     try {
-      const countResult = await pool.query(`SELECT count(*) FROM public."${table}"`);
+      const hCompanyId = await requiredCompanyScope(hProfile, table);
+      const countResult = hCompanyId
+        ? await pool.query(`SELECT count(*) FROM public."${table}" WHERE company_id = $1`, [hCompanyId])
+        : await pool.query(`SELECT count(*) FROM public."${table}"`);
       const total = countResult.rows[0].count;
       res.writeHead(200, { 'content-range': `0-0/${total}` });
     } catch {
@@ -266,27 +304,53 @@ const server = createServer(async (req, res) => {
       if (!tokenValue) {
         return json(res, { error: 'refresh_token is required' }, 400);
       }
-      const rt = await pool.query(
-        'SELECT user_id FROM auth.refresh_tokens WHERE token = $1 AND revoked = false',
-        [tokenValue]
-      );
-      if (rt.rows.length === 0) {
-        // Token invalido - retornar 401 pra forcar re-login
-        return json(res, { error: 'invalid refresh token', error_description: 'Token expired or revoked' }, 401);
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const rt = await client.query(
+          `UPDATE auth.refresh_tokens
+              SET revoked = true, updated_at = now()
+            WHERE token = $1 AND revoked = false
+          RETURNING user_id`,
+          [tokenValue],
+        );
+        if (rt.rows.length === 0) {
+          await client.query('ROLLBACK');
+          return json(res, { error: 'invalid refresh token', error_description: 'Token expired or revoked' }, 401);
+        }
+        const userRes = await client.query(
+          `SELECT u.*
+             FROM auth.users u
+             JOIN public.user_profiles p ON p.id = u.id
+            WHERE u.id = $1 AND p.lg_ativo IS TRUE`,
+          [rt.rows[0].user_id],
+        );
+        if (userRes.rows.length === 0) {
+          await client.query('ROLLBACK');
+          return json(res, { error: 'invalid refresh token', error_description: 'User inactive or missing' }, 401);
+        }
+        const u = userRes.rows[0];
+        const now = Math.floor(Date.now() / 1000);
+        const accessToken = signJwt({ sub: u.id, email: u.email, role: 'authenticated', aud: 'authenticated', iat: now, exp: now + 3600, app_metadata: u.raw_app_meta_data, user_metadata: u.raw_user_meta_data });
+        const newRefreshToken = randomUUID();
+        await client.query(
+          'INSERT INTO auth.refresh_tokens (token, user_id, parent) VALUES ($1, $2, $3)',
+          [newRefreshToken, u.id, tokenValue],
+        );
+        await client.query('COMMIT');
+        return json(res, {
+          access_token: accessToken,
+          token_type: 'bearer',
+          expires_in: 3600,
+          refresh_token: newRefreshToken,
+          user: { id: u.id, aud: 'authenticated', role: 'authenticated', email: u.email, email_confirmed_at: u.email_confirmed_at, app_metadata: u.raw_app_meta_data, user_metadata: u.raw_user_meta_data }
+        });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
       }
-      const userRes = await pool.query('SELECT * FROM auth.users WHERE id = $1', [rt.rows[0].user_id]);
-      const u = userRes.rows[0];
-      const now = Math.floor(Date.now() / 1000);
-      const accessToken = signJwt({ sub: u.id, email: u.email, role: 'authenticated', aud: 'authenticated', iat: now, exp: now + 3600, app_metadata: u.raw_app_meta_data, user_metadata: u.raw_user_meta_data });
-      const newRefreshToken = randomUUID();
-      await pool.query('INSERT INTO auth.refresh_tokens (token, user_id) VALUES ($1, $2)', [newRefreshToken, u.id]);
-      return json(res, {
-        access_token: accessToken,
-        token_type: 'bearer',
-        expires_in: 3600,
-        refresh_token: newRefreshToken,
-        user: { id: u.id, aud: 'authenticated', role: 'authenticated', email: u.email, email_confirmed_at: u.email_confirmed_at, app_metadata: u.raw_app_meta_data, user_metadata: u.raw_user_meta_data }
-      });
     }
 
     // â”€â”€â”€ AUTH: Login â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -350,6 +414,14 @@ const server = createServer(async (req, res) => {
 
     // â”€â”€â”€ AUTH: Logout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (path === '/auth/v1/logout' && req.method === 'POST') {
+      const token = req.headers.authorization?.replace('Bearer ', '');
+      const payload = verifyJwt(token);
+      if (payload?.sub) {
+        await pool.query(
+          'UPDATE auth.refresh_tokens SET revoked = true, updated_at = now() WHERE user_id = $1 AND revoked = false',
+          [payload.sub],
+        );
+      }
       return json(res, {});
     }
 
@@ -429,6 +501,7 @@ const server = createServer(async (req, res) => {
         url.searchParams.get('id') === `eq.${payload.sub}`;
       const decision = isSelfProfileRead ? { ok: true } : await authorize(profile, table, req.method);
       if (!decision.ok) return json(res, { error: 'forbidden', message: decision.reason }, 403);
+      const companyId = await requiredCompanyScope(profile, table);
 
       if (req.method === 'GET') {
         // Parse select columns (strip embedded relations like "payment_source:payment_sources(name,type)")
@@ -454,6 +527,12 @@ const server = createServer(async (req, res) => {
         const conditions = [];
         const values = [];
         let paramIdx = 1;
+
+        if (companyId) {
+          conditions.push(`"company_id" = $${paramIdx}`);
+          values.push(companyId);
+          paramIdx++;
+        }
 
         // Parse PostgREST filters (eq, neq, gt, gte, lt, lte, like, ilike, is, or, in)
         const IDENT_COL = IDENT;
@@ -609,6 +688,12 @@ const server = createServer(async (req, res) => {
 
       if (req.method === 'POST') {
         const body = await parseBody(req);
+        if (companyId) {
+          if (body.company_id && body.company_id !== companyId) {
+            return json(res, { error: 'forbidden', message: 'company_id nao pertence ao perfil autenticado' }, 403);
+          }
+          body.company_id = companyId;
+        }
         const keys = Object.keys(body);
         if (keys.length === 0) return json(res, { error: 'bad_request', message: 'body vazio' }, 400);
         for (const key of keys) {
@@ -651,8 +736,8 @@ const server = createServer(async (req, res) => {
         if (!id) return json(res, { error: 'id required for PATCH' }, 400);
         try {
           const result = await pool.query(
-            `UPDATE public."${table}" SET ${setClause} WHERE id = $${keys.length + 1} RETURNING *`,
-            [...vals, id]
+            `UPDATE public."${table}" SET ${setClause} WHERE id = $${keys.length + 1}${companyId ? ` AND company_id = $${keys.length + 2}` : ''} RETURNING *`,
+            companyId ? [...vals, id, companyId] : [...vals, id]
           );
           return json(res, result.rows[0] || {});
         } catch (e) {
@@ -666,7 +751,7 @@ const server = createServer(async (req, res) => {
 
   } catch (err) {
     console.error('[ERROR]', err);
-    json(res, { error: err.message }, 500);
+    json(res, { error: err.message }, err.statusCode || 500);
   }
 });
 

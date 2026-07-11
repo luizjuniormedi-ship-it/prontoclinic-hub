@@ -56,7 +56,8 @@
     "local:stop": "powershell -ExecutionPolicy Bypass -File scripts/stop-local.ps1",
     "local:health": "powershell -ExecutionPolicy Bypass -File scripts/health-local.ps1",
     "secret:scan": "powershell -ExecutionPolicy Bypass -File scripts/secret-scan.ps1",
-    "secret:scan:staged": "powershell -ExecutionPolicy Bypass -File scripts/secret-scan.ps1 --staged"
+    "secret:scan:staged": "powershell -ExecutionPolicy Bypass -File scripts/secret-scan.ps1 --staged",
+    "validate": "npm run lint && npm run type-check && npm run test && npm run build && npm run secret:scan"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

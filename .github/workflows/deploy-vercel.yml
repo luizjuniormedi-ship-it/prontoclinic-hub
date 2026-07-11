@@ -6,8 +6,6 @@
 # pode ser removido em favor do workflow nativo do Vercel.
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
