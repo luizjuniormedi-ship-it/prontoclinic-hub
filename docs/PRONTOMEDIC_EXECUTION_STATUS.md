@@ -4,7 +4,7 @@ Atualizado em: 2026-07-10
 
 | Modulo | Situacao inicial | Status | Evidencia | Bloqueio/proximo passo |
 |---|---|---|---|---|
-| Infraestrutura e deploy | VPS instalada; deploy manual e correcoes parciais | EM CORRECAO | Scripts de backup/deploy/healthcheck | Executar release corrigida e provar rollback |
+| Infraestrutura e deploy | VPS instalada; release corrigida publicada | EM TESTE | Backup `20260710-220428`, release `/var/www/prontomedic/releases/20260710-220428`, Nginx valido | Executar healthcheck pos-release e provar rollback |
 | Banco e migrations | PostgreSQL 18 com dados migrados | EM AUDITORIA | Dumps e auditorias de contagem | Validar migrations limpa/com dados e integridade por chave |
 | Autenticacao | Login funcional apos recuperacao de JWT | EM CORRECAO | Rotacao/logout endurecidos; 4 testes de invariantes | Testar expiracao, bloqueio, recuperacao e concorrencia |
 | RBAC/multiempresa | API nao aplicava escopo empresarial | EM CORRECAO | Escopo `company_id` e RPC fail-closed implementados | Executar integracao negativa com duas empresas/unidades |
@@ -29,6 +29,8 @@ Atualizado em: 2026-07-10
 - Criada auditoria inicial e status de execucao.
 - Suite atual: 445 testes aprovados; build de producao aprovado.
 - CI endurecido: PostgreSQL 18, migrations bloqueantes e deploys legados manuais.
+- Deploy da fase 1 executado na VPS: backup, build, migrations, contagens e Nginx aprovados.
+- Falha residual apenas no wrapper PowerShell por conversao de `\r`; corrigida usando `scp` + `bash` remoto.
 
 ## Regras de atualizacao
 
