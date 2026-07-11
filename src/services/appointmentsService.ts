@@ -58,6 +58,8 @@ export interface DbAppointment {
   professional_id: string | null;
   specialty_id: string | null;
   service_id: string | null;
+  insurance_company_id?: number | null;
+  insurance_plan_id?: number | null;
   appointment_type_id: string | null;
   appointment_date: string;
   start_time: string;

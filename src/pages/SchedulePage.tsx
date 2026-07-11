@@ -157,11 +157,11 @@ export default function SchedulePage() {
     if (patientIds.length > 0) {
       const { data: pats } = await supabase
         .from("patients")
-        .select("id, full_name, cpf, birth_date, phone, email, sex, insurance_plan_id, insurance_card_number, allergies, clinical_alerts, created_at, updated_at")
+        .select("id, full_name, cpf, birth_date, phone, email, sex, insurance_company_id, insurance_plan_id, insurance_card_number, allergies, clinical_alerts, created_at, updated_at")
         .in("id", patientIds);
 
       // Load insurance names for display
-      const insuranceIds = [...new Set((pats || []).map((p: any) => p.insurance_plan_id).filter(Boolean))];
+        const insuranceIds = [...new Set((pats || []).map((p: PatientDbRow) => p.insurance_company_id).filter(Boolean))];
       let insuranceMap: Record<string, string> = {};
       if (insuranceIds.length > 0) {
         const { data: insurances } = await supabase
@@ -175,7 +175,7 @@ export default function SchedulePage() {
       setPatients((pats || []).map((row: PatientDbRow) => ({
         id: String(row.id), companyId: undefined, name: row.full_name || "", cpf: row.cpf || "",
         birthDate: row.birth_date || "", phone: row.phone || "", email: row.email || "",
-        gender: row.sex || "O", healthInsurance: row.insurance_plan_id ? (insuranceMap[String(row.insurance_plan_id)] || "Convênio #" + row.insurance_plan_id) : undefined, healthInsuranceNumber: row.insurance_card_number ?? undefined,
+         gender: row.sex || "O", healthInsurance: row.insurance_company_id ? (insuranceMap[String(row.insurance_company_id)] || "Convênio #" + row.insurance_company_id) : undefined, healthInsuranceNumber: row.insurance_card_number ?? undefined,
         allergies: row.allergies ?? undefined, clinicalAlerts: row.clinical_alerts ?? undefined,
         createdAt: row.created_at || "", updatedAt: row.updated_at || "",
       })) as Patient[]);
@@ -213,7 +213,7 @@ export default function SchedulePage() {
     dbAppointments.map((db) => {
       const appt = toDisplayAppointment(db, patients, professionals, specialties, appointmentTypes);
       // Resolve insurance name from appointment's insurance_company_id
-      const icId = (db as any).insurance_company_id;
+       const icId = db.insurance_company_id;
       if (icId && insuranceNames[String(icId)]) {
         (appt as any).insuranceName = insuranceNames[String(icId)];
       }

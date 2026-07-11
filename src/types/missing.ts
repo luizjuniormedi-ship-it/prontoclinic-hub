@@ -42,6 +42,7 @@ export interface PatientDbRow {
   sex: "F" | "M" | "O" | null;
   lg_ativo?: boolean;
   company_id?: string;
+  insurance_company_id?: string | number | null;
   insurance_plan_id?: string | number | null;
   insurance_card_number?: string | null;
   allergies?: string | null;
