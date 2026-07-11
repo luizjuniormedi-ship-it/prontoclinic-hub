@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Local Auth Server â€” substitui GoTrue/Supabase Cloud
  * Simula os endpoints que o supabase-js usa:
  *   POST /auth/v1/token?grant_type=password
@@ -14,7 +14,10 @@ import pg from 'pg';
 const { Pool } = pg;
 
 const PORT = Number(process.env.LOCAL_AUTH_PORT || 8000);
-const JWT_SECRET =<DEFINIR_FORA_DO_GIT>
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET || JWT_SECRET.length < 32) {
+  throw new Error('JWT_SECRET obrigatorio e deve ter pelo menos 32 caracteres');
+}
 
 // Fix: pg retorna Date objects pra colunas 'date' â€” forÃ§ar string YYYY-MM-DD
 const types = pg.types;
