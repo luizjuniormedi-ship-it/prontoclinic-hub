@@ -284,12 +284,14 @@ BEGIN
       );
     END IF;
 
-    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', 'authenticated_company_read_' || tbl, tbl);
-    EXECUTE format(
-      'CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid()))',
-      'authenticated_company_read_' || tbl,
-      tbl
-    );
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+      EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', 'authenticated_company_read_' || tbl, tbl);
+      EXECUTE format(
+        'CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid()))',
+        'authenticated_company_read_' || tbl,
+        tbl
+      );
+    END IF;
   END LOOP;
 
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_prontomedic') THEN
