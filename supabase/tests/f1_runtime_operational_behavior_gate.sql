@@ -172,7 +172,7 @@ BEGIN
 END
 $f1$;
 
-PERFORM set_config('app.test_user_id', '44444444-4444-4444-8444-444444444444', true);
+SELECT set_config('app.test_user_id', '44444444-4444-4444-8444-444444444444', true);
 DO $f1$
 DECLARE
   v_auth public.reception_authorizations;
