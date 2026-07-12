@@ -40,12 +40,13 @@ CREATE TRIGGER trg_reception_checkins_updated_at BEFORE UPDATE ON public.recepti
 
 CREATE OR REPLACE FUNCTION public.get_reception_checkin_readiness(p_appointment_id BIGINT)
 RETURNS JSONB LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=public,pg_temp AS $$
-DECLARE v_a appointments;v_p patients;v_issues JSONB:='[]'::JSONB;v_auth BOOLEAN:=FALSE;v_doc BOOLEAN:=FALSE;
+DECLARE v_a appointments;v_p patients;v_a_json JSONB;v_p_json JSONB;v_issues JSONB:='[]'::JSONB;v_auth BOOLEAN:=FALSE;v_doc BOOLEAN:=FALSE;
 BEGIN
  SELECT * INTO v_a FROM appointments WHERE id=p_appointment_id;IF NOT FOUND THEN RAISE EXCEPTION 'Agendamento nao encontrado';END IF;
  SELECT * INTO v_p FROM patients WHERE id=v_a.patient_id;IF NOT FOUND THEN RAISE EXCEPTION 'Paciente nao encontrado';END IF;
- IF NULLIF(trim(COALESCE(v_p.full_name,'')),'') IS NULL OR v_p.birth_date IS NULL THEN v_issues:=v_issues||jsonb_build_array(jsonb_build_object('type','registration','severity','blocking','description','Cadastro minimo incompleto'));v_doc:=TRUE;END IF;
- IF v_a.insurance_company_id IS NOT NULL AND NULLIF(trim(COALESCE(v_a.ds_matricula,v_p.insurance_card_number,v_p.ds_matricula,'')),'') IS NULL THEN v_issues:=v_issues||jsonb_build_array(jsonb_build_object('type','insurance_card','severity','blocking','description','Carteirinha/matricula ausente'));END IF;
+ v_a_json:=to_jsonb(v_a);v_p_json:=to_jsonb(v_p);
+ IF NULLIF(trim(COALESCE(v_p_json->>'full_name','')),'') IS NULL OR NULLIF(v_p_json->>'birth_date','') IS NULL THEN v_issues:=v_issues||jsonb_build_array(jsonb_build_object('type','registration','severity','blocking','description','Cadastro minimo incompleto'));v_doc:=TRUE;END IF;
+ IF NULLIF(v_a_json->>'insurance_company_id','') IS NOT NULL AND NULLIF(trim(COALESCE(v_a_json->>'ds_matricula',v_p_json->>'insurance_card_number',v_p_json->>'ds_matricula','')),'') IS NULL THEN v_issues:=v_issues||jsonb_build_array(jsonb_build_object('type','insurance_card','severity','blocking','description','Carteirinha/matricula ausente'));END IF;
  IF EXISTS(SELECT 1 FROM reception_eligibility_checks e WHERE e.appointment_id=v_a.id AND e.status IN ('pendente','em_analise','nao_elegivel','portal_indisponivel')) THEN v_issues:=v_issues||jsonb_build_array(jsonb_build_object('type','eligibility','severity','blocking','description','Elegibilidade pendente ou invalida'));END IF;
  IF EXISTS(SELECT 1 FROM reception_authorizations r WHERE r.appointment_id=v_a.id AND r.status NOT IN ('nao_necessaria','autorizada','parcialmente_autorizada','liberada_excecao')) THEN v_issues:=v_issues||jsonb_build_array(jsonb_build_object('type','authorization','severity','blocking','description','Autorizacao pendente ou invalida'));v_auth:=TRUE;END IF;
  RETURN jsonb_build_object('appointment_id',v_a.id,'patient_id',v_a.patient_id,'ready',jsonb_array_length(v_issues)=0,'issues',v_issues,'has_authorization_pending',v_auth,'has_document_pending',v_doc);
