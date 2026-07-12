@@ -124,6 +124,86 @@ BEGIN
 END
 $f1$;
 
+
+-- F1 authorization/elegibility behavior and audit history.
+-- Exercises the central Convenios records through the secure RPC boundary.
+INSERT INTO public.insurance_authorizations
+  (id, company_id, patient_id, appointment_id, status, quantity_requested)
+VALUES
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+   930003, 930004, 'pendente', 1),
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0002', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+   930003, 930004, 'pendente', 1);
+
+INSERT INTO public.insurance_eligibility_checks
+  (id, company_id, patient_id, appointment_id, status)
+VALUES
+  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+   930003, 930004, 'pendente');
+
+DO $f1$
+DECLARE
+  v_auth public.reception_authorizations;
+  v_elig public.reception_eligibility_checks;
+  v_history_count integer;
+BEGIN
+  SELECT public.update_reception_authorization_secure(
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001', 'autorizada',
+    'PROTO-001', 'AUTH-001', 'PASS-001', DATE '2026-12-31', 1, NULL
+  ) INTO v_auth;
+
+  IF v_auth.status <> 'autorizada'
+     OR v_auth.protocol_number <> 'PROTO-001'
+     OR v_auth.authorization_number <> 'AUTH-001'
+     OR v_auth.password_number <> 'PASS-001'
+     OR v_auth.quantity_authorized <> 1 THEN
+    RAISE EXCEPTION 'F1 authorization update contract mismatch: %', row_to_json(v_auth);
+  END IF;
+
+  SELECT public.update_reception_eligibility_secure(
+    'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001', 'elegivel',
+    'ELIG-001', 'Cobertura confirmada'
+  ) INTO v_elig;
+
+  IF v_elig.status <> 'elegivel'
+     OR v_elig.protocol_number <> 'ELIG-001'
+     OR v_elig.result_detail <> 'Cobertura confirmada' THEN
+    RAISE EXCEPTION 'F1 eligibility update contract mismatch: %', row_to_json(v_elig);
+  END IF;
+
+  SELECT count(*) INTO v_history_count
+    FROM public.reception_admin_history
+   WHERE company_id = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+     AND entity_id IN (
+       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001',
+       'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001'
+     );
+  IF v_history_count <> 2 THEN
+    RAISE EXCEPTION 'F1 reception admin history expected 2 rows, got %', v_history_count;
+  END IF;
+END
+$f1$;
+
+PERFORM set_config('app.test_user_id', '44444444-4444-4444-8444-444444444444', true);
+DO $f1$
+DECLARE
+  v_auth public.reception_authorizations;
+BEGIN
+  BEGIN
+    SELECT public.update_reception_authorization_secure(
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0002', 'liberada_excecao',
+      NULL, NULL, NULL, NULL, NULL, 'Liberacao indevida'
+    ) INTO v_auth;
+    RAISE EXCEPTION 'F1 unauthorized authorization exception was accepted: %', row_to_json(v_auth);
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM NOT LIKE '%Perfil sem permissao para liberar excecao%' THEN
+        RAISE EXCEPTION 'F1 unauthorized authorization returned unexpected error: %', SQLERRM;
+      END IF;
+  END;
+END
+$f1$;
+
 RESET ROLE;
 ROLLBACK;
 
