@@ -8,7 +8,8 @@ DECLARE
   protected_tables CONSTANT TEXT[] := ARRAY[
     'user_profiles', 'patients', 'professionals', 'appointments',
     'medical_records', 'billings', 'insurance_authorizations',
-    'insurance_eligibility_checks', 'audit_logs'
+    'insurance_eligibility_checks', 'audit_logs',
+    'scheduling_contact_logs', 'scheduling_call_center_tasks'
   ];
   rel RECORD;
   role_record RECORD;
@@ -58,7 +59,19 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'F1 runtime: tenant helper must be SECURITY DEFINER';
   END IF;
+
+  FOR rel IN
+    SELECT c.relname, c.relforcerowsecurity
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname IN ('scheduling_contact_logs', 'scheduling_call_center_tasks')
+  LOOP
+    IF rel.relforcerowsecurity IS NOT TRUE THEN
+      RAISE EXCEPTION 'F1 runtime: FORCE RLS disabled on public.%', rel.relname;
+    END IF;
+  END LOOP;
 END
-$$;
+$;
 
 SELECT 'F1_RUNTIME_SECURITY_GATE=PASS' AS result;
