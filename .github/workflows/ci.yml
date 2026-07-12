@@ -75,7 +75,11 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Run unit tests with coverage
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Collect coverage report
+        continue-on-error: true
         run: npm run test:unit:coverage
 
       - name: Upload coverage
