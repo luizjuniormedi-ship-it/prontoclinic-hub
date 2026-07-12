@@ -247,37 +247,30 @@ describe("appointmentsService — create", () => {
 describe("appointmentsService — update", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("atualiza agendamento com sucesso", async () => {
-    const updateSpy = vi.fn().mockReturnThis();
-    const chain: Record<string, unknown> = {
-      update: updateSpy,
-      eq: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({
-        data: makeAppointment({ notes: "Atualizado" }),
-        error: null,
-      }),
-    };
-    (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue(chain);
+  it("atualiza agendamento com sucesso via RPC seguro", async () => {
+    const rpcSpy = vi.fn().mockResolvedValue({
+      data: makeAppointment({ notes: "Atualizado" }),
+      error: null,
+    });
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockImplementation(rpcSpy);
 
-    const result = await appointmentsService.update("appt-1", { notes: "Atualizado" });
+    const result = await appointmentsService.update("1", { notes: "Atualizado" });
+
     expect(result.notes).toBe("Atualizado");
-    const updated = updateSpy.mock.calls[0][0] as Record<string, unknown>;
-    expect(updated.notes).toBe("Atualizado");
-    expect(updated.updated_at).toBeDefined();
+    expect(rpcSpy).toHaveBeenCalledWith("update_appointment_secure", {
+      p_appointment_id: 1,
+      p_patch: { notes: "Atualizado" },
+    });
   });
 
-  it("lança erro quando Supabase falha", async () => {
-    const chain: Record<string, unknown> = {
-      update: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: null, error: { message: "not found" } }),
-    };
-    (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue(chain);
+  it("lança erro quando o RPC seguro falha", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: null,
+      error: { message: "not found" },
+    });
 
     await expect(
-      appointmentsService.update("appt-1", { notes: "x" })
+      appointmentsService.update("1", { notes: "x" }),
     ).rejects.toThrow(/not found/);
   });
 });
