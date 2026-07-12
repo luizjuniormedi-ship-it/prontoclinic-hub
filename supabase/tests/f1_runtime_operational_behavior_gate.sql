@@ -51,6 +51,7 @@ DO $f1$
 DECLARE
   available_count integer;
   readiness jsonb;
+  checkin jsonb;
 BEGIN
   SELECT count(*) INTO available_count
     FROM public.get_professional_available_slots(930002, DATE '2026-07-20', 30, 930001);
@@ -61,6 +62,22 @@ BEGIN
   SELECT public.get_reception_checkin_readiness(930004) INTO readiness;
   IF COALESCE((readiness->>'ready')::boolean, false) IS NOT TRUE THEN
     RAISE EXCEPTION 'F1 reception readiness unexpectedly blocked: %', readiness;
+  END IF;
+
+  SELECT public.perform_reception_checkin_secure(930004) INTO checkin;
+  IF COALESCE(checkin->>'ticket', '') !~ '^C[0-9]{3}$'
+     OR (checkin->>'released_by_exception')::boolean IS TRUE THEN
+    RAISE EXCEPTION 'F1 reception check-in contract mismatch: %', checkin;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+      FROM public.reception_checkins
+     WHERE id = (checkin->>'checkin_id')::bigint
+       AND appointment_id = 930004
+       AND status = 'checked_in'
+  ) THEN
+    RAISE EXCEPTION 'F1 reception check-in row missing: %', checkin;
   END IF;
 END
 $f1$;
