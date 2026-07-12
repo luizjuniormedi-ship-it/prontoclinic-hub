@@ -102,6 +102,8 @@ jobs:
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/mvp_baseline_empty_db_gate.sql
           echo "Running F1 runtime security gate"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_security_gate.sql
+          echo "Running F1 runtime tenant behavior gate"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_tenant_behavior_gate.sql
 
       - name: Upload F1 evidence
         if: always()
