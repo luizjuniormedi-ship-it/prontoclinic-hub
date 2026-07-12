@@ -12,7 +12,7 @@ CREATE TABLE public.insurance_authorizations (
   protocol_number VARCHAR(120), authorization_number VARCHAR(120), password_number VARCHAR(120),
   valid_until DATE, quantity_requested INTEGER NOT NULL DEFAULT 1,
   quantity_authorized INTEGER NOT NULL DEFAULT 0, quantity_used INTEGER NOT NULL DEFAULT 0,
-  denial_reason TEXT, notes TEXT, created_by UUID, updated_by UUID,
+  denial_reason TEXT, notes TEXT, authorized_at TIMESTAMPTZ, denied_at TIMESTAMPTZ, created_by UUID, updated_by UUID,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
