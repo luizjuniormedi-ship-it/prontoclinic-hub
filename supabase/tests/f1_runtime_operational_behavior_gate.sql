@@ -150,7 +150,7 @@ DECLARE
   v_auth RECORD;
   v_elig RECORD;
 BEGIN
-  SELECT public.update_reception_authorization_secure(
+  SELECT * FROM public.update_reception_authorization_secure(
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001', 'autorizada',
     'PROTO-001', 'AUTH-001', 'PASS-001', DATE '2026-12-31', 1, NULL
   ) INTO v_auth;
@@ -163,7 +163,7 @@ BEGIN
     RAISE EXCEPTION 'F1 authorization update contract mismatch: %', row_to_json(v_auth);
   END IF;
 
-  SELECT public.update_reception_eligibility_secure(
+  SELECT * FROM public.update_reception_eligibility_secure(
     'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001', 'elegivel',
     'ELIG-001', 'Cobertura confirmada'
   ) INTO v_elig;
@@ -183,7 +183,7 @@ DECLARE
   v_auth RECORD;
 BEGIN
   BEGIN
-    SELECT public.update_reception_authorization_secure(
+    SELECT * FROM public.update_reception_authorization_secure(
       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0002', 'liberada_excecao',
       NULL, NULL, NULL, NULL, NULL, 'Liberacao indevida'
     ) INTO v_auth;
