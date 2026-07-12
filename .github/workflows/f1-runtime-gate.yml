@@ -76,9 +76,9 @@ jobs:
             supabase/migrations/20251231005000_create_billings_stub.sql \
             supabase/migrations/20260101000007_audit_logs.sql \
             supabase/migrations/20260101001200_security_hardening.sql \
-            supabase/migrations/20260708090000_scheduling_phase1.sql 
-            supabase/migrations/20260708093000_call_center_phase1.sql \
-            supabase/migrations/20260709210000_scheduling_operations.sql \
+            supabase/migrations/20260708090000_scheduling_phase1.sql \\
+            supabase/migrations/20260708093000_call_center_phase1.sql \\
+            supabase/migrations/20260709210000_scheduling_operations.sql
           do
             echo "Applying core: $migration"
             psql -v ON_ERROR_STOP=1 -1 -f "$migration"
