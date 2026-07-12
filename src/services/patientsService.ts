@@ -128,23 +128,25 @@ export const patientsService = {
   },
 
   async update(id: string, patient: Partial<Patient>): Promise<Patient> {
-    const row = mapPatientToRow(patient);
-    if (row.cpf) row.cpf = stripNonDigits(row.cpf);
-    if (row.phone) row.phone = stripNonDigits(row.phone);
-    row.updated_at = new Date().toISOString();
+    const patch = mapPatientToRow(patient);
+    delete patch.company_id;
+    if (patch.cpf) patch.cpf = stripNonDigits(patch.cpf);
+    if (patch.phone) patch.phone = stripNonDigits(patch.phone);
 
-    const { data, error } = await supabase
-      .from('patients')
-      .update(row)
-      .eq('id', id)
-      .select()
-      .single();
+    if (Object.keys(patch).length === 0) {
+      throw new Error('Nenhum campo de paciente informado.');
+    }
+
+    const { data, error } = await supabase.rpc('update_patient_secure', {
+      p_patient_id: Number(id),
+      p_patch: patch,
+    });
 
     if (error) {
       if (error.message?.includes('unique') || error.message?.includes('duplicate') || error.code === '23505') {
         throw new Error('Já existe um paciente com este CPF cadastrado.');
       }
-      throw new Error(`Erro ao atualizar paciente: ${error.message}`);
+      throw new Error('Erro ao atualizar paciente: ' + error.message);
     }
     return mapRowToPatient(data);
   },
