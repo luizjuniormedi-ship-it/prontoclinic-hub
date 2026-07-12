@@ -167,7 +167,36 @@ BEGIN
   CREATE POLICY mvp_audit_logs_tenant ON public.audit_logs FOR SELECT TO authenticated USING(company_id=public.get_my_company_id());
 END $$;
 
-DO $$
+ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.patients ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.professionals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.appointments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_profiles FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.patients FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.professionals FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.appointments FORCE ROW LEVEL SECURITY;
+
+DO $
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='user_profiles' AND policyname='mvp_user_profiles_tenant') THEN
+    CREATE POLICY mvp_user_profiles_tenant ON public.user_profiles FOR ALL TO authenticated
+      USING (company_id=public.get_my_company_id()) WITH CHECK (company_id=public.get_my_company_id());
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='patients' AND policyname='mvp_patients_tenant') THEN
+    CREATE POLICY mvp_patients_tenant ON public.patients FOR ALL TO authenticated
+      USING (company_id=public.get_my_company_id()) WITH CHECK (company_id=public.get_my_company_id());
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='professionals' AND policyname='mvp_professionals_tenant') THEN
+    CREATE POLICY mvp_professionals_tenant ON public.professionals FOR ALL TO authenticated
+      USING (company_id=public.get_my_company_id()) WITH CHECK (company_id=public.get_my_company_id());
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='appointments' AND policyname='mvp_appointments_tenant') THEN
+    CREATE POLICY mvp_appointments_tenant ON public.appointments FOR ALL TO authenticated
+      USING (company_id=public.get_my_company_id()) WITH CHECK (company_id=public.get_my_company_id());
+  END IF;
+END $;
+
+DO $
 BEGIN
   IF to_regprocedure('public.get_scheduling_actor()') IS NULL OR to_regprocedure('public.create_appointment_secure(bigint,bigint,date,time without time zone,time without time zone,uuid,integer,integer,bigint,bigint,text,boolean,boolean,text)') IS NULL OR to_regprocedure('public.update_appointment_status_secure(bigint,text,text)') IS NULL OR to_regprocedure('public.reschedule_appointment_secure(bigint,date,time without time zone,time without time zone,text)') IS NULL THEN
     RAISE EXCEPTION 'P0/P1 preflight: proven RPC definition missing';
