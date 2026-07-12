@@ -54,10 +54,11 @@ END $$;
 
 CREATE OR REPLACE FUNCTION public.perform_reception_checkin_secure(p_appointment_id BIGINT,p_priority TEXT DEFAULT 'normal',p_exception_reason TEXT DEFAULT NULL)
 RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
-DECLARE v_actor RECORD;v_a appointments;v_ready JSONB;v_checkin reception_checkins;v_ticket reception_queue_tickets;v_number INTEGER;v_issue JSONB;v_exception BOOLEAN:=FALSE;
+DECLARE v_actor RECORD;v_a appointments;v_a_json JSONB;v_ready JSONB;v_checkin reception_checkins;v_ticket reception_queue_tickets;v_number INTEGER;v_issue JSONB;v_exception BOOLEAN:=FALSE;
 BEGIN
  SELECT * INTO v_actor FROM get_scheduling_actor();PERFORM assert_scheduling_permission();
  SELECT * INTO v_a FROM appointments WHERE id=p_appointment_id FOR UPDATE;IF NOT FOUND THEN RAISE EXCEPTION 'Agendamento nao encontrado';END IF;
+ v_a_json:=to_jsonb(v_a);
  IF v_a.status NOT IN ('scheduled','confirmed') THEN RAISE EXCEPTION 'Check-in indisponivel no status %',v_a.status;END IF;
  v_ready:=get_reception_checkin_readiness(v_a.id);
  IF NOT (v_ready->>'ready')::BOOLEAN THEN
@@ -73,7 +74,7 @@ BEGIN
  END LOOP;
  IF v_exception THEN INSERT INTO reception_exception_releases(company_id,checkin_id,appointment_id,reason,risk_description,released_by) VALUES(v_a.company_id,v_checkin.id,v_a.id,trim(p_exception_reason),(v_ready->'issues')::TEXT,v_actor.user_id);END IF;
  PERFORM pg_advisory_xact_lock(hashtext(CURRENT_DATE::TEXT),hashtext('reception-C'));SELECT COALESCE(max(number),0)+1 INTO v_number FROM reception_queue_tickets WHERE ticket_date=CURRENT_DATE AND prefix='C';
- INSERT INTO reception_queue_tickets(company_id,checkin_id,patient_id,appointment_id,prefix,number,priority,sector) VALUES(v_a.company_id,v_checkin.id,v_a.patient_id,v_a.id,'C',v_number,p_priority,CASE WHEN COALESCE(v_a.service_name,'')<>'' THEN 'procedimento' ELSE 'consulta' END) RETURNING * INTO v_ticket;
+ INSERT INTO reception_queue_tickets(company_id,checkin_id,patient_id,appointment_id,prefix,number,priority,sector) VALUES(v_a.company_id,v_checkin.id,v_a.patient_id,v_a.id,'C',v_number,p_priority,CASE WHEN COALESCE(v_a_json->>'service_name','')<>'' THEN 'procedimento' ELSE 'consulta' END) RETURNING * INTO v_ticket;
  PERFORM update_appointment_status_secure(v_a.id,'waiting','Check-in realizado - senha C'||lpad(v_number::TEXT,3,'0'));
  INSERT INTO reception_checkin_status_history(checkin_id,from_status,to_status,reason,actor_user_id) VALUES(v_checkin.id,NULL,'checked_in','Check-in presencial',v_actor.user_id);
  RETURN jsonb_build_object('checkin_id',v_checkin.id,'ticket_id',v_ticket.id,'ticket',v_ticket.prefix||lpad(v_ticket.number::TEXT,3,'0'),'released_by_exception',v_exception,'issues',v_ready->'issues');
