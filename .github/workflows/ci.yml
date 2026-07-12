@@ -82,6 +82,10 @@ jobs:
           nohup node local-auth-server.mjs > /tmp/prontomedic-auth.log 2>&1 &
           for attempt in $(seq 1 30); do
             if curl --fail --silent http://127.0.0.1:8000/auth/v1/settings >/dev/null; then
+              token=$(curl --silent --show-error -X POST 'http://127.0.0.1:8000/auth/v1/token?grant_type=password' -H 'Content-Type: application/json' --data '{"email":"admin@prontomedic.test","password":"TestPassword123!"}' | jq -r '.access_token')
+              user_status=$(curl --silent --show-error --output /tmp/user-same-step.json --write-out '%{http_code}' 'http://127.0.0.1:8000/auth/v1/user' -H "Authorization: Bearer $token")
+              echo "auth_user_same_step_http=$user_status"
+              test "$user_status" = "200"
               echo "local-auth=ready"
               exit 0
             fi
