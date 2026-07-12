@@ -6,6 +6,9 @@ on:
   push:
     branches:
       - ci/f1-runtime-gate-20260712
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
