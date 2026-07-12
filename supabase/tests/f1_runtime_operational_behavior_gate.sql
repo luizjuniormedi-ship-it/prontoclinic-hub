@@ -147,8 +147,8 @@ $f1$;
 
 DO $f1$
 DECLARE
-  v_auth public.reception_authorizations;
-  v_elig public.reception_eligibility_checks;
+  v_auth RECORD;
+  v_elig RECORD;
 BEGIN
   SELECT public.update_reception_authorization_secure(
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001', 'autorizada',
@@ -180,7 +180,7 @@ $f1$;
 SELECT set_config('app.test_user_id', '44444444-4444-4444-8444-444444444444', true);
 DO $f1$
 DECLARE
-  v_auth public.reception_authorizations;
+  v_auth RECORD;
 BEGIN
   BEGIN
     SELECT public.update_reception_authorization_secure(
