@@ -16,6 +16,10 @@ INSERT INTO public.companies (id, name) VALUES
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Tenant A'),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'Tenant B');
 
+INSERT INTO auth.users (id) VALUES
+  ('11111111-1111-4111-8111-111111111111'),
+  ('22222222-2222-4222-8222-222222222222');
+
 INSERT INTO public.user_profiles (id, full_name, email, role_name, company_id)
 VALUES
   ('11111111-1111-4111-8111-111111111111', 'User A', 'a@test.local', 'admin', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
