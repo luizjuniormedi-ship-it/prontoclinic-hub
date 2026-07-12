@@ -83,6 +83,7 @@ jobs:
             supabase/migrations/20260709223000_scheduling_requirements.sql \
             supabase/migrations/20260709232000_scheduling_confirmations.sql \
             supabase/migrations/20260709235000_reception_checkin_core.sql
+            supabase/migrations/20260710001000_reception_authorization_center.sql
           do
             echo "Applying core: $migration"
             psql -v ON_ERROR_STOP=1 -1 -f "$migration"
