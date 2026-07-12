@@ -21,6 +21,11 @@ REVOKE ALL ON TABLE public.billings FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON TABLE public.insurance_authorizations FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON TABLE public.insurance_eligibility_checks FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON TABLE public.audit_logs FROM PUBLIC, anon, authenticated;
+-- Browser CRUD surface for tenant-scoped operational records. RLS remains
+-- authoritative; DELETE is intentionally excluded from the direct table grant.
+GRANT SELECT, INSERT, UPDATE ON TABLE public.patients, public.appointments TO authenticated;
+GRANT USAGE, SELECT ON SEQUENCE public.patients_id_seq, public.appointments_id_seq TO authenticated;
+
 -- Direct table writes are denied to the browser role. Mutations must use the
 -- tenant-aware, audited RPC surface granted below.
 GRANT SELECT ON TABLE public.medical_records TO authenticated;
