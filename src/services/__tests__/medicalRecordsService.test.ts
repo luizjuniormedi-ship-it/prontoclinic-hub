@@ -187,4 +187,5 @@ describe("medicalRecordsService", () => {
         p_patch: { anamnesis: "Atualizado" },
       });
     });
-  });});
+  });
+});
