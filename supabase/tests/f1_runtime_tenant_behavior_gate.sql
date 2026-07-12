@@ -88,6 +88,26 @@ BEGIN
   END IF;
 END
 $f1$;
+DO $f1$
+DECLARE
+  denied boolean := false;
+BEGIN
+  BEGIN
+    PERFORM public.create_call_center_contact_secure(
+      910002, 930002, 'telefone', 'inbound', 'Cross tenant attempt',
+      'recado', NULL, NULL, NULL, false
+    );
+  EXCEPTION
+    WHEN OTHERS THEN
+      denied := true;
+  END;
+
+  IF NOT denied THEN
+    RAISE EXCEPTION 'F1 call center: cross-tenant contact was accepted';
+  END IF;
+END
+$f1$;
+
 
 RESET ROLE;
 ROLLBACK;
