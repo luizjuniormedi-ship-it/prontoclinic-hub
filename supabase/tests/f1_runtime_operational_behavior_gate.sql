@@ -131,7 +131,7 @@ BEGIN
     RAISE EXCEPTION 'F1 reception check-in row missing: %', checkin;
   END IF;
 
-  SELECT set_config('app.test_user_id', '44444444-4444-4444-8444-444444444444', true);
+  PERFORM set_config('app.test_user_id', '44444444-4444-4444-8444-444444444444', true);
   BEGIN
     SELECT public.perform_reception_checkin_secure(930006, 'normal', 'Liberacao indevida') INTO checkin;
     RAISE EXCEPTION 'F1 unauthorized exception release was accepted: %', checkin;
