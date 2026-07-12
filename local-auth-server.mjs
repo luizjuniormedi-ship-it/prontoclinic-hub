@@ -25,6 +25,18 @@ types.setTypeParser(1082, (val) => val); // date -> string as-is
 types.setTypeParser(1114, (val) => val); // timestamp without tz -> string
 types.setTypeParser(1184, (val) => val); // timestamptz -> string
 
+pool.on('error', (error) => {
+  console.error('[PG_POOL_ERROR]', error);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('[UNCAUGHT_EXCEPTION]', error);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[UNHANDLED_REJECTION]', reason);
+});
+
 const pool = new Pool({
   host: process.env.PGHOST || '127.0.0.1',
   port: Number(process.env.PGPORT || 5432),
