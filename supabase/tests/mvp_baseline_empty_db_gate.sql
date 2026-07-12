@@ -35,8 +35,8 @@ BEGIN
     RAISE EXCEPTION 'MVP baseline contains broad USING(true) policy on protected table';
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'appointments_company_id_id_key') THEN
-    RAISE EXCEPTION 'MVP baseline missing appointments tenant key';
+  IF to_regclass('public.appointments_company_id_id_key') IS NULL THEN
+    RAISE EXCEPTION 'MVP baseline missing appointments tenant key index';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'billings_company_appointment_fkey') THEN
     RAISE EXCEPTION 'MVP baseline missing billing composite FK';
