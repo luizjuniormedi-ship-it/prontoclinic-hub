@@ -99,6 +99,19 @@ jobs:
             echo "Applying baseline: $artifact"
             psql -v ON_ERROR_STOP=1 -1 -f "$artifact"
           done
+          echo "Running clinical safe function contract"
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          DO $f1$
+          DECLARE v_imc NUMERIC; v_classification TEXT;
+          BEGIN
+            SELECT imc, classificacao INTO v_imc, v_classification
+              FROM public.calc_imc(70, 175);
+            IF v_imc <> 22.86 OR v_classification <> 'eutrofia' THEN
+              RAISE EXCEPTION 'calc_imc contract mismatch: %, %', v_imc, v_classification;
+            END IF;
+          END
+          $f1$;
+          SQL
           echo "Running empty-db contract"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/mvp_baseline_empty_db_gate.sql
           echo "Running F1 runtime security gate"
