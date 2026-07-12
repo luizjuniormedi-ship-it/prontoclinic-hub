@@ -259,16 +259,43 @@ export const appointmentsService = {
   },
 
   async update(id: string, input: Partial<AppointmentCreateInput>): Promise<DbAppointment> {
-    const row: Record<string, any> = { ...input, updated_at: new Date().toISOString() };
+    const editableFields = [
+      'patient_id',
+      'professional_id',
+      'specialty_id',
+      'appointment_type_id',
+      'unit_id',
+      'service_id',
+      'notes',
+      'is_return',
+      'is_walkin',
+    ] as const;
 
-    const { data, error } = await supabase
-      .from('appointments')
-      .update(row)
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) throw new Error(`Erro ao atualizar agendamento: ${error.message}`);
-    return data;
+    const patch: Record<string, unknown> = {};
+    for (const field of editableFields) {
+      if (field in input) {
+        patch[field] = input[field as keyof AppointmentCreateInput] ?? null;
+      }
+    }
+
+    const unsupportedFields = Object.keys(input).filter(
+      (field) => !editableFields.includes(field as (typeof editableFields)[number]),
+    );
+    if (unsupportedFields.length > 0) {
+      throw new Error(
+        `Edicao direta nao permitida para: ${unsupportedFields.join(', ')}. Use o fluxo seguro de status ou remarcacao.`,
+      );
+    }
+    if (Object.keys(patch).length === 0) {
+      throw new Error('Nenhum campo editavel informado.');
+    }
+
+    const { data, error } = await supabase.rpc('update_appointment_secure', {
+      p_appointment_id: requiredBigIntParam(id, 'Agendamento'),
+      p_patch: patch,
+    });
+    if (error) throw new Error('Erro ao atualizar agendamento: ' + error.message);
+    return data as DbAppointment;
   },
 
   async delete(id: string): Promise<void> {
