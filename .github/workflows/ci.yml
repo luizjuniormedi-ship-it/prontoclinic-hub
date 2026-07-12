@@ -54,6 +54,8 @@ jobs:
             supabase/migrations/20260101000002_insurance_companies.sql
             supabase/migrations/20260101000003_insurance_plans.sql
             supabase/migrations/20260101000004_professional_insurances.sql
+            supabase/migrations/20251231003000_create_medical_records_stub.sql
+            supabase/migrations/20251231005000_create_billings_stub.sql
             supabase/migrations/20260101000007_audit_logs.sql
             supabase/migrations/20260101001200_security_hardening.sql
           )
