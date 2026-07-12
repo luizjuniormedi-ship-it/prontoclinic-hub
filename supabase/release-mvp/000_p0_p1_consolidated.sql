@@ -183,6 +183,6 @@ GRANT EXECUTE ON FUNCTION public.update_appointment_status_secure(BIGINT,TEXT,TE
 REVOKE ALL ON FUNCTION public.reschedule_appointment_secure(BIGINT,DATE,TIME,TIME,TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.reschedule_appointment_secure(BIGINT,DATE,TIME,TIME,TEXT) TO authenticated;
 
-CREATE INDEX IF NOT EXISTS audit_logs_company_created_at_idx ON public.audit_logs(company_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS audit_logs_company_event_idx ON public.audit_logs(company_id,dt_evento DESC);
 COMMIT;
 
