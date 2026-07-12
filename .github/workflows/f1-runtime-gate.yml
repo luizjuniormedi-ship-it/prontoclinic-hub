@@ -77,6 +77,7 @@ jobs:
             supabase/migrations/20260101000007_audit_logs.sql \
             supabase/migrations/20260101001200_security_hardening.sql \
             supabase/migrations/20260708090000_scheduling_phase1.sql \
+            supabase/release-mvp/018_professional_schedules_canonical.sql \
             supabase/migrations/20260708093000_call_center_phase1.sql \
             supabase/migrations/20260709210000_scheduling_operations.sql
           do
@@ -95,7 +96,6 @@ jobs:
           SQL
           for artifact in \
             supabase/release-mvp/000_p0_p1_consolidated.sql \
-            supabase/release-mvp/018_professional_schedules_canonical.sql \
             supabase/release-mvp/011_insurance_authoritative_ledgers.sql \
             supabase/release-mvp/016_service_only_password_resets.sql \
             supabase/release-mvp/017_clinical_safe_functions.sql
