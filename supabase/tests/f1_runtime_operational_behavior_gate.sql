@@ -81,6 +81,21 @@ INSERT INTO public.appointments
 OVERRIDING SYSTEM VALUE VALUES
   (930006, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 930005, 930002, DATE '2026-07-20', TIME '10:00', TIME '10:30', 'scheduled');
 
+
+INSERT INTO public.insurance_authorizations
+  (id, company_id, patient_id, appointment_id, status, quantity_requested)
+VALUES
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+   930003, 930004, 'pendente', 1),
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0002', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+   930003, 930004, 'pendente', 1);
+
+INSERT INTO public.insurance_eligibility_checks
+  (id, company_id, patient_id, appointment_id, status)
+VALUES
+  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+   930003, 930004, 'pendente');
+
 SET LOCAL ROLE authenticated;
 SET LOCAL app.test_user_id = '33333333-3333-4333-8333-333333333333';
 
@@ -124,22 +139,6 @@ BEGIN
 END
 $f1$;
 
-
--- F1 authorization/elegibility behavior and audit history.
--- Exercises the central Convenios records through the secure RPC boundary.
-INSERT INTO public.insurance_authorizations
-  (id, company_id, patient_id, appointment_id, status, quantity_requested)
-VALUES
-  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-   930003, 930004, 'pendente', 1),
-  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0002', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-   930003, 930004, 'pendente', 1);
-
-INSERT INTO public.insurance_eligibility_checks
-  (id, company_id, patient_id, appointment_id, status)
-VALUES
-  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-   930003, 930004, 'pendente');
 
 DO $f1$
 DECLARE
@@ -204,7 +203,26 @@ BEGIN
 END
 $f1$;
 
+
 RESET ROLE;
+
+DO $f1$
+DECLARE
+  v_history_count integer;
+BEGIN
+  SELECT count(*) INTO v_history_count
+    FROM public.reception_admin_history
+   WHERE company_id = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+     AND entity_id IN (
+       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001',
+       'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001'
+     );
+  IF v_history_count <> 2 THEN
+    RAISE EXCEPTION 'F1 reception admin history expected 2 rows, got %', v_history_count;
+  END IF;
+END
+$f1$;
+
 ROLLBACK;
 
 SELECT 'F1_RUNTIME_OPERATIONAL_BEHAVIOR=PASS' AS result;
