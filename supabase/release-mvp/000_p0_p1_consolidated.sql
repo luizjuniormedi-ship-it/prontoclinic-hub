@@ -196,12 +196,12 @@ BEGIN
   END IF;
 END $f1$;
 
-DO $f1$
+DO $f2$
 BEGIN
   IF to_regprocedure('public.get_scheduling_actor()') IS NULL OR to_regprocedure('public.create_appointment_secure(bigint,bigint,date,time without time zone,time without time zone,uuid,integer,integer,bigint,bigint,text,boolean,boolean,text)') IS NULL OR to_regprocedure('public.update_appointment_status_secure(bigint,text,text)') IS NULL OR to_regprocedure('public.reschedule_appointment_secure(bigint,date,time without time zone,time without time zone,text)') IS NULL THEN
     RAISE EXCEPTION 'P0/P1 preflight: proven RPC definition missing';
   END IF;
-END $$;
+END $f2$;
 
 REVOKE ALL ON FUNCTION public.get_scheduling_actor() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_scheduling_actor() TO authenticated;
