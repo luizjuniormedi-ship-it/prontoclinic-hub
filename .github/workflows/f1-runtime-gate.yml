@@ -1,4 +1,5 @@
 name: F1 Runtime Gate
+# Runtime replay gate is intentionally push/manual only; never targets VPS or DataSIGH.
 
 on:
   workflow_dispatch:
