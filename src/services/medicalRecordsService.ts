@@ -92,5 +92,4 @@ export const medicalRecordsService = {
     if (error) throw new Error('Erro ao atualizar prontuário: ' + error.message);
     return data as DbMedicalRecord;
   },
-  },
 };
