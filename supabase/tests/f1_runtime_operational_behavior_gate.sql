@@ -82,19 +82,24 @@ OVERRIDING SYSTEM VALUE VALUES
   (930006, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 930005, 930002, DATE '2026-07-20', TIME '10:00', TIME '10:30', 'scheduled');
 
 
+INSERT INTO public.appointments
+  (id, company_id, patient_id, professional_id, appointment_date, start_time, end_time, status)
+OVERRIDING SYSTEM VALUE VALUES
+  (930007, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 930003, 930002, DATE '2026-07-20', TIME '11:00', TIME '11:30', 'scheduled');
+
 INSERT INTO public.insurance_authorizations
   (id, company_id, patient_id, appointment_id, status, quantity_requested)
 VALUES
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-   930003, 930004, 'pendente', 1),
+   930003, 930007, 'pendente', 1),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0002', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-   930003, 930004, 'pendente', 1);
+   930003, 930007, 'pendente', 1);
 
 INSERT INTO public.insurance_eligibility_checks
   (id, company_id, patient_id, appointment_id, status)
 VALUES
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-   930003, 930004, 'pendente');
+   930003, 930007, 'pendente');
 
 SET LOCAL ROLE authenticated;
 SET LOCAL app.test_user_id = '33333333-3333-4333-8333-333333333333';
