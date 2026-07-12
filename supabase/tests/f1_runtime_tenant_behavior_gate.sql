@@ -108,6 +108,27 @@ BEGIN
 END
 $f1$;
 
+DO $f1$
+DECLARE
+  denied boolean := false;
+BEGIN
+  BEGIN
+    PERFORM public.create_call_center_task_secure(
+      910001, 930001, NULL,
+      '22222222-2222-4222-8222-222222222222',
+      'retornar_ligacao', 'Cross tenant assignment', NULL, 'normal'
+    );
+  EXCEPTION
+    WHEN OTHERS THEN
+      denied := true;
+  END;
+
+  IF NOT denied THEN
+    RAISE EXCEPTION 'F1 call center: cross-tenant assigned_to was accepted';
+  END IF;
+END
+$f1$;
+
 
 RESET ROLE;
 ROLLBACK;
