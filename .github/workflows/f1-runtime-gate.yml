@@ -101,6 +101,7 @@ jobs:
           for artifact in \
             supabase/release-mvp/000_p0_p1_consolidated.sql \
             supabase/migrations/20260710001000_reception_authorization_center.sql \
+            supabase/migrations/20260712100000_authorization_audit_timestamps.sql \
             supabase/release-mvp/011_insurance_authoritative_ledgers.sql \
             supabase/release-mvp/016_service_only_password_resets.sql \
             supabase/release-mvp/017_clinical_safe_functions.sql
