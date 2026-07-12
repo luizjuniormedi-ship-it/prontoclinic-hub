@@ -176,7 +176,7 @@ ALTER TABLE public.patients FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.professionals FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.appointments FORCE ROW LEVEL SECURITY;
 
-DO $
+DO $f1$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='user_profiles' AND policyname='mvp_user_profiles_tenant') THEN
     CREATE POLICY mvp_user_profiles_tenant ON public.user_profiles FOR ALL TO authenticated
@@ -194,9 +194,9 @@ BEGIN
     CREATE POLICY mvp_appointments_tenant ON public.appointments FOR ALL TO authenticated
       USING (company_id=public.get_my_company_id()) WITH CHECK (company_id=public.get_my_company_id());
   END IF;
-END $;
+END $f1$;
 
-DO $
+DO $f1$
 BEGIN
   IF to_regprocedure('public.get_scheduling_actor()') IS NULL OR to_regprocedure('public.create_appointment_secure(bigint,bigint,date,time without time zone,time without time zone,uuid,integer,integer,bigint,bigint,text,boolean,boolean,text)') IS NULL OR to_regprocedure('public.update_appointment_status_secure(bigint,text,text)') IS NULL OR to_regprocedure('public.reschedule_appointment_secure(bigint,date,time without time zone,time without time zone,text)') IS NULL THEN
     RAISE EXCEPTION 'P0/P1 preflight: proven RPC definition missing';
