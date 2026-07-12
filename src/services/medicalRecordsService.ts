@@ -12,6 +12,8 @@ export interface DbMedicalRecord {
   record_date: string;
   anamnesis: string | null;
   evolution: string | null;
+  diagnosis: string | null;
+  prescription: string | null;
   vital_signs: Record<string, any> | null;
   notes: string | null;
   created_at: string;
@@ -26,6 +28,8 @@ export interface MedicalRecordInput {
   record_date?: string;
   anamnesis?: string;
   evolution?: string;
+  diagnosis?: string;
+  prescription?: string;
   vital_signs?: Record<string, any>;
   notes?: string;
 }
