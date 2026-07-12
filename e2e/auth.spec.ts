@@ -1,6 +1,23 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Autenticação', () => {
+  test.beforeEach(async ({ page }) => {
+    page.on('console', (message) => {
+      console.log(`[browser:console:${message.type()}] ${message.text()}`);
+    });
+    page.on('pageerror', (error) => {
+      console.log(`[browser:pageerror] ${error.message}`);
+    });
+    page.on('requestfailed', (request) => {
+      const failure = request.failure()?.errorText || 'unknown';
+      console.log(`[browser:requestfailed] ${request.method()} ${request.url()} ${failure}`);
+    });
+    page.on('response', (response) => {
+      if (/auth\/v1|rest\/v1\/user_profiles/.test(response.url())) {
+        console.log(`[browser:response] ${response.status()} ${response.request().method()} ${response.url()}`);
+      }
+    });
+  });
   [
     { label: 'admin', email: 'admin@prontomedic.test' },
     { label: 'recepção', email: 'recepcao@prontomedic.test' },
