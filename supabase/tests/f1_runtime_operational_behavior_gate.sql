@@ -63,6 +63,24 @@ INSERT INTO public.appointments
 OVERRIDING SYSTEM VALUE VALUES
   (930004, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 930003, 930002, DATE '2026-07-20', TIME '09:00', TIME '09:30', 'scheduled');
 
+
+INSERT INTO auth.users (id) VALUES
+  ('44444444-4444-4444-8444-444444444444');
+
+INSERT INTO public.user_profiles (id, full_name, email, role_name, company_id)
+VALUES
+  ('44444444-4444-4444-8444-444444444444', 'Reception Operator', 'reception@test.local', 'recepcao',
+   'cccccccc-cccc-4ccc-8ccc-cccccccccccc');
+
+INSERT INTO public.patients (id, company_id, full_name, birth_date)
+OVERRIDING SYSTEM VALUE VALUES
+  (930005, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'Patient With Incomplete Record', NULL);
+
+INSERT INTO public.appointments
+  (id, company_id, patient_id, professional_id, appointment_date, start_time, end_time, status)
+OVERRIDING SYSTEM VALUE VALUES
+  (930006, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 930005, 930002, DATE '2026-07-20', TIME '10:00', TIME '10:30', 'scheduled');
+
 SET LOCAL ROLE authenticated;
 SET LOCAL app.test_user_id = '33333333-3333-4333-8333-333333333333';
 
@@ -92,6 +110,17 @@ BEGIN
   IF NOT public.f1_assert_reception_checkin((checkin->>'checkin_id')::bigint, 930004) THEN
     RAISE EXCEPTION 'F1 reception check-in row missing: %', checkin;
   END IF;
+
+  PERFORM set_config('app.test_user_id', '44444444-4444-4444-8444-444444444444', true);
+  BEGIN
+    SELECT public.perform_reception_checkin_secure(930006, 'normal', 'Liberacao indevida') INTO checkin;
+    RAISE EXCEPTION 'F1 unauthorized exception release was accepted: %', checkin;
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM NOT LIKE '%Perfil sem permissao para liberar excecao%' THEN
+        RAISE EXCEPTION 'F1 unauthorized exception returned unexpected error: %', SQLERRM;
+      END IF;
+  END;
 END
 $f1$;
 
