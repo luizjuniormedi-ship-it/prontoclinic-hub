@@ -97,6 +97,15 @@ jobs:
           PGPASSWORD: postgres
           PGDATABASE: postgres
 
+      - name: Smoke local auth credentials
+        run: |
+          set -Eeuo pipefail
+          status=$(curl --silent --show-error --output /tmp/auth-smoke.json --write-out '%{http_code}'             -X POST 'http://127.0.0.1:8000/auth/v1/token?grant_type=password'             -H 'Content-Type: application/json'             -H 'apikey: ci-local-auth'             --data '{"email":"admin@prontomedic.test","password":"TestPassword123!"}')
+          echo "auth_smoke_http=$status"
+          jq '{has_access_token:(.access_token != null), has_refresh_token:(.refresh_token != null), error}' /tmp/auth-smoke.json
+          test "$status" = "200"
+          jq -e '.access_token and .refresh_token' /tmp/auth-smoke.json >/dev/null
+
       - name: Lint
         run: npm run lint
 
