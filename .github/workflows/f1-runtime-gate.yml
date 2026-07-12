@@ -106,6 +106,7 @@ jobs:
             supabase/migrations/20260712120000_secure_patient_update.sql \
             supabase/migrations/20260712130000_secure_medical_records.sql \
             supabase/migrations/20260712140000_secure_call_center_mutations.sql \
+            supabase/migrations/20260712150000_call_center_rls_hardening.sql \
             supabase/release-mvp/011_insurance_authoritative_ledgers.sql \
             supabase/release-mvp/016_service_only_password_resets.sql \
             supabase/release-mvp/017_clinical_safe_functions.sql
