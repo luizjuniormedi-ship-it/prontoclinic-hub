@@ -4,3 +4,6 @@
 ALTER TABLE public.insurance_authorizations
   ADD COLUMN IF NOT EXISTS authorized_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS denied_at TIMESTAMPTZ;
+
+ALTER TABLE public.appointments
+  ADD COLUMN IF NOT EXISTS cd_autorizacao VARCHAR(120);
