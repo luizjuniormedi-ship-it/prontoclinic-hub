@@ -32,4 +32,3 @@ $$;
 
 REVOKE ALL ON TABLE public.password_resets FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT, UPDATE ON TABLE public.password_resets TO service_role;
-GRANT USAGE, SELECT ON SEQUENCE public.password_resets_id_seq TO service_role;
