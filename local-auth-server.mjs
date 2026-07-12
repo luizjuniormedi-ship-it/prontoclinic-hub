@@ -184,14 +184,26 @@ async function requiredCompanyScope(profile, table) {
 const permCache = new Map();
 async function loadRolePerms(role) {
   if (permCache.has(role)) return permCache.get(role);
-  const r = await pool.query(
-    `SELECT rp.module, rp.can_view, rp.can_create, rp.can_edit, rp.can_delete
-       FROM role_permissions rp JOIN roles ro ON ro.id = rp.role_id
-      WHERE ro.name = $1`, [role]);
-  const m = {};
-  for (const row of r.rows) m[row.module] = row;
-  permCache.set(role, m);
-  return m;
+  try {
+    const r = await pool.query(
+      `SELECT rp.module, rp.can_view, rp.can_create, rp.can_edit, rp.can_delete
+         FROM role_permissions rp JOIN roles ro ON ro.id = rp.role_id
+        WHERE ro.name = $1`, [role]);
+    const m = {};
+    for (const row of r.rows) m[row.module] = row;
+    permCache.set(role, m);
+    return m;
+  } catch (error) {
+    // Missing permission catalog is fail-closed: deny non-admin access without
+    // turning a missing deployment prerequisite into an HTTP 500.
+    if (error?.code === '42P01') {
+      console.error(`[RBAC_CATALOG_MISSING] role_permissions/roles for role ${role}`);
+      const denied = {};
+      permCache.set(role, denied);
+      return denied;
+    }
+    throw error;
+  }
 }
 
 /** Retorna {ok:true} ou {ok:false, reason}. Somente admin tem bypass total. */
