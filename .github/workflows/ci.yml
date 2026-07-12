@@ -15,6 +15,7 @@ jobs:
       # Credenciais de producao e DataSIGH nunca sao lidas neste workflow.
       VITE_SUPABASE_URL: http://127.0.0.1:8000
       VITE_SUPABASE_ANON_KEY: ci-local-auth
+      JWT_SECRET: ci-jwt-local-auth-20260712-ephemeral-not-production
 
     services:
       postgres:
@@ -78,8 +79,6 @@ jobs:
       - name: Start local auth backend
         run: |
           set -Eeuo pipefail
-          export JWT_SECRET="$(openssl rand -hex 32)"
-          echo "JWT_SECRET=$JWT_SECRET" >> "$GITHUB_ENV"
           nohup node local-auth-server.mjs > /tmp/prontomedic-auth.log 2>&1 &
           for attempt in $(seq 1 30); do
             if curl --fail --silent http://127.0.0.1:8000/auth/v1/settings >/dev/null; then
