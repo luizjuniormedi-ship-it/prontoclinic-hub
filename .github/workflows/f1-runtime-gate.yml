@@ -1,0 +1,82 @@
+name: F1 Runtime Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ci/f1-runtime-gate-20260712
+
+permissions:
+  contents: read
+
+jobs:
+  f1-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 54322:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Replay F1 baseline and contracts
+        env:
+          PGPASSWORD: postgres
+          PGHOST: 127.0.0.1
+          PGPORT: 54322
+          PGUSER: postgres
+          PGDATABASE: postgres
+        run: |
+          set -Eeuo pipefail
+          mkdir -p artifacts/f1
+          exec > >(tee artifacts/f1/runtime-gate.log) 2>&1
+          psql -v ON_ERROR_STOP=1 -c "CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN;"
+          for migration in \
+            supabase/migrations/00000_extensions.sql \
+            supabase/migrations/20260101000000_base_tables.sql \
+            supabase/migrations/20260101000001_payment_sources.sql \
+            supabase/migrations/20260101000002_insurance_companies.sql \
+            supabase/migrations/20260101000003_insurance_plans.sql \
+            supabase/migrations/20260101000004_professional_insurances.sql \
+            supabase/migrations/20260101000007_audit_logs.sql \
+            supabase/migrations/20260101001200_security_hardening.sql
+          do
+            echo "Applying core: $migration"
+            psql -v ON_ERROR_STOP=1 -1 -f "$migration"
+          done
+          for artifact in \
+            supabase/release-mvp/000_p0_p1_consolidated.sql \
+            supabase/release-mvp/011_insurance_authoritative_ledgers.sql \
+            supabase/release-mvp/014_tenant_policy_replacements.sql \
+            supabase/release-mvp/016_service_only_password_resets.sql
+          do
+            echo "Applying baseline: $artifact"
+            psql -v ON_ERROR_STOP=1 -1 -f "$artifact"
+          done
+          echo "Running empty-db contract"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/mvp_baseline_empty_db_gate.sql
+
+      - name: Upload F1 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: f1-runtime-evidence
+          path: artifacts/f1
+          if-no-files-found: warn
