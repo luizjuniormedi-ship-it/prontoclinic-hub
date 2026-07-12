@@ -16,6 +16,7 @@ jobs:
       VITE_SUPABASE_URL: http://127.0.0.1:8000
       VITE_SUPABASE_ANON_KEY: ci-local-auth
       JWT_SECRET: ci-jwt-local-auth-20260712-ephemeral-not-production
+      CORS_ALLOWED_ORIGINS: http://localhost:4173
 
     services:
       postgres:
