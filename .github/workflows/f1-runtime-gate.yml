@@ -67,7 +67,7 @@ jobs:
           for migration in \
             supabase/migrations/00000_extensions.sql \
             supabase/migrations/20260101000000_base_tables.sql \
-            supabase/migrations/20251231018000_helper_functions.sql \\
+            supabase/migrations/20251231018000_helper_functions.sql \
             supabase/migrations/20260101000001_payment_sources.sql \
             supabase/migrations/20260101000002_insurance_companies.sql \
             supabase/migrations/20260101000003_insurance_plans.sql \
