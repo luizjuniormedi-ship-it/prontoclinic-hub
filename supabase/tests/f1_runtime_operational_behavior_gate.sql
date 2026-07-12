@@ -147,6 +147,32 @@ $f1$;
 
 DO $f1$
 DECLARE
+  v_appointment RECORD;
+BEGIN
+  SELECT * FROM public.update_appointment_secure(
+    930004, jsonb_build_object('notes', 'Nota atualizada com RPC seguro')
+  ) INTO v_appointment;
+
+  IF v_appointment.notes <> 'Nota atualizada com RPC seguro' THEN
+    RAISE EXCEPTION 'F1 secure appointment update contract mismatch: %', row_to_json(v_appointment);
+  END IF;
+
+  BEGIN
+    SELECT * FROM public.update_appointment_secure(
+      930004, jsonb_build_object('status', 'cancelled')
+    ) INTO v_appointment;
+    RAISE EXCEPTION 'F1 direct status mutation was accepted: %', row_to_json(v_appointment);
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM NOT LIKE '%Campo de agendamento nao editavel por este RPC%' THEN
+        RAISE EXCEPTION 'F1 direct status mutation returned unexpected error: %', SQLERRM;
+      END IF;
+  END;
+END
+$f1$;
+
+DO $f1$
+DECLARE
   v_auth RECORD;
   v_elig RECORD;
 BEGIN
