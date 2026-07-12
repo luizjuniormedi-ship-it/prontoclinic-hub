@@ -45,9 +45,19 @@ jobs:
         run: |
           DATABASE_URL=postgresql://postgres:postgres@localhost:54322/postgres
           export PGPASSWORD=postgres
-          for f in supabase/migrations/*.sql; do
-            echo "Applying $f..."
-            psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f "$f"
+          migrations=(
+            supabase/migrations/00000_extensions.sql
+            supabase/migrations/20260101000000_base_tables.sql
+            supabase/migrations/20260101000001_payment_sources.sql
+            supabase/migrations/20260101000002_insurance_companies.sql
+            supabase/migrations/20260101000003_insurance_plans.sql
+            supabase/migrations/20260101000004_professional_insurances.sql
+            supabase/migrations/20260101000007_audit_logs.sql
+            supabase/migrations/20260101001200_security_hardening.sql
+          )
+          for migration in "${migrations[@]}"; do
+            echo "Applying approved core migration $migration..."
+            psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f "$migration"
           done
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:54322/postgres
