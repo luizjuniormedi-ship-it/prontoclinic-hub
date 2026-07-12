@@ -147,6 +147,44 @@ $f1$;
 
 DO $f1$
 DECLARE
+  v_record RECORD;
+BEGIN
+  SELECT * FROM public.create_medical_record_secure(
+    930003, 930002, 930004, DATE '2026-07-20',
+    'Queixa controlada', 'Evolucao inicial', 'Diagnostico teste',
+    'Prescricao teste', jsonb_build_object('pa', '120/80'), 'Nota clinica'
+  ) INTO v_record;
+
+  IF v_record.patient_id <> 930003
+     OR v_record.anamnesis <> 'Queixa controlada'
+     OR v_record.evolution <> 'Evolucao inicial' THEN
+    RAISE EXCEPTION 'F1 medical record create contract mismatch: %', row_to_json(v_record);
+  END IF;
+
+  SELECT * FROM public.update_medical_record_secure(
+    v_record.id, jsonb_build_object('evolution', 'Evolucao revisada')
+  ) INTO v_record;
+
+  IF v_record.evolution <> 'Evolucao revisada' THEN
+    RAISE EXCEPTION 'F1 medical record update contract mismatch: %', row_to_json(v_record);
+  END IF;
+
+  BEGIN
+    SELECT * FROM public.update_medical_record_secure(
+      v_record.id, jsonb_build_object('company_id', 'fora-do-tenant')
+    ) INTO v_record;
+    RAISE EXCEPTION 'F1 medical record forbidden field was accepted: %', row_to_json(v_record);
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM NOT LIKE '%Campo clinico nao editavel por este RPC%' THEN
+        RAISE EXCEPTION 'F1 medical record forbidden field returned unexpected error: %', SQLERRM;
+      END IF;
+  END;
+END
+$f1$;
+
+DO $f1$
+DECLARE
   v_appointment RECORD;
 BEGIN
   SELECT * FROM public.update_appointment_secure(
