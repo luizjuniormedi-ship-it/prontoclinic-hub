@@ -1,4 +1,4 @@
-﻿name: CI
+name: CI
 
 on:
   push:
@@ -11,9 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      # CI usa o local-auth-server real contra PostgreSQL efemero.
+      # Credenciais de producao e DataSIGH nunca sao lidas neste workflow.
+      VITE_SUPABASE_URL: http://127.0.0.1:8000
+      VITE_SUPABASE_ANON_KEY: ci-local-auth
 
     services:
       postgres:
@@ -68,6 +69,33 @@ jobs:
 
       - name: Type check
         run: npm run type-check
+
+      - name: Seed ephemeral auth users
+        run: psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres -d postgres -f scripts/ci-seed-e2e.sql
+        env:
+          PGPASSWORD: postgres
+
+      - name: Start local auth backend
+        run: |
+          set -Eeuo pipefail
+          export JWT_SECRET="$(openssl rand -hex 32)"
+          echo "JWT_SECRET=$JWT_SECRET" >> "$GITHUB_ENV"
+          nohup node local-auth-server.mjs > /tmp/prontomedic-auth.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/auth/v1/settings >/dev/null; then
+              echo "local-auth=ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/prontomedic-auth.log
+          exit 1
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 54322
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: postgres
 
       - name: Lint
         run: npm run lint
