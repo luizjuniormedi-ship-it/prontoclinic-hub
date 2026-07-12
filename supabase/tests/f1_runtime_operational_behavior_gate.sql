@@ -261,6 +261,37 @@ BEGIN
 END
 $f1$;
 
+DO $f1$
+DECLARE
+  v_contact RECORD;
+  v_task_count integer;
+  v_task RECORD;
+BEGIN
+  SELECT * FROM public.create_call_center_contact_secure(
+    930003, 930004, 'telefone', 'inbound', 'Retorno de confirmacao',
+    'recado', 'Ligar novamente', 'retornar_ligacao', NOW(), true
+  ) INTO v_contact;
+
+  SELECT count(*) INTO v_task_count
+    FROM public.scheduling_call_center_tasks
+   WHERE contact_log_id = v_contact.id
+     AND company_id = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  IF v_task_count <> 1 THEN
+    RAISE EXCEPTION 'F1 call center atomic contact/task expected 1 task, got %', v_task_count;
+  END IF;
+
+  SELECT * FROM public.complete_call_center_task_secure(
+    (SELECT id FROM public.scheduling_call_center_tasks
+      WHERE contact_log_id = v_contact.id
+      ORDER BY id DESC LIMIT 1)
+  ) INTO v_task;
+
+  IF v_task.status <> 'done' THEN
+    RAISE EXCEPTION 'F1 call center completion mismatch: %', row_to_json(v_task);
+  END IF;
+END
+$f1$;
+
 
 RESET ROLE;
 
