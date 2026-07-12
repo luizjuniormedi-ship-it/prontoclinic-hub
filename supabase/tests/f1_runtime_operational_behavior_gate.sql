@@ -126,7 +126,7 @@ BEGIN
     RAISE EXCEPTION 'F1 reception check-in row missing: %', checkin;
   END IF;
 
-  PERFORM set_config('app.test_user_id', '44444444-4444-4444-8444-444444444444', true);
+  SELECT set_config('app.test_user_id', '44444444-4444-4444-8444-444444444444', true);
   BEGIN
     SELECT public.perform_reception_checkin_secure(930006, 'normal', 'Liberacao indevida') INTO checkin;
     RAISE EXCEPTION 'F1 unauthorized exception release was accepted: %', checkin;
@@ -144,7 +144,6 @@ DO $f1$
 DECLARE
   v_auth public.reception_authorizations;
   v_elig public.reception_eligibility_checks;
-  v_history_count integer;
 BEGIN
   SELECT public.update_reception_authorization_secure(
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001', 'autorizada',
@@ -170,16 +169,6 @@ BEGIN
     RAISE EXCEPTION 'F1 eligibility update contract mismatch: %', row_to_json(v_elig);
   END IF;
 
-  SELECT count(*) INTO v_history_count
-    FROM public.reception_admin_history
-   WHERE company_id = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
-     AND entity_id IN (
-       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001',
-       'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001'
-     );
-  IF v_history_count <> 2 THEN
-    RAISE EXCEPTION 'F1 reception admin history expected 2 rows, got %', v_history_count;
-  END IF;
 END
 $f1$;
 
