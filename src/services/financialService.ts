@@ -36,23 +36,27 @@ export const billingsService = {
   async getAll(): Promise<DbBilling[]> {
     const { data, error } = await supabase
       .from('billings')
-      .select('id, company_id, patient_id, professional_id, insurance_company_id, description, amount, discount, total, status, notes, created_at')
+      .select(
+        'id, company_id, patient_id, appointment_id, amount, status, guide_number, tiss_status, dt_vencimento, dt_pagamento, created_at',
+      )
       .order('created_at', { ascending: false })
       .limit(2000);
+
     if (error) throw new Error(`Erro ao buscar faturamentos: ${error.message}`);
+
     return (data || []).map((row: any) => ({
       id: String(row.id),
       company_id: row.company_id,
       unit_id: null,
       patient_id: row.patient_id == null ? null : String(row.patient_id),
-      professional_id: row.professional_id == null ? null : String(row.professional_id),
-      appointment_id: null,
-      billing_type: row.insurance_company_id ? 'convenio' : 'particular',
+      professional_id: null,
+      appointment_id: row.appointment_id == null ? null : String(row.appointment_id),
+      billing_type: row.tiss_status || null,
       gross_amount: Number(row.amount) || 0,
-      discount: Number(row.discount) || 0,
-      net_amount: Number(row.total) || 0,
+      discount: 0,
+      net_amount: Number(row.amount) || 0,
       status: row.status,
-      notes: row.notes || row.description,
+      notes: row.guide_number ? `Guia: ${row.guide_number}` : null,
       created_at: row.created_at,
     }));
   },
