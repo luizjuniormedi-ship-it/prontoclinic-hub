@@ -39,6 +39,25 @@ INSERT INTO public.professional_schedules
 VALUES
   ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 930002, 'segunda-feira', 900, 1000, 30, 930001);
 
+CREATE OR REPLACE FUNCTION public.f1_assert_reception_checkin(p_id bigint, p_appointment_id bigint)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $f1$
+  SELECT EXISTS (
+    SELECT 1
+      FROM public.reception_checkins
+     WHERE id = p_id
+       AND appointment_id = p_appointment_id
+       AND status = 'checked_in'
+  )
+$f1$;
+
+REVOKE ALL ON FUNCTION public.f1_assert_reception_checkin(bigint, bigint) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.f1_assert_reception_checkin(bigint, bigint) TO authenticated;
+
 INSERT INTO public.appointments
   (id, company_id, patient_id, professional_id, appointment_date, start_time, end_time, status)
 OVERRIDING SYSTEM VALUE VALUES
@@ -70,13 +89,7 @@ BEGIN
     RAISE EXCEPTION 'F1 reception check-in contract mismatch: %', checkin;
   END IF;
 
-  IF NOT EXISTS (
-    SELECT 1
-      FROM public.reception_checkins
-     WHERE id = (checkin->>'checkin_id')::bigint
-       AND appointment_id = 930004
-       AND status = 'checked_in'
-  ) THEN
+  IF NOT public.f1_assert_reception_checkin((checkin->>'checkin_id')::bigint, 930004) THEN
     RAISE EXCEPTION 'F1 reception check-in row missing: %', checkin;
   END IF;
 END
