@@ -62,7 +62,7 @@ jobs:
           CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY);
           CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $f1$
             SELECT NULL::uuid
-          $;
+          $f1$;
           SQL
           for migration in \
             supabase/migrations/00000_extensions.sql \
