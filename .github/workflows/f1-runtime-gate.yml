@@ -93,7 +93,6 @@ jobs:
           for artifact in \
             supabase/release-mvp/000_p0_p1_consolidated.sql \
             supabase/release-mvp/011_insurance_authoritative_ledgers.sql \
-            supabase/release-mvp/014_tenant_policy_replacements.sql \
             supabase/release-mvp/016_service_only_password_resets.sql
           do
             echo "Applying baseline: $artifact"
