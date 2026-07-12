@@ -80,6 +80,14 @@ jobs:
             echo "Applying core: $migration"
             psql -v ON_ERROR_STOP=1 -1 -f "$migration"
           done
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE app_owner NOLOGIN NOSUPERUSER NOBYPASSRLS;
+          ALTER TABLE public.medical_records OWNER TO app_owner;
+          ALTER TABLE public.billings OWNER TO app_owner;
+          ALTER TABLE public.insurance_authorizations OWNER TO app_owner;
+          ALTER TABLE public.insurance_eligibility_checks OWNER TO app_owner;
+          ALTER TABLE public.audit_logs OWNER TO app_owner;
+          SQL
           for artifact in \
             supabase/release-mvp/008_canonical_insurance.sql \
             supabase/release-mvp/000_p0_p1_consolidated.sql \
