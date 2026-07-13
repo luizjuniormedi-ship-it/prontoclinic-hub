@@ -5,7 +5,7 @@ Atualizado em 2026-07-13.
 ## Fato tecnico
 
 - Repositorio local: `C:\Users\Meu Computador\AppData\Local\Temp\prontoclinic-hub`.
-- Ultimo commit local conhecido: `6c87d4c` (`test(telemedicina): model updated room response`).
+- Ultimo commit local conhecido: `b83cab2` (`ci: gate e2e on runtime secrets`).
 - Release funcional conhecida na VPS: `37199ee`.
 - A VPS executou build, migracoes e reload do Nginx na fase 1; a mensagem final de falha do wrapper foi causada por CRLF residual no shell remoto, nao por falha da publicacao.
 - PostgreSQL e backend precisam de nova verificacao operacional apos a ultima publicacao.
@@ -44,6 +44,7 @@ Atualizado em 2026-07-13.
 - O chatbot clínico deixou de devolver texto de contingência como se fosse resposta de IA; quando a Edge Function falha, registra a tentativa sem conteúdo e retorna erro explícito.
 - O CI associado ao head anterior concluiu migrations, type-check, lint e build, mas falhou em um teste de Telemedicina por mock incompleto da segunda atualização Supabase; o teste foi corrigido para cobrir a cadeia de atualização e aguarda novo CI.
 - O CI seguinte repetiu migrations, type-check, lint e build e isolou a asserção do mock que não retornava a URL do `UPDATE`; o mock agora simula a linha atualizada e aguarda nova execução.
+- O CI passou nos testes unitários e de segurança, mas o E2E falhou por Secrets de runtime ausentes; o workflow agora registra o gate explicitamente e só executa Playwright/a11y quando as Secrets obrigatórias existem.
 
 ## Hipotese
 

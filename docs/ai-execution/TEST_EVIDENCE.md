@@ -84,3 +84,4 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - Commit funcional atual: `25d9f49`; chatbot clínico falha fechado sem resposta simulada e possui teste de tentativa registrada sem conteúdo. `git diff --check` aprovado; Vitest permanece bloqueado por `EPERM` do Node.
 - CI do commit `124fac1`: migrations, type-check, lint e build aprovados; suíte unitária falhou em 1 teste de Telemedicina (mock não cobria a segunda chamada Supabase). Correção em `241f2fa`; novo CI pendente.
 - CI do commit `083bc83`: migrations, type-check, lint e build aprovados; suíte unitária falhou em 1 asserção porque o mock não retornava a URL após o update. Correção em `6c87d4c`; novo CI pendente.
+- CI do commit `b780c50`: migrations, type-check, lint, build, 480 testes unitários e segurança aprovados; E2E bloqueado por Secrets ausentes. Correção do workflow em `b83cab2` torna o gate explícito e evita falha de a11y sem relatório.
