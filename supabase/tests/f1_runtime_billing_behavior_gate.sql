@@ -21,6 +21,16 @@ BEGIN
     RAISE EXCEPTION 'F1 billing production requires ENABLE and FORCE RLS';
   END IF;
 
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_index AS index_definition
+    WHERE index_definition.indexrelid = to_regclass('public.billings_appointment_id_unique')
+      AND index_definition.indisunique
+      AND index_definition.indpred IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'F1 billing production requires unique appointment billing invariant';
+  END IF;
+
   IF has_table_privilege('authenticated', 'public.billings', 'SELECT')
      OR has_table_privilege('anon', 'public.billings', 'SELECT') THEN
     RAISE EXCEPTION 'F1 billing production direct browser SELECT was not revoked';

@@ -1,5 +1,22 @@
 -- Least-privilege read model for the billable production page.
 
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM public.billings
+    WHERE appointment_id IS NOT NULL
+    GROUP BY appointment_id
+    HAVING count(*) > 1
+  ) THEN
+    RAISE EXCEPTION 'Billings possui atendimentos duplicados; saneamento controlado obrigatorio';
+  END IF;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS billings_appointment_id_unique
+  ON public.billings(appointment_id)
+  WHERE appointment_id IS NOT NULL;
+
 ALTER TABLE public.billings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.billings FORCE ROW LEVEL SECURITY;
 
@@ -96,5 +113,4 @@ $$;
 
 REVOKE ALL ON FUNCTION public.list_billing_production_secure() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.list_billing_production_secure() TO authenticated;
-
 
