@@ -20,21 +20,22 @@ authed.describe('Prontuário', () => {
 
     await page.goto('/reception');
     const appointmentsResponse = await appointmentsResponsePromise;
-    const patientsResponse = await patientsResponsePromise;
     expect(appointmentsResponse.ok()).toBeTruthy();
-    expect(patientsResponse.ok()).toBeTruthy();
-
     const appointments = await appointmentsResponse.json() as Array<{
       id: string | number;
       patient_id: string | number;
       start_time: string;
       status: string;
     }>;
+
+    const patientsResponse = await patientsResponsePromise;
+    expect(patientsResponse.ok()).toBeTruthy();
+    const patients = await patientsResponse.json() as Array<{ id: string | number; full_name: string }>;
+
     const appointment = appointments.find(({ id }) => String(id) === APPOINTMENT_ID);
     expect(appointment).toBeDefined();
     expect(appointment?.status).toBe('waiting');
 
-    const patients = await patientsResponse.json() as Array<{ id: string | number; full_name: string }>;
     const patient = patients.find(({ id }) => String(id) === String(appointment?.patient_id));
     expect(patient).toBeDefined();
 
