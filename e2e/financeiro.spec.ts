@@ -47,7 +47,7 @@ for (const role of ['doctor', 'reception', 'patient'] as const) {
     for (const path of ['/financial', '/billing-production', '/billing-accounts']) {
       const writes: string[] = [];
       const observeWrite = (request: { method(): string; url(): string }) => {
-        if (request.method() !== 'GET' && /\/rest\/v1\/|\/functions\/v1\//.test(request.url())) {
+        if (!['GET', 'HEAD'].includes(request.method()) && /\/rest\/v1\/|\/functions\/v1\//.test(request.url())) {
           writes.push(`${request.method()} ${request.url()}`);
         }
       };
