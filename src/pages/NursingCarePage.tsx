@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Pill, AlertTriangle, Syringe, ClipboardList, ShieldCheck, Plus, XCircle, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,8 +39,13 @@ export default function NursingCarePage() {
   // checagem beira-leito
   const [checkMed, setCheckMed] = useState<MedAdmin | null>(null);
   const [checks, setChecks] = useState<Array<{ certo: string; ok: boolean }>>([]);
+  const [confirmedPatientId, setConfirmedPatientId] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [adminIntentKey, setAdminIntentKey] = useState("");
+  const refusalIntentKeys = useRef(new Map<number, string>());
   // nova intercorrência
   const [incOpen, setIncOpen] = useState(false);
+  const [incidentIntentKey, setIncidentIntentKey] = useState("");
   const [incForm, setIncForm] = useState({ patient_id: "", incident_type: "queda", severity: "moderada", description: "" });
 
   const load = useCallback(() => {
@@ -52,16 +57,31 @@ export default function NursingCarePage() {
   }, []);
   useEffect(load, [load]);
 
-  const openBedside = async (m: MedAdmin) => {
+  const openBedside = (m: MedAdmin) => {
     setCheckMed(m);
-    try { setChecks(await nursingCareService.bedsideCheck(m.id, m.patient_id)); }
+    setChecks([]);
+    setConfirmedPatientId("");
+    setAdminIntentKey(crypto.randomUUID());
+  };
+
+  const runBedsideCheck = async () => {
+    if (!checkMed) return;
+    const patientId = Number(confirmedPatientId);
+    if (!Number.isSafeInteger(patientId) || patientId <= 0) {
+      toast({ title: "Identificacao invalida", description: "Leia ou informe o ID da pulseira do paciente.", variant: "destructive" });
+      return;
+    }
+    setChecking(true);
+    setChecks([]);
+    try { setChecks(await nursingCareService.bedsideCheck(checkMed.id, patientId)); }
     catch (e) { toast({ title: "Erro na checagem", description: String(e), variant: "destructive" }); }
+    finally { setChecking(false); }
   };
 
   const confirmAdminister = async () => {
     if (!checkMed) return;
     setBusy(true);
-    try { await nursingCareService.administer(checkMed.id); toast({ title: "Medicamento administrado", description: "Checagem beira-leito confirmada" }); setCheckMed(null); load(); }
+    try { await nursingCareService.administer(checkMed.id, Number(confirmedPatientId), adminIntentKey); toast({ title: "Medicamento administrado", description: "Checagem beira-leito confirmada" }); setCheckMed(null); setAdminIntentKey(""); load(); }
     catch (e) { toast({ title: "Erro", description: String(e), variant: "destructive" }); }
     finally { setBusy(false); }
   };
@@ -69,7 +89,9 @@ export default function NursingCarePage() {
   const refuseMed = async (m: MedAdmin) => {
     const reason = await promptText({ title: "Recusa de medicação", label: "Motivo da recusa", required: true });
     if (!reason) return;
-    try { await nursingCareService.refuse(m.id, reason); toast({ title: "Recusa registrada" }); load(); }
+    const key = refusalIntentKeys.current.get(m.id) ?? crypto.randomUUID();
+    refusalIntentKeys.current.set(m.id, key);
+    try { await nursingCareService.refuse(m.id, reason, key); refusalIntentKeys.current.delete(m.id); toast({ title: "Recusa registrada" }); load(); }
     catch (e) { toast({ title: "Erro", description: String(e), variant: "destructive" }); }
   };
 
@@ -77,7 +99,7 @@ export default function NursingCarePage() {
     if (!incForm.patient_id || !incForm.description.trim()) { toast({ title: "Preencha paciente e descrição", variant: "destructive" }); return; }
     setBusy(true);
     try {
-      const inc = await nursingCareService.createIncident({ patient_id: Number(incForm.patient_id), incident_type: incForm.incident_type, severity: incForm.severity, description: incForm.description.trim() });
+      const inc = await nursingCareService.createIncident({ patient_id: Number(incForm.patient_id), incident_type: incForm.incident_type, severity: incForm.severity, description: incForm.description.trim(), idempotencyKey: incidentIntentKey });
       toast({ title: "Intercorrência registrada", description: inc.medico_notificado ? "Médico notificado automaticamente" : "Registrada" });
       setIncOpen(false); setIncForm({ patient_id: "", incident_type: "queda", severity: "moderada", description: "" }); load();
     } catch (e) { toast({ title: "Erro", description: String(e), variant: "destructive" }); }
@@ -132,7 +154,7 @@ export default function NursingCarePage() {
         </TabsContent>
 
         <TabsContent value="intercorrencias" className="space-y-2">
-          <div className="flex justify-end"><Button size="sm" onClick={() => setIncOpen(true)}><Plus className="h-4 w-4 mr-1" />Nova intercorrência</Button></div>
+          <div className="flex justify-end"><Button size="sm" onClick={() => { setIncidentIntentKey(crypto.randomUUID()); setIncOpen(true); }}><Plus className="h-4 w-4 mr-1" />Nova intercorrência</Button></div>
           <div className="rounded-lg border bg-card overflow-auto">
             <Table>
               <TableHeader><TableRow><TableHead>Paciente</TableHead><TableHead>Tipo</TableHead><TableHead>Gravidade</TableHead><TableHead>Descrição</TableHead><TableHead>Médico</TableHead><TableHead>Data</TableHead></TableRow></TableHeader>
@@ -180,6 +202,13 @@ export default function NursingCarePage() {
           <div className="space-y-2 py-2">
             <div className="rounded bg-muted/50 p-2 text-sm"><b>{checkMed?.patient_name}</b><br />{checkMed?.medication} · {checkMed?.dose} {checkMed?.via}</div>
             <div className="space-y-1">
+              <Label htmlFor="bedside-patient-id">ID lido da pulseira *</Label>
+              <div className="flex gap-2">
+                <Input id="bedside-patient-id" inputMode="numeric" value={confirmedPatientId} onChange={(event) => { setConfirmedPatientId(event.target.value); setChecks([]); }} placeholder="Leia ou digite o ID" />
+                <Button type="button" variant="outline" onClick={runBedsideCheck} disabled={checking || !confirmedPatientId.trim()}>{checking ? "..." : "Checar"}</Button>
+              </div>
+            </div>
+            <div className="space-y-1">
               {checks.map((c, i) => (
                 <div key={i} className="flex items-center gap-2 text-sm">
                   {c.ok ? <CheckCircle2 className="h-4 w-4 text-success" /> : <XCircle className="h-4 w-4 text-destructive" />}
@@ -191,7 +220,7 @@ export default function NursingCarePage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCheckMed(null)} disabled={busy}>Cancelar</Button>
-            <Button onClick={confirmAdminister} disabled={busy || checks.some((c) => !c.ok)}>{busy ? "..." : "Confirmar administração"}</Button>
+            <Button onClick={confirmAdminister} disabled={busy || checking || checks.length === 0 || checks.some((c) => !c.ok)}>{busy ? "..." : "Confirmar administração"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -223,3 +252,4 @@ export default function NursingCarePage() {
     </div>
   );
 }
+

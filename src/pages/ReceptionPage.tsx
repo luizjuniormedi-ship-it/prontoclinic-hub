@@ -18,8 +18,11 @@ import { Appointment, AppointmentStatus, Patient } from "@/types";
 import type { AppointmentTypeLiteral, AppointmentStatusForBadge } from "@/types/missing";
 import { useToast } from "@/hooks/use-toast";
 import { calculateAge } from "@/utils/formatters";
+import { getReceptionOperationalDate } from "@/utils/receptionOperationalDate";
 import { useDebounce } from "@/hooks/useDebounce";
 import { CheckinReadiness, ReceptionPendingItem, receptionService } from "@/services/receptionService";
+import { useAuth } from "@/hooks/useAuth";
+import { canAccessRoute } from "@/config/routePermissions";
 
 interface PatientRow { id: string; full_name: string; cpf: string | null; birth_date: string | null; phone: string | null; allergies: string | null; insurance_plan_id: string | null; }
 
@@ -66,10 +69,13 @@ export default function ReceptionPage() {
   const [authorizationPassword, setAuthorizationPassword] = useState("");
   const [authorizationValidUntil, setAuthorizationValidUntil] = useState("");
   const [pendingDetail, setPendingDetail] = useState("");
+  const [startingAppointmentId, setStartingAppointmentId] = useState<string | null>(null);
   const debouncedSearch = useDebounce(search, 300);
   const navigate = useNavigate();
   const { toast } = useToast();
-  const today = new Date().toISOString().split("T")[0];
+  const { user } = useAuth();
+  const canOpenAttendance = canAccessRoute(user?.role_name, "/attendance");
+  const today = getReceptionOperationalDate();
 
   const loadAll = useCallback(async () => {
     try {
@@ -101,7 +107,21 @@ export default function ReceptionPage() {
       await appointmentsService.getByDate(today).then(setDbAppointments);
       const labels: Record<string, string> = { waiting: "Check-in realizado!", in_progress: "Atendimento iniciado!", completed: "Finalizado!" };
       toast({ title: labels[newStatus] || "Atualizado" });
-    } catch (err) { toast({ title: "Erro", description: (err as Error).message, variant: "destructive" }); }
+      return true;
+    } catch (err) {
+      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" });
+      return false;
+    }
+  };
+
+  const startAttendance = async (id: string) => {
+    try {
+      setStartingAppointmentId(id);
+      const updated = await handleStatusChange(id, "in_progress");
+      if (updated && canOpenAttendance) navigate(`/attendance/${id}`);
+    } finally {
+      setStartingAppointmentId(null);
+    }
   };
 
   const openCheckin = async (appointment: Appointment) => {
@@ -229,7 +249,7 @@ export default function ReceptionPage() {
               a.status === "scheduled" || a.status === "confirmed" ? (
                 <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => void openCheckin(a)}><Check className="mr-1 h-3 w-3" />Check-in</Button>
               ) : a.status === "waiting" ? (
-                <Button size="sm" className="h-7 text-xs" onClick={() => { handleStatusChange(a.id, "in_progress"); navigate(`/attendance/${a.id}`); }}><Play className="mr-1 h-3 w-3" />Iniciar</Button>
+                <Button size="sm" className="h-7 text-xs" disabled={startingAppointmentId === a.id} onClick={() => void startAttendance(a.id)}><Play className="mr-1 h-3 w-3" />{startingAppointmentId === a.id ? "Iniciando..." : "Iniciar"}</Button>
               ) : null
             ))
           )}
@@ -238,9 +258,9 @@ export default function ReceptionPage() {
         <TabsContent value="attending" className="mt-3 space-y-2">
           {inProgress.length === 0 ? <EmptyState icon={Stethoscope} title="Nenhum atendimento em andamento" /> :
             inProgress.map((a) => renderCard(a,
-              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => navigate(`/attendance/${a.id}`)}>
+              canOpenAttendance ? <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => navigate(`/attendance/${a.id}`)}>
                 <Stethoscope className="mr-1 h-3 w-3" />Abrir
-              </Button>
+              </Button> : null
             ))
           }
         </TabsContent>
@@ -297,3 +317,4 @@ function StatusCard({ icon, label, count, color, bg }: { icon: React.ReactNode; 
     </Card>
   );
 }
+

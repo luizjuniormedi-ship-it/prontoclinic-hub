@@ -29,7 +29,7 @@ vi.mock("@/lib/supabase", () => {
     update: vi.fn().mockReturnThis(),
     single: vi.fn(),
   };
-  return { supabase: { from: vi.fn(() => chain) } };
+  return { supabase: { from: vi.fn(() => chain), rpc: vi.fn() } };
 });
 
 import { supabase } from "@/lib/supabase";
@@ -52,8 +52,14 @@ describe("medicalRecordsService", () => {
           record_date: "2026-06-15",
           anamnesis: "Queixa",
           evolution: null,
+        diagnosis: null,
+        prescription: null,
           vital_signs: null,
           notes: null,
+          status: "draft",
+          signed_at: null,
+          signed_by: null,
+          content_hash: null,
           created_at: "2026-06-15T10:00:00Z",
         },
         {
@@ -66,8 +72,14 @@ describe("medicalRecordsService", () => {
           record_date: "2026-01-01",
           anamnesis: null,
           evolution: null,
+        diagnosis: null,
+        prescription: null,
           vital_signs: null,
           notes: null,
+          status: "draft",
+          signed_at: null,
+          signed_by: null,
+          content_hash: null,
           created_at: "2026-01-01T10:00:00Z",
         },
       ];
@@ -114,8 +126,14 @@ describe("medicalRecordsService", () => {
         record_date: "2026-06-15",
         anamnesis: null,
         evolution: null,
+        diagnosis: null,
+        prescription: null,
         vital_signs: null,
         notes: null,
+        status: "draft",
+        signed_at: null,
+        signed_by: null,
+        content_hash: null,
         created_at: "2026-06-15T10:00:00Z",
       };
       const chain = {
@@ -143,90 +161,97 @@ describe("medicalRecordsService", () => {
   });
 
   describe("create", () => {
-    it("cria prontuário com record_date automático quando não informado", async () => {
-      const created: DbMedicalRecord = {
-        id: "r-new",
-        company_id: null,
-        unit_id: null,
-        patient_id: "p1",
-        professional_id: "d1",
-        appointment_id: null,
-        record_date: new Date().toISOString(),
-        anamnesis: "Q",
-        evolution: null,
-        vital_signs: null,
-        notes: null,
-        created_at: new Date().toISOString(),
-      };
-      const single = vi.fn().mockResolvedValue({ data: created, error: null });
-      const insert = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single }) });
-      (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ insert });
-
-      const result = await medicalRecordsService.create({
-        patient_id: "p1",
-        professional_id: "d1",
-        anamnesis: "Q",
-      });
-
-      expect(result.id).toBe("r-new");
-      expect(insert).toHaveBeenCalled();
-      const callArg = insert.mock.calls[0][0];
-      expect(callArg.patient_id).toBe("p1");
-      expect(callArg.record_date).toBeDefined(); // auto-filled
-    });
-
-    it("rejeita input sem patient_id", async () => {
-      await expect(
-        medicalRecordsService.create({
-          patient_id: "",
-          anamnesis: "Queixa",
-        }),
-      ).rejects.toThrow(/patient_id é obrigatório/);
-    });
-
-    it("respeita record_date quando fornecido", async () => {
-      const fixedDate = "2025-01-15T08:00:00Z";
-      const single = vi.fn().mockResolvedValue({
-        data: { id: "r-fixed", record_date: fixedDate, patient_id: "p1" },
+    it("cria prontuário via RPC seguro", async () => {
+      const created = { id: 10, patient_id: 101, anamnesis: "Q" };
+      (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+        data: created,
         error: null,
       });
-      const insert = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single }) });
-      (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ insert });
 
-      await medicalRecordsService.create({
-        patient_id: "p1",
-        record_date: fixedDate,
+      const result = await medicalRecordsService.create({
+        patient_id: "101",
+        professional_id: "202",
+        anamnesis: "Q",
       });
 
-      const callArg = insert.mock.calls[0][0];
-      expect(callArg.record_date).toBe(fixedDate);
+      expect(result.id).toBe(10);
+      expect(supabase.rpc).toHaveBeenCalledWith("create_medical_record_secure", expect.objectContaining({
+        p_patient_id: 101,
+        p_professional_id: 202,
+        p_anamnesis: "Q",
+      }));
+    });
+
+    it("rejeita input sem patient_id numérico", async () => {
+      await expect(
+        medicalRecordsService.create({ patient_id: "", anamnesis: "Queixa" }),
+      ).rejects.toThrow(/patient_id/);
     });
   });
 
   describe("update", () => {
-    it("atualiza prontuário por id", async () => {
-      const updated: DbMedicalRecord = {
-        id: "r1",
-        company_id: null,
-        unit_id: null,
-        patient_id: "p1",
-        professional_id: null,
-        appointment_id: null,
-        record_date: "2026-06-15",
-        anamnesis: "Atualizado",
-        evolution: null,
-        vital_signs: null,
-        notes: null,
-        created_at: "2026-06-15T10:00:00Z",
-      };
-      const single = vi.fn().mockResolvedValue({ data: updated, error: null });
-      const update = vi.fn().mockReturnValue({
-        eq: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single }) }),
+    it("atualiza prontuário por RPC seguro", async () => {
+      const updated = { id: 10, patient_id: 101, anamnesis: "Atualizado" };
+      (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+        data: updated,
+        error: null,
       });
-      (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ update });
 
-      const result = await medicalRecordsService.update("r1", { anamnesis: "Atualizado" });
+      const result = await medicalRecordsService.update("10", { anamnesis: "Atualizado" });
+
       expect(result.anamnesis).toBe("Atualizado");
+      expect(supabase.rpc).toHaveBeenCalledWith("update_medical_record_secure", {
+        p_record_id: 10,
+        p_patch: { anamnesis: "Atualizado" },
+      });
+    });
+  });
+
+  describe("finalizeAttendance", () => {
+    it("finaliza e assina o atendimento por uma única RPC", async () => {
+      const finalized = { id: 10, appointment_id: 303, status: "signed" };
+      (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+        data: finalized,
+        error: null,
+      });
+
+      const result = await medicalRecordsService.finalizeAttendance({
+        appointment_id: "303",
+        anamnesis: "Queixa",
+        evolution: "Evolução",
+        vital_signs: { pa: "120/80" },
+      });
+
+      expect(result.status).toBe("signed");
+      expect(supabase.rpc).toHaveBeenCalledWith("finalize_medical_attendance_secure", {
+        p_appointment_id: "303",
+        p_record_date: null,
+        p_anamnesis: "Queixa",
+        p_evolution: "Evolução",
+        p_diagnosis: null,
+        p_prescription: null,
+        p_vital_signs: { pa: "120/80" },
+        p_notes: null,
+      });
+    });
+
+    it("rejeita appointment_id não numérico antes da RPC", async () => {
+      await expect(medicalRecordsService.finalizeAttendance({
+        appointment_id: "inválido",
+      })).rejects.toThrow(/appointment_id/);
+      expect(supabase.rpc).not.toHaveBeenCalled();
+    });
+
+    it("preserva BIGINT acima de Number.MAX_SAFE_INTEGER como string", async () => {
+      (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+        data: { id: "1", status: "signed" }, error: null,
+      });
+      await medicalRecordsService.finalizeAttendance({ appointment_id: "9007199254740993" });
+      expect(supabase.rpc).toHaveBeenCalledWith(
+        "finalize_medical_attendance_secure",
+        expect.objectContaining({ p_appointment_id: "9007199254740993" }),
+      );
     });
   });
 });
+

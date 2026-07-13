@@ -15,7 +15,12 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { pharmacyService, medicamentoSchema, dispensacaoSchema } from "@/services/pharmacyService";
+import {
+  pharmacyService,
+  medicamentoSchema,
+  dispensacaoSchema,
+  SNGPC_INTEGRATION_STATUS,
+} from "@/services/pharmacyService";
 
 // Mock do Supabase
 vi.mock("@/lib/supabase", () => {
@@ -115,10 +120,12 @@ describe("lotesService — getValidos (FEFO)", () => {
   it("filtra apenas status OK, VENCE_30_DIAS, VENCE_90_DIAS (não vencidos)", async () => {
     const inSpy = vi.fn().mockReturnThis();
     const eqSpy = vi.fn().mockReturnThis();
+    const orderSpy = vi.fn().mockReturnThis();
     const chain: any = {
       select: vi.fn().mockReturnThis(),
       eq: eqSpy,
       in: inSpy,
+      order: orderSpy,
     };
     (chain as any).then = (resolve: any) => resolve({ data: [], error: null });
     (supabase.from as any).mockReturnValue(chain);
@@ -126,6 +133,10 @@ describe("lotesService — getValidos (FEFO)", () => {
     await pharmacyService.lotes.getValidos(1, "MEDICAMENTO");
     expect(eqSpy).toHaveBeenCalledWith("cd_medicamento_id", 1);
     expect(inSpy).toHaveBeenCalledWith("status_validade", ["OK", "VENCE_30_DIAS", "VENCE_90_DIAS"]);
+    expect(orderSpy.mock.calls).toEqual([
+      ["dt_validade", { ascending: true }],
+      ["cd_lote", { ascending: true }],
+    ]);
   });
 
   it("usa cd_material_id para tipo MATERIAL", async () => {
@@ -134,6 +145,7 @@ describe("lotesService — getValidos (FEFO)", () => {
       select: vi.fn().mockReturnThis(),
       eq: eqSpy,
       in: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
     };
     (chain as any).then = (resolve: any) => resolve({ data: [], error: null });
     (supabase.from as any).mockReturnValue(chain);
@@ -171,7 +183,10 @@ describe("lotesService — getProximosVencimento", () => {
     const diffDias = Math.round((dataChamada.getTime() - antes.getTime()) / 86400000);
     expect(diffDias).toBeGreaterThanOrEqual(29);
     expect(diffDias).toBeLessThanOrEqual(31);
-    expect(orderSpy).toHaveBeenCalledWith("dt_validade", { ascending: true });
+    expect(orderSpy.mock.calls).toEqual([
+      ["dt_validade", { ascending: true }],
+      ["cd_lote", { ascending: true }],
+    ]);
     void depois;
   });
 });
@@ -230,12 +245,12 @@ describe("movimentacoesService — saida (valida estoque)", () => {
     await expect(pharmacyService.movimentacoes.saida(1, 10, 5, "Dispensação")).rejects.toThrow(/Estoque insuficiente/);
   });
 
-  it("chama RPC com tipo SAIDA e dados do paciente", async () => {
+  it("chama RPC com tipo SAIDA, dados do paciente e prescrição nula", async () => {
     (supabase.rpc as any).mockResolvedValue({
       data: [{ id: 100, qt_anterior: 30, qt_posterior: 20 }],
       error: null,
     });
-    await pharmacyService.movimentacoes.saida(1, 10, 5, "Receita ambulatorial", 99, 77);
+    await pharmacyService.movimentacoes.saida(1, 10, 5, "Receita ambulatorial", 99);
     expect(supabase.rpc).toHaveBeenCalledWith("registrar_movimentacao_estoque", {
       p_lote_id: 1,
       p_tipo: "SAIDA",
@@ -243,8 +258,16 @@ describe("movimentacoesService — saida (valida estoque)", () => {
       p_motivo: "Receita ambulatorial",
       p_paciente_id: 5,
       p_appointment_id: 99,
-      p_prescricao_id: 77,
+      p_prescricao_id: null,
     });
+  });
+
+  it("rejeita prescrição não canônica antes da RPC", async () => {
+    await expect(
+      pharmacyService.movimentacoes.saida(1, 10, 5, "Receita ambulatorial", 99, 77),
+    ).rejects.toThrow(/Prescrição canônica ainda não está disponível/);
+
+    expect(supabase.rpc).not.toHaveBeenCalled();
   });
 });
 
@@ -257,6 +280,7 @@ describe("dispensacoesService — create (validação de itens)", () => {
     expect(() =>
       dispensacaoSchema.parse({
         cd_paciente: 1,
+        idempotency_key: "11111111-1111-4111-8111-111111111111",
         itens: [],
       }),
     ).toThrow();
@@ -266,6 +290,7 @@ describe("dispensacoesService — create (validação de itens)", () => {
     expect(() =>
       dispensacaoSchema.parse({
         cd_paciente: 0,
+        idempotency_key: "11111111-1111-4111-8111-111111111111",
         itens: [{ cd_lote: 1, qt_dispensada: 1 }],
       }),
     ).toThrow();
@@ -275,61 +300,108 @@ describe("dispensacoesService — create (validação de itens)", () => {
     expect(() =>
       dispensacaoSchema.parse({
         cd_paciente: 1,
+        idempotency_key: "11111111-1111-4111-8111-111111111111",
         itens: [{ cd_lote: 1, qt_dispensada: 0 }],
       }),
     ).toThrow();
   });
 
-  it("cria dispensação + chama saida para cada item", async () => {
-    // Mock da criação da dispensação
-    const insertChain: any = {
-      insert: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({
-        data: {
-          id: 50,
-          company_id: "c1",
-          cd_paciente: 1,
-          dt_dispensacao: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-        },
-        error: null,
-      }),
-    };
-    (supabase.from as any).mockReturnValueOnce(insertChain);
-
-    // Mock da RPC de movimentação (sucesso)
+  it("confirma cabeçalho, itens e estoque por uma única RPC atômica sem prescrição", async () => {
     (supabase.rpc as any).mockResolvedValue({
-      data: [{ id: 1, qt_anterior: 100, qt_posterior: 90 }],
+      data: {
+        id: 50,
+        company_id: "c1",
+        cd_paciente: 1,
+        dt_dispensacao: "2026-07-13T12:00:00.000Z",
+        cd_usuario: "22222222-2222-4222-8222-222222222222",
+        idempotent_replay: false,
+      },
       error: null,
     });
 
-    // Mock do insert de dispensacao_itens — chamado 2x (um por item)
-    const itemChain: any = {
-      insert: vi.fn().mockReturnThis(),
-    };
-    (itemChain as any).then = (resolve: any) => resolve({ data: null, error: null });
-    (supabase.from as any).mockReturnValueOnce(itemChain);
-    (supabase.from as any).mockReturnValueOnce(itemChain);
-
     const result = await pharmacyService.dispensacoes.create({
       cd_paciente: 1,
+      cd_appointment: 99,
+      ds_observacao: "  Receita ambulatorial  ",
+      idempotency_key: "11111111-1111-4111-8111-111111111111",
       itens: [
         { cd_lote: 10, qt_dispensada: 5 },
-        { cd_lote: 11, qt_dispensada: 3 },
+        { cd_lote: 11, qt_dispensada: 3, vl_unitario: 4.5 },
       ],
     });
 
     expect(result.id).toBe(50);
-    expect(supabase.rpc).toHaveBeenCalledTimes(2);
-    expect(supabase.rpc).toHaveBeenNthCalledWith(1, "registrar_movimentacao_estoque", expect.objectContaining({
-      p_tipo: "SAIDA",
-      p_quantidade: 5,
-    }));
-    expect(supabase.rpc).toHaveBeenNthCalledWith(2, "registrar_movimentacao_estoque", expect.objectContaining({
-      p_tipo: "SAIDA",
-      p_quantidade: 3,
-    }));
+    expect(supabase.rpc).toHaveBeenCalledOnce();
+    expect(supabase.rpc).toHaveBeenCalledWith("dispensar_estoque", {
+      p_idempotency_key: "11111111-1111-4111-8111-111111111111",
+      p_paciente_id: 1,
+      p_itens: [
+        { cd_lote: 10, qt_dispensada: 5 },
+        { cd_lote: 11, qt_dispensada: 3 },
+      ],
+      p_appointment_id: 99,
+      p_prescricao_id: null,
+      p_observacao: "Receita ambulatorial",
+    });
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it("rejeita cd_prescricao_id antes da RPC enquanto não há prescrição canônica", async () => {
+    await expect(pharmacyService.dispensacoes.create({
+      cd_paciente: 1,
+      cd_prescricao_id: 77,
+      idempotency_key: "11111111-1111-4111-8111-111111111111",
+      itens: [{ cd_lote: 10, qt_dispensada: 1 }],
+    })).rejects.toThrow(/Prescrição canônica ainda não está disponível/);
+
+    expect(supabase.rpc).not.toHaveBeenCalled();
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it("propaga o erro real da RPC sem rollback ou escrita alternativa", async () => {
+    (supabase.rpc as any).mockResolvedValue({
+      data: null,
+      error: { message: "Estoque insuficiente no lote 10" },
+    });
+
+    await expect(pharmacyService.dispensacoes.create({
+      cd_paciente: 1,
+      idempotency_key: "11111111-1111-4111-8111-111111111111",
+      itens: [{ cd_lote: 10, qt_dispensada: 5 }],
+    })).rejects.toThrow("Estoque insuficiente no lote 10");
+
+    expect(supabase.rpc).toHaveBeenCalledOnce();
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it("falha fechado quando a RPC não comprova o commit", async () => {
+    (supabase.rpc as any).mockResolvedValue({ data: null, error: null });
+
+    await expect(pharmacyService.dispensacoes.create({
+      cd_paciente: 1,
+      idempotency_key: "11111111-1111-4111-8111-111111111111",
+      itens: [{ cd_lote: 10, qt_dispensada: 1 }],
+    })).rejects.toThrow("Resposta inválida ao confirmar dispensação");
+  });
+});
+
+describe("receitasControladasService — SNGPC", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("declara integração pendente e nunca marca receita como enviada localmente", async () => {
+    expect(pharmacyService.receitasControladas.integrationStatus).toEqual(
+      SNGPC_INTEGRATION_STATUS,
+    );
+    expect(SNGPC_INTEGRATION_STATUS.integrated).toBe(false);
+    expect(SNGPC_INTEGRATION_STATUS.state).toBe("PENDENTE_INTEGRACAO");
+
+    await expect(pharmacyService.receitasControladas.enviarSNGPC(42))
+      .rejects.toThrow(/não integrado/i);
+
+    expect(supabase.from).not.toHaveBeenCalled();
+    expect(supabase.rpc).not.toHaveBeenCalled();
   });
 });
 
@@ -406,3 +478,4 @@ describe("medicamentoSchema (Zod)", () => {
     }
   });
 });
+

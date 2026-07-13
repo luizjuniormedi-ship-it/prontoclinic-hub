@@ -29,6 +29,10 @@ const envSchema = z.object({
   VITE_APP_NAME: z.string().default("ProntoMedic"),
   VITE_APP_ENV: z.enum(["development", "staging", "production"]).default("development"),
   VITE_APP_URL: z.string().url().optional(),
+  VITE_PUBLIC_COMPANY_ID: z
+    .string()
+    .uuid("VITE_PUBLIC_COMPANY_ID deve ser um UUID valido")
+    .optional(),
   VITE_RESEND_API_KEY: z.string().optional(),
   VITE_EMAIL_FROM: z.string().email().optional(),
   VITE_EMAIL_REPLY_TO: z.string().email().optional(),
@@ -57,8 +61,6 @@ const envSchema = z.object({
     ),
   VITE_DICOM_BUCKET: z.string().optional(),
   VITE_TISS_VERSION: z.string().default("3.05.00"),
-  VITE_TISS_CERT_PATH: z.string().optional(),
-  VITE_TISS_CERT_PASSWORD: z.string().optional(),
   VITE_TISS_AMBIENTE: z.enum(["HOMOLOGACAO", "PRODUCAO"]).default("HOMOLOGACAO"),
 });
 
@@ -80,3 +82,4 @@ export const features = {
   telemedicine: env.VITE_ENABLE_TELEMEDICINE,
   whatsapp: env.VITE_ENABLE_WHATSAPP,
 } as const;
+

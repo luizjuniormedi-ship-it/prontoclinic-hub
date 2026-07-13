@@ -6,6 +6,7 @@ vi.mock("@/lib/supabase", () => {
     supabase: {
       auth: { getUser: vi.fn() },
       from: vi.fn(),
+      rpc: vi.fn(),
     },
   };
 });
@@ -15,8 +16,6 @@ import { supabase } from "@/lib/supabase";
 function chainWith(result: unknown) {
   const chain: Record<string, any> = {
     select: vi.fn().mockReturnThis(),
-    insert: vi.fn().mockReturnThis(),
-    update: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
@@ -50,16 +49,14 @@ describe("callCenterService", () => {
     expect(result[0].patient_phone).toBe("21999999999");
   });
 
-  it("cria contato e tarefa quando proxima acao é informada", async () => {
-    (supabase.auth.getUser as any).mockResolvedValue({ data: { user: { id: "user-1" } } });
-    const profileChain = chainWith({ data: { company_id: "company-1" }, error: null });
-    const contactChain = chainWith({ data: { id: 77, result: "recado" }, error: null });
-    const taskChain = chainWith({ data: { id: 88, status: "pending" }, error: null });
-    (supabase.from as any)
-      .mockReturnValueOnce(profileChain)
-      .mockReturnValueOnce(contactChain)
-      .mockReturnValueOnce(profileChain)
-      .mockReturnValueOnce(taskChain);
+  it("cria contato e tarefa atomicamente quando proxima acao é informada", async () => {
+    const contact = {
+      id: 77,
+      patient_id: 10,
+      result: "recado",
+      next_action: "retornar_ligacao",
+    };
+    (supabase.rpc as any).mockResolvedValue({ data: contact, error: null });
 
     const result = await callCenterService.createContact({
       patient_id: "10",
@@ -73,24 +70,17 @@ describe("callCenterService", () => {
     });
 
     expect(result.id).toBe(77);
-    expect(contactChain.insert).toHaveBeenCalledWith(expect.objectContaining({
-      patient_id: 10,
-      company_id: "company-1",
-      operator_id: "user-1",
-      contact_reason: "Retorno pendente",
-    }));
-    expect(taskChain.insert).toHaveBeenCalledWith(expect.objectContaining({
-      contact_log_id: 77,
-      task_type: "retornar_ligacao",
-      status: "pending",
-    }));
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "create_call_center_contact_secure",
+      expect.objectContaining({
+        p_patient_id: 10,
+        p_contact_reason: "Retorno pendente",
+        p_create_task: true,
+      }),
+    );
   });
 
-  it("rejeita contato sem motivo", async () => {
-    (supabase.auth.getUser as any).mockResolvedValue({ data: { user: { id: "user-1" } } });
-    const profileChain = chainWith({ data: { company_id: "company-1" }, error: null });
-    (supabase.from as any).mockReturnValue(profileChain);
-
+  it("rejeita contato sem motivo antes de chamar o backend", async () => {
     await expect(callCenterService.createContact({
       patient_id: "10",
       channel: "telefone",
@@ -98,15 +88,39 @@ describe("callCenterService", () => {
       contact_reason: " ",
       result: "recado",
     })).rejects.toThrow(/Motivo do contato/);
+
+    expect(supabase.rpc).not.toHaveBeenCalled();
   });
 
-  it("conclui tarefa", async () => {
-    const chain = chainWith({ data: null, error: null });
-    chain.eq.mockResolvedValue({ error: null });
-    (supabase.from as any).mockReturnValue(chain);
+  it("cria tarefa via RPC segura", async () => {
+    const task = { id: 88, status: "pending" };
+    (supabase.rpc as any).mockResolvedValue({ data: task, error: null });
+
+    const result = await callCenterService.createTask({
+      patient_id: "10",
+      task_type: "retornar_ligacao",
+      description: "Ligar amanhã",
+    });
+
+    expect(result).toEqual(task);
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "create_call_center_task_secure",
+      expect.objectContaining({
+        p_patient_id: 10,
+        p_task_type: "retornar_ligacao",
+        p_description: "Ligar amanhã",
+        p_priority: "normal",
+      }),
+    );
+  });
+
+  it("conclui tarefa via RPC segura", async () => {
+    (supabase.rpc as any).mockResolvedValue({ data: null, error: null });
 
     await expect(callCenterService.completeTask(5)).resolves.toBeUndefined();
-    expect(chain.update).toHaveBeenCalledWith(expect.objectContaining({ status: "done" }));
-    expect(chain.eq).toHaveBeenCalledWith("id", 5);
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "complete_call_center_task_secure",
+      { p_task_id: 5 },
+    );
   });
 });

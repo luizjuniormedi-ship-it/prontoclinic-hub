@@ -1,94 +1,82 @@
-import { test as authed, expect } from './fixtures/auth';
+import { test, expect, type Page } from './fixtures/auth';
 
-authed.describe('Faturamento', () => {
-  authed.beforeEach(async ({ loginAs }) => {
+async function openFinancialAndAssertRuntime(page: Page, path = '/financial') {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  const responsePromise = page.waitForResponse((response) =>
+    response.url().includes('/rest/v1/rpc/list_billing_financial_summary_secure')
+  , { timeout: 3000 }).catch(() => null);
+  await page.goto(path);
+  const response = await responsePromise;
+  if (!response) {
+    const headings = await page.getByRole('heading').allTextContents();
+    const errorHeading = page.getByRole('heading', { name: 'Erro' });
+    const errorText = await errorHeading.count()
+      ? (await errorHeading.locator('..').innerText()).replace(/\s+/g, ' ')
+      : 'sem ErrorState';
+    throw new Error(`Resumo financeiro nao foi solicitado. headings=${JSON.stringify(headings)} pageErrors=${JSON.stringify(pageErrors)} errorState=${errorText}`);
+  }
+  if (!response.ok()) {
+    throw new Error(`Resumo financeiro falhou: HTTP ${response.status()} ${await response.text()}`);
+  }
+}
+
+test.describe('Financeiro e faturamento - contrato operacional', () => {
+  test.beforeEach(async ({ loginAs }) => {
     await loginAs('admin');
   });
 
-  authed('criar convênio', async ({ page }) => {
-    await page.goto('/admin/convenios');
-    await page.getByRole('button', { name: /novo convênio|criar/i }).click();
-    await page.getByLabel(/nome/i).fill('Unimed E2E');
-    await page.getByLabel(/razão social/i).fill('Unimed Federação E2E LTDA');
-    await page.getByLabel(/cnpj/i).fill('11.222.333/0001-81');
-    await page.getByLabel(/registro ans/i).fill('123456');
-    await page.getByRole('button', { name: /salvar/i }).click();
-    await expect(page.getByText(/convênio criado/i)).toBeVisible();
+  test('exibe contas a receber sem criar cobranca arbitraria', async ({ page }) => {
+    await openFinancialAndAssertRuntime(page);
+
+    await expect(page).toHaveURL(/\/financial$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Contas a Receber' })).toBeVisible();
+    await expect(page.getByText('Cobranças originadas de atendimentos e respectivos saldos')).toBeVisible();
+    await expect(page.getByPlaceholder('Buscar paciente...')).toBeVisible();
+    await expect(page.getByRole('button', { name: /nova cobrança/i })).toHaveCount(0);
+
+    const table = page.getByRole('table');
+    const emptyState = page.getByRole('heading', { name: 'Nenhuma transação encontrada' });
+    await expect(table.or(emptyState)).toBeVisible();
   });
 
-  authed('criar plano dentro do convênio', async ({ page }) => {
-    await page.goto('/admin/convenios');
-    await page.getByText('Unimed E2E').first().click();
-    await page.getByRole('tab', { name: /planos/i }).click();
-    await page.getByRole('button', { name: /novo plano/i }).click();
-    await page.getByLabel(/nome/i).fill('Plano E2E Básico');
-    await page.getByLabel(/cobertura/i).fill('Ambulatorial');
-    await page.getByRole('button', { name: /salvar/i }).click();
-    await expect(page.getByText('Plano E2E Básico')).toBeVisible();
+  test('exibe producao faturavel vinculada a atendimento', async ({ page }) => {
+    await page.goto('/billing-production');
+
+    await expect(page).toHaveURL(/\/billing-production$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Faturamento' })).toBeVisible();
+    await expect(page.getByText('Produção faturável vinculada aos atendimentos')).toBeVisible();
+    await expect(page.getByPlaceholder('Buscar paciente, profissional...')).toBeVisible();
+
+    const table = page.getByRole('table');
+    const emptyState = page.getByRole('heading', { name: 'Nenhum faturamento encontrado' });
+    await expect(table.or(emptyState)).toBeVisible();
   });
 
-  authed('definir preço particular', async ({ page }) => {
-    await page.goto('/admin/tabelas-precos');
-    await page.getByRole('button', { name: /nova tabela/i }).click();
-    await page.getByLabel(/nome/i).fill('Particular E2E');
-    await page.getByLabel(/tipo/i).selectOption({ label: 'Particular' });
-    await page.getByRole('button', { name: /salvar/i }).click();
-    await expect(page.getByText('Particular E2E')).toBeVisible();
-  });
+  test('rota antiga de contas redireciona para o contrato financeiro comprovado', async ({ page }) => {
+    await openFinancialAndAssertRuntime(page, '/billing-accounts');
 
-  authed('definir preço por convênio', async ({ page }) => {
-    await page.goto('/admin/tabelas-precos');
-    await page.getByText('Particular E2E').first().click();
-    await page.getByRole('button', { name: /adicionar procedimento/i }).click();
-    await page.getByLabel(/procedimento/i).click();
-    await page.getByRole('option').first().click();
-    await page.getByLabel(/preço/i).fill('150.00');
-    await page.getByRole('button', { name: /salvar/i }).click();
-    await expect(page.getByText(/R\$ ?150/i)).toBeVisible();
-  });
-
-  authed('testar find_price (resolver com fallback)', async ({ page, request }) => {
-    // Chamar diretamente a função via API do Supabase Edge Function ou RPC
-    const res = await request.post(
-      `${process.env.VITE_SUPABASE_URL}/rest/v1/rpc/find_price`,
-      {
-        headers: {
-          apikey: process.env.VITE_SUPABASE_ANON_KEY!,
-          Authorization: `Bearer ${process.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        data: {
-          p_procedure_code: 'CONSULTA',
-          p_insurance_id: 'unimed-e2e',
-          p_company_id: 'default'
-        }
-      }
-    );
-    expect([200, 204]).toContain(res.status());
-  });
-
-  authed('gerar fatura mensal', async ({ page }) => {
-    await page.goto('/financial');
-    await page.getByRole('button', { name: /gerar fatura|fatura mensal/i }).click();
-    await page.getByLabel(/mês/i).fill('2026-06');
-    await page.getByRole('button', { name: /gerar/i }).click();
-    await expect(page.getByText(/fatura gerada|R\$/i)).toBeVisible({ timeout: 30000 });
-  });
-
-  authed('visualizar glosa', async ({ page }) => {
-    await page.goto('/financial');
-    await page.getByRole('tab', { name: /glosas/i }).click();
-    await expect(page.getByRole('row').first()).toBeVisible();
-    const motivo = await page.getByRole('row').first().textContent();
-    expect(motivo).toBeTruthy();
-  });
-
-  authed('enviar recurso de glosa', async ({ page }) => {
-    await page.goto('/financial');
-    await page.getByRole('tab', { name: /glosas/i }).click();
-    await page.getByRole('row').first().getByRole('button', { name: /recurso/i }).click();
-    await page.getByLabel(/justificativa/i).fill('Procedimento coberto pelo contrato — recurso E2E');
-    await page.getByRole('button', { name: /enviar/i }).click();
-    await expect(page.getByText(/recurso enviado/i)).toBeVisible();
+    await expect(page).toHaveURL(/\/financial$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Contas a Receber' })).toBeVisible();
   });
 });
+
+for (const role of ['doctor', 'reception', 'patient'] as const) {
+  test(`perfil ${role} nao acessa rotinas financeiras`, async ({ page, loginAs }) => {
+    await loginAs(role);
+
+    for (const path of ['/financial', '/billing-production', '/billing-accounts']) {
+      const writes: string[] = [];
+      const observeWrite = (request: { method(): string; url(): string }) => {
+        if (!['GET', 'HEAD'].includes(request.method()) && /\/rest\/v1\/|\/functions\/v1\//.test(request.url())) {
+          writes.push(`${request.method()} ${request.url()}`);
+        }
+      };
+      page.on('request', observeWrite);
+      await page.goto(path);
+      await expect(page.getByRole('heading', { level: 1, name: 'Acesso Negado' })).toBeVisible();
+      expect(writes).toEqual([]);
+      page.off('request', observeWrite);
+    }
+  });
+}

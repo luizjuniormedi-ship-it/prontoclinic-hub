@@ -46,6 +46,7 @@
     "test:unit:watch": "vitest",
     "test:unit:ui": "vitest --ui",
     "test:unit:coverage": "vitest run --coverage",
+    "test:contract:cors": "node scripts/test-local-auth-cors-preflight.mjs",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
@@ -57,7 +58,8 @@
     "local:health": "powershell -ExecutionPolicy Bypass -File scripts/health-local.ps1",
     "secret:scan": "powershell -ExecutionPolicy Bypass -File scripts/secret-scan.ps1",
     "secret:scan:staged": "powershell -ExecutionPolicy Bypass -File scripts/secret-scan.ps1 --staged",
-    "validate": "npm run lint && npm run type-check && npm run test && npm run build && npm run secret:scan"
+    "validate:rpc": "node scripts/validate-rpc-contract.mjs",
+    "validate": "npm run validate:rpc && npm run lint && npm run type-check && npm run test && npm run build && npm run secret:scan"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -147,3 +149,4 @@
     "vitest": "^3.2.4"
   }
 }
+

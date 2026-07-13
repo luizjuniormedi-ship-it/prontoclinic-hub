@@ -1,4 +1,4 @@
-import { test as base, expect, Page } from '@playwright/test';
+import { test as base, expect, type Page } from './backend-health';
 
 export type UserRole = 'admin' | 'doctor' | 'reception' | 'patient';
 
@@ -23,9 +23,25 @@ export const test = base.extend<{
         patient: { email: 'paciente@prontomedic.test', password: 'TestPassword123!' }
       }[role];
 
+      const isOnAppOrigin = (() => {
+        try {
+          return ['http:', 'https:'].includes(new URL(page.url()).protocol);
+        } catch {
+          return false;
+        }
+      })();
+
+      if (!isOnAppOrigin) {
+        await page.goto('/login');
+      }
+      await page.evaluate(() => {
+        localStorage.clear();
+        sessionStorage.clear();
+      });
+      await page.context().clearCookies();
       await page.goto('/login');
       await page.getByLabel('E-mail').fill(creds.email);
-      await page.getByRole('textbox', { name: 'Senha' }).fill(creds.password);
+      await page.getByLabel('Senha', { exact: true }).fill(creds.password);
       await page.getByRole('button', { name: /entrar/i }).click();
       await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
     });
@@ -33,3 +49,5 @@ export const test = base.extend<{
 });
 
 export { expect };
+export type { Page };
+

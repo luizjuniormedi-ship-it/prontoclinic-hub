@@ -4,7 +4,7 @@
  * Espelha SIGH.xml (544 registros) + SIGH.recurso_de_glosa
  *
  * Sub-componentes:
- *   - TissStats.tsx       — totalizadores + graficos
+ *   - TissStats.tsx       — totalizadores canonicos
  *   - TissLoteList.tsx    — tabela de faturas
  *   - TissGuiaForm.tsx    — dialogs de glosa/protocolo
  *   - TissXmlPreview.tsx  — modal de detalhes
@@ -13,7 +13,6 @@
  */
 
 import { useState, useEffect } from "react";
-import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
@@ -25,25 +24,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Settings2, RefreshCw } from "lucide-react";
-import { toast } from "sonner";
-import { tissService, type TissStatus, type TissXml } from "@/services/tissService";
-import { useAuth } from "@/hooks/useAuth";
+import { tissService, type TissReadModel } from "@/services/tissService";
 import { TissStats } from "./TissStats";
 import { TissLoteList } from "./TissLoteList";
-import { TissGuiaForm } from "./TissGuiaForm";
+import { TissGlosaList, TissGuiaForm } from "./TissGuiaForm";
 import { TissXmlPreview } from "./TissXmlPreview";
 
 export function TissManager() {
-  const { user } = useAuth();
-  // companyId era acessado do useAuth legado; hoje vem do user.company_id
-  const companyId = user?.company_id ?? "";
   const hoje = new Date();
   const [mes, setMes] = useState(hoje.getMonth() + 1);
   const [ano, setAno] = useState(hoje.getFullYear());
-  const [filterStatus, setFilterStatus] = useState<TissStatus | "ALL">("ALL");
   const [filterConvenio, setFilterConvenio] = useState<number | "ALL">("ALL");
-  const [selectedXml, setSelectedXml] = useState<TissXml | null>(null);
-  const [glosaDialogOpen, setGlosaDialogOpen] = useState(false);
+  const [selectedXml, setSelectedXml] = useState<TissReadModel | null>(null);
   const [protocolDialogOpen, setProtocolDialogOpen] = useState(false);
 
   // Listen to cross-component mes-change events from TissLoteList
@@ -56,21 +48,8 @@ export function TissManager() {
     return () => window.removeEventListener("tiss:mes-change", handler);
   }, []);
 
-  const generateMonthMutation = useMutation({
-    mutationFn: () => tissService.gerarFaturaMensal(mes, ano, companyId),
-    onSuccess: (r) =>
-      toast.success(`Lote ${r.lote}: ${r.total_xmls} XMLs gerados, R$ ${r.vl_total.toFixed(2)}`),
-    onError: (e: Error) => toast.error(`Erro: ${e.message}`),
-  });
-
-  const handleSelectXml = (xml: TissXml) => {
+  const handleSelectXml = (xml: TissReadModel) => {
     setSelectedXml(xml);
-    setGlosaDialogOpen(false);
-  };
-
-  const handleOpenGlosa = (xml: TissXml) => {
-    setSelectedXml(xml);
-    setGlosaDialogOpen(true);
   };
 
   return (
@@ -79,22 +58,26 @@ export function TissManager() {
         <div>
           <h1 className="text-2xl font-bold">Faturamento TISS</h1>
           <p className="text-muted-foreground">
-            XMLs de faturamento eletronico de convenios (espelha SIGH.xml)
+            Referencias canonicas de faturamento conveniado em modo somente leitura
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setProtocolDialogOpen(true)}>
+          <Button
+            variant="outline"
+            onClick={() => setProtocolDialogOpen(true)}
+            title="Consultar metadados dos protocolos"
+          >
             <Settings2 className="h-4 w-4 mr-1" />Protocolos
           </Button>
-          <Button onClick={() => generateMonthMutation.mutate()} disabled={generateMonthMutation.isPending}>
+          <Button disabled title="Geracao TISS indisponivel ate existir backend seguro">
             <RefreshCw className="h-4 w-4 mr-1" />
-            {generateMonthMutation.isPending ? "Gerando..." : "Gerar Fatura do Mes"}
+            Gerar Fatura do Mes
           </Button>
         </div>
       </div>
 
       {/* Totalizadores + charts (sub-componente) */}
-      <TissStats companyId={companyId} ano={ano} />
+      <TissStats ano={ano} />
 
       {/* Selecao de ano (compartilhada entre abas) */}
       <div className="flex items-center gap-2">
@@ -112,50 +95,38 @@ export function TissManager() {
       <Tabs defaultValue="guias" className="w-full">
         <TabsList>
           <TabsTrigger value="guias">Guias TISS</TabsTrigger>
-          <TabsTrigger value="charts">Graficos</TabsTrigger>
           <TabsTrigger value="glosas">Glosas</TabsTrigger>
         </TabsList>
 
         <TabsContent value="guias" className="space-y-3">
           <TissLoteList
-            companyId={companyId}
             mes={mes}
             ano={ano}
-            filterStatus={filterStatus}
-            setFilterStatus={setFilterStatus}
             filterConvenio={filterConvenio}
             setFilterConvenio={setFilterConvenio}
             onSelectXml={handleSelectXml}
-            onOpenGlosa={handleOpenGlosa}
           />
-        </TabsContent>
-
-        <TabsContent value="charts" className="space-y-4">
-          <TissStats companyId={companyId} ano={ano} />
         </TabsContent>
 
         <TabsContent value="glosas" className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Glosas em aberto. Selecione uma fatura GLOSADA na aba "Guias TISS" para enviar recurso.
+            Todas as glosas. Recursos permanecem indisponiveis ate existir backend TISS seguro.
           </p>
+          <TissGlosaList />
         </TabsContent>
       </Tabs>
 
       {/* Modal de Detalhes (preview) */}
       <TissXmlPreview
         xml={selectedXml}
-        open={!!selectedXml && !glosaDialogOpen}
+        open={!!selectedXml}
         onOpenChange={(o) => !o && setSelectedXml(null)}
       />
 
       {/* Dialogs de formularios (glosa + protocolo) */}
       <TissGuiaForm
-        glosaDialogOpen={glosaDialogOpen}
-        setGlosaDialogOpen={setGlosaDialogOpen}
-        selectedXml={selectedXml}
         protocolDialogOpen={protocolDialogOpen}
         setProtocolDialogOpen={setProtocolDialogOpen}
-        companyId={companyId}
       />
     </div>
   );

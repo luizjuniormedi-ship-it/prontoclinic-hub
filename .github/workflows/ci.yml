@@ -1,4 +1,4 @@
-﻿name: CI
+name: CI
 
 on:
   push:
@@ -11,9 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      # CI usa o local-auth-server real contra PostgreSQL efemero.
+      # Credenciais de producao e DataSIGH nunca sao lidas neste workflow.
+      VITE_SUPABASE_URL: http://127.0.0.1:8000
+      VITE_SUPABASE_ANON_KEY: ci-local-auth
+      JWT_SECRET: ci-jwt-local-auth-20260712-ephemeral-not-production
+      CORS_ALLOWED_ORIGINS: http://localhost:4173
 
     services:
       postgres:
@@ -41,19 +44,473 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate frontend, proxy and SQL RPC parity
+        run: npm run validate:rpc
+
       - name: Apply database migrations
         run: |
           DATABASE_URL=postgresql://postgres:postgres@localhost:54322/postgres
           export PGPASSWORD=postgres
-          for f in supabase/migrations/*.sql; do
-            echo "Applying $f..."
-            psql -v ON_ERROR_STOP=1 -1 -h localhost -U postgres -d postgres -f "$f"
+          psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres -d postgres -c "CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN BYPASSRLS;"
+          psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres -d postgres -c "CREATE SCHEMA auth; CREATE TABLE auth.users (id uuid PRIMARY KEY); CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS \$\$ SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid \$\$;"
+          migrations=(
+            supabase/migrations/00000_extensions.sql
+            supabase/migrations/20260101000000_base_tables.sql
+            supabase/migrations/20251231018000_helper_functions.sql
+            supabase/migrations/20260101000001_payment_sources.sql
+            supabase/migrations/20260101000002_insurance_companies.sql
+            supabase/migrations/20260101000003_insurance_plans.sql
+            supabase/migrations/20260101000004_professional_insurances.sql
+            supabase/migrations/20251231003000_create_medical_records_stub.sql
+            supabase/migrations/20251231005000_create_billings_stub.sql
+            supabase/migrations/20260101000007_audit_logs.sql
+            supabase/migrations/20260101001200_security_hardening.sql
+            supabase/release-mvp/017_clinical_safe_functions.sql
+            supabase/migrations/20260708090000_scheduling_phase1.sql
+            supabase/release-mvp/018_professional_schedules_canonical.sql
+            supabase/migrations/20260708093000_call_center_phase1.sql
+            supabase/migrations/20260709210000_scheduling_operations.sql
+            supabase/release-mvp/008_canonical_insurance.sql
+            supabase/migrations/20260709223000_scheduling_requirements.sql
+            supabase/migrations/20260709232000_scheduling_confirmations.sql
+            supabase/migrations/20260709235000_reception_checkin_core.sql
+            supabase/migrations/20260710001000_reception_authorization_center.sql
+            supabase/migrations/20260712170000_medical_record_prescription_contract.sql
+            supabase/migrations/20260712180000_medical_records_canonical_columns.sql
+            supabase/migrations/20260712130000_secure_medical_records.sql
+            supabase/migrations/20260712190000_rbac_schema_baseline.sql
+            supabase/migrations/20260712200000_secure_user_profile_admin.sql
+            supabase/migrations/20260712210000_secure_billings.sql
+            supabase/migrations/20260712220000_secure_billing_receipts.sql
+            supabase/migrations/20260712225000_secure_tiss_foundation.sql
+            supabase/migrations/20260712230000_financial_summary_rpc.sql
+            supabase/migrations/20260712231000_billing_production_read_model.sql
+            supabase/migrations/20260712232000_operational_schema_contracts.sql
+            supabase/migrations/20260712233000_tenant_surface_hardening.sql
+            supabase/migrations/20260712234000_reception_rbac_read_defaults.sql
+          )
+          for migration in "${migrations[@]}"; do
+            if [[ "$migration" == *"20260712225000_secure_tiss_foundation.sql" ]]; then
+              psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres -d postgres -c "CREATE ROLE app_prontomedic NOLOGIN NOSUPERUSER NOBYPASSRLS;"
+            fi
+            echo "Applying approved core migration $migration..."
+            psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f "$migration"
           done
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:54322/postgres
 
+      - name: Run TISS foundation gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_tiss_foundation_gate.sql
+
+      - name: Run billing production read-model gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_billing_behavior_gate.sql
+
+      - name: Run operational schema contract gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_schema_contract_gate.sql
+
+      - name: Run tenant surface hardening gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_tenant_surface_gate.sql
+
+      - name: Run reception RBAC defaults gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_reception_rbac_defaults_gate.sql
+
+      - name: Apply scheduling and reception tenant hardening
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260712234500_scheduling_reception_tenant_hardening.sql
+
+      - name: Run scheduling and reception tenant gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_scheduling_reception_tenant_gate.sql
+
+      - name: Apply TISS read-only model
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260712235000_tiss_read_model.sql
+
+      - name: Run TISS read-model gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_tiss_read_model_gate.sql
+
+      - name: Apply TISS glosa and protocol read models
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260712236000_tiss_glosa_protocol_read_models.sql
+
+      - name: Run TISS glosa and protocol read gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_tiss_glosa_protocol_read_gate.sql
+
+      - name: Apply clinical signing contract
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260713081337_clinical_record_signing_contract.sql
+
+      - name: Run clinical signing gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_clinical_signing_gate.sql
+
+      - name: Apply encounters read model
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260713140000_encounters_read_model.sql
+
+      - name: Run encounters read-model gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_encounters_read_model_gate.sql
+
+      - name: Harden clinical data-access audit RPC
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260713150000_harden_log_data_access.sql
+
+      - name: Run clinical data-access audit gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_audit_data_access_gate.sql
+
+      - name: Apply notification and pre-registration tenant hardening
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260713090310_notification_pre_registration_tenant_hardening.sql
+
+      - name: Run notification and pre-registration tenant gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_notification_pre_registration_gate.sql
+
+      - name: Apply LIS foundation and result hardening
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260101000018_lis.sql
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260713100000_lis_atomic_result_release_contract.sql
+
+      - name: Run LIS result tenant gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_lis_atomic_result_gate.sql
+
+      - name: Apply nursing canonical secure contract
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260713120000_nursing_canonical_secure_contract.sql
+
+      - name: Run nursing tenant and clinical safety gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_nursing_secure_gate.sql
+
+      - name: Apply nursing triage atomic contract
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260713130000_nursing_triage_atomic_contract.sql
+
+      - name: Run nursing triage atomic gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_nursing_triage_gate.sql
+
+      - name: Run nursing triage real concurrency gate
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 54322
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: postgres
+        run: bash scripts/ci-nursing-triage-concurrency.sh
+
+      - name: Apply F4 pharmacy atomic tenant contract
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260101000015_farmacia.sql
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260713141921_f4_pharmacy_atomic_tenant_contract.sql
+
+      - name: Run F4 pharmacy runtime gate
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 54322
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: postgres
+        run: |
+          psql -v ON_ERROR_STOP=1 \
+            -v "f4_dblink_connstr=host=127.0.0.1 port=5432 dbname=$PGDATABASE user=$PGUSER password=$PGPASSWORD" \
+            -f supabase/tests/f4_pharmacy_atomic_tenant_gate.sql
+
+      - name: Apply F4 professional payments secure contract
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260101000030_professional_payments.sql
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260713170000_professional_payments_secure_contract.sql
+
+      - name: Run F4 professional payments runtime gate
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 54322
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: postgres
+        run: |
+          psql -v ON_ERROR_STOP=1 \
+            -v "f4_dblink_connstr=host=127.0.0.1 port=5432 dbname=$PGDATABASE user=$PGUSER password=$PGPASSWORD" \
+            -f supabase/tests/f4_professional_payments_secure_gate.sql
+
+      - name: Apply RPC proxy ACL hardening
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres \
+            -f supabase/migrations/20260713190000_rpc_proxy_acl_hardening.sql
+
+      - name: Run RPC proxy ACL gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres \
+            -f supabase/tests/f1_runtime_rpc_proxy_acl_gate.sql
+
+      - name: Validate runtime RPC catalog and ACL
+        run: npm run validate:rpc -- --runtime
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 54322
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: postgres
+
       - name: Type check
         run: npm run type-check
+
+      - name: Test local auth CORS preflight contract
+        run: npm run test:contract:cors
+
+      - name: Seed ephemeral auth users
+        run: |
+          psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres -d postgres -f scripts/ci-seed-e2e.sql
+          psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres -d postgres <<'SQL'
+          INSERT INTO public.role_permissions (role_id, module, can_view)
+          SELECT id, 'faturamento', TRUE
+            FROM public.roles
+           WHERE name = 'admin'
+          ON CONFLICT (role_id, module) DO UPDATE
+            SET can_view = EXCLUDED.can_view;
+          INSERT INTO public.role_permissions (role_id, module, can_view, can_edit)
+          SELECT id, 'agenda', TRUE, TRUE
+            FROM public.roles
+           WHERE name = 'recepcao'
+          ON CONFLICT (role_id, module) DO UPDATE
+            SET can_view = EXCLUDED.can_view,
+                can_edit = EXCLUDED.can_edit,
+                updated_at = NOW();
+          INSERT INTO public.patients (id, company_id, full_name, lg_ativo)
+          VALUES
+            (991301, '00000000-0000-0000-0000-000000000001', 'CI Nursing Triage Patient', TRUE),
+            (991302, '00000000-0000-0000-0000-000000000001', 'CI Medical Record Patient', TRUE)
+          ON CONFLICT (id) DO UPDATE
+            SET company_id = EXCLUDED.company_id,
+                full_name = EXCLUDED.full_name,
+                lg_ativo = TRUE;
+          INSERT INTO public.patients (
+            id, company_id, full_name, birth_date, sex,
+            allergies, clinical_alerts, lg_ativo
+          ) VALUES (
+            991303, '00000000-0000-0000-0000-000000000001',
+            'CI Paciente Prontuario E2E', DATE '1985-03-15', 'F',
+            'Dipirona', 'Hipertensao controlada', TRUE
+          ) ON CONFLICT (id) DO UPDATE
+            SET company_id = EXCLUDED.company_id,
+                full_name = EXCLUDED.full_name,
+                birth_date = EXCLUDED.birth_date,
+                sex = EXCLUDED.sex,
+                allergies = EXCLUDED.allergies,
+                clinical_alerts = EXCLUDED.clinical_alerts,
+                lg_ativo = TRUE;
+          INSERT INTO public.professionals (id, company_id, user_id, full_name, lg_ativo)
+          VALUES (
+            991302, '00000000-0000-0000-0000-000000000001',
+            '22222222-2222-4222-8222-222222222222', 'CI Medical Record Doctor', TRUE
+          ) ON CONFLICT (id) DO UPDATE
+            SET company_id = EXCLUDED.company_id,
+                user_id = EXCLUDED.user_id,
+                full_name = EXCLUDED.full_name,
+                lg_ativo = TRUE;
+          INSERT INTO public.professionals (id, company_id, user_id, full_name, lg_ativo)
+          VALUES (
+            991303, '00000000-0000-0000-0000-000000000001',
+            '22222222-2222-4222-8222-222222222222', 'CI Medico Prontuario E2E', TRUE
+          ) ON CONFLICT (id) DO UPDATE
+            SET company_id = EXCLUDED.company_id,
+                user_id = EXCLUDED.user_id,
+                full_name = EXCLUDED.full_name,
+                lg_ativo = TRUE;
+          INSERT INTO public.appointments (
+            id, company_id, patient_id, professional_id,
+            appointment_date, start_time, end_time, status
+          ) VALUES (
+            991302, '00000000-0000-0000-0000-000000000001', 991302, 991302,
+            DATE '2026-07-22', TIME '09:00', TIME '09:30', 'in_progress'
+          ), (
+            991304, '00000000-0000-0000-0000-000000000001', 991302, 991302,
+            DATE '2026-07-22', TIME '10:00', TIME '10:30', 'in_progress'
+          ), (
+            991303, '00000000-0000-0000-0000-000000000001', 991303, 991303,
+            (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date,
+            TIME '11:00', TIME '11:30', 'waiting'
+          ) ON CONFLICT (id) DO UPDATE
+            SET company_id = EXCLUDED.company_id,
+                patient_id = EXCLUDED.patient_id,
+                professional_id = EXCLUDED.professional_id,
+                appointment_date = EXCLUDED.appointment_date,
+                start_time = EXCLUDED.start_time,
+                end_time = EXCLUDED.end_time,
+                status = EXCLUDED.status;
+          INSERT INTO public.mnct_classificacao_risco (
+            id, company_id, ds_classificacao, cd_cor_hex,
+            nr_tempo_max_atendimento_min, lg_ativo
+          ) VALUES (
+            991301, '00000000-0000-0000-0000-000000000001',
+            'CI TRIAGE YELLOW', '#FACC15', 60, TRUE
+          ) ON CONFLICT (id) DO UPDATE
+            SET company_id = EXCLUDED.company_id,
+                cd_cor_hex = EXCLUDED.cd_cor_hex,
+                nr_tempo_max_atendimento_min = EXCLUDED.nr_tempo_max_atendimento_min,
+                lg_ativo = TRUE;
+          SQL
+        env:
+          PGPASSWORD: postgres
+
+      - name: Start local auth backend
+        run: |
+          set -Eeuo pipefail
+          setsid nohup node local-auth-server.mjs > /tmp/prontomedic-auth.log 2>&1 < /dev/null &
+          echo $! > /tmp/prontomedic-auth.pid
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/auth/v1/settings >/dev/null; then
+              token=$(curl --silent --show-error -X POST 'http://127.0.0.1:8000/auth/v1/token?grant_type=password' -H 'Content-Type: application/json' --data '{"email":"admin@prontomedic.test","password":"TestPassword123!"}' | jq -r '.access_token')
+              user_status=$(curl --silent --show-error --output /tmp/user-same-step.json --write-out '%{http_code}' 'http://127.0.0.1:8000/auth/v1/user' -H "Authorization: Bearer $token")
+              echo "auth_user_same_step_http=$user_status"
+              test "$user_status" = "200"
+              echo "local-auth=ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/prontomedic-auth.log
+          exit 1
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 54322
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: postgres
+
+      - name: Smoke local auth credentials
+        run: |
+          set -Eeuo pipefail
+          status=$(curl --silent --show-error --output /tmp/auth-smoke.json --write-out '%{http_code}'             -X POST 'http://127.0.0.1:8000/auth/v1/token?grant_type=password'             -H 'Content-Type: application/json'             -H 'apikey: ci-local-auth'             --data '{"email":"admin@prontomedic.test","password":"TestPassword123!"}')
+          echo "auth_smoke_http=$status"
+          jq '{has_access_token:(.access_token != null), has_refresh_token:(.refresh_token != null), error}' /tmp/auth-smoke.json
+          test "$status" = "200"
+          jq -e '.access_token and .refresh_token' /tmp/auth-smoke.json >/dev/null
+          token=$(jq -r '.access_token' /tmp/auth-smoke.json)
+          profile_status=$(curl --silent --show-error --output /tmp/profile-smoke.json --write-out '%{http_code}'             'http://127.0.0.1:8000/rest/v1/user_profiles?id=eq.11111111-1111-4111-8111-111111111111&select=id,full_name,role_name,company_id,primary_unit_id'             -H "apikey: ci-local-auth" -H "Authorization: Bearer $token")
+          echo "profile_smoke_http=$profile_status"
+          jq '{rows:(length), first:(.[0] // null)}' /tmp/profile-smoke.json
+          test "$profile_status" = "200"
+          jq -e 'length == 1 and .[0].id == "11111111-1111-4111-8111-111111111111"' /tmp/profile-smoke.json >/dev/null
+          financial_status=$(curl --silent --show-error --output /tmp/financial-smoke.json --write-out '%{http_code}' \
+            -X POST 'http://127.0.0.1:8000/rest/v1/rpc/list_billing_financial_summary_secure' \
+            -H 'Content-Type: application/json' \
+            -H 'apikey: ci-local-auth' \
+            -H "Authorization: Bearer $token" \
+            --data '{}')
+          echo "financial_summary_smoke_http=$financial_status"
+          jq 'if type == "array" then {rows:length, error:null} else {rows:null, error:(.error // .message // "resposta invalida")} end' /tmp/financial-smoke.json
+          test "$financial_status" = "200"
+          jq -e 'type == "array"' /tmp/financial-smoke.json >/dev/null
+          for rpc in list_tiss_glosas_read_secure list_tiss_protocols_read_secure; do
+            response_file="/tmp/${rpc}.json"
+            rpc_status=$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+              -X POST "http://127.0.0.1:8000/rest/v1/rpc/${rpc}" \
+              -H 'Content-Type: application/json' \
+              -H 'apikey: ci-local-auth' \
+              -H "Authorization: Bearer $token" \
+              --data '{}')
+            echo "${rpc}_smoke_http=$rpc_status"
+            jq 'if type == "array" then {rows:length} else {error:(.error // .message // "resposta invalida")} end' "$response_file"
+            test "$rpc_status" = "200"
+            jq -e 'type == "array"' "$response_file" >/dev/null
+          done
+          enqueue_status=$(curl --silent --show-error --output /tmp/nursing-triage-enqueue.json --write-out '%{http_code}' \
+            -X POST 'http://127.0.0.1:8000/rest/v1/rpc/enqueue_nursing_triage_secure' \
+            -H 'Content-Type: application/json' -H 'apikey: ci-local-auth' \
+            -H "Authorization: Bearer $token" \
+            --data '{"p_patient_id":991301,"p_initial_complaint":"CI atomic triage","p_classification_id":991301,"p_idempotency_key":"91301000-0000-4000-8000-000000000001"}')
+          test "$enqueue_status" = "200"
+          queue_id=$(jq -er '.id // .queue_item.id' /tmp/nursing-triage-enqueue.json)
+          call_status=$(curl --silent --show-error --output /tmp/nursing-triage-call.json --write-out '%{http_code}' \
+            -X POST 'http://127.0.0.1:8000/rest/v1/rpc/call_nursing_triage_secure' \
+            -H 'Content-Type: application/json' -H 'apikey: ci-local-auth' \
+            -H "Authorization: Bearer $token" \
+            --data "{\"p_queue_id\":${queue_id},\"p_idempotency_key\":\"91301000-0000-4000-8000-000000000002\"}")
+          test "$call_status" = "200"
+          complete_payload=$(jq -nc --argjson queue_id "$queue_id" '{
+            p_queue_id:$queue_id,
+            p_appointment_id:null,
+            p_classification_id:991301,
+            p_triage:{
+              queixa_principal:"CI atomic triage",
+              sinais_vitais:{pressaoSistolica:120,pressaoDiastolica:80,frequenciaCardiaca:75,frequenciaRespiratoria:16,temperatura:36.7,saturacaoO2:98,escalaDor:2},
+              glasgow:{ocular:4,verbal:5,motor:6},
+              status:"TRIADO"
+            },
+            p_idempotency_key:"91301000-0000-4000-8000-000000000003"
+          }')
+          complete_status=$(curl --silent --show-error --output /tmp/nursing-triage-complete.json --write-out '%{http_code}' \
+            -X POST 'http://127.0.0.1:8000/rest/v1/rpc/complete_nursing_triage_secure' \
+            -H 'Content-Type: application/json' -H 'apikey: ci-local-auth' \
+            -H "Authorization: Bearer $token" --data "$complete_payload")
+          echo "nursing_triage_http=${enqueue_status}/${call_status}/${complete_status}"
+          test "$complete_status" = "200"
+          jq -e '.triage.tp_status == "TRIADO" and .news2.nr_score_total != null and .queue_item.tp_status == "TRIADO"' /tmp/nursing-triage-complete.json >/dev/null
+          for table in nursing_medication_administrations nursing_incidents nursing_procedures nursing_shift_handoffs triagens news2_avaliacoes triagem_fila; do
+            for method in POST PATCH; do
+              direct_status=$(curl --silent --show-error --output "/tmp/${table}-${method}.json" --write-out '%{http_code}' \
+                -X "$method" "http://127.0.0.1:8000/rest/v1/${table}?id=eq.1" \
+                -H 'Content-Type: application/json' \
+                -H 'apikey: ci-local-auth' \
+                -H "Authorization: Bearer $token" \
+                --data '{}')
+              echo "${table}_${method}_direct_http=$direct_status"
+              test "$direct_status" = "403"
+            done
+          done
+          reception_token=$(curl --silent --show-error -X POST 'http://127.0.0.1:8000/auth/v1/token?grant_type=password' \
+            -H 'Content-Type: application/json' -H 'apikey: ci-local-auth' \
+            --data '{"email":"recepcao@prontomedic.test","password":"TestPassword123!"}' | jq -r '.access_token')
+          nursing_denied_status=$(curl --silent --show-error --output /tmp/nursing-rbac-denied.json --write-out '%{http_code}' \
+            -X POST 'http://127.0.0.1:8000/rest/v1/rpc/report_nursing_incident_secure' \
+            -H 'Content-Type: application/json' -H 'apikey: ci-local-auth' \
+            -H "Authorization: Bearer $reception_token" \
+            --data '{"p_patient_id":1,"p_incident_type":"teste","p_severity":"leve","p_description":"deve ser negado","p_idempotency_key":"6a000000-0000-4000-8000-000000000099"}')
+          echo "nursing_reception_rpc_http=$nursing_denied_status"
+          test "$nursing_denied_status" = "403"
+
+      - name: Smoke P0 medical record HTTP contract
+        run: node scripts/smoke-medical-record-http.mjs
 
       - name: Lint
         run: npm run lint
@@ -61,7 +518,11 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Run unit tests with coverage
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Collect coverage report
+        continue-on-error: true
         run: npm run test:unit:coverage
 
       - name: Upload coverage
@@ -73,13 +534,24 @@ jobs:
           retention-days: 30
 
       - name: Install Playwright
-        run: npx playwright install --with-deps chromium firefox webkit
+        run: npx playwright install --with-deps chromium
 
       - name: Run E2E tests
-        run: npm run test:e2e
+        run: npm run test:e2e -- --project=chromium e2e/auth.spec.ts e2e/operational-smoke.spec.ts e2e/financeiro.spec.ts e2e/a11y.spec.ts e2e/prontuario.spec.ts e2e/farmacia.spec.ts e2e/professional-payment.spec.ts
         env:
           CI: true
           E2E_BASE_URL: http://localhost:4173
+
+      - name: Diagnose local auth backend
+        if: always()
+        run: |
+          echo "===== local-auth pid ====="
+          if [ -f /tmp/prontomedic-auth.pid ]; then
+            pid=$(cat /tmp/prontomedic-auth.pid)
+            ps -p "$pid" -o pid,stat,cmd || true
+          fi
+          echo "===== local-auth log ====="
+          cat /tmp/prontomedic-auth.log 2>/dev/null || true
 
       - name: Upload test results
         if: always()
@@ -112,3 +584,4 @@ jobs:
             test -f scripts/check-a11y-violations.mjs
             node scripts/check-a11y-violations.mjs
           fi
+

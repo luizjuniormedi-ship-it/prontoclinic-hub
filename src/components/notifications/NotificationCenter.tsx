@@ -4,12 +4,11 @@
  * Central de notificacoes do usuario + configuracoes LGPD de opt-in/opt-out por canal.
  *
  * Tabs:
- *   1. Nao lidas - notificacoes com status PENDING/SENT/DELIVERED
+ *   1. Nao lidas - notificacoes ainda nao lidas pelo usuario
  *   2. Todas     - historico completo
  *   3. Configuracoes - opt-in/opt-out por canal (LGPD)
  *
- * Usa notificationService para queries (Supabase) e atualizacoes locais via
- * useMutation (TanStack Query).
+ * Usa views e RPCs tenant-safe para queries e mutacoes via TanStack Query.
  */
 
 import { useState } from "react";
@@ -79,38 +78,38 @@ interface Preference {
   unsubscribe_reason: string | null;
 }
 
+interface NotificationViewRecord extends NotificationRecord {
+  is_read: boolean;
+  read_at?: string | null;
+}
+
 export function NotificationCenter() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"unread" | "all" | "settings">("unread");
 
-  // 1. Listagem (admin/user): historico do recipient_id = 0 -> todas do company
-  // Para esta tela exibimos as ultimas 100 da company (admin only)
+  // 1. Listagem tenant-safe das notificacoes do usuario autenticado.
   const listQuery = useQuery({
     queryKey: ["notifications", tab],
-    queryFn: async (): Promise<NotificationRecord[]> => {
+    queryFn: async (): Promise<NotificationViewRecord[]> => {
       const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
       let q = supabase
-        .from("notifications")
+        .from("v_my_notifications")
         .select("*")
         .gte("dt_queued", since)
         .order("dt_queued", { ascending: false })
         .limit(100);
 
       if (tab === "unread") {
-        q = q.in("status", ["PENDING", "PROCESSING", "SENT", "DELIVERED"]);
+        q = q.eq("is_read", false);
       }
 
       const { data, error } = await q;
       if (error) {
-        // Tabela ainda nao existe -> lista vazia (silencioso)
-        if (error.code === "42P01" || /relation.*does not exist/i.test(error.message)) {
-          return [];
-        }
         throw new Error(error.message);
       }
-      return (data ?? []) as NotificationRecord[];
+      return (data ?? []) as NotificationViewRecord[];
     },
   });
 
@@ -118,33 +117,19 @@ export function NotificationCenter() {
   const prefsQuery = useQuery({
     queryKey: ["notification-prefs", user?.id],
     queryFn: async (): Promise<Preference[]> => {
-      // Fallback se a tabela nao existir ainda
-      try {
-        const { data, error } = await supabase
-          .from("notification_preferences")
-          .select("*");
-        if (error) throw error;
-        const rows = (data ?? []) as Preference[];
-        // Garante um registro por canal (default enabled=true)
-        return CHANNELS.map((c) => {
-          const existing = rows.find((r) => r.channel === c.id);
-          return existing ?? { channel: c.id, is_enabled: true, unsubscribed_at: null, unsubscribe_reason: null };
-        });
-      } catch {
-        return CHANNELS.map((c) => ({
-          channel: c.id, is_enabled: true, unsubscribed_at: null, unsubscribe_reason: null,
-        }));
-      }
+      const { data, error } = await supabase.rpc("get_my_notification_preferences");
+      if (error) throw new Error(error.message);
+      return (data ?? []) as Preference[];
     },
+    enabled: Boolean(user?.id),
   });
 
   // 3. Mutacoes
   const markReadMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from("notifications")
-        .update({ status: "READ", updated_at: new Date().toISOString() })
-        .eq("id", id);
+      const { error } = await supabase.rpc("mark_my_notification_read", {
+        p_notification_id: id,
+      });
       if (error) throw new Error(error.message);
       return id;
     },
@@ -159,41 +144,27 @@ export function NotificationCenter() {
 
   const markAllReadMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase
-        .from("notifications")
-        .update({ status: "READ", updated_at: new Date().toISOString() })
-        .in("status", ["PENDING", "PROCESSING", "SENT", "DELIVERED"]);
+      const { error } = await supabase.rpc("mark_all_my_notifications_read");
       if (error) throw new Error(error.message);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
       toast({ title: "Todas marcadas como lidas." });
     },
+    onError: (err: Error) => {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    },
   });
 
   const togglePrefMutation = useMutation({
     mutationFn: async ({ channel, enabled }: { channel: NotificationChannel; enabled: boolean }) => {
-      // Tenta atualizar via service; se nao existir tabela, faz no-op
-      try {
-        // Sem recipientId confiavel aqui, entao usa upsert direto
-        const { data: companyId } = await supabase.rpc("current_company_id");
-        if (!companyId) throw new Error("company_id ausente");
-        const { error } = await supabase.from("notification_preferences").upsert(
-          {
-            company_id: companyId,
-            recipient_type: "STAFF",
-            recipient_id: user?.id ?? null,
-            channel,
-            is_enabled: enabled,
-            unsubscribed_at: enabled ? null : new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "company_id,recipient_id,recipient_type,channel" },
-        );
-        if (error) throw new Error(error.message);
-      } catch {
-        // Fallback silencioso
-      }
+      const { error } = await supabase.rpc("set_my_notification_preference", {
+        p_channel: channel,
+        p_enabled: enabled,
+        p_reason: enabled ? null : "Desativado pelo usuario na Central de Notificacoes",
+      });
+
+      if (error) throw new Error(error.message);
     },
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ["notification-prefs"] });
@@ -202,6 +173,13 @@ export function NotificationCenter() {
         description: vars.enabled
           ? "Você voltará a receber notificações neste canal."
           : "Você não receberá mais notificações neste canal.",
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Não foi possível salvar a preferência",
+        description: err.message,
+        variant: "destructive",
       });
     },
   });
@@ -253,6 +231,8 @@ export function NotificationCenter() {
         <TabsContent value="unread" className="space-y-3">
           {listQuery.isLoading ? (
             <SkeletonList />
+          ) : listQuery.isError ? (
+            <LoadError message={listQuery.error.message} />
           ) : notifications.length === 0 ? (
             <EmptyInbox />
           ) : (
@@ -273,6 +253,8 @@ export function NotificationCenter() {
         <TabsContent value="all" className="space-y-3">
           {listQuery.isLoading ? (
             <SkeletonList />
+          ) : listQuery.isError ? (
+            <LoadError message={listQuery.error.message} />
           ) : notifications.length === 0 ? (
             <EmptyInbox />
           ) : (
@@ -304,6 +286,15 @@ export function NotificationCenter() {
             <CardContent className="divide-y">
               {prefsQuery.isLoading ? (
                 <SkeletonList />
+              ) : prefsQuery.isError ? (
+                <LoadError message={prefsQuery.error.message} />
+              ) : prefs.length === 0 ? (
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription className="text-xs">
+                    Nenhuma preferência de comunicação está disponível para este usuário.
+                  </AlertDescription>
+                </Alert>
               ) : (
                 prefs.map((p) => {
                   const ch = CHANNELS.find((c) => c.id === p.channel);
@@ -356,7 +347,7 @@ export function NotificationCenter() {
 function NotificationRow({
   n, onMarkRead, isMarking, showStatus,
 }: {
-  n: NotificationRecord;
+  n: NotificationViewRecord;
   onMarkRead: () => void;
   isMarking: boolean;
   showStatus?: boolean;
@@ -407,7 +398,7 @@ function NotificationRow({
                 size="sm"
                 className="shrink-0"
                 onClick={onMarkRead}
-                disabled={isMarking || n.status === "READ"}
+                disabled={isMarking || n.is_read}
                 title="Marcar como lida"
               >
                 {isMarking ? (
@@ -459,4 +450,16 @@ function EmptyInbox() {
   );
 }
 
+function LoadError({ message }: { message: string }) {
+  return (
+    <Alert variant="destructive">
+      <AlertCircle className="h-4 w-4" />
+      <AlertDescription>
+        Não foi possível carregar os dados. {message}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 export default NotificationCenter;
+

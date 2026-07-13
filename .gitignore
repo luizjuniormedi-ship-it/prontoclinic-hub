@@ -1,4 +1,4 @@
-﻿# =============================================================================
+# =============================================================================
 # ProntoMedic â€” .gitignore
 # =============================================================================
 # Migrado de .gitignore original (commit 949c59c) + melhorias de seguranÃ§a
@@ -136,6 +136,8 @@ ENTREGA_FINAL_VPS.md
 CHECKLIST_VPS_SEGURANCA.md
 BUGFIX_RLS_POLICIES.md
 scripts/*.json
+!scripts/rpc-allowlist.json
+!scripts/rpc-contract.json
 scripts/*.out.json
 scripts/.env.*
 
@@ -151,3 +153,4 @@ scripts/vps_*.sh
 scripts/backup*.sh
 scripts/*dump*.sql
 *.csv
+

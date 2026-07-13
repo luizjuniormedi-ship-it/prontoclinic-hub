@@ -213,17 +213,20 @@ describe("lgpdService — requestEsquecimento", () => {
     (supabase.from as any)
       .mockReturnValueOnce(profileChain)
       .mockReturnValueOnce(insertChain);
-    (supabase.rpc as any).mockResolvedValue({
-      data: { ok: true, paciente_anonimizado: true },
-      error: null,
-    });
-
     const result = await lgpdService.requestEsquecimento(
       1,
       "EXERCICIO_DIREITO_ESQUECIMENTO",
     );
     expect(result.solicitacao.tipo).toBe("ESQUECIMENTO");
-    expect(result.anonimizacao).toBeDefined();
+    expect(result.anonimizacao).toBeUndefined();
+    expect(supabase.rpc).not.toHaveBeenCalled();
+  });
+
+  it("bloqueia anonimização destrutiva no navegador", async () => {
+    await expect(
+      lgpdService.executeEsquecimento(1, "EXERCICIO_DIREITO_ESQUECIMENTO"),
+    ).rejects.toThrow("bloqueada no navegador");
+    expect(supabase.rpc).not.toHaveBeenCalled();
   });
 
   it("rejeita motivo inválido", async () => {
@@ -384,3 +387,4 @@ describe("lgpdService — constantes", () => {
     expect(TEXTO_TERMO_CONSENTIMENTO).toMatch(/13\.709\/2018/);
   });
 });
+

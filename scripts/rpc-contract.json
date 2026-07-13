@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 1,
+  "expectedFrontendCount": 72,
+  "expectedClassifiedGapCount": 28,
+  "expectedClassificationCounts": {
+    "candidate": 9,
+    "contract_fix": 19,
+    "replacement_required": 0
+  },
+  "forbiddenFrontendRpcs": {
+    "anonymize_patient": "Destrutiva e reservada ao worker administrativo server-side"
+  },
+  "classifications": {
+    "calcular_kpis_diarios": {
+      "status": "contract_fix",
+      "module": "bi",
+      "action": "can_edit",
+      "reason": "tenant e periodo devem ser derivados e validados server-side"
+    },
+    "cancel_pre_cadastro": { "status": "candidate", "module": "recepcao", "action": "can_edit" },
+    "complete_call_center_task_secure": {
+      "status": "contract_fix",
+      "module": "recepcao",
+      "action": "can_edit",
+      "reason": "validar ACL completa, tenant e serializacao do retorno composto"
+    },
+    "confirm_pre_cadastro": {
+      "status": "contract_fix",
+      "module": "recepcao",
+      "action": "can_edit",
+      "reason": "separar canal anonimo e fluxo autenticado, com rate limit e tenant server-side"
+    },
+    "create_call_center_contact_secure": {
+      "status": "contract_fix",
+      "module": "recepcao",
+      "action": "can_create",
+      "reason": "validar ACL completa, tenant e serializacao do retorno composto"
+    },
+    "create_call_center_task_secure": {
+      "status": "contract_fix",
+      "module": "recepcao",
+      "action": "can_create",
+      "reason": "validar ACL completa, tenant e serializacao do retorno composto"
+    },
+    "create_pre_cadastro": {
+      "status": "contract_fix",
+      "module": "recepcao",
+      "action": "can_create",
+      "reason": "entrada publica exige endpoint isolado, rate limit e tenant nao controlado pelo cliente"
+    },
+    "criar_sala_telemedicina": {
+      "status": "contract_fix",
+      "module": "telemedicina",
+      "action": "can_create",
+      "reason": "validar tenant, participante e vinculo assistencial antes de criar a sala"
+    },
+    "detectar_alertas_bi": {
+      "status": "contract_fix",
+      "module": "bi",
+      "action": "can_edit",
+      "reason": "tenant e escopo devem ser derivados server-side"
+    },
+    "finalizar_sala_telemedicina": {
+      "status": "contract_fix",
+      "module": "telemedicina",
+      "action": "can_edit",
+      "reason": "contrato legado nao comprova participante, tenant e encerramento idempotente"
+    },
+    "find_price": {
+      "status": "contract_fix",
+      "module": "faturamento",
+      "action": "can_view",
+      "reason": "empresa, plano e tabela de preco precisam de escopo server-side"
+    },
+    "get_my_notification_preferences": { "status": "candidate", "module": "notificacoes", "action": "can_view" },
+    "log_data_access": { "status": "candidate", "module": "auditoria", "action": "can_create" },
+    "mark_all_my_notifications_read": {
+      "status": "contract_fix",
+      "module": "notificacoes",
+      "action": "can_edit",
+      "reason": "limitar o conjunto atualizado exclusivamente ao usuario autenticado"
+    },
+    "mark_my_notification_read": {
+      "status": "contract_fix",
+      "module": "notificacoes",
+      "action": "can_edit",
+      "reason": "alinhar identidade do destinatario e RBAC ao usuario autenticado"
+    },
+    "pre_confirm_pre_cadastro": {
+      "status": "contract_fix",
+      "module": "recepcao",
+      "action": "can_edit",
+      "reason": "token publico, tenant e expiracao exigem endpoint restrito e rate-limited"
+    },
+    "promote_pre_cadastro": { "status": "candidate", "module": "recepcao", "action": "can_edit" },
+    "publish_dicom_report": {
+      "status": "contract_fix",
+      "module": "dicom",
+      "action": "can_edit",
+      "reason": "SECURITY DEFINER exige autorizacao clinica interna, tenant e revoke completo"
+    },
+    "queue_notification": {
+      "status": "contract_fix",
+      "module": "notificacoes",
+      "action": "can_create",
+      "reason": "definir modulo RBAC canonico e limitar destinatarios por tenant"
+    },
+    "registrar_consentimento_gravacao": {
+      "status": "contract_fix",
+      "module": "telemedicina",
+      "action": "can_create",
+      "reason": "consentimento exige identidade, finalidade, versao e prova auditavel server-side"
+    },
+    "renew_pre_cadastro_confirmation": { "status": "candidate", "module": "recepcao", "action": "can_edit" },
+    "retry_notification": {
+      "status": "contract_fix",
+      "module": "notificacoes",
+      "action": "can_edit",
+      "reason": "definir modulo RBAC canonico e limitar reprocessamento por tenant"
+    },
+    "set_my_notification_preference": { "status": "candidate", "module": "notificacoes", "action": "can_edit" },
+    "set_notification_preference": { "status": "candidate", "module": "notificacoes", "action": "can_edit" },
+    "cancel_pending_appointment_notifications": { "status": "candidate", "module": "recepcao", "action": "can_edit" },
+    "update_appointment_secure": {
+      "status": "contract_fix",
+      "module": "agenda",
+      "action": "can_edit",
+      "reason": "validar tenant de paciente, profissional, unidade, servico e especialidade"
+    },
+    "update_patient_secure": {
+      "status": "contract_fix",
+      "module": "pacientes",
+      "action": "can_edit",
+      "reason": "separar alteracoes administrativas de campos clinicos sensiveis"
+    },
+    "update_user_profile_secure": { "status": "candidate", "module": "admin", "action": "can_edit" }
+  }
+}
+

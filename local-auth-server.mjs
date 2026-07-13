@@ -33,6 +33,18 @@ const pool = new Pool({
   database: process.env.PGDATABASE || 'prontoclinic',
 });
 
+pool.on('error', (error) => {
+  console.error('[PG_POOL_ERROR]', error);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('[UNCAUGHT_EXCEPTION]', error);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[UNHANDLED_REJECTION]', reason);
+});
+
 // Simple JWT (HS256)
 function base64url(str) {
   return Buffer.from(str).toString('base64url');
@@ -91,6 +103,32 @@ async function getUserProfile(userId) {
   return res.rows[0] || null;
 }
 
+async function withAuthenticatedDbSession(payload, operation) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('request.jwt.claim.sub', $1, true),
+              set_config('request.jwt.claims', $2, true),
+              set_config('request.jwt.claim.role', 'authenticated', true)`,
+      [payload.sub, JSON.stringify({ ...payload, role: 'authenticated' })],
+    );
+    await client.query('SET LOCAL ROLE authenticated');
+    const result = await operation(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('[DB_SESSION_ROLLBACK_ERROR]', rollbackError);
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // AUTORIZAÃ‡ÃƒO SERVER-SIDE (RBAC por role Ã— mÃ³dulo Ã— aÃ§Ã£o)
 // Mapeia tabela fÃ­sica â†’ mÃ³dulo lÃ³gico da matriz role_permissions.
@@ -100,8 +138,26 @@ const REFERENCE_TABLES = new Set([
   'countries', 'states', 'racas', 'etnias', 'nacionalidades',
 ]);
 
-function tableToModule(table) {
+const SCHEDULING_CATALOG_TABLES = new Set([
+  'professionals', 'specialties', 'appointment_types', 'services_catalog',
+]);
+
+function tableToModule(table, method = 'GET') {
   const t = table.toLowerCase();
+  // O nome canonico do papel e necessario para montar a sessao de qualquer
+  // usuario autenticado. O catalogo e global e somente leitura; as permissoes
+  // detalhadas continuam protegidas pelo modulo administrativo.
+  if (t === 'roles') {
+    return method === 'GET' || method === 'HEAD' ? null : 'admin';
+  }
+  // Unidade e catalogo operacional compartilhado: leitura autenticada e
+  // tenant-scoped; escrita continua restrita ao modulo administrativo.
+  if (t === 'units') {
+    return method === 'GET' || method === 'HEAD' ? null : 'admin';
+  }
+  if (SCHEDULING_CATALOG_TABLES.has(t)) {
+    return method === 'GET' || method === 'HEAD' ? 'agenda' : 'admin';
+  }
   // match por prefixo/nome exato
   const map = [
     // prontuÃ¡rio/clÃ­nico ANTES de pacientes (patient_allergies, patient_problem_list, patient_medications sÃ£o atos clÃ­nicos)
@@ -111,7 +167,7 @@ function tableToModule(table) {
     [/^patients$|^paciente|^patient_phones|^telxpac/, 'pacientes'],
     [/^appointments$|^agenda|^professional_schedules|^escala/, 'agenda'],
     // EvoluÃ§Ã£o/procedimentos/incidentes de enfermagem = conteÃºdo clÃ­nico sensÃ­vel â†’ mÃ³dulo prontuario (recepÃ§Ã£o bloqueada por LGPD)
-    [/^nursing_notes|^nursing_procedures|^nursing_incidents|^nursing_medication|^nursing_evolution/, 'prontuario'],
+    [/^nursing_notes|^nursing_procedures|^nursing_incidents|^nursing_medication|^nursing_shift|^nursing_evolution/, 'enfermagem'],
     // Fila de triagem e classificaÃ§Ã£o de risco = mÃ³dulo enfermagem (recepÃ§Ã£o pode ver p/ chamar paciente)
     [/^triagens?$|^triagem_|^nursing_|^mnct_/, 'enfermagem'],
     [/^exames_lab|^lab_/, 'laboratorio'],
@@ -168,18 +224,45 @@ async function requiredCompanyScope(profile, table) {
   return profile.company_id;
 }
 
-// cache de permissÃµes por role (evita query a cada request)
-const permCache = new Map();
-async function loadRolePerms(role) {
-  if (permCache.has(role)) return permCache.get(role);
-  const r = await pool.query(
-    `SELECT rp.module, rp.can_view, rp.can_create, rp.can_edit, rp.can_delete
-       FROM role_permissions rp JOIN roles ro ON ro.id = rp.role_id
-      WHERE ro.name = $1`, [role]);
-  const m = {};
-  for (const row of r.rows) m[row.module] = row;
-  permCache.set(role, m);
-  return m;
+// Somente leituras podem usar cache curto. Mutacoes sempre consultam o catalogo
+// para que uma revogacao tenha efeito na chamada seguinte.
+const VIEW_PERMISSION_CACHE_TTL_MS = 5_000;
+const viewPermissionCache = new Map();
+async function loadRolePerms(role, action = 'can_view') {
+  const cacheable = action === 'can_view';
+  const cached = cacheable ? viewPermissionCache.get(role) : null;
+  if (cached?.expiresAt > Date.now()) return cached.permissions;
+  if (cached) viewPermissionCache.delete(role);
+  try {
+    const r = await pool.query(
+      `SELECT rp.module, rp.can_view, rp.can_create, rp.can_edit, rp.can_delete
+         FROM role_permissions rp JOIN roles ro ON ro.id = rp.role_id
+        WHERE ro.name = $1`, [role]);
+    const m = {};
+    for (const row of r.rows) m[row.module] = row;
+    if (cacheable) {
+      viewPermissionCache.set(role, {
+        permissions: m,
+        expiresAt: Date.now() + VIEW_PERMISSION_CACHE_TTL_MS,
+      });
+    }
+    return m;
+  } catch (error) {
+    // Missing permission catalog is fail-closed: deny non-admin access without
+    // turning a missing deployment prerequisite into an HTTP 500.
+    if (error?.code === '42P01') {
+      console.error(`[RBAC_CATALOG_MISSING] role_permissions/roles for role ${role}`);
+      const denied = {};
+      if (cacheable) {
+        viewPermissionCache.set(role, {
+          permissions: denied,
+          expiresAt: Date.now() + VIEW_PERMISSION_CACHE_TTL_MS,
+        });
+      }
+      return denied;
+    }
+    throw error;
+  }
 }
 
 /** Retorna {ok:true} ou {ok:false, reason}. Somente admin tem bypass total. */
@@ -188,7 +271,7 @@ async function authorize(profile, table, method) {
   if (!profile.lg_ativo) return { ok: false, reason: 'usuÃ¡rio inativo' };
   const role = (profile.role_name || '').toLowerCase();
   if (role === 'admin') return { ok: true };
-  const module = tableToModule(table);
+  const module = tableToModule(table, method);
   if (module === '__unmapped__') {
     return { ok: false, reason: `tabela '${table}' nao esta explicitamente autorizada` };
   }
@@ -196,10 +279,10 @@ async function authorize(profile, table, method) {
     // tabelas de referÃªncia: leitura liberada, escrita sÃ³ admin (jÃ¡ retornou acima)
     return METHOD_TO_ACTION[method] === 'can_view' ? { ok: true } : { ok: false, reason: 'escrita em tabela de referÃªncia exige admin' };
   }
-  const perms = await loadRolePerms(role);
+  const action = METHOD_TO_ACTION[method] || 'can_view';
+  const perms = await loadRolePerms(role, action);
   const rule = perms[module];
   if (!rule) return { ok: false, reason: `role '${role}' sem acesso ao mÃ³dulo '${module}'` };
-  const action = METHOD_TO_ACTION[method] || 'can_view';
   if (!rule[action]) return { ok: false, reason: `role '${role}' nÃ£o pode '${action}' em '${module}'` };
   return { ok: true };
 }
@@ -215,6 +298,12 @@ const RPC_PERMISSIONS = {
   cancel_schedule_block_secure: { module: 'agenda', action: 'can_edit' },
   get_professional_available_slots: { module: 'agenda', action: 'can_view' },
   get_scheduling_requirements: { module: 'agenda', action: 'can_view' },
+  current_company_id: { module: 'admin', action: 'can_view' },
+  calc_imc: { module: 'prontuario', action: 'can_view' },
+  create_medical_record_secure: { module: 'prontuario', action: 'can_create' },
+  update_medical_record_secure: { module: 'prontuario', action: 'can_edit' },
+  sign_medical_record_secure: { module: 'prontuario', action: 'can_edit' },
+  finalize_medical_attendance_secure: { module: 'prontuario', action: 'can_create' },
   create_appointment_with_requirements_secure: { module: 'agenda', action: 'can_create' },
   refresh_confirmation_queue_secure: { module: 'agenda', action: 'can_edit' },
   record_confirmation_attempt_secure: { module: 'agenda', action: 'can_edit' },
@@ -223,7 +312,91 @@ const RPC_PERMISSIONS = {
   perform_reception_checkin_secure: { module: 'recepcao', action: 'can_create' },
   update_reception_authorization_secure: { module: 'recepcao', action: 'can_edit' },
   update_reception_eligibility_secure: { module: 'recepcao', action: 'can_edit' },
+  create_billing_secure: { module: 'faturamento', action: 'can_create' },
+  update_billing_status_secure: { module: 'faturamento', action: 'can_edit' },
+  list_billing_production_secure: { module: 'faturamento', action: 'can_view' },
+  list_tiss_read_model_secure: { module: 'faturamento', action: 'can_view' },
+  list_tiss_glosas_read_secure: { module: 'faturamento', action: 'can_view' },
+  list_tiss_protocols_read_secure: { module: 'faturamento', action: 'can_view' },
+  list_billing_financial_summary_secure: { module: 'financeiro', action: 'can_view' },
+  get_billing_balance_secure: { module: 'financeiro', action: 'can_view' },
+  record_billing_receipt_secure: { module: 'financeiro', action: 'can_create' },
+  reverse_billing_receipt_secure: { module: 'financeiro', action: 'can_edit' },
+  create_professional_payment: { module: 'financeiro', action: 'can_create' },
+  list_professional_payments: { module: 'financeiro', action: 'can_view' },
+  transition_professional_payment: { module: 'financeiro', action: 'can_edit' },
+  save_or_release_lab_result_secure: { module: 'laboratorio', action: 'can_edit' },
+  create_nursing_medication_secure: { module: 'enfermagem', action: 'can_edit' },
+  bedside_check: { module: 'enfermagem', action: 'can_view' },
+  administer_nursing_medication_secure: { module: 'enfermagem', action: 'can_edit' },
+  refuse_nursing_medication_secure: { module: 'enfermagem', action: 'can_edit' },
+  report_nursing_incident_secure: { module: 'enfermagem', action: 'can_create' },
+  record_nursing_procedure_secure: { module: 'enfermagem', action: 'can_create' },
+  create_nursing_shift_handoff_secure: { module: 'enfermagem', action: 'can_create' },
+  enqueue_nursing_triage_secure: { module: 'enfermagem', action: 'can_create' },
+  call_nursing_triage_secure: { module: 'enfermagem', action: 'can_edit' },
+  complete_nursing_triage_secure: { module: 'enfermagem', action: 'can_edit' },
+  calcular_valor_estoque: { module: 'farmacia', action: 'can_view' },
+  dispensar_estoque: { module: 'farmacia', action: 'can_edit' },
+  registrar_movimentacao_estoque: { module: 'farmacia', action: 'can_edit' },
 };
+
+const CENTRAL_PERMISSION_RPCS = new Set([
+  'list_tiss_glosas_read_secure',
+  'list_tiss_protocols_read_secure',
+]);
+
+const STRUCTURED_ROW_RPCS = new Set([
+  'create_professional_payment',
+  'list_professional_payments',
+  'transition_professional_payment',
+]);
+
+function buildRpcQuery(functionName, parameterNames) {
+  if (!Object.prototype.hasOwnProperty.call(RPC_PERMISSIONS, functionName) || !isIdentifier(functionName)) {
+    throw new Error(`RPC '${functionName}' nao autorizada`);
+  }
+  for (const parameterName of parameterNames) {
+    if (!isIdentifier(parameterName)) {
+      throw new Error(`parametro RPC invalido: ${parameterName}`);
+    }
+  }
+
+  const namedArgs = parameterNames
+    .map((parameterName, index) => `${quoteIdent(parameterName)} => $${index + 1}`)
+    .join(', ');
+  const qualifiedFunction = `public.${quoteIdent(functionName)}`;
+  if (STRUCTURED_ROW_RPCS.has(functionName)) {
+    return `SELECT to_jsonb(r) AS result FROM ${qualifiedFunction}(${namedArgs}) AS r`;
+  }
+  return `SELECT ${qualifiedFunction}(${namedArgs}) AS result`;
+}
+
+function serializeRpcResult(functionName, rows) {
+  if (STRUCTURED_ROW_RPCS.has(functionName)) {
+    return rows.map((row) => row.result);
+  }
+  if (rows.length === 0) return [];
+  if (rows.length > 1) return rows.map((row) => row.result);
+  return rows[0].result;
+}
+
+const RPC_ONLY_TABLES = new Set([
+  'medical_records',
+  'nursing_medication_administrations',
+  'nursing_incidents',
+  'nursing_procedures',
+  'nursing_shift_handoffs',
+  'triagens',
+  'news2_avaliacoes',
+  'triagem_fila',
+]);
+
+const RPC_ONLY_METHODS = new Set(['POST', 'PATCH', 'DELETE']);
+
+function requiresSecureRpc(table, method) {
+  return RPC_ONLY_TABLES.has(table) && RPC_ONLY_METHODS.has(method);
+}
 
 async function authorizeRpc(profile, functionName) {
   const required = RPC_PERMISSIONS[functionName];
@@ -231,11 +404,11 @@ async function authorizeRpc(profile, functionName) {
   if (!profile || !profile.lg_ativo) return { ok: false, reason: 'usuario invalido/inativo' };
 
   const role = (profile.role_name || '').toLowerCase();
-  if (role === 'admin') {
+  if (role === 'admin' && !CENTRAL_PERMISSION_RPCS.has(functionName)) {
     return { ok: true };
   }
 
-  const permissions = await loadRolePerms(role);
+  const permissions = await loadRolePerms(role, required.action);
   const rule = permissions[required.module];
   if (!rule?.[required.action]) {
     return { ok: false, reason: `role '${role}' nao pode '${required.action}' em '${required.module}'` };
@@ -259,7 +432,7 @@ function cors(req, res) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
   }
-  res.setHeader('Access-Control-Allow-Headers', 'authorization, apikey, content-type, prefer, range, x-client-info');
+  res.setHeader('Access-Control-Allow-Headers', 'authorization, apikey, content-type, prefer, range, x-client-info, x-application-name, x-supabase-api-version, accept-profile, content-profile, x-retry-count');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Expose-Headers', 'content-range');
   return true;
@@ -268,6 +441,15 @@ function cors(req, res) {
 function json(res, data, status = 200) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
+}
+
+function databaseError(res, scope, context, error, code = 'PGRST000') {
+  console.error(`[${scope}]`, context, error);
+  return json(res, {
+    error: 'database_error',
+    message: 'Database request failed',
+    code,
+  }, 400);
 }
 
 function parseBody(req, maxBytes = 1024 * 1024) {
@@ -346,13 +528,16 @@ const server = createServer(async (req, res) => {
     if (!hDecision.ok) { res.writeHead(403); res.end(); return; }
     try {
       const hCompanyId = await requiredCompanyScope(hProfile, table);
-      const countResult = hCompanyId
-        ? await pool.query(`SELECT count(*) FROM public."${table}" WHERE company_id = $1`, [hCompanyId])
-        : await pool.query(`SELECT count(*) FROM public."${table}"`);
+      const countResult = await withAuthenticatedDbSession(hPayload, (client) =>
+        hCompanyId
+          ? client.query(`SELECT count(*) FROM public."${table}" WHERE company_id = $1`, [hCompanyId])
+          : client.query(`SELECT count(*) FROM public."${table}"`)
+      );
       const total = countResult.rows[0].count;
       res.writeHead(200, { 'content-range': `0-0/${total}` });
-    } catch {
-      res.writeHead(200, { 'content-range': '0-0/0' });
+    } catch (error) {
+      console.error('[REST_HEAD_ERROR]', { table, userId: hPayload.sub, message: error.message });
+      res.writeHead(500);
     }
     res.end();
     return;
@@ -501,6 +686,13 @@ const server = createServer(async (req, res) => {
 
     // (refresh token handler moved to top of chain)
 
+    // â”€â”€â”€ AUTH: Password recovery (local adapter)
+    // Always returns a generic success response; no user existence is disclosed.
+    if (path === '/auth/v1/recover' && req.method === 'POST') {
+      await parseBody(req);
+      return json(res, {});
+    }
+
     // â”€â”€â”€ AUTH: Settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (path === '/auth/v1/settings') {
       return json(res, { external: {}, disable_signup: false, mailer_autoconfirm: true });
@@ -529,29 +721,22 @@ const server = createServer(async (req, res) => {
           return json(res, { error: 'bad_request', message: `parÃ¢metro RPC invÃ¡lido: ${key}` }, 400);
         }
       }
-      // monta SELECT fn(p1 => $1, p2 => $2) com params nomeados
-      const namedArgs = keys.map((k, i) => `"${k}" => $${i + 1}`).join(', ');
       const vals = keys.map((k) => body[k]);
-      const client = await pool.connect();
       try {
-        await client.query('BEGIN');
-        await client.query(
-          `SELECT set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claims', $2, true)`,
-          [payload.sub, JSON.stringify(payload)],
+        const rpcQuery = buildRpcQuery(fnName, keys);
+        const result = await withAuthenticatedDbSession(payload, (client) =>
+          client.query(rpcQuery, vals)
         );
-        const result = await client.query(`SELECT public."${fnName}"(${namedArgs}) AS result`, vals);
-        await client.query('COMMIT');
-        const val = result.rows.length === 0
-          ? []
-          : result.rows.length > 1
-            ? result.rows.map((row) => row.result)
-            : result.rows[0].result;
+        const val = serializeRpcResult(fnName, result.rows);
         return json(res, val);
       } catch (e) {
-        await client.query('ROLLBACK');
-        return json(res, { error: e.message, code: 'PGRST202' }, 400);
-      } finally {
-        client.release();
+        return databaseError(
+          res,
+          'RPC_ERROR',
+          { function: fnName, userId: payload.sub },
+          e,
+          'PGRST202',
+        );
       }
     }
 
@@ -569,6 +754,9 @@ const server = createServer(async (req, res) => {
 
       // Enforcement RBAC: role Ã— mÃ³dulo Ã— aÃ§Ã£o
       const profile = await getUserProfile(payload.sub);
+      if (!profile || !profile.lg_ativo) {
+        return json(res, { error: 'forbidden', message: 'usuÃ¡rio invÃ¡lido/inativo' }, 403);
+      }
       const isSelfProfileRead =
         req.method === 'GET' &&
         table === 'user_profiles' &&
@@ -576,6 +764,10 @@ const server = createServer(async (req, res) => {
       const decision = isSelfProfileRead ? { ok: true } : await authorize(profile, table, req.method);
       if (!decision.ok) return json(res, { error: 'forbidden', message: decision.reason }, 403);
       const companyId = await requiredCompanyScope(profile, table);
+
+      if (requiresSecureRpc(table, req.method)) {
+        return json(res, { error: 'forbidden', message: 'Mutacao permitida somente por RPC segura' }, 403);
+      }
 
       if (req.method === 'GET') {
         // Parse select columns (strip embedded relations like "payment_source:payment_sources(name,type)")
@@ -734,16 +926,17 @@ const server = createServer(async (req, res) => {
         }
 
         try {
-          const result = await pool.query(query, values);
-
-          // Count total if Prefer: count=exact
           const prefer = req.headers.prefer || '';
-          let totalCount = result.rows.length;
-          if (prefer.includes('count=exact')) {
-            const countQuery = `SELECT COUNT(*) FROM public."${table}"` + (conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '');
-            const countResult = await pool.query(countQuery, values);
-            totalCount = parseInt(countResult.rows[0].count);
-          }
+          const { result, totalCount } = await withAuthenticatedDbSession(payload, async (client) => {
+            const result = await client.query(query, values);
+            let totalCount = result.rows.length;
+            if (prefer.includes('count=exact')) {
+              const countQuery = `SELECT COUNT(*) FROM public."${table}"` + (conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '');
+              const countResult = await client.query(countQuery, values);
+              totalCount = parseInt(countResult.rows[0].count);
+            }
+            return { result, totalCount };
+          });
 
           const start = rangeEnd !== null ? rangeStart : (offsetParam ? parseInt(offsetParam) : 0);
           const end = start + result.rows.length - 1;
@@ -756,7 +949,7 @@ const server = createServer(async (req, res) => {
           }
           return json(res, result.rows);
         } catch (e) {
-          return json(res, { error: e.message, code: 'PGRST000' }, 400);
+          return databaseError(res, 'REST_READ_ERROR', { table, userId: payload.sub }, e);
         }
       }
 
@@ -779,17 +972,17 @@ const server = createServer(async (req, res) => {
         const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
         const columns = keys.map(quoteIdent).join(', ');
         try {
-          const result = await pool.query(
+          const result = await withAuthenticatedDbSession(payload, (client) => client.query(
             `INSERT INTO public."${table}" (${columns}) VALUES (${placeholders}) RETURNING *`,
             vals
-          );
+          ));
           const prefer = req.headers.prefer || '';
           if (prefer.includes('return=representation')) {
             return json(res, result.rows[0], 201);
           }
           return json(res, {}, 201);
         } catch (e) {
-          return json(res, { error: e.message }, 400);
+          return databaseError(res, 'REST_INSERT_ERROR', { table, userId: payload.sub }, e);
         }
       }
 
@@ -809,13 +1002,13 @@ const server = createServer(async (req, res) => {
         const id = idParam?.replace('eq.', '');
         if (!id) return json(res, { error: 'id required for PATCH' }, 400);
         try {
-          const result = await pool.query(
+          const result = await withAuthenticatedDbSession(payload, (client) => client.query(
             `UPDATE public."${table}" SET ${setClause} WHERE id = $${keys.length + 1}${companyId ? ` AND company_id = $${keys.length + 2}` : ''} RETURNING *`,
             companyId ? [...vals, id, companyId] : [...vals, id]
-          );
+          ));
           return json(res, result.rows[0] || {});
         } catch (e) {
-          return json(res, { error: e.message }, 400);
+          return databaseError(res, 'REST_UPDATE_ERROR', { table, userId: payload.sub }, e);
         }
       }
     }
@@ -825,7 +1018,14 @@ const server = createServer(async (req, res) => {
 
   } catch (err) {
     console.error('[ERROR]', err);
-    json(res, { error: err.message }, err.statusCode || 500);
+    const status = Number.isInteger(err?.statusCode) ? err.statusCode : 500;
+    json(
+      res,
+      status < 500
+        ? { error: 'request_error', message: err.message }
+        : { error: 'internal_error', message: 'Internal server error' },
+      status,
+    );
   }
 });
 
@@ -839,3 +1039,4 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜`);
   console.log(``);
 });
+

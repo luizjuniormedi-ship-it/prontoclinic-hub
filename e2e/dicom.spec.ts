@@ -1,5 +1,4 @@
-import { test as base, expect } from '@playwright/test';
-import { test as authed } from './fixtures/auth';
+import { test as authed, expect } from './fixtures/auth';
 
 /**
  * E2E — PACS / DICOM

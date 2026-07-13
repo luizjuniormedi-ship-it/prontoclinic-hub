@@ -12,10 +12,6 @@ import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, ErrorState } from "@/components/StateViews";
 import { supabase } from "@/lib/supabase";
 import { medicalRecordsService } from "@/services/medicalRecordsService";
-import { appointmentsService } from "@/services/appointmentsService";
-import { billingsService } from "@/services/financialService";
-import { priceTableService } from "@/services/priceTableService";
-import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { calculateAge } from "@/utils/formatters";
 
@@ -25,7 +21,6 @@ interface AppointmentInfo { id: string; patient_id: string; professional_id: str
 export default function AttendancePage() {
   const { appointmentId } = useParams<{ appointmentId: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +44,11 @@ export default function AttendancePage() {
   const [vitalSigns, setVitalSigns] = useState({ bloodPressure: "", heartRate: "", temperature: "", weight: "", height: "", oxygenSaturation: "" });
 
   useEffect(() => {
-    if (!appointmentId) return;
+    if (!appointmentId) {
+      setError("Identificador do agendamento não informado.");
+      setLoading(false);
+      return;
+    }
     (async () => {
       try {
         const { data: appt, error: ae } = await supabase.from("appointments").select("*").eq("id", appointmentId).maybeSingle();
@@ -57,7 +56,9 @@ export default function AttendancePage() {
         setAppointment(appt);
 
         if (appt.patient_id) {
-          const { data: pat } = await supabase.from("patients").select("id, full_name, birth_date, sex, allergies, clinical_alerts, insurance_plan_id").eq("id", appt.patient_id).maybeSingle();
+          const { data: pat, error: patientError } = await supabase.from("patients").select("id, full_name, birth_date, sex, allergies, clinical_alerts, insurance_plan_id").eq("id", appt.patient_id).maybeSingle();
+          if (patientError) { setError(`Erro ao carregar paciente: ${patientError.message}`); setLoading(false); return; }
+          if (!pat) { setError("Paciente do agendamento não encontrado."); setLoading(false); return; }
           setPatient(pat);
         }
         setLoading(false);
@@ -100,53 +101,17 @@ export default function AttendancePage() {
         returnNotes && `**Retorno:** ${returnNotes}`,
       ].filter(Boolean).join("\n\n");
 
-      await medicalRecordsService.create({
-        patient_id: patient.id,
-        professional_id: appointment.professional_id,
+      await medicalRecordsService.finalizeAttendance({
         appointment_id: appointment.id,
-        company_id: appointment.company_id || user?.company_id || undefined,
-        unit_id: appointment.unit_id || user?.primary_unit_id || undefined,
         anamnesis: anamnesis || undefined,
         evolution: evolution || undefined,
+        diagnosis: diagnosis || undefined,
+        prescription: prescription || undefined,
         vital_signs: Object.keys(vs).length > 0 ? vs : undefined,
       });
 
-      // Update appointment status to completed (with validation)
-      await appointmentsService.updateStatus(appointment.id, "completed");
-
-      // Auto-create billing with price lookup
-      try {
-        const priceLookup = await priceTableService.findPrice(
-          Number(appointment.appointment_type_id) || 0,
-          patient.insurance_plan_id ? Number(patient.insurance_plan_id) : null
-        );
-        const price = priceLookup.vl_particular + priceLookup.vl_convenio;
-        const billingType = patient.insurance_plan_id ? "convenio" : "particular";
-
-        await billingsService.create({
-          patient_id: patient.id,
-          professional_id: appointment.professional_id || undefined,
-          appointment_id: appointment.id,
-          company_id: appointment.company_id || user?.company_id || undefined,
-          unit_id: appointment.unit_id || user?.primary_unit_id || undefined,
-          billing_type: billingType,
-          gross_amount: price,
-          net_amount: price,
-          status: "em_aberto",
-          notes: price > 0
-            ? `Valor automático: R$ ${price.toFixed(2)}`
-            : "Preço não configurado — ajuste manualmente",
-        });
-
-        if (price === 0) {
-          toast({ title: "Atenção", description: "Billing gerado com valor R$ 0,00. Configure a tabela de preços em Cadastros.", variant: "destructive" });
-        }
-      } catch (billingErr) {
-        console.warn("Auto-billing failed (non-critical):", billingErr.message);
-      }
-
-      toast({ title: "Atendimento salvo e finalizado!" });
-      navigate("/reception");
+      toast({ title: "Atendimento finalizado", description: "Prontuário assinado e faturamento encaminhado." });
+      navigate("/records");
     } catch (err) {
       toast({ title: "Erro ao salvar", description: (err as Error).message, variant: "destructive" });
     } finally {
@@ -155,7 +120,7 @@ export default function AttendancePage() {
   };
 
   if (loading) return <LoadingState />;
-  if (error) return <ErrorState message={error} onRetry={() => navigate("/reception")} />;
+  if (error) return <ErrorState message={error} onRetry={() => navigate("/records")} />;
   if (!patient || !appointment) return <ErrorState message="Dados não encontrados" />;
 
   return (
@@ -165,7 +130,7 @@ export default function AttendancePage() {
         description="Registro do prontuário médico"
         actions={
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => navigate("/reception")}><ArrowLeft className="mr-1 h-4 w-4" />Voltar</Button>
+            <Button variant="outline" onClick={() => navigate("/records")}><ArrowLeft className="mr-1 h-4 w-4" />Voltar</Button>
             <Button onClick={handleSave} disabled={saving}>
               {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}
               {saving ? "Salvando..." : "Finalizar Atendimento"}
@@ -253,3 +218,4 @@ export default function AttendancePage() {
     </div>
   );
 }
+

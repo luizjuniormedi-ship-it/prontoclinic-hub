@@ -1,21 +1,13 @@
 import { useEffect, useState, useCallback } from "react";
-import { Receipt, Search, TrendingUp, Plus } from "lucide-react";
+import { Receipt, Search, TrendingUp } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState, ErrorState } from "@/components/StateViews";
 import { StatsCard } from "@/components/StatsCard";
 import { billingsService, DbBilling } from "@/services/financialService";
-import { professionalsLookup, DbProfessional } from "@/services/appointmentsService";
-import { Patient } from "@/types";
-import { useAuth } from "@/hooks/useAuth";
-import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
 
 const formatCurrency = (v: number | null | undefined) => (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -28,43 +20,17 @@ const billingTypeLabels: Record<string, string> = { particular: "Particular", co
 
 export default function BillingProductionPage() {
   const [billings, setBillings] = useState<DbBilling[]>([]);
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [newOpen, setNewOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const { user } = useAuth();
-  const { toast } = useToast();
-
-  // New billing form
-  const [newPatientId, setNewPatientId] = useState("");
-  const [newProfId, setNewProfId] = useState("");
-  const [newGross, setNewGross] = useState("");
-  const [newDiscount, setNewDiscount] = useState("0");
-  const [newType, setNewType] = useState("particular");
 
   const loadAll = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const [b, profs] = await Promise.all([
-        billingsService.getAll(),
-        professionalsLookup.getAll(),
-      ]);
-      const patientIds = Array.from(new Set(b.map((item) => item.patient_id).filter((id): id is string => Boolean(id))));
-      const chunks: string[][] = [];
-      for (let i = 0; i < patientIds.length; i += 100) chunks.push(patientIds.slice(i, i + 100));
-      const responses = await Promise.all(chunks.map((ids) => supabase.from("patients").select("id, full_name").in("id", ids)));
-      const patientRows = responses.flatMap(({ data, error: patientError }) => {
-        if (patientError) throw patientError;
-        return data || [];
-      });
+      const b = await billingsService.getAll();
       setBillings(b);
-      setPatients(patientRows.map((p: any) => ({ id: String(p.id), name: p.full_name || "" } as Patient)));
-      setProfessionals(profs);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -74,13 +40,13 @@ export default function BillingProductionPage() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  const getPatientName = (id: string | null) => patients.find((p) => p.id === id)?.name || "—";
-  const getProfName = (id: string | null) => professionals.find((p) => p.id === id)?.full_name || "—";
+  const getPatientName = (billing: DbBilling) => billing.patient_name || "—";
+  const getProfName = (billing: DbBilling) => billing.professional_name || "—";
 
   const filtered = billings.filter((b) => {
     const q = search.toLowerCase();
-    const patName = getPatientName(b.patient_id).toLowerCase();
-    const profName = getProfName(b.professional_id).toLowerCase();
+    const patName = getPatientName(b).toLowerCase();
+    const profName = getProfName(b).toLowerCase();
     const matchSearch = !search || patName.includes(q) || profName.includes(q);
     const matchStatus = statusFilter === "all" || b.status === statusFilter;
     return matchSearch && matchStatus;
@@ -88,40 +54,6 @@ export default function BillingProductionPage() {
 
   const totalFaturado = billings.filter((b) => b.status === "faturado").reduce((s, b) => s + b.net_amount, 0);
   const totalAberto = billings.filter((b) => b.status === "em_aberto").reduce((s, b) => s + b.net_amount, 0);
-
-  const handleCreate = async () => {
-    if (!newPatientId || !newGross) {
-      toast({ title: "Preencha paciente e valor", variant: "destructive" });
-      return;
-    }
-    const gross = Number(newGross);
-    const disc = Number(newDiscount) || 0;
-    setSaving(true);
-    try {
-      await billingsService.create({
-        patient_id: newPatientId,
-        professional_id: newProfId || undefined,
-        company_id: user?.company_id || undefined,
-        unit_id: user?.primary_unit_id || undefined,
-        billing_type: newType,
-        gross_amount: gross,
-        discount: disc,
-        net_amount: gross - disc,
-        status: "em_aberto",
-      });
-      toast({ title: "Faturamento criado!" });
-      setNewOpen(false);
-      setNewPatientId("");
-      setNewProfId("");
-      setNewGross("");
-      setNewDiscount("0");
-      loadAll();
-    } catch (err) {
-      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
-  };
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={loadAll} />;
@@ -131,7 +63,6 @@ export default function BillingProductionPage() {
       <PageHeader
         title="Faturamento"
         description="Produção faturável vinculada aos atendimentos"
-        actions={<Button onClick={() => setNewOpen(true)}><Plus className="mr-2 h-4 w-4" />Novo Faturamento</Button>}
       />
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -169,8 +100,8 @@ export default function BillingProductionPage() {
             <TableBody>
               {filtered.map((b) => (
                 <TableRow key={b.id}>
-                  <TableCell className="font-medium text-sm">{getPatientName(b.patient_id)}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{getProfName(b.professional_id)}</TableCell>
+                  <TableCell className="font-medium text-sm">{getPatientName(b)}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{getProfName(b)}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className="border-0 bg-primary/10 text-primary text-[10px]">
                       {billingTypeLabels[b.billing_type || ""] || b.billing_type || "—"}
@@ -191,49 +122,7 @@ export default function BillingProductionPage() {
         </div>
       )}
 
-      {/* New billing dialog */}
-      <Dialog open={newOpen} onOpenChange={setNewOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Novo Faturamento</DialogTitle>
-            <DialogDescription>Registre um faturamento.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Paciente *</Label>
-              <Select value={newPatientId} onValueChange={setNewPatientId}>
-                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                <SelectContent>{patients.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Profissional</Label>
-              <Select value={newProfId} onValueChange={setNewProfId}>
-                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                <SelectContent>{professionals.map((p) => <SelectItem key={p.id} value={p.id}>{p.full_name}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Tipo</Label>
-              <Select value={newType} onValueChange={setNewType}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {Object.entries(billingTypeLabels).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-2"><Label>Bruto *</Label><Input type="number" value={newGross} onChange={(e) => setNewGross(e.target.value)} /></div>
-              <div className="space-y-2"><Label>Desconto</Label><Input type="number" value={newDiscount} onChange={(e) => setNewDiscount(e.target.value)} /></div>
-              <div className="space-y-2"><Label>Líquido</Label><Input type="number" value={String((Number(newGross) || 0) - (Number(newDiscount) || 0))} disabled /></div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setNewOpen(false)}>Cancelar</Button>
-            <Button onClick={handleCreate} disabled={saving}>{saving ? "Salvando..." : "Registrar"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
+

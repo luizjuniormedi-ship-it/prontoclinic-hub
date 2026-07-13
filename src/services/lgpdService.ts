@@ -13,7 +13,7 @@
  * Operacoes:
  *   - getConsentimentos / updateConsentimento
  *   - requestAcesso / requestPortabilidade / requestEsquecimento / requestRevogacao
- *   - executeEsquecimento (RPC anonymize_patient)
+ *   - anonimização efetiva permanece em fluxo administrativo server-side
  *   - exportarDados (payload de portabilidade)
  *   - getPoliticaRetencao / setPoliticaRetencao
  *   - getSolicitacoes / processarSolicitacao
@@ -332,22 +332,14 @@ export const lgpdService = {
   ): Promise<{ solicitacao: LgpdSolicitacao; anonimizacao?: Record<string, unknown> }> {
     motivoEsquecimentoSchema.parse(motivo);
     const solicitacao = await this.criarSolicitacao(patientId, "ESQUECIMENTO", ip);
-
-    let anonimizacao: Record<string, unknown> | undefined;
-    try {
-      anonimizacao = await this.executeEsquecimento(patientId, motivo);
-    } catch (err) {
-      // Anonimizacao falhou — solicitacao fica EM_ANDAMENTO para reprocessamento
-      await supabase
-        .from("lgpd_solicitacoes")
-        .update({ status: "EM_ANDAMENTO" })
-        .eq("id", solicitacao.id);
-      throw err;
-    }
-    return { solicitacao, anonimizacao };
+    return { solicitacao };
   },
 
-  /** Executa a anonimizacao (chama a RPC `anonymize_patient`). */
+  /**
+   * A anonimização é destrutiva e não pode ser iniciada pelo navegador.
+   * A solicitação deve ser aprovada e executada por um worker administrativo
+   * server-side com trilha de auditoria e credencial de serviço.
+   */
   async executeEsquecimento(
     patientId: number,
     motivo: MotivoAnonimizacao
@@ -356,14 +348,9 @@ export const lgpdService = {
     if (!Number.isInteger(patientId) || patientId <= 0) {
       throw new Error("patientId invalido");
     }
-    const { data, error } = await supabase.rpc("anonymize_patient", {
-      p_paciente_id: patientId,
-      p_motivo: motivo,
-    });
-    if (error) {
-      throw new Error(`Erro ao anonimizar paciente: ${error.message}`);
-    }
-    return (data || {}) as Record<string, unknown>;
+    throw new Error(
+      "Anonimizacao bloqueada no navegador; use o fluxo administrativo server-side aprovado",
+    );
   },
 
   // ---------------------------------------------------------------------------
@@ -583,26 +570,12 @@ export const lgpdService = {
     limit = 100
   ): Promise<{ sucesso: number; falha: number; erros: Array<{ id: number; erro: string }> }> {
     motivoEsquecimentoSchema.parse(motivo);
-    const candidatos = await this.getPacientesAnonimizaveis(limit);
-
-    let sucesso = 0;
-    let falha = 0;
-    const erros: Array<{ id: number; erro: string }> = [];
-
-    for (const c of candidatos) {
-      try {
-        await this.executeEsquecimento(c.id, motivo);
-        sucesso++;
-      } catch (err) {
-        falha++;
-        erros.push({
-          id: c.id,
-          erro: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-    return { sucesso, falha, erros };
+    if (!Number.isInteger(limit) || limit <= 0) throw new Error("limit invalido");
+    throw new Error(
+      "Anonimizacao em massa bloqueada no navegador; execute somente pelo worker administrativo aprovado",
+    );
   },
 };
 
 export default lgpdService;
+

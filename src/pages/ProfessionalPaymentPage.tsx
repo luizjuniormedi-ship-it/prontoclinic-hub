@@ -1,154 +1,416 @@
-import { useEffect, useState } from "react";
-import { Banknote, Search, TrendingUp, CheckCircle } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Ban, Banknote, Check, ChevronLeft, ChevronRight, Search, TrendingUp, WalletCards } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/PageHeader";
-import { LoadingState, EmptyState } from "@/components/StateViews";
+import { EmptyState, ErrorState, LoadingState } from "@/components/StateViews";
 import { StatsCard } from "@/components/StatsCard";
-import { professionalPaymentsService, type ProfessionalPaymentWithDetails } from "@/services/professionalPaymentsService";
-import { catalogService } from "@/services/catalogService";
+import {
+  createProfessionalPaymentIntentKey,
+  professionalPaymentsService,
+  todayInSaoPaulo,
+  type ProfessionalPayment,
+  type ProfessionalPaymentListFilters,
+  type ProfessionalPaymentStatus,
+  type ProfessionalPaymentTargetStatus,
+} from "@/services/professionalPaymentsService";
+import { unitsService } from "@/services/catalogService";
 import { formatCurrency } from "@/utils/formatters";
 import { useToast } from "@/hooks/use-toast";
+import { useDebounce } from "@/hooks/useDebounce";
 
-const paymentStatusLabels: Record<string, string> = {
-  apurado: "Apurado", conferido: "Conferido", pago: "Pago", cancelado: "Cancelado",
-};
-const paymentStatusColors: Record<string, string> = {
+const paymentStatusLabels = {
+  apurado: "Apurado",
+  conferido: "Conferido",
+  pago: "Pago",
+  cancelado: "Cancelado",
+} as const;
+
+const paymentStatusColors = {
   apurado: "bg-warning/10 text-warning",
   conferido: "bg-primary/10 text-primary",
   pago: "bg-success/10 text-success",
   cancelado: "bg-muted text-muted-foreground",
+} as const;
+
+const remTypeLabels = {
+  FIXED: "Valor Fixo",
+  PACKAGE: "Pacote",
+  CH: "CH",
+  PERCENTAGE: "Percentual",
+} as const;
+
+const PAGE_SIZE = 25;
+
+type PendingAction = {
+  paymentId: number;
+  professionalName: string;
+  targetStatus: ProfessionalPaymentTargetStatus;
+  idempotencyKey: string;
+  reason: string;
+  paymentDate: string | null;
+  error: string | null;
 };
-const remTypeLabels: Record<string, string> = {
-  FIXED: "Valor Fixo", PACKAGE: "Pacote", CH: "CH", PERCENTAGE: "Percentual",
+
+type LoadOptions = {
+  preserveCurrentRows?: boolean;
+  rethrow?: boolean;
 };
+
+type PaymentQuery = {
+  page: number;
+  search: string;
+  status: ProfessionalPaymentStatus | "all";
+  unitId: string | "all";
+};
+
+function actionTitle(targetStatus: ProfessionalPaymentTargetStatus): string {
+  if (targetStatus === "conferido") return "Confirmar conferencia";
+  if (targetStatus === "pago") return "Confirmar pagamento";
+  return "Cancelar repasse";
+}
+
+function actionButtonLabel(targetStatus: ProfessionalPaymentTargetStatus, retry: boolean): string {
+  if (retry) return "Tentar novamente";
+  if (targetStatus === "conferido") return "Confirmar conferencia";
+  if (targetStatus === "pago") return "Confirmar pagamento";
+  return "Confirmar cancelamento";
+}
+
+function actionSuccessTitle(targetStatus: ProfessionalPaymentTargetStatus): string {
+  if (targetStatus === "conferido") return "Repasse conferido";
+  if (targetStatus === "pago") return "Repasse pago";
+  return "Repasse cancelado";
+}
 
 export default function ProfessionalPaymentPage() {
-  const [payments, setPayments] = useState<ProfessionalPaymentWithDetails[]>([]);
-  const [units, setUnits] = useState<{ id: string; name: string }[]>([]);
+  const [payments, setPayments] = useState<ProfessionalPayment[]>([]);
+  const [units, setUnits] = useState<Array<{ id: string; name: string }>>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [query, setQuery] = useState<PaymentQuery>({
+    page: 0,
+    search: "",
+    status: "all",
+    unitId: "all",
+  });
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [unitFilter, setUnitFilter] = useState("all");
+  const [unitsLoading, setUnitsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [unitsError, setUnitsError] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState("");
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [actionPending, setActionPending] = useState(false);
+  const inFlightIntent = useRef<string | null>(null);
+  const latestLoadRequest = useRef(0);
+  const queryRef = useRef(query);
+  queryRef.current = query;
   const { toast } = useToast();
+  const debouncedSearch = useDebounce(searchInput, 300);
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const [p, u] = await Promise.all([
-        professionalPaymentsService.getAllWithDetails(),
-        catalogService.units.getAll(),
-      ]);
-      setPayments(p);
-      setUnits(u.map((unit) => ({ id: unit.id, name: unit.name })));
-    } catch (err) {
-      toast({
-        title: "Erro ao carregar repasses",
-        description: err instanceof Error ? err.message : String(err),
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    const search = debouncedSearch.trim();
+    setQuery((current) => current.search === search
+      ? current
+      : { ...current, page: 0, search });
+  }, [debouncedSearch]);
+
+  const requestPage = useCallback((activeQuery: PaymentQuery) => {
+    const filters: ProfessionalPaymentListFilters = {
+      limit: PAGE_SIZE,
+      offset: activeQuery.page * PAGE_SIZE,
+    };
+    if (activeQuery.search) filters.search = activeQuery.search;
+    if (activeQuery.status !== "all") filters.status = activeQuery.status;
+    if (activeQuery.unitId !== "all") filters.unitId = Number(activeQuery.unitId);
+    return professionalPaymentsService.list(filters);
+  }, []);
+
+  const load = useCallback(async (options: LoadOptions = {}) => {
+    const preserveCurrentRows = options.preserveCurrentRows === true;
+    const activeQuery = queryRef.current;
+    const requestId = latestLoadRequest.current + 1;
+    latestLoadRequest.current = requestId;
+    if (!preserveCurrentRows) {
+      setLoading(true);
+      setLoadError(null);
     }
-  };
+    try {
+      const rows = await requestPage(activeQuery);
+      if (requestId !== latestLoadRequest.current || queryRef.current !== activeQuery) return;
+      if (rows.length === 0 && activeQuery.page > 0) {
+        setQuery((current) => ({ ...current, page: Math.max(0, current.page - 1) }));
+        return;
+      }
+      setPayments(rows);
+      setTotalCount(rows[0]?.totalCount ?? 0);
+    } catch (error) {
+      if (requestId !== latestLoadRequest.current) return;
+      if (!preserveCurrentRows) {
+        setPayments([]);
+        setTotalCount(0);
+        setLoadError(error instanceof Error ? error.message : String(error));
+      }
+      if (options.rethrow) throw error;
+    } finally {
+      if (requestId === latestLoadRequest.current) setLoading(false);
+    }
+  }, [requestPage]);
+
+  const loadUnits = useCallback(async () => {
+    setUnitsLoading(true);
+    setUnitsError(null);
+    try {
+      const rows = await unitsService.getAll();
+      setUnits(rows.map(({ id, name }) => ({ id, name })));
+    } catch (error) {
+      setUnits([]);
+      setUnitsError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setUnitsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load, query]);
 
-  const handleMarcarPago = async (id: number) => {
+  useEffect(() => {
+    void loadUnits();
+  }, [loadUnits]);
+
+  const openAction = (payment: ProfessionalPayment, targetStatus: ProfessionalPaymentTargetStatus) => {
     try {
-      await professionalPaymentsService.marcarComoPago(id, new Date().toISOString().split("T")[0]);
-      toast({ title: "Repasse marcado como pago" });
-      void load();
-    } catch (err) {
+      setPendingAction({
+        paymentId: payment.id,
+        professionalName: payment.professionalName ?? `Profissional #${payment.professionalId}`,
+        targetStatus,
+        idempotencyKey: createProfessionalPaymentIntentKey(),
+        reason: "",
+        paymentDate: targetStatus === "pago" ? todayInSaoPaulo() : null,
+        error: null,
+      });
+    } catch (error) {
       toast({
-        title: "Erro ao marcar como pago",
-        description: err instanceof Error ? err.message : String(err),
+        title: "Nao foi possivel iniciar a acao",
+        description: error instanceof Error ? error.message : String(error),
         variant: "destructive",
       });
     }
   };
 
-  const filtered = payments.filter((p) => {
-    const q = search.toLowerCase();
-    const matchSearch = !search || (p.professionalName ?? "").toLowerCase().includes(q) || (p.ds_reference ?? "").toLowerCase().includes(q);
-    const matchStatus = statusFilter === "all" || p.status === statusFilter;
-    const matchUnit = unitFilter === "all" || String(p.cd_unit ?? "") === unitFilter;
-    return matchSearch && matchStatus && matchUnit;
-  });
+  const confirmAction = async () => {
+    if (!pendingAction || inFlightIntent.current) return;
+    const reason = pendingAction.reason.trim();
+    if (pendingAction.targetStatus === "cancelado" && !reason) {
+      setPendingAction((current) => current ? { ...current, error: "Informe o motivo do cancelamento." } : current);
+      return;
+    }
 
-  const totalApurado = payments.filter((p) => p.status === "apurado").reduce((s, p) => s + Number(p.total_value), 0);
-  const totalPago = payments.filter((p) => p.status === "pago").reduce((s, p) => s + Number(p.total_value), 0);
+    inFlightIntent.current = pendingAction.idempotencyKey;
+    setActionPending(true);
+    setPendingAction((current) => current ? { ...current, error: null } : current);
+    try {
+      await professionalPaymentsService.transition(
+        pendingAction.paymentId,
+        pendingAction.targetStatus,
+        {
+          idempotencyKey: pendingAction.idempotencyKey,
+          reason: pendingAction.targetStatus === "cancelado" ? reason : null,
+          paymentDate: pendingAction.paymentDate,
+        },
+      );
+      await load({ preserveCurrentRows: true, rethrow: true });
+      toast({ title: actionSuccessTitle(pendingAction.targetStatus) });
+      setPendingAction(null);
+    } catch (error) {
+      setPendingAction((current) => current ? {
+        ...current,
+        error: error instanceof Error ? error.message : String(error),
+      } : current);
+    } finally {
+      inFlightIntent.current = null;
+      setActionPending(false);
+    }
+  };
 
-  if (loading) return <LoadingState />;
+  const totalPending = payments
+    .filter((payment) => payment.status === "apurado" || payment.status === "conferido")
+    .reduce((sum, payment) => sum + payment.totalValue, 0);
+  const totalPaid = payments
+    .filter((payment) => payment.status === "pago")
+    .reduce((sum, payment) => sum + payment.totalValue, 0);
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const firstItem = totalCount === 0 ? 0 : query.page * PAGE_SIZE + 1;
+  const lastItem = Math.min((query.page + 1) * PAGE_SIZE, totalCount);
+  const hasFilters = query.search !== "" || query.status !== "all" || query.unitId !== "all";
+
+  if (loading || unitsLoading) return <LoadingState message="Carregando repasses..." />;
+  if (loadError || unitsError) {
+    return (
+      <ErrorState
+        message={loadError ?? unitsError ?? "Erro ao carregar repasses"}
+        onRetry={() => {
+          if (loadError) void load();
+          if (unitsError) void loadUnits();
+        }}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <PageHeader title="Pagamento Médico" description="Repasses e remuneração de profissionais" />
+      <PageHeader title="Pagamento Medico" description="Repasses e remuneracao de profissionais" />
 
-      <div className="grid grid-cols-2 gap-3">
-        <StatsCard title="A Pagar (apurado)" value={formatCurrency(totalApurado)} icon={TrendingUp} variant="warning" />
-        <StatsCard title="Total Pago" value={formatCurrency(totalPago)} icon={Banknote} variant="success" />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <StatsCard title="Total pendente nesta pagina" value={formatCurrency(totalPending)} icon={TrendingUp} variant="warning" />
+        <StatsCard title="Total pago nesta pagina" value={formatCurrency(totalPaid)} icon={Banknote} variant="success" />
       </div>
 
-      <div className="flex gap-2 flex-wrap">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Buscar profissional..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className="flex flex-wrap gap-2">
+        <div className="relative min-w-[200px] max-w-sm flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            aria-label="Buscar repasses"
+            placeholder="Buscar profissional..."
+            className="pl-9"
+            value={searchInput}
+            maxLength={200}
+            onChange={(event) => setSearchInput(event.target.value)}
+          />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[120px]"><SelectValue placeholder="Status" /></SelectTrigger>
+        <Select
+          value={query.status}
+          onValueChange={(status) => setQuery((current) => ({
+            ...current,
+            page: 0,
+            status: status as ProfessionalPaymentStatus | "all",
+          }))}
+        >
+          <SelectTrigger aria-label="Filtrar por status" className="w-[140px]">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
-            {Object.entries(paymentStatusLabels).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+            {Object.entries(paymentStatusLabels).map(([key, value]) => (
+              <SelectItem key={key} value={key}>{value}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
-        <Select value={unitFilter} onValueChange={setUnitFilter}>
-          <SelectTrigger className="w-[150px]"><SelectValue placeholder="Unidade" /></SelectTrigger>
+        <Select
+          value={query.unitId}
+          onValueChange={(unitId) => setQuery((current) => ({ ...current, page: 0, unitId }))}
+        >
+          <SelectTrigger aria-label="Filtrar por unidade" className="w-[170px]">
+            <SelectValue placeholder="Unidade" />
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas</SelectItem>
-            {units.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+            {units.map(({ id, name }) => <SelectItem key={id} value={id}>{name}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
 
-      {filtered.length === 0 ? <EmptyState icon={Banknote} title="Nenhum repasse" description="Cadastre repasses na produção médica para visualizar aqui." /> : (
-        <div className="rounded-lg border bg-card overflow-auto">
+      {payments.length === 0 ? (
+        <EmptyState
+          icon={Banknote}
+          title="Nenhum repasse"
+          description={hasFilters
+            ? "Nao ha repasses para os filtros selecionados."
+            : "Cadastre repasses na producao medica para visualizar aqui."}
+        />
+      ) : (
+        <div className="overflow-auto rounded-lg border bg-card">
           <Table>
-            <TableHeader><TableRow>
-              <TableHead>Profissional</TableHead>
-              <TableHead>Unidade</TableHead>
-              <TableHead>Referência</TableHead>
-              <TableHead>Tipo</TableHead>
-              <TableHead>Descrição</TableHead>
-              <TableHead>Qtd</TableHead>
-              <TableHead>%</TableHead>
-              <TableHead>Total</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Ações</TableHead>
-            </TableRow></TableHeader>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Profissional</TableHead>
+                <TableHead>Unidade</TableHead>
+                <TableHead>Referencia</TableHead>
+                <TableHead>Tipo</TableHead>
+                <TableHead>Descricao</TableHead>
+                <TableHead>Qtd</TableHead>
+                <TableHead>%</TableHead>
+                <TableHead>Total</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Acoes</TableHead>
+              </TableRow>
+            </TableHeader>
             <TableBody>
-              {filtered.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell className="font-medium text-sm">{p.professionalName}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{p.unitName ?? "—"}</TableCell>
-                  <TableCell className="text-xs">{new Date(p.dt_reference).toLocaleDateString("pt-BR")}</TableCell>
-                  <TableCell><Badge variant="outline" className="border-0 bg-primary/10 text-primary text-[10px]">{remTypeLabels[p.tp_remuneration] ?? p.tp_remuneration}</Badge></TableCell>
-                  <TableCell className="text-xs text-muted-foreground max-w-[150px] truncate">{p.ds_reference ?? "—"}</TableCell>
-                  <TableCell className="text-xs">{p.total_procedures}</TableCell>
-                  <TableCell className="text-xs">{Number(p.percentage).toFixed(1)}%</TableCell>
-                  <TableCell className="font-medium text-sm">{formatCurrency(Number(p.total_value))}</TableCell>
-                  <TableCell><Badge variant="outline" className={`border-0 text-[10px] ${paymentStatusColors[p.status] ?? ""}`}>{paymentStatusLabels[p.status] ?? p.status}</Badge></TableCell>
+              {payments.map((payment) => (
+                <TableRow key={payment.id} data-payment-id={payment.id}>
+                  <TableCell className="text-sm font-medium">
+                    {payment.professionalName ?? `Profissional #${payment.professionalId}`}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{payment.unitName ?? "-"}</TableCell>
+                  <TableCell className="text-xs">
+                    {new Date(`${payment.referenceDate}T00:00:00`).toLocaleDateString("pt-BR")}
+                  </TableCell>
                   <TableCell>
-                    {p.status === "apurado" && (
-                      <Button variant="ghost" size="sm" onClick={() => void handleMarcarPago(p.id)} title="Marcar como pago">
-                        <CheckCircle className="h-4 w-4 text-success" />
-                      </Button>
-                    )}
+                    <Badge variant="outline" className="border-0 bg-primary/10 text-[10px] text-primary">
+                      {remTypeLabels[payment.remunerationType]}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="max-w-[150px] truncate text-xs text-muted-foreground">
+                    {payment.referenceDescription ?? "-"}
+                  </TableCell>
+                  <TableCell className="text-xs">{payment.totalProcedures}</TableCell>
+                  <TableCell className="text-xs">{payment.percentage.toFixed(1)}%</TableCell>
+                  <TableCell className="text-sm font-medium">{formatCurrency(payment.totalValue)}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={`border-0 text-[10px] ${paymentStatusColors[payment.status]}`}>
+                      {paymentStatusLabels[payment.status]}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex min-w-max items-center gap-1">
+                      {payment.status === "apurado" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openAction(payment, "conferido")}
+                          disabled={actionPending}
+                        >
+                          <Check className="mr-1 h-4 w-4" />
+                          Conferir
+                        </Button>
+                      )}
+                      {payment.status === "conferido" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openAction(payment, "pago")}
+                          disabled={actionPending}
+                        >
+                          <WalletCards className="mr-1 h-4 w-4" />
+                          Pagar
+                        </Button>
+                      )}
+                      {(payment.status === "apurado" || payment.status === "conferido") && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openAction(payment, "cancelado")}
+                          disabled={actionPending}
+                        >
+                          <Ban className="mr-1 h-4 w-4" />
+                          Cancelar
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -156,6 +418,96 @@ export default function ProfessionalPaymentPage() {
           </Table>
         </div>
       )}
+
+      <div className="flex items-center justify-between gap-3" aria-label="Paginacao de repasses">
+        <p className="text-xs text-muted-foreground">
+          {firstItem}-{lastItem} de {totalCount} repasses
+        </p>
+        <div className="flex gap-1">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            aria-label="Pagina anterior"
+            title="Pagina anterior"
+            disabled={query.page === 0 || actionPending}
+            onClick={() => setQuery((current) => ({ ...current, page: Math.max(0, current.page - 1) }))}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            aria-label="Proxima pagina"
+            title="Proxima pagina"
+            disabled={query.page >= totalPages - 1 || actionPending}
+            onClick={() => setQuery((current) => ({ ...current, page: current.page + 1 }))}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      <AlertDialog
+        open={pendingAction !== null}
+        onOpenChange={(open) => {
+          if (!open && !actionPending) setPendingAction(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{pendingAction ? actionTitle(pendingAction.targetStatus) : "Confirmar acao"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingAction?.targetStatus === "pago"
+                ? `Confirme explicitamente o pagamento do repasse de ${pendingAction.professionalName}.`
+                : pendingAction?.targetStatus === "conferido"
+                  ? `O repasse de ${pendingAction.professionalName} foi revisado e pode ser conferido?`
+                  : `O repasse de ${pendingAction?.professionalName ?? "profissional"} sera cancelado.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {pendingAction?.targetStatus === "cancelado" && (
+            <div className="space-y-2">
+              <Label htmlFor="professional-payment-cancel-reason">Motivo do cancelamento</Label>
+              <Textarea
+                id="professional-payment-cancel-reason"
+                value={pendingAction.reason}
+                maxLength={1000}
+                disabled={actionPending}
+                onChange={(event) => setPendingAction((current) => current ? {
+                  ...current,
+                  reason: event.target.value,
+                  error: null,
+                } : current)}
+              />
+            </div>
+          )}
+
+          {pendingAction?.error && (
+            <p role="alert" className="text-sm text-destructive">{pendingAction.error}</p>
+          )}
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={actionPending}>Voltar</AlertDialogCancel>
+            <Button
+              type="button"
+              variant={pendingAction?.targetStatus === "cancelado" ? "destructive" : "default"}
+              disabled={actionPending}
+              onClick={() => void confirmAction()}
+            >
+              {actionPending
+                ? "Processando..."
+                : pendingAction
+                  ? actionButtonLabel(pendingAction.targetStatus, pendingAction.error !== null)
+                  : "Confirmar"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
+

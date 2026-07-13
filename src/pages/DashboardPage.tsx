@@ -11,6 +11,7 @@ import { supabase } from "@/lib/supabase";
 import { appointmentsService, professionalsLookup, DbAppointment, DbProfessional } from "@/services/appointmentsService";
 import { calculateAge } from "@/utils/formatters";
 import { useAuth } from "@/hooks/useAuth";
+import { canAccessRoute } from "@/config/routePermissions";
 import type { AppointmentStatusForBadge } from "@/types/missing";
 
 interface PatientRow { id: string; full_name: string; birth_date: string | null; }
@@ -25,29 +26,35 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const today = new Date().toISOString().split("T")[0];
+  const canViewSchedule = canAccessRoute(user?.role_name, "/schedule");
+  const canViewPatients = canAccessRoute(user?.role_name, "/patients");
 
   useEffect(() => {
+    if (!user) return;
+
     (async () => {
       try {
         setLoading(true);
         const [profs, appts, { count }] = await Promise.all([
-          professionalsLookup.getAll(),
-          appointmentsService.getByDate(today),
-          supabase.from("patients").select("id", { count: "exact", head: true }),
+          canViewSchedule ? professionalsLookup.getAll() : Promise.resolve([]),
+          canViewSchedule ? appointmentsService.getByDate(today) : Promise.resolve([]),
+          canViewPatients
+            ? supabase.from("patients").select("id", { count: "exact", head: true })
+            : Promise.resolve({ count: 0 }),
         ]);
         setProfessionals(profs);
         setAppointments(appts);
         setTotalPatients(count || 0);
 
         const patientIds = [...new Set(appts.map((a) => a.patient_id).filter(Boolean))];
-        if (patientIds.length > 0) {
+        if (canViewPatients && patientIds.length > 0) {
           const { data } = await supabase.from("patients").select("id, full_name, birth_date").in("id", patientIds);
           setPatients(data || []);
         }
       } catch (err) { setError((err as Error).message); }
       finally { setLoading(false); }
     })();
-  }, [today]);
+  }, [canViewPatients, canViewSchedule, today, user]);
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
@@ -122,3 +129,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+

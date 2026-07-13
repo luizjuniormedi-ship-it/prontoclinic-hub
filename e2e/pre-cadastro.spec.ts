@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/backend-health';
 
 test.describe('Pré-cadastro público (PWA)', () => {
   test('acessar /pre-cadastro sem login', async ({ page }) => {

@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { classificar, parseHL7, pedido } from "@/services/lisService";
+import { classificar, parseHL7, pedido, resultado } from "@/services/lisService";
 
 vi.mock("@/lib/supabase", () => {
   const chain = {
@@ -188,3 +188,111 @@ describe("lisService — pedido.create()", () => {
     expect(result.itens_ids).toEqual([200, 201]);
   });
 });
+
+describe("lisService — resultado.salvarSeguro()", () => {
+  const results = [{
+    ds_parametro: "Glicose",
+    vl_resultado: 90,
+    vl_resultado_texto: null,
+    ds_unidade: "mg/dL",
+    vl_minimo_referencia: 70,
+    vl_maximo_referencia: 99,
+    tp_resultado: "NORMAL" as const,
+  }];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("salva e libera atomicamente por uma única RPC", async () => {
+    const rpcResponse = { success: true, item_id: 42, item_status: "LIBERADO" };
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: rpcResponse, error: null } as never);
+
+    await expect(resultado.salvarSeguro({
+      itemId: 42,
+      results,
+      release: true,
+      expectedStatus: "EM_ANALISE",
+      idempotencyKey: "lab-result-request-1",
+    })).resolves.toEqual(rpcResponse);
+
+    expect(supabase.rpc).toHaveBeenCalledTimes(1);
+    expect(supabase.rpc).toHaveBeenCalledWith("save_or_release_lab_result_secure", {
+      p_item_id: 42,
+      p_expected_status: "EM_ANALISE",
+      p_idempotency_key: "lab-result-request-1",
+      p_results: results,
+      p_release: true,
+    });
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it("normaliza resposta tabular da RPC", async () => {
+    const rpcResponse = { success: true, item_id: 42, item_status: "EM_ANALISE" };
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: [rpcResponse], error: null } as never);
+
+    await expect(resultado.salvarSeguro({
+      itemId: 42,
+      results,
+      release: false,
+      expectedStatus: "COLETADO",
+      idempotencyKey: "lab-result-request-2",
+    })).resolves.toEqual(rpcResponse);
+  });
+
+  it("propaga erro da RPC sem executar escrita alternativa", async () => {
+    const rpcError = { code: "P0001", message: "Status do item foi alterado" };
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: null, error: rpcError } as never);
+
+    await expect(resultado.salvarSeguro({
+      itemId: 42,
+      results,
+      release: false,
+      expectedStatus: "COLETADO",
+      idempotencyKey: "lab-result-request-3",
+    })).rejects.toBe(rpcError);
+
+    expect(supabase.rpc).toHaveBeenCalledTimes(1);
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it("rejeita falha de negócio e resposta vazia", async () => {
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({
+      data: { success: false, message: "Item já liberado" },
+      error: null,
+    } as never);
+
+    const input = {
+      itemId: 42,
+      results,
+      release: true,
+      expectedStatus: "EM_ANALISE" as const,
+      idempotencyKey: "lab-result-request-4",
+    };
+    await expect(resultado.salvarSeguro(input)).rejects.toThrow("Item já liberado");
+
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: null, error: null } as never);
+    await expect(resultado.salvarSeguro(input)).rejects.toThrow("Resposta inválida");
+  });
+
+  it("valida resultados e idempotência antes da RPC", async () => {
+    await expect(resultado.salvarSeguro({
+      itemId: 42,
+      results: [],
+      release: false,
+      expectedStatus: "COLETADO",
+      idempotencyKey: "key",
+    })).rejects.toThrow("ao menos um parâmetro");
+
+    await expect(resultado.salvarSeguro({
+      itemId: 42,
+      results,
+      release: false,
+      expectedStatus: "COLETADO",
+      idempotencyKey: " ",
+    })).rejects.toThrow("idempotência obrigatória");
+
+    expect(supabase.rpc).not.toHaveBeenCalled();
+  });
+});
+

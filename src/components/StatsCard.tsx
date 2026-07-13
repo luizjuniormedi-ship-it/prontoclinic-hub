@@ -31,7 +31,7 @@ const iconVariantStyles: Record<string, string> = {
 
 export function StatsCard({ title, value, icon: Icon, description, trend, variant = "default" }: StatsCardProps) {
   return (
-    <Card className={`${variantStyles[variant]} animate-fade-in`}>
+    <Card className={variantStyles[variant]}>
       <CardContent className="p-6">
         <div className="flex items-center justify-between">
           <div className="space-y-1">

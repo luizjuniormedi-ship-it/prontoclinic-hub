@@ -40,12 +40,13 @@ CREATE TRIGGER trg_reception_checkins_updated_at BEFORE UPDATE ON public.recepti
 
 CREATE OR REPLACE FUNCTION public.get_reception_checkin_readiness(p_appointment_id BIGINT)
 RETURNS JSONB LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=public,pg_temp AS $$
-DECLARE v_a appointments;v_p patients;v_issues JSONB:='[]'::JSONB;v_auth BOOLEAN:=FALSE;v_doc BOOLEAN:=FALSE;
+DECLARE v_a appointments;v_p patients;v_a_json JSONB;v_p_json JSONB;v_issues JSONB:='[]'::JSONB;v_auth BOOLEAN:=FALSE;v_doc BOOLEAN:=FALSE;
 BEGIN
  SELECT * INTO v_a FROM appointments WHERE id=p_appointment_id;IF NOT FOUND THEN RAISE EXCEPTION 'Agendamento nao encontrado';END IF;
  SELECT * INTO v_p FROM patients WHERE id=v_a.patient_id;IF NOT FOUND THEN RAISE EXCEPTION 'Paciente nao encontrado';END IF;
- IF NULLIF(trim(COALESCE(v_p.full_name,'')),'') IS NULL OR v_p.birth_date IS NULL THEN v_issues:=v_issues||jsonb_build_array(jsonb_build_object('type','registration','severity','blocking','description','Cadastro minimo incompleto'));v_doc:=TRUE;END IF;
- IF v_a.insurance_company_id IS NOT NULL AND NULLIF(trim(COALESCE(v_a.ds_matricula,v_p.insurance_card_number,v_p.ds_matricula,'')),'') IS NULL THEN v_issues:=v_issues||jsonb_build_array(jsonb_build_object('type','insurance_card','severity','blocking','description','Carteirinha/matricula ausente'));END IF;
+ v_a_json:=to_jsonb(v_a);v_p_json:=to_jsonb(v_p);
+ IF NULLIF(trim(COALESCE(v_p_json->>'full_name','')),'') IS NULL OR NULLIF(v_p_json->>'birth_date','') IS NULL THEN v_issues:=v_issues||jsonb_build_array(jsonb_build_object('type','registration','severity','blocking','description','Cadastro minimo incompleto'));v_doc:=TRUE;END IF;
+ IF NULLIF(v_a_json->>'insurance_company_id','') IS NOT NULL AND NULLIF(trim(COALESCE(v_a_json->>'ds_matricula',v_p_json->>'insurance_card_number',v_p_json->>'ds_matricula','')),'') IS NULL THEN v_issues:=v_issues||jsonb_build_array(jsonb_build_object('type','insurance_card','severity','blocking','description','Carteirinha/matricula ausente'));END IF;
  IF EXISTS(SELECT 1 FROM reception_eligibility_checks e WHERE e.appointment_id=v_a.id AND e.status IN ('pendente','em_analise','nao_elegivel','portal_indisponivel')) THEN v_issues:=v_issues||jsonb_build_array(jsonb_build_object('type','eligibility','severity','blocking','description','Elegibilidade pendente ou invalida'));END IF;
  IF EXISTS(SELECT 1 FROM reception_authorizations r WHERE r.appointment_id=v_a.id AND r.status NOT IN ('nao_necessaria','autorizada','parcialmente_autorizada','liberada_excecao')) THEN v_issues:=v_issues||jsonb_build_array(jsonb_build_object('type','authorization','severity','blocking','description','Autorizacao pendente ou invalida'));v_auth:=TRUE;END IF;
  RETURN jsonb_build_object('appointment_id',v_a.id,'patient_id',v_a.patient_id,'ready',jsonb_array_length(v_issues)=0,'issues',v_issues,'has_authorization_pending',v_auth,'has_document_pending',v_doc);
@@ -53,10 +54,11 @@ END $$;
 
 CREATE OR REPLACE FUNCTION public.perform_reception_checkin_secure(p_appointment_id BIGINT,p_priority TEXT DEFAULT 'normal',p_exception_reason TEXT DEFAULT NULL)
 RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
-DECLARE v_actor RECORD;v_a appointments;v_ready JSONB;v_checkin reception_checkins;v_ticket reception_queue_tickets;v_number INTEGER;v_issue JSONB;v_exception BOOLEAN:=FALSE;
+DECLARE v_actor RECORD;v_a appointments;v_a_json JSONB;v_ready JSONB;v_checkin reception_checkins;v_ticket reception_queue_tickets;v_number INTEGER;v_issue JSONB;v_exception BOOLEAN:=FALSE;
 BEGIN
  SELECT * INTO v_actor FROM get_scheduling_actor();PERFORM assert_scheduling_permission();
  SELECT * INTO v_a FROM appointments WHERE id=p_appointment_id FOR UPDATE;IF NOT FOUND THEN RAISE EXCEPTION 'Agendamento nao encontrado';END IF;
+ v_a_json:=to_jsonb(v_a);
  IF v_a.status NOT IN ('scheduled','confirmed') THEN RAISE EXCEPTION 'Check-in indisponivel no status %',v_a.status;END IF;
  v_ready:=get_reception_checkin_readiness(v_a.id);
  IF NOT (v_ready->>'ready')::BOOLEAN THEN
@@ -72,7 +74,7 @@ BEGIN
  END LOOP;
  IF v_exception THEN INSERT INTO reception_exception_releases(company_id,checkin_id,appointment_id,reason,risk_description,released_by) VALUES(v_a.company_id,v_checkin.id,v_a.id,trim(p_exception_reason),(v_ready->'issues')::TEXT,v_actor.user_id);END IF;
  PERFORM pg_advisory_xact_lock(hashtext(CURRENT_DATE::TEXT),hashtext('reception-C'));SELECT COALESCE(max(number),0)+1 INTO v_number FROM reception_queue_tickets WHERE ticket_date=CURRENT_DATE AND prefix='C';
- INSERT INTO reception_queue_tickets(company_id,checkin_id,patient_id,appointment_id,prefix,number,priority,sector) VALUES(v_a.company_id,v_checkin.id,v_a.patient_id,v_a.id,'C',v_number,p_priority,CASE WHEN COALESCE(v_a.service_name,'')<>'' THEN 'procedimento' ELSE 'consulta' END) RETURNING * INTO v_ticket;
+ INSERT INTO reception_queue_tickets(company_id,checkin_id,patient_id,appointment_id,prefix,number,priority,sector) VALUES(v_a.company_id,v_checkin.id,v_a.patient_id,v_a.id,'C',v_number,p_priority,CASE WHEN COALESCE(v_a_json->>'service_name','')<>'' THEN 'procedimento' ELSE 'consulta' END) RETURNING * INTO v_ticket;
  PERFORM update_appointment_status_secure(v_a.id,'waiting','Check-in realizado - senha C'||lpad(v_number::TEXT,3,'0'));
  INSERT INTO reception_checkin_status_history(checkin_id,from_status,to_status,reason,actor_user_id) VALUES(v_checkin.id,NULL,'checked_in','Check-in presencial',v_actor.user_id);
  RETURN jsonb_build_object('checkin_id',v_checkin.id,'ticket_id',v_ticket.id,'ticket',v_ticket.prefix||lpad(v_ticket.number::TEXT,3,'0'),'released_by_exception',v_exception,'issues',v_ready->'issues');

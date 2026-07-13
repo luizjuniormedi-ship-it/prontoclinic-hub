@@ -154,6 +154,32 @@ export interface ResultadoLab {
   created_at: string;
 }
 
+export interface LabResultSecurePayload {
+  ds_parametro: string;
+  vl_resultado: number | null;
+  vl_resultado_texto?: string | null;
+  ds_unidade?: string | null;
+  vl_minimo_referencia?: number | null;
+  vl_maximo_referencia?: number | null;
+  tp_resultado: LabResultadoTipo;
+  cd_equipamento?: string | null;
+  cd_lote_reagente?: string | null;
+  ds_observacao?: string | null;
+  ds_hl7_message?: string | null;
+}
+
+export interface SaveLabResultSecureInput {
+  itemId: number;
+  results: LabResultSecurePayload[];
+  release: boolean;
+  expectedStatus: LabPedidoStatus;
+  idempotencyKey: string;
+}
+
+export interface SaveLabResultSecureResponse {
+  [key: string]: unknown;
+}
+
 export interface AlertaCritico {
   id: number;
   cd_resultado: number;
@@ -595,52 +621,49 @@ export const pedido = {
 // ── Resultados ───────────────────────────────────────────────────────────────
 
 export const resultado = {
-  async inserir(input: Omit<ResultadoLab, "id" | "created_at" | "dt_resultado"> & { dt_resultado?: string }): Promise<ResultadoLab> {
-    const { data, error } = await supabase
-      .from("exames_lab_resultado")
-      .insert({ ...input, dt_resultado: input.dt_resultado ?? new Date().toISOString() })
-      .select()
-      .single();
+  async salvarSeguro(input: SaveLabResultSecureInput): Promise<SaveLabResultSecureResponse> {
+    if (input.results.length === 0) {
+      throw new Error("Preencha ao menos um parâmetro");
+    }
+    if (!input.idempotencyKey.trim()) {
+      throw new Error("Chave de idempotência obrigatória");
+    }
+
+    const { data, error } = await supabase.rpc("save_or_release_lab_result_secure", {
+      p_item_id: input.itemId,
+      p_expected_status: input.expectedStatus,
+      p_idempotency_key: input.idempotencyKey,
+      p_results: input.results,
+      p_release: input.release,
+    });
+
     if (error) throw error;
 
-    // Se resultado for crítico, registrar alerta (trigger também registra, mas
-    // fazemos aqui para garantir idempotência e também popular ds_observacao)
-    if (data.tp_resultado === "CRITICO_BAIXO" || data.tp_resultado === "CRITICO_ALTO") {
-      // No-op: trigger fn_gerar_alerta_critico já cuida
+    const response = Array.isArray(data) ? data[0] : data;
+    if (!response || typeof response !== "object") {
+      throw new Error("Resposta inválida ao salvar resultado laboratorial");
     }
-    return data as ResultadoLab;
+
+    const result = response as SaveLabResultSecureResponse;
+    if (result.success === false || result.ok === false) {
+      const message = result.message ?? result.error;
+      throw new Error(
+        typeof message === "string" ? message : "Não foi possível salvar o resultado laboratorial",
+      );
+    }
+
+    return result;
   },
 
-  async inserirLote(
-    cdItemPedido: number,
-    parametros: Array<{
-      ds_parametro: string;
-      vl_resultado: number | null;
-      ds_unidade?: string;
-      vl_minimo_referencia?: number;
-      vl_maximo_referencia?: number;
-      ds_observacao?: string;
-    }>,
-  ): Promise<ResultadoLab[]> {
-    if (parametros.length === 0) return [];
-
-    const rows = parametros.map((p) => ({
-      cd_item_pedido: cdItemPedido,
-      ds_parametro: p.ds_parametro,
-      vl_resultado: p.vl_resultado,
-      ds_unidade: p.ds_unidade,
-      vl_minimo_referencia: p.vl_minimo_referencia ?? null,
-      vl_maximo_referencia: p.vl_maximo_referencia ?? null,
-      tp_resultado: classificar(p.vl_resultado, p.vl_minimo_referencia, p.vl_maximo_referencia),
-      ds_observacao: p.ds_observacao,
-    }));
-
+  async obterStatusItem(itemId: number): Promise<LabPedidoStatus> {
     const { data, error } = await supabase
-      .from("exames_lab_resultado")
-      .insert(rows)
-      .select();
+      .from("exames_lab_pedido_itens")
+      .select("tp_status")
+      .eq("id", itemId)
+      .maybeSingle();
     if (error) throw error;
-    return (data || []) as ResultadoLab[];
+    if (!data?.tp_status) throw new Error("Item do pedido laboratorial não encontrado");
+    return data.tp_status as LabPedidoStatus;
   },
 
   async listarPorItem(cdItemPedido: number): Promise<ResultadoLab[]> {
@@ -653,30 +676,6 @@ export const resultado = {
     return (data || []) as ResultadoLab[];
   },
 
-  async liberarItem(itemId: number): Promise<void> {
-    const { error } = await supabase
-      .from("exames_lab_pedido_itens")
-      .update({ tp_status: "LIBERADO", dt_liberacao: new Date().toISOString() })
-      .eq("id", itemId);
-    if (error) throw error;
-
-    // Verificar se todos os itens do pedido estão LIBERADOS
-    const { data: item } = await supabase
-      .from("exames_lab_pedido_itens")
-      .select("cd_pedido")
-      .eq("id", itemId)
-      .maybeSingle();
-    if (item) {
-      const { data: todos } = await supabase
-        .from("exames_lab_pedido_itens")
-        .select("tp_status")
-        .eq("cd_pedido", item.cd_pedido);
-      const todosLiberados = (todos || []).every((i) => i.tp_status === "LIBERADO");
-      if (todosLiberados) {
-        await pedido.atualizarStatus(item.cd_pedido, "LIBERADO");
-      }
-    }
-  },
 };
 
 // ── Alertas Críticos ─────────────────────────────────────────────────────────
@@ -865,3 +864,4 @@ export const LAB_MATERIAIS: LabMaterial[] = [
   "LIQUOR",
   "OUTROS",
 ];
+

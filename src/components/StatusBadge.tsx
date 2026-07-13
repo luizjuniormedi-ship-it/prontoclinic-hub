@@ -5,7 +5,7 @@ import { getAppointmentStatusLabel, getAppointmentTypeLabel, getPaymentStatusLab
 const appointmentStatusVariants: Record<AppointmentStatus, string> = {
   scheduled: "bg-muted text-muted-foreground",
   confirmed: "bg-primary/10 text-primary",
-  waiting: "bg-warning/10 text-warning",
+  waiting: "bg-warning/20 text-foreground",
   in_progress: "bg-success/10 text-success",
   completed: "bg-muted text-muted-foreground",
   no_show: "bg-destructive/10 text-destructive",
@@ -70,3 +70,4 @@ export function TherapyPackageStatusBadge({ status }: { status: TherapyPackageSt
 export function ProfessionalStatusBadge({ status }: { status: ProfessionalStatus }) {
   return <Badge variant="outline" className={`${professionalStatusVariants[status]} border-0 font-medium`}>{getProfessionalStatusLabel(status)}</Badge>;
 }
+

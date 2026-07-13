@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConfirmProvider } from "@/hooks/useConfirm";
@@ -40,7 +40,6 @@ const CallCenterPage = lazy(() => import("@/pages/CallCenterPage"));
 const WorklistPage = lazy(() => import("@/pages/WorklistPage"));
 const PACSPage = lazy(() => import("@/pages/PACSPage"));
 const BillingProductionPage = lazy(() => import("@/pages/BillingProductionPage"));
-const BillingAccountsPage = lazy(() => import("@/pages/BillingAccountsPage"));
 const ProfessionalPaymentPage = lazy(() => import("@/pages/ProfessionalPaymentPage"));
 const MasterDataPage = lazy(() => import("@/pages/MasterDataPage"));
 const ProfessionalCredentialingPage = lazy(() => import("@/pages/ProfessionalCredentialingPage"));
@@ -211,7 +210,7 @@ const App = () => (
             {/* Financial */}
             <Route path="/financial" element={<AppLayout><ProtectedRoute path="/financial"><LazyRoute><FinancialPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/billing-production" element={<AppLayout><ProtectedRoute path="/billing-production"><LazyRoute><BillingProductionPage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/billing-accounts" element={<AppLayout><ProtectedRoute path="/billing-accounts"><LazyRoute><BillingAccountsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/billing-accounts" element={<Navigate to="/financial" replace />} />
             <Route path="/professional-payment" element={<AppLayout><ProtectedRoute path="/professional-payment"><LazyRoute><ProfessionalPaymentPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/admin/tiss" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><TissManager /></LazyRoute></ProtectedRoute></AppLayout>} />
 

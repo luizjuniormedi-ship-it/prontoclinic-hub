@@ -242,11 +242,19 @@ export const notificationService = {
     }
 
     // Cancelar lembretes pendentes anteriores
-    await supabase
-      .from("notifications")
-      .update({ status: "CANCELLED", updated_at: new Date().toISOString() })
-      .eq("appointment_id", appointment.id)
-      .eq("status", "PENDING");
+    const { error: cancelError } = await supabase.rpc(
+      "cancel_pending_appointment_notifications",
+      { p_appointment_id: appointment.id },
+    );
+
+    if (cancelError) {
+      console.error(
+        "[notifications] falha ao cancelar lembretes pendentes",
+        appointment.id,
+        cancelError,
+      );
+      return null;
+    }
 
     return this.enqueue({
       p_company_id: appointment.company_id,
@@ -393,35 +401,16 @@ export const notificationService = {
   // 8. Retry manual (admin) — só se tentativas < max
   // ---------------------------------------------------------------------------
   async retry(id: string): Promise<boolean> {
-    const { data: notification, error: fetchErr } = await supabase
-      .from("notifications")
-      .select("attempts, max_attempts, status")
-      .eq("id", id)
-      .single();
+    const { data, error } = await supabase.rpc("retry_notification", {
+      p_notification_id: id,
+    });
 
-    if (fetchErr || !notification) return false;
-
-    if (notification.attempts >= notification.max_attempts) {
-      console.warn("[notifications] max_attempts atingido", id);
-      return false;
-    }
-    if (notification.status !== "FAILED" && notification.status !== "PENDING") {
-      console.warn("[notifications] status nao permite retry", id);
+    if (error) {
+      console.error("[notifications] retry falhou", id, error);
       return false;
     }
 
-    const { error } = await supabase
-      .from("notifications")
-      .update({
-        status: "PENDING",
-        error_code: null,
-        error_message: null,
-        dt_scheduled_for: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id);
-
-    return !error;
+    return data === true;
   },
 
   // ---------------------------------------------------------------------------
@@ -517,26 +506,20 @@ export const notificationService = {
     channel: NotificationChannel,
     enabled: boolean,
   ): Promise<boolean> {
-    const { data: companyId } = await supabase.rpc("current_company_id");
-    if (!companyId) return false;
+    const { data, error } = await supabase.rpc("set_notification_preference", {
+      p_recipient_type: recipient.recipientType,
+      p_recipient_id: recipient.recipientId,
+      p_channel: channel,
+      p_enabled: enabled,
+      p_reason: enabled ? null : "Opt-out via perfil",
+    });
 
-    const { error } = await supabase.from("notification_preferences").upsert(
-      {
-        company_id: companyId,
-        recipient_type: recipient.recipientType,
-        recipient_id: recipient.recipientId,
-        channel,
-        is_enabled: enabled,
-        unsubscribed_at: enabled ? null : new Date().toISOString(),
-        unsubscribe_reason: enabled ? null : "Opt-out via perfil",
-        updated_at: new Date().toISOString(),
-      },
-      {
-        onConflict: "company_id,recipient_id,recipient_type,channel",
-      },
-    );
+    if (error) {
+      console.error("[notifications] setPreference falhou", error);
+      return false;
+    }
 
-    return !error;
+    return data === true;
   },
 
   // ---------------------------------------------------------------------------
@@ -603,3 +586,4 @@ export const notificationService = {
 };
 
 export default notificationService;
+

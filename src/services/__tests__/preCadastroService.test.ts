@@ -8,15 +8,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock env module (necessario para buildConfirmLink e emailService)
+const mockEnv = vi.hoisted(() => ({
+  VITE_APP_URL: "https://app.test",
+  VITE_APP_NAME: "TestApp",
+  VITE_APP_ENV: "development",
+  VITE_PUBLIC_COMPANY_ID: "11111111-1111-1111-1111-111111111111" as string | undefined,
+  VITE_RESEND_API_KEY: "re_test_key",
+  VITE_EMAIL_FROM: "noreply@test.com",
+  VITE_EMAIL_REPLY_TO: "suporte@test.com",
+}));
+
 vi.mock("@/lib/env", () => ({
-  env: {
-    VITE_APP_URL: "https://app.test",
-    VITE_APP_NAME: "TestApp",
-    VITE_APP_ENV: "development",
-    VITE_RESEND_API_KEY: "re_test_key",
-    VITE_EMAIL_FROM: "noreply@test.com",
-    VITE_EMAIL_REPLY_TO: "suporte@test.com",
-  },
+  env: mockEnv,
 }));
 
 // Mock do emailService para evitar fetch real
@@ -74,6 +77,7 @@ const validForm = {
   full_name: "Maria de Souza",
   email: "maria@example.com",
   phone: "(11) 99999-9999",
+  whatsapp: "(11) 98888-7777",
   cpf: "529.982.247-25", // CPF valido
   birth_date: "1990-05-12",
   gender: "F" as const,
@@ -83,6 +87,7 @@ const validForm = {
   bairro: "Bela Vista",
   cidade: "Sao Paulo",
   uf: "SP" as const,
+  ibge_cidade: "3550308",
   lg_aceite_termo: true,
   versao_termo: "v1.0-2026-06-22",
 };
@@ -91,6 +96,11 @@ const validCompanyId = "11111111-1111-1111-1111-111111111111";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockEnv.VITE_PUBLIC_COMPANY_ID = validCompanyId;
+  (emailService.sendPreCadastroConfirmation as any).mockResolvedValue({
+    id: "msg_1",
+    provider: "resend",
+  });
 });
 
 // =============================================================================
@@ -297,27 +307,7 @@ describe("preCadastroService - validarCPF (via Zod)", () => {
 // =============================================================================
 
 describe("preCadastroService - criar", () => {
-  it("cria pre-cadastro com sucesso (sem companyId explicito -> resolve do banco)", async () => {
-    // Mock do resolveCompanyId: SELECT companies
-    const companiesChain = {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      order: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockReturnThis(),
-      maybeSingle: vi.fn().mockResolvedValue({
-        data: { id: validCompanyId },
-        error: null,
-      }),
-    };
-    // O supabase.from sera chamado duas vezes: companies + rpc
-    let fromCall = 0;
-    (supabase.from as any).mockImplementation(() => {
-      fromCall++;
-      if (fromCall === 1) return companiesChain;
-      return {}; // nao usado
-    });
-
-    // Mock do RPC
+  it("cria pre-cadastro usando VITE_PUBLIC_COMPANY_ID", async () => {
     (supabase.rpc as any).mockResolvedValue({
       data: [
         {
@@ -341,9 +331,13 @@ describe("preCadastroService - criar", () => {
         p_company_id: validCompanyId,
         p_full_name: "Maria de Souza",
         p_email: "maria@example.com",
+        p_cpf: "52998224725",
+        p_whatsapp: "(11) 98888-7777",
+        p_ibge_cidade: "3550308",
         p_uf: "SP",
       }),
     );
+    expect(supabase.from).not.toHaveBeenCalledWith("companies");
   });
 
   it("usa companyId explicito quando fornecido (nao consulta companies)", async () => {
@@ -564,38 +558,68 @@ describe("preCadastroService - buscarPorToken (getByToken)", () => {
       lg_confirmado: false,
       created_at: "2026-06-23T00:00:00Z",
     };
-    const chain = {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      maybeSingle: vi.fn().mockResolvedValue({ data: publicData, error: null }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
+    (supabase.rpc as any).mockResolvedValue({
+      data: [publicData],
+      error: null,
+    });
 
     const result = await preCadastroService.buscarPorToken(token);
 
     expect(result).toEqual(publicData);
-    expect(chain.select).toHaveBeenCalledWith(
-      "id, company_id, full_name, email, status, dt_token_exp, lg_confirmado, created_at",
+    expect(supabase.rpc).toHaveBeenCalledWith("pre_confirm_pre_cadastro", {
+      p_token: token,
+    });
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it("prioriza companyId explicito sobre VITE_PUBLIC_COMPANY_ID", async () => {
+    const explicitCompanyId = "22222222-2222-4222-8222-222222222222";
+    (supabase.rpc as any).mockResolvedValue({
+      data: [{
+        id: "pre-789",
+        token: "tok-explicit-1234567890",
+        dt_exp: "2026-06-26T00:00:00Z",
+      }],
+      error: null,
+    });
+
+    await preCadastroService.criar(validForm, { companyId: explicitCompanyId });
+
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "create_pre_cadastro",
+      expect.objectContaining({ p_company_id: explicitCompanyId }),
     );
-    expect(chain.eq).toHaveBeenCalledWith("token_confirmacao", token);
+  });
+
+  it("falha claramente quando empresa publica nao esta configurada", async () => {
+    mockEnv.VITE_PUBLIC_COMPANY_ID = undefined;
+
+    await expect(preCadastroService.criar(validForm)).rejects.toThrow(
+      /VITE_PUBLIC_COMPANY_ID.*UUID valido/i,
+    );
+    expect(supabase.rpc).not.toHaveBeenCalled();
+    expect(supabase.from).not.toHaveBeenCalledWith("companies");
+  });
+
+  it("rejeita companyId explicito que nao seja UUID", async () => {
+    await expect(
+      preCadastroService.criar(validForm, { companyId: "empresa-invalida" }),
+    ).rejects.toThrow(/deve ser um UUID valido/i);
+    expect(supabase.rpc).not.toHaveBeenCalled();
   });
 
   it("retorna null para token curto sem consultar banco", async () => {
     const result = await preCadastroService.buscarPorToken("short");
     expect(result).toBeNull();
+    expect(supabase.rpc).not.toHaveBeenCalled();
     expect(supabase.from).not.toHaveBeenCalled();
   });
 
   it("retorna null quando RLS bloqueia (PGRST116)", async () => {
-    const chain = {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      maybeSingle: vi.fn().mockResolvedValue({
-        data: null,
-        error: { code: "PGRST116", message: "row not found" },
-      }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
+    (supabase.rpc as any).mockResolvedValue({
+      data: null,
+      error: { code: "PGRST116", message: "row not found" },
+    });
 
     const result = await preCadastroService.buscarPorToken(
       "abcdef1234567890abcdef1234567890",
@@ -604,15 +628,10 @@ describe("preCadastroService - buscarPorToken (getByToken)", () => {
   });
 
   it("retorna null silenciosamente para erro de row-level security", async () => {
-    const chain = {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      maybeSingle: vi.fn().mockResolvedValue({
-        data: null,
-        error: { code: "PGRST301", message: "row-level security violation" },
-      }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
+    (supabase.rpc as any).mockResolvedValue({
+      data: null,
+      error: { code: "PGRST301", message: "row-level security violation" },
+    });
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const result = await preCadastroService.buscarPorToken(
@@ -620,6 +639,79 @@ describe("preCadastroService - buscarPorToken (getByToken)", () => {
     );
     expect(result).toBeNull();
     warnSpy.mockRestore();
+  });
+});
+
+// =============================================================================
+// reenviarEmail (RPC renew_pre_cadastro_confirmation)
+// =============================================================================
+
+describe("preCadastroService - reenviarEmail", () => {
+  const renewed = {
+    token: "renewed-token-abcdef1234567890",
+    dt_exp: "2026-06-29T00:00:00Z",
+    email: "maria@example.com",
+    full_name: "Maria de Souza",
+  };
+
+  it("renova pela RPC e envia o email preservando a API publica", async () => {
+    (supabase.rpc as any).mockResolvedValue({ data: [renewed], error: null });
+
+    const result = await preCadastroService.reenviarEmail("pre-1");
+
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "renew_pre_cadastro_confirmation",
+      { p_id: "pre-1" },
+    );
+    expect(supabase.from).not.toHaveBeenCalled();
+    expect(emailService.sendPreCadastroConfirmation).toHaveBeenCalledWith({
+      to: renewed.email,
+      nome: renewed.full_name,
+      linkConfirmacao: expect.stringContaining(renewed.token),
+      dtExp: renewed.dt_exp,
+    });
+    expect(result).toEqual({
+      linkConfirmacao: expect.stringContaining(renewed.token),
+    });
+  });
+
+  it("aceita retorno da RPC como objeto", async () => {
+    (supabase.rpc as any).mockResolvedValue({ data: renewed, error: null });
+
+    const result = await preCadastroService.reenviarEmail("pre-2");
+
+    expect(result.linkConfirmacao).toContain(renewed.token);
+  });
+
+  it("rejeita id vazio sem chamar a RPC", async () => {
+    await expect(preCadastroService.reenviarEmail("")).rejects.toThrow(
+      /preCadastroId obrigatorio/,
+    );
+    expect(supabase.rpc).not.toHaveBeenCalled();
+  });
+
+  it("propaga erro da RPC sem enviar email", async () => {
+    (supabase.rpc as any).mockResolvedValue({
+      data: null,
+      error: { message: "pre-cadastro cancelado" },
+    });
+
+    await expect(preCadastroService.reenviarEmail("pre-3")).rejects.toThrow(
+      /pre-cadastro cancelado/,
+    );
+    expect(emailService.sendPreCadastroConfirmation).not.toHaveBeenCalled();
+  });
+
+  it("rejeita resposta incompleta da RPC", async () => {
+    (supabase.rpc as any).mockResolvedValue({
+      data: [{ token: "missing-fields" }],
+      error: null,
+    });
+
+    await expect(preCadastroService.reenviarEmail("pre-4")).rejects.toThrow(
+      /Resposta invalida do servidor/,
+    );
+    expect(emailService.sendPreCadastroConfirmation).not.toHaveBeenCalled();
   });
 });
 
@@ -650,31 +742,18 @@ describe("preCadastroService - listarPendentes", () => {
     expect(chain.eq).toHaveBeenCalledWith("company_id", validCompanyId);
   });
 
-  it("resolve companyId quando nao informado", async () => {
-    const companiesChain = {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      order: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockReturnThis(),
-      maybeSingle: vi.fn().mockResolvedValue({
-        data: { id: validCompanyId },
-        error: null,
-      }),
-    };
+  it("usa VITE_PUBLIC_COMPANY_ID quando companyId nao e informado", async () => {
     const pendentesChain = {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
       order: vi.fn().mockResolvedValue({ data: [], error: null }),
     };
-    let fromCall = 0;
-    (supabase.from as any).mockImplementation(() => {
-      fromCall++;
-      if (fromCall === 1) return companiesChain;
-      return pendentesChain;
-    });
+    (supabase.from as any).mockReturnValue(pendentesChain);
 
     const result = await preCadastroService.listarPendentes();
     expect(result).toEqual([]);
+    expect(supabase.from).toHaveBeenCalledWith("pre_cadastros_pendentes");
+    expect(pendentesChain.eq).toHaveBeenCalledWith("company_id", validCompanyId);
   });
 
   it("lança erro quando RPC falha", async () => {
@@ -788,10 +867,10 @@ describe("preCadastroService - listar", () => {
 });
 
 // =============================================================================
-// updateStatus (nao existe no service, mas update e usado em reenviarEmail)
+// updateStatus (nao existe no service)
 // =============================================================================
 // OBS: preCadastroService nao expoe updateStatus publico; o ajuste de status
-// e feito via RPCs (criar, confirmar, promover, cancelar) e via reenviarEmail.
+// e feito via RPCs (criar, confirmar, promover, reenviar e cancelar).
 // O teste abaixo documenta essa observacao.
 
 describe("preCadastroService - updateStatus (observacao)", () => {
@@ -869,3 +948,4 @@ describe("preCadastroService - cancelar", () => {
     expect(result).toBe(false);
   });
 });
+

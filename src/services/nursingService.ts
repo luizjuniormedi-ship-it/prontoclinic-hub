@@ -238,39 +238,69 @@ function mapRowToTriagem(row: TriagemRow): Triagem {
   };
 }
 
-function mapSinaisToRow(data: TriagemCreate): Record<string, unknown> {
-  const row: Record<string, unknown> = {
-    company_id: data.company_id,
-    cd_paciente: data.cd_paciente,
-    cd_appointment: data.cd_appointment ?? null,
-    cd_classificacao_id: data.cd_classificacao_id ?? null,
-    cd_usuario_enfermeiro: data.cd_usuario_enfermeiro ?? null,
-    ds_queixa_principal: data.queixa_principal ?? null,
-    ds_historia_doenca_atual: data.historia_doenca_atual ?? null,
-    ds_medicamentos_uso: data.medicamentos_uso ?? null,
-    ds_alergias: data.alergias ?? null,
-    ds_observacoes_enfermagem: data.observacoes_enfermagem ?? null,
-    tp_status: data.tp_status ?? "AGUARDANDO",
-  };
-  const sv = data.sinaisVitais;
-  if (sv.pressaoSistolica !== undefined) row.vl_pressao_sistolica = sv.pressaoSistolica;
-  if (sv.pressaoDiastolica !== undefined) row.vl_pressao_diastolica = sv.pressaoDiastolica;
-  if (sv.frequenciaCardiaca !== undefined) row.vl_frequencia_cardiaca = sv.frequenciaCardiaca;
-  if (sv.frequenciaRespiratoria !== undefined) row.vl_frequencia_respiratoria = sv.frequenciaRespiratoria;
-  if (sv.temperatura !== undefined && sv.temperatura !== null) row.vl_temperatura = sv.temperatura;
-  if (sv.saturacaoO2 !== undefined) row.vl_saturacao_o2 = sv.saturacaoO2;
-  if (sv.glicemia !== undefined) row.vl_glicemia = sv.glicemia;
-  if (sv.escalaDor !== undefined) row.vl_escala_dor = sv.escalaDor;
-  if (data.antropometria) {
-    if (data.antropometria.pesoKg !== undefined) row.vl_peso_kg = data.antropometria.pesoKg;
-    if (data.antropometria.alturaCm !== undefined) row.vl_altura_cm = data.antropometria.alturaCm;
+function requireIdempotencyKey(value: string): string {
+  const key = value?.trim();
+  if (!key) throw new Error("Chave de idempotência é obrigatória.");
+  return key;
+}
+
+function createIdempotencyKey(): string {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = char === "x" ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
+const pendingEnqueueKeys = new Map<string, string>();
+const pendingCallKeys = new Map<number, string>();
+
+function requireRecord(value: unknown, operation: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${operation}: resposta inválida do servidor.`);
   }
-  if (data.glasgow) {
-    row.vl_glasgow_ocular = data.glasgow.ocular;
-    row.vl_glasgow_verbal = data.glasgow.verbal;
-    row.vl_glasgow_motor = data.glasgow.motor;
+  return value as Record<string, unknown>;
+}
+
+function unwrapRecord(value: unknown, operation: string, keys: string[]): Record<string, unknown> {
+  const response = requireRecord(value, operation);
+  for (const key of keys) {
+    if (key in response) return requireRecord(response[key], operation);
   }
-  return row;
+  return response;
+}
+
+function requireFilaItem(value: unknown, operation: string): FilaItem {
+  const row = unwrapRecord(value, operation, ["queue_item", "fila", "item"]);
+  if (
+    typeof row.id !== "number"
+    || typeof row.cd_paciente !== "number"
+    || typeof row.cd_senha !== "string"
+    || typeof row.tp_status !== "string"
+  ) {
+    throw new Error(`${operation}: item de fila inválido na resposta.`);
+  }
+  return row as unknown as FilaItem;
+}
+
+function requireTriagem(value: unknown, operation: string): Triagem {
+  const row = unwrapRecord(value, operation, ["triage", "triagem"]);
+  if (typeof row.id !== "number" || typeof row.cd_paciente !== "number" || typeof row.tp_status !== "string") {
+    throw new Error(`${operation}: triagem inválida na resposta.`);
+  }
+  return mapRowToTriagem(row as unknown as TriagemRow);
+}
+
+function requireCompletedTriagem(value: unknown, operation: string): Triagem {
+  const response = requireRecord(value, operation);
+  const triagem = requireTriagem(response.triage, operation);
+  requireFilaItem(response.queue_item, operation);
+  const news2 = requireRecord(response.news2, operation);
+  if (typeof news2.nr_score_total !== "number" || typeof news2.cd_classificacao_risco !== "string") {
+    throw new Error(`${operation}: avaliação NEWS2 inválida na resposta.`);
+  }
+  return triagem;
 }
 
 // ─── NEWS2 — algoritmo clínico ──────────────────────────────────────────────
@@ -350,6 +380,12 @@ export interface News2Result {
     fc: number;
     consciencia: number;
   };
+}
+
+export interface CompleteTriagemOptions {
+  filaId: number;
+  news2?: News2Result;
+  idempotencyKey: string;
 }
 
 /**
@@ -435,16 +471,46 @@ export function classificarManchester(
 export function validateTriagem(data: TriagemCreate): string | null {
   if (!data.company_id) return "company_id é obrigatório.";
   if (!data.cd_paciente) return "Paciente é obrigatório.";
+  if (!data.cd_classificacao_id) return "Classificação de risco é obrigatória.";
   const sv = data.sinaisVitais;
-  if (sv.pressaoSistolica !== undefined && sv.pressaoSistolica !== null) {
-    if (sv.pressaoSistolica < 0 || sv.pressaoSistolica > 300) {
-      return "Pressão sistólica fora da faixa (0-300).";
-    }
+  if (sv.pressaoSistolica === undefined || sv.pressaoSistolica === null) {
+    return "Pressão sistólica (PAS) é obrigatória para calcular o NEWS2.";
   }
-  if (sv.temperatura !== undefined && sv.temperatura !== null) {
-    if (sv.temperatura < 20 || sv.temperatura > 45) {
-      return "Temperatura fora da faixa (20-45°C).";
-    }
+  if (sv.pressaoDiastolica === undefined || sv.pressaoDiastolica === null) {
+    return "Pressão diastólica (PAD) é obrigatória para calcular o NEWS2.";
+  }
+  if (sv.frequenciaCardiaca === undefined || sv.frequenciaCardiaca === null) {
+    return "Frequência cardíaca (FC) é obrigatória para calcular o NEWS2.";
+  }
+  if (sv.frequenciaRespiratoria === undefined || sv.frequenciaRespiratoria === null) {
+    return "Frequência respiratória (FR) é obrigatória para calcular o NEWS2.";
+  }
+  if (sv.temperatura === undefined || sv.temperatura === null) {
+    return "Temperatura é obrigatória para calcular o NEWS2.";
+  }
+  if (sv.saturacaoO2 === undefined || sv.saturacaoO2 === null) {
+    return "Saturação de oxigênio (SpO2) é obrigatória para calcular o NEWS2.";
+  }
+  if (sv.pressaoSistolica < 1 || sv.pressaoSistolica > 300) {
+    return "Pressão sistólica (PAS) fora da faixa permitida (1-300 mmHg).";
+  }
+  if (sv.pressaoDiastolica < 1 || sv.pressaoDiastolica > 200) {
+    return "Pressão diastólica (PAD) fora da faixa permitida (1-200 mmHg).";
+  }
+  if (sv.pressaoDiastolica >= sv.pressaoSistolica) {
+    return "Pressão diastólica (PAD) deve ser menor que a pressão sistólica (PAS).";
+  }
+  if (sv.frequenciaCardiaca < 1 || sv.frequenciaCardiaca > 250) {
+    return "Frequência cardíaca (FC) fora da faixa permitida (1-250 bpm).";
+  }
+  if (sv.frequenciaRespiratoria < 1 || sv.frequenciaRespiratoria > 80) {
+    return "Frequência respiratória (FR) fora da faixa permitida (1-80 irpm).";
+  }
+  if (sv.temperatura < 20 || sv.temperatura > 45) {
+    return "Temperatura fora da faixa permitida (20-45°C).";
+  }
+  if (sv.saturacaoO2 < 1 || sv.saturacaoO2 > 100) {
+    return "Saturação de oxigênio (SpO2) fora da faixa permitida (1-100%).";
   }
   if (sv.escalaDor !== undefined && sv.escalaDor !== null) {
     if (sv.escalaDor < 0 || sv.escalaDor > 10) {
@@ -488,17 +554,35 @@ export const nursingService = {
   },
 
   triagem: {
-    async create(data: TriagemCreate): Promise<Triagem> {
+    async create(data: TriagemCreate, options?: CompleteTriagemOptions): Promise<Triagem> {
       const err = validateTriagem(data);
       if (err) throw new Error(err);
-      const row = mapSinaisToRow(data);
-      const { data: inserted, error } = await supabase
-        .from("triagens")
-        .insert(row)
-        .select()
-        .single();
-      if (error) throw new Error(`Erro ao criar triagem: ${error.message}`);
-      return mapRowToTriagem(inserted as TriagemRow);
+      if (!options || !Number.isInteger(options.filaId) || options.filaId <= 0) {
+        throw new Error("Conclusão segura exige um item válido da fila.");
+      }
+      const glasgowTotal = data.glasgow
+        ? data.glasgow.ocular + data.glasgow.verbal + data.glasgow.motor
+        : 15;
+      const { data: completed, error } = await supabase.rpc("complete_nursing_triage_secure", {
+        p_queue_id: options.filaId,
+        p_appointment_id: data.cd_appointment ?? null,
+        p_classification_id: data.cd_classificacao_id,
+        p_triage: {
+          queixa_principal: data.queixa_principal ?? null,
+          historia_doenca_atual: data.historia_doenca_atual ?? null,
+          medicamentos_uso: data.medicamentos_uso ?? null,
+          alergias: data.alergias ?? null,
+          observacoes_enfermagem: data.observacoes_enfermagem ?? null,
+          sinais_vitais: data.sinaisVitais,
+          antropometria: data.antropometria ?? null,
+          glasgow: data.glasgow ?? null,
+          nivel_consciencia: glasgowTotal === 15 ? "A" : "C",
+          status: data.tp_status ?? "TRIADO",
+        },
+        p_idempotency_key: requireIdempotencyKey(options.idempotencyKey),
+      });
+      if (error) throw new Error(`Erro ao concluir triagem: ${error.message}`);
+      return requireCompletedTriagem(completed, "Erro ao concluir triagem");
     },
 
     async getById(id: number): Promise<Triagem | null> {
@@ -521,58 +605,6 @@ export const nursingService = {
       return (data ?? []).map((r) => mapRowToTriagem(r as TriagemRow));
     },
 
-    async update(id: number, data: Partial<TriagemCreate>): Promise<Triagem> {
-      const row: Record<string, unknown> = {};
-      if (data.cd_classificacao_id !== undefined) row.cd_classificacao_id = data.cd_classificacao_id;
-      if (data.tp_status !== undefined) row.tp_status = data.tp_status;
-      if (data.observacoes_enfermagem !== undefined) {
-        row.ds_observacoes_enfermagem = data.observacoes_enfermagem;
-      }
-      if (data.sinaisVitais) {
-        const sv = data.sinaisVitais;
-        if (sv.pressaoSistolica !== undefined) row.vl_pressao_sistolica = sv.pressaoSistolica;
-        if (sv.pressaoDiastolica !== undefined) row.vl_pressao_diastolica = sv.pressaoDiastolica;
-        if (sv.frequenciaCardiaca !== undefined) row.vl_frequencia_cardiaca = sv.frequenciaCardiaca;
-        if (sv.frequenciaRespiratoria !== undefined) row.vl_frequencia_respiratoria = sv.frequenciaRespiratoria;
-        if (sv.temperatura !== undefined && sv.temperatura !== null) row.vl_temperatura = sv.temperatura;
-        if (sv.saturacaoO2 !== undefined) row.vl_saturacao_o2 = sv.saturacaoO2;
-        if (sv.glicemia !== undefined) row.vl_glicemia = sv.glicemia;
-        if (sv.escalaDor !== undefined) row.vl_escala_dor = sv.escalaDor;
-      }
-      const { data: updated, error } = await supabase
-        .from("triagens")
-        .update(row)
-        .eq("id", id)
-        .select()
-        .single();
-      if (error) throw new Error(`Erro ao atualizar triagem: ${error.message}`);
-      return mapRowToTriagem(updated as TriagemRow);
-    },
-
-    /**
-     * Salva a avaliação NEWS2 vinculada a uma triagem.
-     */
-    async salvarNews2(triagemId: number, companyId: string, avaliacao: News2Result): Promise<News2Avaliacao> {
-      const row = {
-        company_id: companyId,
-        cd_triagem: triagemId,
-        nr_frequencia_respiratoria: avaliacao.detalhes.fr,
-        nr_saturacao_o2: avaliacao.detalhes.spo2,
-        nr_temperatura: avaliacao.detalhes.temp,
-        nr_pressao_sistolica: avaliacao.detalhes.pas,
-        nr_frequencia_cardiaca: avaliacao.detalhes.fc,
-        nr_nivel_consciencia: avaliacao.detalhes.consciencia,
-        cd_classificacao_risco: avaliacao.classificacao,
-      };
-      const { data, error } = await supabase
-        .from("news2_avaliacoes")
-        .insert(row)
-        .select()
-        .single();
-      if (error) throw new Error(`Erro ao salvar NEWS2: ${error.message}`);
-      return data as News2Avaliacao;
-    },
-
     async getNews2ByTriagem(triagemId: number): Promise<News2Avaliacao | null> {
       const { data, error } = await supabase
         .from("news2_avaliacoes")
@@ -588,29 +620,6 @@ export const nursingService = {
 
   fila: {
     /**
-     * Gera a próxima senha sequencial (T001, T002...) para a empresa.
-     * Tenta usar a função SQL gerar_senha_triagem; em fallback (modo offline
-     * / mock) gera localmente.
-     */
-    async gerarSenha(companyId: string): Promise<string> {
-      try {
-        const { data, error } = await supabase.rpc("gerar_senha_triagem", {
-          p_company_id: companyId,
-        });
-        if (!error && typeof data === "string") return data;
-      } catch {
-        // Ignora — usa fallback
-      }
-      // Fallback local
-      const stamp = new Date();
-      const dd = String(stamp.getDate()).padStart(2, "0");
-      const hh = String(stamp.getHours()).padStart(2, "0");
-      const mm = String(stamp.getMinutes()).padStart(2, "0");
-      const ss = String(stamp.getSeconds()).padStart(2, "0");
-      return `T${dd}${hh}${mm}${ss}`.slice(0, 12);
-    },
-
-    /**
      * Adiciona paciente à fila de triagem.
      */
     async adicionar(
@@ -618,25 +627,29 @@ export const nursingService = {
       cdPaciente: number,
       queixaInicial: string,
       cdClassificacaoId?: number | null,
+      idempotencyKey?: string,
     ): Promise<FilaItem> {
-      const senha = await nursingService.fila.gerarSenha(companyId);
-      const row: Record<string, unknown> = {
-        company_id: companyId,
-        cd_paciente: cdPaciente,
-        cd_senha: senha,
-        tp_status: "AGUARDANDO",
-        ds_queixa_inicial: queixaInicial,
-      };
-      if (cdClassificacaoId !== undefined) row.cd_classificacao_id = cdClassificacaoId;
-      const { data, error } = await supabase.from("triagem_fila").insert(row).select().single();
+      const fingerprint = JSON.stringify([companyId, cdPaciente, queixaInicial, cdClassificacaoId ?? null]);
+      const operationKey = idempotencyKey
+        ? requireIdempotencyKey(idempotencyKey)
+        : (pendingEnqueueKeys.get(fingerprint) ?? createIdempotencyKey());
+      if (!idempotencyKey) pendingEnqueueKeys.set(fingerprint, operationKey);
+      const { data, error } = await supabase.rpc("enqueue_nursing_triage_secure", {
+        p_patient_id: cdPaciente,
+        p_initial_complaint: queixaInicial,
+        p_classification_id: cdClassificacaoId ?? null,
+        p_idempotency_key: operationKey,
+      });
       if (error) throw new Error(`Erro ao adicionar à fila: ${error.message}`);
-      return data as FilaItem;
+      const item = requireFilaItem(data, "Erro ao adicionar à fila");
+      pendingEnqueueKeys.delete(fingerprint);
+      return item;
     },
 
     /**
      * Retorna itens em AGUARDANDO/CHAMADO, ordenados por gravidade e chegada.
      */
-    async getFilaAtiva(companyId: string): Promise<FilaItem[]> {
+    async getFilaAtiva(_companyId: string): Promise<FilaItem[]> {
       const { data, error } = await supabase
         .from("triagem_fila")
         .select("*")
@@ -649,31 +662,22 @@ export const nursingService = {
     /**
      * Chama o próximo da fila (altera status para CHAMADO e seta dt_chamada).
      */
-    async chamar(senhaId: number): Promise<FilaItem> {
-      const { data, error } = await supabase
-        .from("triagem_fila")
-        .update({ tp_status: "CHAMADO", dt_chamada: new Date().toISOString() })
-        .eq("id", senhaId)
-        .select()
-        .single();
+    async chamar(senhaId: number, idempotencyKey?: string): Promise<FilaItem> {
+      const operationKey = idempotencyKey
+        ? requireIdempotencyKey(idempotencyKey)
+        : (pendingCallKeys.get(senhaId) ?? createIdempotencyKey());
+      if (!idempotencyKey) pendingCallKeys.set(senhaId, operationKey);
+      const { data, error } = await supabase.rpc("call_nursing_triage_secure", {
+        p_queue_id: senhaId,
+        p_idempotency_key: operationKey,
+      });
       if (error) throw new Error(`Erro ao chamar senha: ${error.message}`);
-      return data as FilaItem;
-    },
-
-    /**
-     * Marca senha como TRIADO.
-     */
-    async marcarTriado(senhaId: number): Promise<FilaItem> {
-      const { data, error } = await supabase
-        .from("triagem_fila")
-        .update({ tp_status: "TRIADO" })
-        .eq("id", senhaId)
-        .select()
-        .single();
-      if (error) throw new Error(`Erro ao marcar triado: ${error.message}`);
-      return data as FilaItem;
+      const item = requireFilaItem(data, "Erro ao chamar senha");
+      pendingCallKeys.delete(senhaId);
+      return item;
     },
   },
 };
 
 export default nursingService;
+

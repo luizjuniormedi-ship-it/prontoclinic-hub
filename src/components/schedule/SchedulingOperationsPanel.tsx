@@ -127,11 +127,11 @@ export function SchedulingOperationsPanel({ professionals, specialties, appointm
           <TabsContent value="availability" className="space-y-3 pt-2">
             <div className="grid gap-2 md:grid-cols-[minmax(220px,1fr)_160px_120px_auto]">
               <Select value={professionalId} onValueChange={setProfessionalId}>
-                <SelectTrigger><SelectValue placeholder="Profissional" /></SelectTrigger>
+                <SelectTrigger aria-label="Profissional para consulta de disponibilidade"><SelectValue placeholder="Profissional" /></SelectTrigger>
                 <SelectContent>{professionals.filter((p) => p.lg_ativo !== false).map((p) => <SelectItem key={p.id} value={p.id}>{p.full_name}</SelectItem>)}</SelectContent>
               </Select>
-              <Input type="date" value={slotDate} onChange={(event) => setSlotDate(event.target.value)} />
-              <Select value={duration} onValueChange={setDuration}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{[10, 15, 20, 30, 40, 60].map((value) => <SelectItem key={value} value={String(value)}>{value} min</SelectItem>)}</SelectContent></Select>
+              <Input aria-label="Data para consulta de disponibilidade" type="date" value={slotDate} onChange={(event) => setSlotDate(event.target.value)} />
+              <Select value={duration} onValueChange={setDuration}><SelectTrigger aria-label="Duracao da consulta"><SelectValue /></SelectTrigger><SelectContent>{[10, 15, 20, 30, 40, 60].map((value) => <SelectItem key={value} value={String(value)}>{value} min</SelectItem>)}</SelectContent></Select>
               <Button onClick={() => void searchSlots()} disabled={!professionalId || loading}>Buscar</Button>
             </div>
             {slots.length > 0 ? <div className="flex flex-wrap gap-2">{slots.map((slot) => <Badge key={`${slot.start_time}-${slot.unit_id}`} variant="outline" className="px-3 py-1.5">{slot.start_time.slice(0, 5)} - {slot.end_time.slice(0, 5)}</Badge>)}</div> : <p className="text-sm text-muted-foreground">Selecione profissional, data e duração para calcular horários livres pela escala.</p>}

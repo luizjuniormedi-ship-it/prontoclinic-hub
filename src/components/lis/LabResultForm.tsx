@@ -10,7 +10,7 @@
  * Requisitos: WCAG AA (labels, aria-describedby, foco visível)
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,8 @@ import {
   resultado,
   valorReferencia,
   classificar,
+  type LabResultSecurePayload,
+  type LabPedidoStatus,
   type LabResultadoTipo,
   type ResultadoLab,
   type ValorReferencia,
@@ -43,6 +45,11 @@ interface ParametrosState {
   vl_minimo_referencia: string;
   vl_maximo_referencia: string;
   ds_observacao: string;
+}
+
+function createIdempotencyKey(): string {
+  return globalThis.crypto?.randomUUID?.()
+    ?? `lab-result-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function resultadoBadge(tp: LabResultadoTipo | null): { label: string; cls: string } {
@@ -68,7 +75,6 @@ export interface LabResultFormProps {
 export function LabResultForm({
   cdItemPedido,
   cdExame,
-  userId,
   onSaved,
   onCancel,
 }: LabResultFormProps) {
@@ -79,6 +85,11 @@ export function LabResultForm({
   const [equipamento, setEquipamento] = useState("");
   const [loteReagente, setLoteReagente] = useState("");
   const [hl7Raw, setHl7Raw] = useState("");
+  const pendingOperation = useRef<{
+    fingerprint: string;
+    idempotencyKey: string;
+    expectedStatus: LabPedidoStatus;
+  } | null>(null);
 
   // Carregar valores de referência do exame
   const { data: referencias } = useQuery({
@@ -91,6 +102,17 @@ export function LabResultForm({
   const { data: resultadosExistentes } = useQuery({
     queryKey: ["lab-resultado-item", cdItemPedido],
     queryFn: () => resultado.listarPorItem(cdItemPedido),
+    enabled: !!cdItemPedido,
+  });
+
+  const {
+    data: itemStatus,
+    error: itemStatusError,
+    isPending: isItemStatusPending,
+    refetch: refetchItemStatus,
+  } = useQuery({
+    queryKey: ["lab-item-status", cdItemPedido],
+    queryFn: () => resultado.obterStatusItem(cdItemPedido),
     enabled: !!cdItemPedido,
   });
 
@@ -179,15 +201,15 @@ export function LabResultForm({
 
   const salvar = useMutation({
     mutationFn: async (liberar: boolean) => {
-      // 1. Inserir resultados em lote
-      const rows = parametros
+      if (!itemStatus) throw new Error("Não foi possível confirmar o status atual do item");
+
+      const rows: LabResultSecurePayload[] = parametros
         .filter((p) => p.ds_parametro && p.vl_resultado !== "")
         .map((p) => {
           const v = p.vl_resultado === "" ? null : Number(p.vl_resultado);
           const min = p.vl_minimo_referencia === "" ? null : Number(p.vl_minimo_referencia);
           const max = p.vl_maximo_referencia === "" ? null : Number(p.vl_maximo_referencia);
           return {
-            cd_item_pedido: cdItemPedido,
             ds_parametro: p.ds_parametro,
             vl_resultado: v,
             vl_resultado_texto: p.vl_resultado && Number.isNaN(Number(p.vl_resultado)) ? p.vl_resultado : null,
@@ -197,28 +219,33 @@ export function LabResultForm({
             tp_resultado: classificar(v, min, max),
             cd_equipamento: equipamento || null,
             cd_lote_reagente: loteReagente || null,
-            cd_usuario_laboratorio: userId || null,
             ds_observacao: p.ds_observacao || null,
             ds_hl7_message: hl7Raw || null,
           };
         });
       if (rows.length === 0) throw new Error("Preencha ao menos um parâmetro");
-      const { error } = await (await import("@/lib/supabase")).supabase
-        .from("exames_lab_resultado")
-        .insert(rows);
-      if (error) throw error;
-      // 2. Liberar item se solicitado
-      if (liberar) {
-        await resultado.liberarItem(cdItemPedido);
-      } else {
-        // Marcar como EM_ANALISE se ainda não estiver
-        await (await import("@/lib/supabase")).supabase
-          .from("exames_lab_pedido_itens")
-          .update({ tp_status: "EM_ANALISE" })
-          .eq("id", cdItemPedido);
+
+      const requestFingerprint = JSON.stringify({ liberar, rows });
+      let operation = pendingOperation.current;
+      if (!operation || operation.fingerprint !== requestFingerprint) {
+        operation = {
+          fingerprint: requestFingerprint,
+          idempotencyKey: createIdempotencyKey(),
+          expectedStatus: itemStatus,
+        };
+        pendingOperation.current = operation;
       }
+
+      return resultado.salvarSeguro({
+        itemId: cdItemPedido,
+        results: rows,
+        release: liberar,
+        expectedStatus: operation.expectedStatus,
+        idempotencyKey: operation.idempotencyKey,
+      });
     },
     onSuccess: (_, liberar) => {
+      pendingOperation.current = null;
       queryClient.invalidateQueries({ queryKey: ["lab-resultado-item", cdItemPedido] });
       queryClient.invalidateQueries({ queryKey: ["lab-alertas-pendentes"] });
       queryClient.invalidateQueries({ queryKey: ["lab-pedidos"] });
@@ -230,12 +257,31 @@ export function LabResultForm({
       });
       onSaved();
     },
-    onError: (e: Error) =>
-      toast({ title: "Erro ao salvar", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => {
+      void refetchItemStatus();
+      toast({ title: "Erro ao salvar", description: e.message, variant: "destructive" });
+    },
   });
+
+  const podeSalvar = itemStatus === "COLETADO" || itemStatus === "EM_ANALISE";
+  const podeLiberar = itemStatus === "EM_ANALISE";
 
   return (
     <div className="space-y-4">
+      {itemStatusError && (
+        <Alert variant="destructive" role="alert">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Erro ao carregar status do exame</AlertTitle>
+          <AlertDescription>{(itemStatusError as Error).message}</AlertDescription>
+        </Alert>
+      )}
+      {itemStatus && !podeSalvar && (
+        <Alert variant="destructive" role="alert">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Resultado não pode ser salvo</AlertTitle>
+          <AlertDescription>O item está com status {itemStatus}.</AlertDescription>
+        </Alert>
+      )}
       {temCritico && (
         <Alert variant="destructive" role="alert">
           <AlertTriangle className="h-4 w-4" />
@@ -443,12 +489,15 @@ export function LabResultForm({
         <Button
           variant="outline"
           onClick={() => salvar.mutate(false)}
-          disabled={salvar.isPending}
+          disabled={salvar.isPending || isItemStatusPending || !podeSalvar}
         >
           <Save className="h-4 w-4 mr-2" />
           Salvar (não liberar)
         </Button>
-        <Button onClick={() => salvar.mutate(true)} disabled={salvar.isPending}>
+        <Button
+          onClick={() => salvar.mutate(true)}
+          disabled={salvar.isPending || isItemStatusPending || !podeLiberar}
+        >
           <Send className="h-4 w-4 mr-2" />
           Salvar e liberar
         </Button>
@@ -456,3 +505,4 @@ export function LabResultForm({
     </div>
   );
 }
+
