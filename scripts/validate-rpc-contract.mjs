@@ -266,6 +266,35 @@ async function validateRuntime(proxyNames, classifiedNames, forbiddenNames, fron
         WHERE n.nspname = 'public'
         GROUP BY n.oid`,
     );
+    const membershipAcl = await pool.query(
+      `SELECT member_role.rolname AS member_name,
+              membership.inherit_option,
+              membership.set_option,
+              membership.admin_option
+         FROM pg_auth_members membership
+         JOIN pg_roles granted_role ON granted_role.oid = membership.roleid
+         JOIN pg_roles member_role ON member_role.oid = membership.member
+        WHERE granted_role.rolname = 'authenticated'
+          AND member_role.rolname = ANY($1::text[])`,
+      [['app_prontomedic', 'prontomedic_rpc_owner']],
+    );
+    const membershipByRole = new Map(
+      membershipAcl.rows.map((row) => [row.member_name, row]),
+    );
+    const backendMembership = membershipByRole.get('app_prontomedic');
+    if (!backendMembership
+        || backendMembership.inherit_option
+        || !backendMembership.set_option
+        || backendMembership.admin_option) {
+      errors.push('RUNTIME_BACKEND_ROLE_MEMBERSHIP_UNSAFE');
+    }
+    const ownerMembership = membershipByRole.get('prontomedic_rpc_owner');
+    if (!ownerMembership
+        || !ownerMembership.inherit_option
+        || ownerMembership.set_option
+        || ownerMembership.admin_option) {
+      errors.push('RUNTIME_RPC_OWNER_MEMBERSHIP_UNSAFE');
+    }
     const writableRoles = schemaAcl.rows[0]?.untrusted_create_roles || [];
     const publicSchemaWritable = writableRoles.length > 0;
     if (publicSchemaWritable) errors.push(`RUNTIME_PUBLIC_SCHEMA_WRITABLE roles=${writableRoles.join(',')}`);

@@ -15,7 +15,9 @@ ALTER ROLE prontomedic_rpc_owner
 DO $rpc$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
-    GRANT authenticated TO prontomedic_rpc_owner;
+    GRANT authenticated TO prontomedic_rpc_owner WITH INHERIT TRUE;
+    GRANT authenticated TO prontomedic_rpc_owner WITH SET FALSE;
+    GRANT authenticated TO prontomedic_rpc_owner WITH ADMIN FALSE;
   END IF;
 END
 $rpc$;
@@ -38,6 +40,9 @@ DO $rpc$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_prontomedic') THEN
     ALTER ROLE app_prontomedic NOINHERIT NOBYPASSRLS;
+    GRANT authenticated TO app_prontomedic WITH INHERIT FALSE;
+    GRANT authenticated TO app_prontomedic WITH SET TRUE;
+    GRANT authenticated TO app_prontomedic WITH ADMIN FALSE;
   END IF;
 END
 $rpc$;
@@ -49,6 +54,23 @@ GRANT CREATE ON SCHEMA public TO prontomedic_rpc_owner;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public
   TO prontomedic_rpc_owner;
 GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public
+  TO prontomedic_rpc_owner;
+
+-- Helpers privadas chamadas por RPCs de faturamento transferidas para o owner
+-- seguro. Elas permanecem inacessiveis aos papeis de API.
+ALTER FUNCTION public.assert_billing_permission(BOOLEAN)
+  OWNER TO prontomedic_rpc_owner;
+ALTER FUNCTION public.can_transition_billing_status(TEXT, TEXT)
+  OWNER TO prontomedic_rpc_owner;
+REVOKE ALL ON FUNCTION public.assert_billing_permission(BOOLEAN) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.can_transition_billing_status(TEXT, TEXT) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.assert_billing_permission(BOOLEAN)
+  FROM anon, authenticated, app_prontomedic;
+REVOKE EXECUTE ON FUNCTION public.can_transition_billing_status(TEXT, TEXT)
+  FROM anon, authenticated, app_prontomedic;
+GRANT EXECUTE ON FUNCTION public.assert_billing_permission(BOOLEAN)
+  TO prontomedic_rpc_owner;
+GRANT EXECUTE ON FUNCTION public.can_transition_billing_status(TEXT, TEXT)
   TO prontomedic_rpc_owner;
 
 CREATE TEMP TABLE rpc_proxy_contract (

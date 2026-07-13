@@ -37,6 +37,7 @@ DECLARE
   backend_execute_count INTEGER;
   authenticated_missing_count INTEGER;
   blocked_rpc_exposure_count INTEGER;
+  billing_helper_exposure_count INTEGER;
 BEGIN
   IF NOT EXISTS (
     SELECT 1
@@ -49,8 +50,16 @@ BEGIN
     RAISE EXCEPTION 'prontomedic_rpc_owner is missing or unsafe';
   END IF;
 
-  IF NOT pg_has_role('prontomedic_rpc_owner', 'authenticated', 'MEMBER') THEN
-    RAISE EXCEPTION 'prontomedic_rpc_owner must receive authenticated RLS policies';
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_auth_members membership
+     WHERE membership.roleid = to_regrole('authenticated')::oid
+       AND membership.member = to_regrole('prontomedic_rpc_owner')::oid
+       AND membership.inherit_option
+       AND NOT membership.set_option
+       AND NOT membership.admin_option
+  ) THEN
+    RAISE EXCEPTION 'prontomedic_rpc_owner membership options are unsafe';
   END IF;
 
   IF NOT EXISTS (
@@ -60,7 +69,15 @@ BEGIN
        AND NOT rolinherit
        AND NOT rolsuper
        AND NOT rolbypassrls
-  ) OR NOT pg_has_role('app_prontomedic', 'authenticated', 'MEMBER') THEN
+  ) OR NOT EXISTS (
+    SELECT 1
+      FROM pg_auth_members membership
+     WHERE membership.roleid = to_regrole('authenticated')::oid
+       AND membership.member = to_regrole('app_prontomedic')::oid
+       AND NOT membership.inherit_option
+       AND membership.set_option
+       AND NOT membership.admin_option
+  ) THEN
     RAISE EXCEPTION 'app_prontomedic must assume authenticated explicitly without inherited privileges';
   END IF;
 
@@ -186,6 +203,45 @@ BEGIN
 
   IF blocked_rpc_exposure_count <> 0 THEN
     RAISE EXCEPTION 'blocked RPCs remain exposed: %', blocked_rpc_exposure_count;
+  END IF;
+
+  IF NOT has_function_privilege(
+    'prontomedic_rpc_owner',
+    'public.assert_billing_permission(boolean)',
+    'EXECUTE'
+  ) OR NOT has_function_privilege(
+    'prontomedic_rpc_owner',
+    'public.can_transition_billing_status(text,text)',
+    'EXECUTE'
+  ) THEN
+    RAISE EXCEPTION 'billing private helpers are unavailable to prontomedic_rpc_owner';
+  END IF;
+
+  SELECT COUNT(*)
+    INTO billing_helper_exposure_count
+    FROM pg_proc function_row
+    JOIN pg_namespace namespace_row ON namespace_row.oid = function_row.pronamespace
+   WHERE namespace_row.nspname = 'public'
+     AND function_row.proname = ANY (ARRAY[
+       'assert_billing_permission', 'can_transition_billing_status'
+     ])
+     AND (function_row.proowner <> to_regrole('prontomedic_rpc_owner')::oid OR
+       EXISTS (
+         SELECT 1
+           FROM aclexplode(COALESCE(
+             function_row.proacl,
+             acldefault('f', function_row.proowner)
+           )) acl
+          WHERE acl.grantee = 0
+            AND acl.privilege_type = 'EXECUTE'
+       )
+       OR has_function_privilege('anon', function_row.oid, 'EXECUTE')
+       OR has_function_privilege('authenticated', function_row.oid, 'EXECUTE')
+     );
+
+  IF billing_helper_exposure_count <> 0 THEN
+    RAISE EXCEPTION 'billing private helpers have unsafe owner or API exposure: %',
+      billing_helper_exposure_count;
   END IF;
 
   RAISE NOTICE 'F1_RUNTIME_RPC_PROXY_ACL_GATE=PASS';
