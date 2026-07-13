@@ -246,6 +246,9 @@ jobs:
           ) VALUES (
             991302, '00000000-0000-0000-0000-000000000001', 991302, 991302,
             DATE '2026-07-22', TIME '09:00', TIME '09:30', 'in_progress'
+          ), (
+            991304, '00000000-0000-0000-0000-000000000001', 991302, 991302,
+            DATE '2026-07-22', TIME '10:00', TIME '10:30', 'in_progress'
           ) ON CONFLICT (id) DO UPDATE
             SET company_id = EXCLUDED.company_id,
                 patient_id = EXCLUDED.patient_id,
