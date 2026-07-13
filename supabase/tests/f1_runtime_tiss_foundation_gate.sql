@@ -73,6 +73,10 @@ BEGIN
     RAISE EXCEPTION 'F1 TISS foundation requires ENABLE and FORCE RLS';
   END IF;
 
+  IF NOT pg_has_role('app_prontomedic', 'authenticated', 'MEMBER') THEN
+    RAISE EXCEPTION 'F1 TISS foundation requires app_prontomedic membership in authenticated';
+  END IF;
+
   IF has_table_privilege('anon', 'public.tiss_xml', 'INSERT')
      OR has_table_privilege('anon', 'public.tiss_xml', 'UPDATE')
      OR has_table_privilege('anon', 'public.tiss_xml', 'DELETE')
@@ -153,3 +157,4 @@ RESET ROLE;
 
 ROLLBACK;
 SELECT 'F1_RUNTIME_TISS_FOUNDATION_GATE=PASS' AS result;
+

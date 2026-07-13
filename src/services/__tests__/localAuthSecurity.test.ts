@@ -43,4 +43,21 @@ describe("local auth server security invariants", () => {
     expect(source).not.toContain("role === 'admin' || role === 'adm_medicos'");
     expect(source).not.toContain("role === 'admin' || role === 'diretoria'");
   });
+
+  it("executa REST e RPC sob claims e papel PostgreSQL autenticado", () => {
+    expect(source).toContain("async function withAuthenticatedDbSession(payload, operation)");
+    expect(source).toContain("set_config('request.jwt.claim.sub', $1, true)");
+    expect(source).toContain("set_config('request.jwt.claims', $2, true)");
+    expect(source).toContain("set_config('request.jwt.claim.role', 'authenticated', true)");
+    expect(source).toContain("SET LOCAL ROLE authenticated");
+    expect(source).toContain("withAuthenticatedDbSession(hPayload");
+    expect(source).toContain("withAuthenticatedDbSession(payload");
+  });
+
+  it("mantem dados e count no mesmo cliente e nao mascara falha HEAD", () => {
+    expect(source).toContain("const countResult = await client.query(countQuery, values)");
+    expect(source).not.toContain("res.writeHead(200, { 'content-range': '0-0/0' })");
+    expect(source).toContain("[REST_HEAD_ERROR]");
+  });
 });
+

@@ -103,6 +103,32 @@ async function getUserProfile(userId) {
   return res.rows[0] || null;
 }
 
+async function withAuthenticatedDbSession(payload, operation) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('request.jwt.claim.sub', $1, true),
+              set_config('request.jwt.claims', $2, true),
+              set_config('request.jwt.claim.role', 'authenticated', true)`,
+      [payload.sub, JSON.stringify({ ...payload, role: 'authenticated' })],
+    );
+    await client.query('SET LOCAL ROLE authenticated');
+    const result = await operation(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('[DB_SESSION_ROLLBACK_ERROR]', rollbackError);
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // AUTORIZAÃ‡ÃƒO SERVER-SIDE (RBAC por role Ã— mÃ³dulo Ã— aÃ§Ã£o)
 // Mapeia tabela fÃ­sica â†’ mÃ³dulo lÃ³gico da matriz role_permissions.
@@ -378,13 +404,16 @@ const server = createServer(async (req, res) => {
     if (!hDecision.ok) { res.writeHead(403); res.end(); return; }
     try {
       const hCompanyId = await requiredCompanyScope(hProfile, table);
-      const countResult = hCompanyId
-        ? await pool.query(`SELECT count(*) FROM public."${table}" WHERE company_id = $1`, [hCompanyId])
-        : await pool.query(`SELECT count(*) FROM public."${table}"`);
+      const countResult = await withAuthenticatedDbSession(hPayload, (client) =>
+        hCompanyId
+          ? client.query(`SELECT count(*) FROM public."${table}" WHERE company_id = $1`, [hCompanyId])
+          : client.query(`SELECT count(*) FROM public."${table}"`)
+      );
       const total = countResult.rows[0].count;
       res.writeHead(200, { 'content-range': `0-0/${total}` });
-    } catch {
-      res.writeHead(200, { 'content-range': '0-0/0' });
+    } catch (error) {
+      console.error('[REST_HEAD_ERROR]', { table, userId: hPayload.sub, message: error.message });
+      res.writeHead(500);
     }
     res.end();
     return;
@@ -571,15 +600,10 @@ const server = createServer(async (req, res) => {
       // monta SELECT fn(p1 => $1, p2 => $2) com params nomeados
       const namedArgs = keys.map((k, i) => `"${k}" => $${i + 1}`).join(', ');
       const vals = keys.map((k) => body[k]);
-      const client = await pool.connect();
       try {
-        await client.query('BEGIN');
-        await client.query(
-          `SELECT set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claims', $2, true)`,
-          [payload.sub, JSON.stringify(payload)],
+        const result = await withAuthenticatedDbSession(payload, (client) =>
+          client.query(`SELECT public."${fnName}"(${namedArgs}) AS result`, vals)
         );
-        const result = await client.query(`SELECT public."${fnName}"(${namedArgs}) AS result`, vals);
-        await client.query('COMMIT');
         const val = result.rows.length === 0
           ? []
           : result.rows.length > 1
@@ -587,11 +611,8 @@ const server = createServer(async (req, res) => {
             : result.rows[0].result;
         return json(res, val);
       } catch (e) {
-        await client.query('ROLLBACK');
         console.error('[RPC_ERROR]', { function: fnName, userId: payload.sub, message: e.message });
         return json(res, { error: e.message, code: 'PGRST202' }, 400);
-      } finally {
-        client.release();
       }
     }
 
@@ -609,6 +630,9 @@ const server = createServer(async (req, res) => {
 
       // Enforcement RBAC: role Ã— mÃ³dulo Ã— aÃ§Ã£o
       const profile = await getUserProfile(payload.sub);
+      if (!profile || !profile.lg_ativo) {
+        return json(res, { error: 'forbidden', message: 'usuÃ¡rio invÃ¡lido/inativo' }, 403);
+      }
       const isSelfProfileRead =
         req.method === 'GET' &&
         table === 'user_profiles' &&
@@ -774,16 +798,17 @@ const server = createServer(async (req, res) => {
         }
 
         try {
-          const result = await pool.query(query, values);
-
-          // Count total if Prefer: count=exact
           const prefer = req.headers.prefer || '';
-          let totalCount = result.rows.length;
-          if (prefer.includes('count=exact')) {
-            const countQuery = `SELECT COUNT(*) FROM public."${table}"` + (conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '');
-            const countResult = await pool.query(countQuery, values);
-            totalCount = parseInt(countResult.rows[0].count);
-          }
+          const { result, totalCount } = await withAuthenticatedDbSession(payload, async (client) => {
+            const result = await client.query(query, values);
+            let totalCount = result.rows.length;
+            if (prefer.includes('count=exact')) {
+              const countQuery = `SELECT COUNT(*) FROM public."${table}"` + (conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '');
+              const countResult = await client.query(countQuery, values);
+              totalCount = parseInt(countResult.rows[0].count);
+            }
+            return { result, totalCount };
+          });
 
           const start = rangeEnd !== null ? rangeStart : (offsetParam ? parseInt(offsetParam) : 0);
           const end = start + result.rows.length - 1;
@@ -879,3 +904,4 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜`);
   console.log(``);
 });
+

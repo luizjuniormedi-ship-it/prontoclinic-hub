@@ -3,8 +3,6 @@
  * Sub-componente extraido de TissManager.tsx
  */
 
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -46,18 +44,6 @@ export function TissXmlPreview({ xml, open, onOpenChange }: TissXmlPreviewProps)
                 <div><b>Versao TISS:</b> {xml.ds_versao_tiss}</div>
               </div>
 
-              {xml.bl_xml_enviado && (
-                <div>
-                  <Label className="text-xs">XML Enviado</Label>
-                  <Textarea readOnly value={xml.bl_xml_enviado} rows={6} className="font-mono text-xs" />
-                </div>
-              )}
-              {xml.bl_xml_retorno && (
-                <div>
-                  <Label className="text-xs">XML de Retorno</Label>
-                  <Textarea readOnly value={xml.bl_xml_retorno} rows={6} className="font-mono text-xs" />
-                </div>
-              )}
               {xml.ds_motivo_rejeicao && (
                 <div className="p-3 bg-red-50 text-red-800 rounded">
                   <b>Motivo da rejeicao:</b> {xml.ds_motivo_rejeicao}
@@ -74,15 +60,5 @@ export function TissXmlPreview({ xml, open, onOpenChange }: TissXmlPreviewProps)
   );
 }
 
-export function downloadXml(f: TissXml) {
-  if (!f.bl_xml_enviado) return;
-  const blob = new Blob([f.bl_xml_enviado], { type: "text/xml" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = f.ds_filename || `tiss_${f.id}.xml`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 export default TissXmlPreview;
+

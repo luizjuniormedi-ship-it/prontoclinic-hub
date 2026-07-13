@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { tissService } from "@/services/tissService";
+import { TISS_XML_METADATA_COLUMNS, tissService } from "@/services/tissService";
 
 vi.mock("@/lib/supabase", () => ({
   supabase: {
@@ -33,7 +33,8 @@ describe("tissService.listFaturas", () => {
     await tissService.listFaturas("company-1");
 
     expect(supabase.from).toHaveBeenCalledWith("tiss_xml");
-    expect(chain.select).toHaveBeenCalledWith("*");
+    expect(chain.select).toHaveBeenCalledWith(TISS_XML_METADATA_COLUMNS);
+    expect(TISS_XML_METADATA_COLUMNS).not.toMatch(/bl_xml|ds_hash|cd_user|cd_origem|company_id/);
     expect(chain.eq).toHaveBeenCalledWith("company_id", "company-1");
     expect(chain.eq).toHaveBeenCalledWith("lg_deletado", false);
     expect(chain.limit).toHaveBeenCalledWith(500);
@@ -143,3 +144,4 @@ describe("tissService safety gates", () => {
     expectNoBrowserSideEffects();
   });
 });
+

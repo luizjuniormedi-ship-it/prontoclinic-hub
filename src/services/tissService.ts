@@ -45,7 +45,6 @@ export type GlosaStatus = "PENDENTE" | "ENVIADO" | "DEFERIDO" | "INDEFERIDO" | "
 
 export interface TissXml {
   id: number;
-  company_id: string;
   cd_fatura?: number;
   cd_convenio?: number;
   ds_descricao?: string;
@@ -55,17 +54,11 @@ export interface TissXml {
   cd_lote?: number;
   ds_protocolo?: string;
   dt_recurso?: string;
-  ds_recurso_xml?: string;
   ds_protocolo_recurso?: string;
   vl_informado?: number;
   vl_processado?: number;
   vl_liberado?: number;
   vl_glosa?: number;
-  bl_xml_enviado?: string;
-  bl_xml_retorno?: string;
-  bl_xml_recurso?: string;
-  ds_hash_envio?: string;
-  ds_hash_retorno?: string;
   ds_versao_tiss: string;
   tp_ambiente: TissAmbiente;
   status: TissStatus;
@@ -74,17 +67,41 @@ export interface TissXml {
   dt_envio?: string;
   dt_retorno?: string;
   dt_pagamento?: string;
-  cd_user_envio?: string;
-  cd_user_recebimento?: string;
-  cd_origem_sigh?: number;
   created_at: string;
   updated_at: string;
 }
 
+export const TISS_XML_METADATA_COLUMNS = [
+  "id",
+  "cd_fatura",
+  "cd_convenio",
+  "ds_descricao",
+  "ds_filename",
+  "dt_fatura",
+  "ds_tipo_guia",
+  "cd_lote",
+  "ds_protocolo",
+  "dt_recurso",
+  "ds_protocolo_recurso",
+  "vl_informado",
+  "vl_processado",
+  "vl_liberado",
+  "vl_glosa",
+  "ds_versao_tiss",
+  "tp_ambiente",
+  "status",
+  "ds_motivo_rejeicao",
+  "lg_deletado",
+  "dt_envio",
+  "dt_retorno",
+  "dt_pagamento",
+  "created_at",
+  "updated_at",
+].join(", ");
+
 export interface TissGlosa {
   id: number;
   cd_tiss_xml: number;
-  company_id: string;
   cd_glosa_code?: string;
   ds_motivo?: string;
   vl_glosa: number;
@@ -92,35 +109,55 @@ export interface TissGlosa {
   lg_recurso_enviado: boolean;
   dt_recurso?: string;
   ds_protocolo_recurso?: string;
-  bl_xml_recurso?: string;
   ds_status_recurso: GlosaStatus;
   cd_procedimento_tuss?: string;
   cd_executante?: string;
-  cd_user_registro?: string;
-  cd_origem_sigh?: number;
   created_at: string;
   updated_at: string;
 }
 
+const TISS_GLOSA_METADATA_COLUMNS = [
+  "id",
+  "cd_tiss_xml",
+  "cd_glosa_code",
+  "ds_motivo",
+  "vl_glosa",
+  "dt_glosa",
+  "lg_recurso_enviado",
+  "dt_recurso",
+  "ds_protocolo_recurso",
+  "ds_status_recurso",
+  "cd_procedimento_tuss",
+  "cd_executante",
+  "created_at",
+  "updated_at",
+].join(", ");
+
 export interface TissProtocol {
   id: number;
-  company_id: string;
   cd_convenio: number;
-  ds_endpoint: string;
   ds_versao_tiss: string;
   tp_ambiente: TissAmbiente;
-  cd_certificado_a1_path?: string;
-  ds_certificado_senha?: string;
-  ds_usuario?: string;
-  ds_senha?: string;
   lg_active: boolean;
   ds_observacao?: string;
   dt_ultimo_teste?: string;
   ds_status_teste?: string;
-  cd_origem_sigh?: number;
   created_at: string;
   updated_at: string;
 }
+
+const TISS_PROTOCOL_METADATA_COLUMNS = [
+  "id",
+  "cd_convenio",
+  "ds_versao_tiss",
+  "tp_ambiente",
+  "lg_active",
+  "ds_observacao",
+  "dt_ultimo_teste",
+  "ds_status_teste",
+  "created_at",
+  "updated_at",
+].join(", ");
 
 // ── Códigos TISS (tabela oficial ANS, subset) ──────────────────────
 
@@ -190,7 +227,7 @@ export const tissService = {
   ): Promise<TissXml[]> {
     let q = supabase
       .from("tiss_xml")
-      .select("*")
+      .select(TISS_XML_METADATA_COLUMNS)
       .eq("company_id", companyId)
       .eq("lg_deletado", false)
       .order("dt_fatura", { ascending: false });
@@ -214,7 +251,7 @@ export const tissService = {
   async getById(id: number): Promise<TissXml> {
     const { data, error } = await supabase
       .from("tiss_xml")
-      .select("*")
+      .select(TISS_XML_METADATA_COLUMNS)
       .eq("id", id)
       .single();
     if (error) throw error;
@@ -310,7 +347,7 @@ export const tissService = {
   async listGlosas(tissXmlId: number): Promise<TissGlosa[]> {
     const { data, error } = await supabase
       .from("tiss_glosas")
-      .select("*")
+      .select(TISS_GLOSA_METADATA_COLUMNS)
       .eq("cd_tiss_xml", tissXmlId)
       .order("dt_glosa", { ascending: false });
     if (error) throw error;
@@ -328,7 +365,7 @@ export const tissService = {
   async gerarXMLRecurso(glosaId: number): Promise<string> {
     const { data: glosa } = await supabase
       .from("tiss_glosas")
-      .select("*, tiss_xml(cd_convenio, ds_protocolo, dt_fatura, vl_glosa)")
+      .select("cd_glosa_code, ds_motivo, vl_glosa, tiss_xml(cd_convenio, ds_protocolo, dt_fatura, vl_glosa)")
       .eq("id", glosaId)
       .single();
     if (!glosa) throw new Error("Glosa nao encontrada");
@@ -454,7 +491,7 @@ export const tissService = {
   async listProtocols(companyId: string): Promise<TissProtocol[]> {
     const { data, error } = await supabase
       .from("tiss_protocols")
-      .select("*")
+      .select(TISS_PROTOCOL_METADATA_COLUMNS)
       .eq("company_id", companyId)
       .order("cd_convenio");
     if (error) throw error;
@@ -463,7 +500,7 @@ export const tissService = {
 
   async saveProtocol(
     companyId: string,
-    data: Partial<TissProtocol> & { cd_convenio: number; ds_endpoint: string }
+    data: { cd_convenio: number; ds_endpoint: string }
   ): Promise<TissProtocol> {
     void companyId;
     void data;
@@ -472,3 +509,4 @@ export const tissService = {
 };
 
 export default tissService;
+

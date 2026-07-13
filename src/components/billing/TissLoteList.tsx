@@ -32,7 +32,6 @@ import {
   CheckCircle2,
   DollarSign,
   XCircle,
-  Download,
   RefreshCw,
 } from "lucide-react";
 import {
@@ -41,7 +40,7 @@ import {
   type TissXml,
 } from "@/services/tissService";
 import { insuranceCompanyService } from "@/services/insuranceService";
-import { downloadXml } from "./TissXmlPreview";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 function statusBadge(s: TissStatus): { label: string; cls: string; icon: typeof FileText } {
   const map: Record<TissStatus, { label: string; cls: string; icon: typeof FileText }> = {
@@ -141,15 +140,6 @@ const TissRow = memo(function TissRow({ fatura, onSelectXml }: TissRowProps) {
               <AlertTriangle className="h-3 w-3 text-orange-600" />
             </Button>
           )}
-          {fatura.bl_xml_enviado && (
-            <Button
-              size="sm" variant="ghost"
-              onClick={() => downloadXml(fatura)}
-              title="Baixar XML"
-            >
-              <Download className="h-3 w-3" />
-            </Button>
-          )}
         </div>
       </TableCell>
     </TableRow>
@@ -167,7 +157,7 @@ function TissLoteListImpl({
   setFilterConvenio,
   onSelectXml,
 }: TissLoteListProps) {
-  const { data: faturas, isLoading } = useQuery({
+  const { data: faturas, isLoading, isError, refetch } = useQuery({
     queryKey: ["tiss-xml", companyId, mes, ano, filterStatus, filterConvenio],
     queryFn: () =>
       tissService.listFaturas(companyId, {
@@ -238,6 +228,20 @@ function TissLoteListImpl({
         </CardContent>
       </Card>
 
+      {isError && (
+        <Alert variant="destructive" role="alert">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Nao foi possivel carregar as guias TISS</AlertTitle>
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            <span>Os dados nao foram exibidos. Nenhuma operacao TISS foi executada.</span>
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              <RefreshCw className="h-4 w-4 mr-1" />
+              Tentar novamente
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -260,6 +264,12 @@ function TissLoteListImpl({
                   <TableCell colSpan={9} className="text-center py-8">
                     <RefreshCw className="h-4 w-4 animate-spin inline mr-2" />
                     Carregando...
+                  </TableCell>
+                </TableRow>
+              ) : isError ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center py-8 text-destructive">
+                    Guias indisponiveis no momento.
                   </TableCell>
                 </TableRow>
               ) : (faturas || []).length === 0 ? (
@@ -289,3 +299,4 @@ export const TissLoteList = memo(TissLoteListImpl);
 TissLoteList.displayName = "TissLoteList";
 
 export default TissLoteList;
+

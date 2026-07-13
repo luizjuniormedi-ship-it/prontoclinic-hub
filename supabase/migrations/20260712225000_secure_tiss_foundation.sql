@@ -210,6 +210,20 @@ $$;
 ALTER TABLE public.tiss_xml ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tiss_xml FORCE ROW LEVEL SECURITY;
 
+-- The custom auth proxy connects as app_prontomedic and deliberately assumes
+-- the authenticated role per request so PostgreSQL, not JavaScript alone,
+-- enforces tenant policies. Fail closed when the runtime roles are incomplete.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_prontomedic')
+     OR NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    RAISE EXCEPTION 'Runtime roles app_prontomedic/authenticated are required for TISS RLS';
+  END IF;
+
+  GRANT authenticated TO app_prontomedic;
+END
+$$;
+
 REVOKE INSERT, UPDATE, DELETE ON TABLE public.tiss_xml FROM PUBLIC, anon, authenticated;
 
 -- Remove legacy write policies. Recreate read access only when the established
@@ -246,3 +260,4 @@ BEGIN
   END IF;
 END
 $$;
+

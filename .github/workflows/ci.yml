@@ -48,7 +48,7 @@ jobs:
         run: |
           DATABASE_URL=postgresql://postgres:postgres@localhost:54322/postgres
           export PGPASSWORD=postgres
-          psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres -d postgres -c "CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN;"
+          psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres -d postgres -c "CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN; CREATE ROLE app_prontomedic NOLOGIN NOSUPERUSER NOBYPASSRLS;"
           psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres -d postgres -c "CREATE SCHEMA auth; CREATE TABLE auth.users (id uuid PRIMARY KEY); CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS \$\$ SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid \$\$;"
           migrations=(
             supabase/migrations/00000_extensions.sql
@@ -214,3 +214,4 @@ jobs:
             test -f scripts/check-a11y-violations.mjs
             node scripts/check-a11y-violations.mjs
           fi
+

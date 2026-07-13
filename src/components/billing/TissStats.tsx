@@ -7,6 +7,9 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, PieChart, Pie, Cell } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle, RefreshCw } from "lucide-react";
 import { tissService, type TissXml } from "@/services/tissService";
 
 const CHART_COLORS = ["#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
@@ -18,7 +21,7 @@ export interface TissStatsProps {
 }
 
 export function TissStats({ companyId, ano, faturas }: TissStatsProps) {
-  const { data: stats } = useQuery({
+  const { data: stats, isError, refetch } = useQuery({
     queryKey: ["tiss-stats", companyId, ano],
     queryFn: () => tissService.getEstatisticas(companyId, ano),
     enabled: !!companyId,
@@ -44,6 +47,19 @@ export function TissStats({ companyId, ano, faturas }: TissStatsProps) {
 
   return (
     <div className="space-y-4">
+      {isError && (
+        <Alert variant="destructive" role="alert">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Nao foi possivel carregar os indicadores TISS</AlertTitle>
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            <span>Os totalizadores permanecem indisponiveis ate uma nova consulta segura.</span>
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              <RefreshCw className="h-4 w-4 mr-1" />
+              Tentar novamente
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
           <Card>
@@ -158,3 +174,4 @@ export function TissStats({ companyId, ano, faturas }: TissStatsProps) {
 }
 
 export default TissStats;
+
