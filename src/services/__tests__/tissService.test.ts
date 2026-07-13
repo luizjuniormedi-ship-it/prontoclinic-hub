@@ -68,3 +68,19 @@ describe("tissService.listFaturas", () => {
     });
   });
 });
+
+describe("tissService safety gates", () => {
+  it("bloqueia transmissao SOAP no navegador antes de qualquer acesso externo", async () => {
+    await expect(tissService.sendToOperadora(10)).rejects.toThrow(
+      "Transmissao TISS bloqueada"
+    );
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it("bloqueia a geracao mensal legada que nao possui contrato transacional", async () => {
+    await expect(tissService.gerarFaturaMensal(7, 2026, "company-1")).rejects.toThrow(
+      "Geracao mensal TISS bloqueada"
+    );
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+});

@@ -13,7 +13,6 @@
  */
 
 import { useState, useEffect } from "react";
-import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
@@ -25,7 +24,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Settings2, RefreshCw } from "lucide-react";
-import { toast } from "sonner";
 import { tissService, type TissStatus, type TissXml } from "@/services/tissService";
 import { useAuth } from "@/hooks/useAuth";
 import { TissStats } from "./TissStats";
@@ -56,13 +54,6 @@ export function TissManager() {
     return () => window.removeEventListener("tiss:mes-change", handler);
   }, []);
 
-  const generateMonthMutation = useMutation({
-    mutationFn: () => tissService.gerarFaturaMensal(mes, ano, companyId),
-    onSuccess: (r) =>
-      toast.success(`Lote ${r.lote}: ${r.total_xmls} XMLs gerados, R$ ${r.vl_total.toFixed(2)}`),
-    onError: (e: Error) => toast.error(`Erro: ${e.message}`),
-  });
-
   const handleSelectXml = (xml: TissXml) => {
     setSelectedXml(xml);
     setGlosaDialogOpen(false);
@@ -86,9 +77,9 @@ export function TissManager() {
           <Button variant="outline" onClick={() => setProtocolDialogOpen(true)}>
             <Settings2 className="h-4 w-4 mr-1" />Protocolos
           </Button>
-          <Button onClick={() => generateMonthMutation.mutate()} disabled={generateMonthMutation.isPending}>
+          <Button disabled title="Geracao indisponivel ate ativacao da RPC TISS segura">
             <RefreshCw className="h-4 w-4 mr-1" />
-            {generateMonthMutation.isPending ? "Gerando..." : "Gerar Fatura do Mes"}
+            Gerar Fatura do Mes
           </Button>
         </div>
       </div>

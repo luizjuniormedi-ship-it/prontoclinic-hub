@@ -388,69 +388,10 @@ export const tissService = {
    * Em producao: usa certificado A1 e assina o XML
    */
   async sendToOperadora(tissXmlId: number): Promise<{ sent: boolean; protocolo?: string; response?: unknown }> {
-    const xml = await this.getById(tissXmlId);
-
-    // Buscar protocolo (endpoint) da operadora
-    const { data: proto } = await supabase
-      .from("tiss_protocols")
-      .select("*")
-      .eq("cd_convenio", xml.cd_convenio || 0)
-      .eq("tp_ambiente", xml.tp_ambiente)
-      .eq("lg_active", true)
-      .maybeSingle();
-
-    if (!proto) {
-      throw new Error(
-        `Protocolo TISS nao configurado para convenio ${xml.cd_convenio} no ambiente ${xml.tp_ambiente}. Configure em tiss_protocols.`
-      );
-    }
-
-    const start = Date.now();
-    let sent = false;
-    let protocolo: string | undefined;
-    let respXml: string | undefined;
-    let motivoRejeicao: string | undefined;
-
-    try {
-      const res = await fetch(proto.ds_endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "text/xml; charset=utf-8",
-          SOAPAction: `"tissAction/${xml.ds_tipo_guia || "ENVIO_LOTE_GUIAS"}"`,
-        },
-        body: xml.bl_xml_enviado || "",
-        signal: AbortSignal.timeout(30000),
-      });
-      sent = res.ok;
-      respXml = await res.text();
-
-      // Extrair protocolo do XML de retorno (parser simples)
-      const m = respXml.match(/<ns\d:protocolo[^>]*>([^<]+)<\/ns\d:protocolo>|<protocolo[^>]*>([^<]+)<\/protocolo>/);
-      protocolo = m?.[1] || m?.[2];
-
-      if (!sent) {
-        motivoRejeicao = `HTTP ${res.status}: ${respXml.substring(0, 500)}`;
-      }
-    } catch (e) {
-      sent = false;
-      motivoRejeicao = e instanceof Error ? e.message : "Falha no envio";
-    }
-
-    const now = new Date().toISOString();
-    await supabase
-      .from("tiss_xml")
-      .update({
-        status: sent ? "ENVIADO" : "REJEITADO",
-        dt_envio: now,
-        ds_protocolo: protocolo,
-        bl_xml_retorno: respXml,
-        ds_motivo_rejeicao: motivoRejeicao,
-        cd_user_envio: (await supabase.auth.getUser()).data.user?.id,
-        updated_at: now,
-      })
-      .eq("id", tissXmlId);
-
-    return { sent, protocolo, response: respXml };
+    void tissXmlId;
+    throw new Error(
+      "Transmissao TISS bloqueada: exige backend seguro com certificado A1, idempotencia e auditoria"
+    );
   },
 
   // ── Processamento do retorno ───────────────────────────────────
@@ -671,54 +612,12 @@ export const tissService = {
     ano: number,
     companyId: string
   ): Promise<{ lote: number; total_xmls: number; vl_total: number }> {
-    const dataInicio = `${ano}-${String(mes).padStart(2, "0")}-01`;
-    const dataFim = new Date(ano, mes, 0).toISOString().substring(0, 10); // ultimo dia do mes
-
-    // Buscar atendimentos do mes cobertos por convenio
-    const { data: appointments, error } = await supabase
-      .from("appointments")
-      .select("id, cd_patient, cd_insurance_plan, total_amount, status")
-      .eq("company_id", companyId)
-      .gte("start_time", dataInicio)
-      .lte("start_time", dataFim + "T23:59:59")
-      .neq("status", "CANCELLED");
-    if (error) throw error;
-
-    // Criar XML para cada atendimento
-    const lote = Math.floor(Date.now() / 1000);
-    let vlTotal = 0;
-    let count = 0;
-    for (const apt of appointments || []) {
-      const { data: plan } = await supabase
-        .from("insurance_plans")
-        .select("insurance_company_id, codigo")
-        .eq("id", apt.cd_insurance_plan || 0)
-        .maybeSingle();
-      if (!plan) continue;
-
-      const vlTotalApt = (apt as { total_amount?: number }).total_amount || 0;
-      vlTotal += vlTotalApt;
-      count++;
-
-      await supabase.from("tiss_xml").insert({
-        company_id: companyId,
-        cd_convenio: plan.insurance_company_id,
-        cd_fatura: apt.id,
-        ds_descricao: `Fatura mensal ${mes}/${ano} - Apt ${apt.id}`,
-        ds_filename: `lote_${lote}_apt_${apt.id}.xml`,
-        dt_fatura: dataFim,
-        ds_tipo_guia: "CONSULTA",
-        cd_lote: lote,
-        vl_informado: vlTotalApt,
-        vl_liberado: 0,
-        vl_glosa: 0,
-        ds_versao_tiss: "3.05.00",
-        tp_ambiente: "HOMOLOGACAO",
-        status: "PENDENTE",
-      });
-    }
-
-    return { lote, total_xmls: count, vl_total: vlTotal };
+    void mes;
+    void ano;
+    void companyId;
+    throw new Error(
+      "Geracao mensal TISS bloqueada: o fluxo legado nao possui contrato transacional seguro"
+    );
   },
 
   // ── Estatisticas (dashboard) ───────────────────────────────────

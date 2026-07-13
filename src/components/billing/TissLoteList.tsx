@@ -4,7 +4,7 @@
  */
 
 import { memo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,7 +35,6 @@ import {
   Download,
   RefreshCw,
 } from "lucide-react";
-import { toast } from "sonner";
 import {
   tissService,
   type TissStatus,
@@ -74,11 +73,9 @@ interface TissRowProps {
   fatura: TissXml;
   onSelectXml: (xml: TissXml) => void;
   onOpenGlosa: (xml: TissXml) => void;
-  onSend: (id: number) => void;
-  isSending: boolean;
 }
 
-const TissRow = memo(function TissRow({ fatura, onSelectXml, onOpenGlosa, onSend, isSending }: TissRowProps) {
+const TissRow = memo(function TissRow({ fatura, onSelectXml, onOpenGlosa }: TissRowProps) {
   const sb = statusBadge(fatura.status);
   const Icon = sb.icon;
   const convenioNome =
@@ -131,9 +128,8 @@ const TissRow = memo(function TissRow({ fatura, onSelectXml, onOpenGlosa, onSend
           {fatura.status === "PENDENTE" && (
             <Button
               size="sm" variant="default"
-              onClick={() => onSend(fatura.id)}
-              disabled={isSending}
-              title="Enviar operadora"
+              disabled
+              title="Transmissao indisponivel ate configuracao do backend seguro"
             >
               <Send className="h-3 w-3" />
             </Button>
@@ -174,8 +170,6 @@ function TissLoteListImpl({
   onSelectXml,
   onOpenGlosa,
 }: TissLoteListProps) {
-  const queryClient = useQueryClient();
-
   const { data: faturas, isLoading } = useQuery({
     queryKey: ["tiss-xml", companyId, mes, ano, filterStatus, filterConvenio],
     queryFn: () =>
@@ -191,19 +185,6 @@ function TissLoteListImpl({
   const { data: convenios } = useQuery({
     queryKey: ["insurance-companies"],
     queryFn: () => insuranceCompanyService.getAll(),
-  });
-
-  const sendMutation = useMutation({
-    mutationFn: (id: number) => tissService.sendToOperadora(id),
-    onSuccess: (r) => {
-      if (r.sent) {
-        toast.success(`Enviado! Protocolo: ${r.protocolo || "(sem protocolo)"}`);
-      } else {
-        toast.error("Envio rejeitado pela operadora");
-      }
-      queryClient.invalidateQueries({ queryKey: ["tiss-xml"] });
-    },
-    onError: (e: Error) => toast.error(`Erro: ${e.message}`),
   });
 
   return (
@@ -297,8 +278,6 @@ function TissLoteListImpl({
                     fatura={f}
                     onSelectXml={onSelectXml}
                     onOpenGlosa={onOpenGlosa}
-                    onSend={(id) => sendMutation.mutate(id)}
-                    isSending={sendMutation.isPending}
                   />
                 ))
               )}
