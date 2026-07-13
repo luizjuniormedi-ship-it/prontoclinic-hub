@@ -93,3 +93,9 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - `npm run secret:scan` local: aprovado, sem segredo conhecido no escopo analisado.
 - Senha literal removida de `PRONTOMEDIC_VPS_CRONOGRAMA.md`; senhas devem ser fornecidas fora do repositorio.
 - O resultado nao substitui o gate F1 com dois tenants reais.
+
+### Contrato operacional do gate F1
+
+- Secrets requeridos: `PRONTOMEDIC_E2E_BASE_URL`, `PRONTOMEDIC_ANON_KEY`, `PRONTOMEDIC_TENANT_A_EMAIL`, `PRONTOMEDIC_TENANT_A_PASSWORD`, `PRONTOMEDIC_TENANT_B_EMAIL` e `PRONTOMEDIC_TENANT_B_PASSWORD`.
+- Pre-condicao: tenants A e B devem ser empresas distintas.
+- Cobertura: login dos dois perfis, leitura de perfil, leitura e contagem de paciente, tentativa de insercao cross-tenant, PATCH cross-tenant e verificacao de imutabilidade do registro original.

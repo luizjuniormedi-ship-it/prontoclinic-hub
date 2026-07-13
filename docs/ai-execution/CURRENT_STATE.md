@@ -68,3 +68,7 @@ Executar o workflow manual `F1 runtime gate` com Secrets homologados; depois reg
 - E2E e a11y continuam condicionados a Secrets de runtime ausentes; o workflow registra o bloqueio sem transformar ausencia de teste em aprovacao.
 - Scanner de segredos local aprovado apos remover senha literal do runbook.
 - Producao continua bloqueada ate haver evidencia executavel de login, isolamento tenant, RLS/owner/BYPASSRLS e rollback.
+
+### Inputs obrigatorios do F1 runtime gate
+
+O workflow exige Secrets protegidos, sem valores no repositorio: `PRONTOMEDIC_E2E_BASE_URL`, `PRONTOMEDIC_ANON_KEY`, `PRONTOMEDIC_TENANT_A_EMAIL`, `PRONTOMEDIC_TENANT_A_PASSWORD`, `PRONTOMEDIC_TENANT_B_EMAIL` e `PRONTOMEDIC_TENANT_B_PASSWORD`. Os usuarios A e B devem existir em empresas diferentes; o teste verifica leitura, contagem, insercao e PATCH cross-tenant sem persistencia indevida.
