@@ -463,41 +463,17 @@ class TelemedicinaService {
       .single();
     if (selErr || !presc) throw new Error(selErr?.message ?? "Prescrição não encontrada");
 
-    // 2. Marcar como assinada
-    const { error: updErr } = await supabase
-      .from("telemedicina_prescricoes")
-      .update({ lg_assinada: true })
-      .eq("id", prescricaoId);
-    if (updErr) throw new Error(updErr.message);
-
-    // 3. Gerar URL do PDF (em produção: Supabase Storage signed URL)
-    // Aqui usamos uma URL determinística que o componente Prescriber
-    // converte em PDF client-side. Em produção, isto seria um upload
-    // real para o bucket S3/SUPABASE.
-    const fakeStorage = `receitas/${presc.cd_paciente}/${prescricaoId}.pdf`;
-    const urlPdf = `${env.VITE_SUPABASE_URL}/storage/v1/object/sign/${fakeStorage}?t=${Date.now()}`;
-
-    // 4. Criar registro em telemedicina_receitas
-    const dtValidade = new Date();
-    dtValidade.setDate(dtValidade.getDate() + validadeEmDias);
-
-    const { data: rec, error: insErr } = await supabase
-      .from("telemedicina_receitas")
-      .insert({
-        cd_prescricao_id: prescricaoId,
-        cd_paciente: presc.cd_paciente,
-        cd_medico: presc.cd_medico,
-        ds_receita_url: urlPdf,
-        cd_hash_assinatura: hashAssinatura,
-        cd_certificado_digital: certificado,
-        tp_receita: tipoReceita,
-        dt_validade: dtValidade.toISOString(),
-      })
-      .select("id")
-      .single();
-    if (insErr || !rec) throw new Error(insErr?.message ?? "Falha ao criar receita");
-
-    return { receitaId: rec.id as string, urlPdf };
+    // A assinatura só pode ser confirmada depois de gerar e armazenar o PDF
+    // assinado. Este serviço ainda não possui pipeline real de PDF/Storage;
+    // falhar fechado evita marcar a prescrição como assinada com uma URL
+    // inexistente ou registrar uma receita que não pode ser baixada.
+    void hashAssinatura;
+    void certificado;
+    void tipoReceita;
+    void validadeEmDias;
+    throw new Error(
+      "Assinatura digital indisponível: armazenamento real do PDF ainda não está configurado",
+    );
   }
 
   // 2.7. Gravação (com consentimento LGPD)
