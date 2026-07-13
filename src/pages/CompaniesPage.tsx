@@ -25,6 +25,8 @@ export default function CompaniesPage() {
   const [companyDialogOpen, setCompanyDialogOpen] = useState(false);
   const [unitDialogOpen, setUnitDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editingCompany, setEditingCompany] = useState<Company | null>(null);
+  const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
   const [companyForm, setCompanyForm] = useState({ legalName: "", tradeName: "", cnpj: "", phone: "", email: "" });
   const [unitForm, setUnitForm] = useState({ companyId: "", name: "", code: "", type: "filial" as UnitType, address: "", city: "", state: "", phone: "", email: "" });
   const { toast } = useToast();
@@ -44,9 +46,15 @@ export default function CompaniesPage() {
     }
     setSaving(true);
     try {
-      await catalogService.companies.create(companyForm);
-      toast({ title: "Empresa cadastrada" });
+      if (editingCompany) {
+        await catalogService.companies.update(editingCompany.id, companyForm);
+        toast({ title: "Empresa atualizada" });
+      } else {
+        await catalogService.companies.create(companyForm);
+        toast({ title: "Empresa cadastrada" });
+      }
       setCompanyDialogOpen(false);
+      setEditingCompany(null);
       setCompanyForm({ legalName: "", tradeName: "", cnpj: "", phone: "", email: "" });
       await reload();
     } catch (err) {
@@ -64,9 +72,16 @@ export default function CompaniesPage() {
     }
     setSaving(true);
     try {
-      await catalogService.units.create({ ...unitForm, companyId: selectedCompanyId });
-      toast({ title: "Unidade cadastrada" });
+      const input = { ...unitForm, companyId: selectedCompanyId };
+      if (editingUnit) {
+        await catalogService.units.update(editingUnit.id, input);
+        toast({ title: "Unidade atualizada" });
+      } else {
+        await catalogService.units.create(input);
+        toast({ title: "Unidade cadastrada" });
+      }
       setUnitDialogOpen(false);
+      setEditingUnit(null);
       setUnitForm({ companyId: selectedCompanyId, name: "", code: "", type: "filial", address: "", city: "", state: "", phone: "", email: "" });
       await reload();
     } catch (err) {
@@ -106,7 +121,7 @@ export default function CompaniesPage() {
       <PageHeader title="Empresas & Unidades" description="Gestão multiempresa e multiunidade" actions={
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => { setUnitForm((form) => ({ ...form, companyId: companyId || companies[0]?.id || "" })); setUnitDialogOpen(true); }}><MapPin className="mr-2 h-4 w-4" />Nova Unidade</Button>
-          <Button onClick={() => setCompanyDialogOpen(true)}><Plus className="mr-2 h-4 w-4" />Nova Empresa</Button>
+          <Button onClick={() => { setEditingCompany(null); setCompanyForm({ legalName: "", tradeName: "", cnpj: "", phone: "", email: "" }); setCompanyDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" />Nova Empresa</Button>
         </div>
       } />
 
@@ -136,7 +151,7 @@ export default function CompaniesPage() {
                       <TableCell className="text-xs">{c.cnpj}</TableCell>
                       <TableCell className="text-xs">{c.phone}</TableCell>
                       <TableCell><Badge variant="outline" className={`border-0 ${c.status === "active" ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"}`}>{c.status === "active" ? "Ativo" : "Inativo"}</Badge></TableCell>
-                      <TableCell><Button variant="ghost" size="sm" className="h-7 text-xs">Editar</Button></TableCell>
+                      <TableCell><Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setEditingCompany(c); setCompanyForm({ legalName: c.legalName, tradeName: c.tradeName, cnpj: c.cnpj, phone: c.phone, email: c.email }); setCompanyDialogOpen(true); }}>Editar</Button></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -161,7 +176,7 @@ export default function CompaniesPage() {
                       <TableCell className="text-xs">{u.city}/{u.state}</TableCell>
                       <TableCell><Badge variant="outline" className="border-0 bg-primary/10 text-primary text-[10px]">{unitTypeLabels[u.type]}</Badge></TableCell>
                       <TableCell><Badge variant="outline" className={`border-0 ${u.status === "active" ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"}`}>{u.status === "active" ? "Ativo" : "Inativo"}</Badge></TableCell>
-                      <TableCell><Button variant="ghost" size="sm" className="h-7 text-xs">Editar</Button></TableCell>
+                      <TableCell><Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setEditingUnit(u); setUnitForm({ companyId: u.companyId, name: u.name, code: u.code, type: u.type, address: u.address, city: u.city, state: u.state, phone: u.phone, email: u.email }); setUnitDialogOpen(true); }}>Editar</Button></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -174,7 +189,7 @@ export default function CompaniesPage() {
       {/* Company dialog */}
       <Dialog open={companyDialogOpen} onOpenChange={setCompanyDialogOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Nova Empresa</DialogTitle><DialogDescription>Cadastre uma empresa do grupo.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>{editingCompany ? "Editar Empresa" : "Nova Empresa"}</DialogTitle><DialogDescription>Cadastre uma empresa do grupo.</DialogDescription></DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2"><Label>Razão Social *</Label><Input value={companyForm.legalName} onChange={(e) => setCompanyForm((form) => ({ ...form, legalName: e.target.value }))} placeholder="Razão social" /></div>
             <div className="space-y-2"><Label>Nome Fantasia *</Label><Input value={companyForm.tradeName} onChange={(e) => setCompanyForm((form) => ({ ...form, tradeName: e.target.value }))} placeholder="Nome fantasia" /></div>
@@ -186,7 +201,7 @@ export default function CompaniesPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCompanyDialogOpen(false)}>Cancelar</Button>
-            <Button disabled={saving} onClick={handleCreateCompany}>{saving ? "Salvando..." : "Cadastrar"}</Button>
+            <Button disabled={saving} onClick={handleCreateCompany}>{saving ? "Salvando..." : editingCompany ? "Atualizar" : "Cadastrar"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -194,7 +209,7 @@ export default function CompaniesPage() {
       {/* Unit dialog */}
       <Dialog open={unitDialogOpen} onOpenChange={setUnitDialogOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Nova Unidade</DialogTitle><DialogDescription>Cadastre uma filial ou unidade.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>{editingUnit ? "Editar Unidade" : "Nova Unidade"}</DialogTitle><DialogDescription>Cadastre uma filial ou unidade.</DialogDescription></DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2"><Label>Empresa *</Label>
               <Select value={unitForm.companyId} onValueChange={(value) => setUnitForm((form) => ({ ...form, companyId: value }))}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
@@ -227,7 +242,7 @@ export default function CompaniesPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setUnitDialogOpen(false)}>Cancelar</Button>
-            <Button disabled={saving} onClick={handleCreateUnit}>{saving ? "Salvando..." : "Cadastrar"}</Button>
+            <Button disabled={saving} onClick={handleCreateUnit}>{saving ? "Salvando..." : editingUnit ? "Atualizar" : "Cadastrar"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

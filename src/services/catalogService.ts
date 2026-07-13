@@ -335,6 +335,31 @@ export const unitsService = {
     });
     if (error) throw new Error(`Erro ao cadastrar unidade: ${error.message}`);
   },
+
+  async update(id: string, input: {
+    companyId: string;
+    code: string;
+    name: string;
+    type: UnitType;
+    address?: string;
+    city?: string;
+    state?: string;
+    phone?: string;
+    email?: string;
+  }): Promise<void> {
+    const { error } = await supabase.from("units").update({
+      cd_codigo: input.code,
+      ds_nome: input.name,
+      tp_unidade: input.type === "ambulatorio" ? "CONSULTORIO" : input.type === "laboratorio" ? "LABORATORIO" : input.type.toUpperCase(),
+      ds_endereco: input.address || null,
+      ds_cidade: input.city || null,
+      ds_uf: input.state || null,
+      nr_telefone: input.phone || null,
+      ds_email: input.email || null,
+      lg_principal: input.type === "matriz",
+    }).eq("id", id).eq("company_id", input.companyId);
+    if (error) throw new Error(`Erro ao atualizar unidade: ${error.message}`);
+  },
 };
 
 // ── Companies ────────────────────────────────────────────────────────────────
@@ -368,6 +393,17 @@ export const companiesService = {
       lg_ativo: true,
     });
     if (error) throw new Error(`Erro ao cadastrar empresa: ${error.message}`);
+  },
+
+  async update(id: string, input: { legalName: string; tradeName: string; cnpj: string; phone?: string; email?: string }): Promise<void> {
+    const { error } = await supabase.from("companies").update({
+      name: input.tradeName || input.legalName,
+      ds_razao_social: input.legalName || input.tradeName,
+      cnpj: input.cnpj || null,
+      phone: input.phone || null,
+      email: input.email || null,
+    }).eq("id", id);
+    if (error) throw new Error(`Erro ao atualizar empresa: ${error.message}`);
   },
 };
 
