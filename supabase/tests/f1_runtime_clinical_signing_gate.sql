@@ -65,7 +65,7 @@ BEGIN
      OR v_first.patient_id <> 940011
      OR v_first.professional_id <> 940001
      OR v_first.status <> 'signed'
-     OR v_first.signed_by <> auth.uid()
+     OR v_first.signed_by <> 'da000000-0000-4000-8000-000000000001'::uuid
      OR length(v_first.content_hash) <> 64 THEN
     RAISE EXCEPTION 'Clinical signature contract mismatch: %', row_to_json(v_first);
   END IF;
