@@ -63,3 +63,4 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - O workflow manual `F1 runtime gate` foi adicionado em `.github/workflows/f1-runtime-gate.yml`; ele falha explicitamente quando algum Secret obrigatório estiver ausente e não imprime valores sensíveis.
 - Hardening estático adicionado em `scripts/bootstrap-base-tables.sql` e coberto por `bootstrap-security.test.mjs`: ausência de claim não escolhe usuário e não assume `service_role`; `anon` não recebe `GRANT ALL`.
 - `npm run test:security` foi tentado nesta rodada, mas o runtime Node falhou antes de carregar os testes com `EPERM` ao resolver `C:\Users\Meu Computador`; resultado não foi contado como aprovação.
+- A migration `20251231000050_auth_compatibility.sql` foi reforçada para replay limpo; a tabela compatível agora cobre todos os campos consumidos por `scripts/seed-e2e-users.sql` e `local-auth-server.mjs`.
