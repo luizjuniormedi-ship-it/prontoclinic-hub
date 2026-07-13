@@ -6,6 +6,7 @@ BEGIN;
 DO $gate$
 DECLARE
   v_reception_role_id bigint;
+  v_medical_role_id bigint;
 BEGIN
   SELECT id
     INTO v_reception_role_id
@@ -15,6 +16,13 @@ BEGIN
 
   IF v_reception_role_id IS NULL THEN
     RAISE EXCEPTION 'F1 reception RBAC active role is missing';
+  END IF;
+
+  SELECT id INTO v_medical_role_id
+    FROM public.roles
+   WHERE name = 'medico' AND lg_ativo = TRUE;
+  IF v_medical_role_id IS NULL THEN
+    RAISE EXCEPTION 'F1 medical RBAC active role is missing';
   END IF;
 
   IF (
@@ -39,6 +47,28 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'F1 reception RBAC received financial or admin defaults';
   END IF;
+
+  IF (
+    SELECT count(*)
+      FROM public.role_permissions
+     WHERE role_id = v_medical_role_id
+       AND module IN ('pacientes', 'agenda')
+       AND can_view = TRUE
+       AND can_create = FALSE
+       AND can_edit = FALSE
+       AND can_delete = FALSE
+       AND can_export = FALSE
+  ) <> 2 THEN
+    RAISE EXCEPTION 'F1 medical RBAC read-only operational defaults are incomplete';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.role_permissions
+     WHERE role_id = v_medical_role_id
+       AND module IN ('financeiro', 'faturamento', 'admin')
+  ) THEN
+    RAISE EXCEPTION 'F1 medical RBAC received financial or admin defaults';
+  END IF;
 END
 $gate$;
 
@@ -56,6 +86,7 @@ UPDATE public.role_permissions
 DO $gate$
 DECLARE
   v_reception_role_id bigint;
+  v_medical_role_id bigint;
   v_agenda public.role_permissions;
 BEGIN
   SELECT id INTO STRICT v_reception_role_id
@@ -66,6 +97,10 @@ BEGIN
     FROM public.role_permissions
    WHERE role_id = v_reception_role_id
      AND module = 'agenda';
+
+  SELECT id INTO STRICT v_medical_role_id
+    FROM public.roles
+   WHERE name = 'medico';
 
   IF v_agenda.can_view <> FALSE
      OR v_agenda.can_edit <> TRUE
@@ -89,6 +124,22 @@ BEGIN
        AND module IN ('financeiro', 'faturamento', 'admin')
   ) THEN
     RAISE EXCEPTION 'F1 reception RBAC replay introduced financial or admin access';
+  END IF;
+
+  IF (
+    SELECT count(*) FROM public.role_permissions
+     WHERE role_id = v_medical_role_id
+       AND module IN ('pacientes', 'agenda')
+  ) <> 2 THEN
+    RAISE EXCEPTION 'F1 medical RBAC bootstrap is not idempotent';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.role_permissions
+     WHERE role_id = v_medical_role_id
+       AND module IN ('financeiro', 'faturamento', 'admin')
+  ) THEN
+    RAISE EXCEPTION 'F1 medical RBAC replay introduced financial or admin access';
   END IF;
 END
 $gate$;
