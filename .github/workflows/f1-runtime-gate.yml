@@ -117,6 +117,7 @@ jobs:
             supabase/migrations/20260712190000_rbac_schema_baseline.sql \
             supabase/migrations/20260712200000_secure_user_profile_admin.sql \
             supabase/migrations/20260712210000_secure_billings.sql \
+            supabase/migrations/20260712220000_secure_billing_receipts.sql \
             supabase/release-mvp/011_insurance_authoritative_ledgers.sql \
             supabase/release-mvp/016_service_only_password_resets.sql \
             supabase/release-mvp/017_clinical_safe_functions.sql
@@ -149,6 +150,8 @@ jobs:
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_rbac_behavior_gate.sql
           echo "Running F1 runtime billing behavior gate"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_billing_behavior_gate.sql
+          echo "Running F1 runtime receipt ledger gate"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_receipts_behavior_gate.sql
 
       - name: Upload F1 evidence
         if: always()
