@@ -32,7 +32,7 @@ BEGIN
       WHEN COALESCE(r.received, 0) < b.amount THEN 'parcial'
       ELSE 'pago'
     END,
-    b.dt_vencimento, lr.payment_method, lr.occurred_at, b.created_at
+    b.dt_vencimento, lr.payment_method::TEXT, lr.occurred_at, b.created_at
   FROM public.billings b
   LEFT JOIN LATERAL (
     SELECT sum(CASE WHEN br.entry_type='receipt' THEN br.amount ELSE -br.amount END) AS received
