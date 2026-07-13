@@ -249,16 +249,20 @@ BEGIN
     INTO medical_record_policy_count
     FROM pg_policies
    WHERE schemaname = 'public'
-     AND tablename = 'medical_records'
      AND policyname = ANY (ARRAY[
        'rpc_proxy_medical_records_insert',
-       'rpc_proxy_medical_records_update'
+       'rpc_proxy_medical_records_update',
+       'rpc_proxy_appointments_update',
+       'rpc_proxy_scheduling_history_insert',
+       'rpc_proxy_clinical_outbox_select',
+       'rpc_proxy_clinical_outbox_insert',
+       'rpc_proxy_clinical_outbox_update'
      ])
      AND roles = ARRAY['prontomedic_rpc_owner']::name[]
-     AND cmd IN ('INSERT', 'UPDATE');
+     AND cmd IN ('SELECT', 'INSERT', 'UPDATE');
 
-  IF medical_record_policy_count <> 2 THEN
-    RAISE EXCEPTION 'medical_records RPC owner policies are incomplete';
+  IF medical_record_policy_count <> 7 THEN
+    RAISE EXCEPTION 'clinical RPC owner policies are incomplete';
   END IF;
 
   RAISE NOTICE 'F1_RUNTIME_RPC_PROXY_ACL_GATE=PASS';

@@ -196,6 +196,48 @@ CREATE POLICY rpc_proxy_medical_records_update
     AND public.has_medical_record_permission('edit')
   );
 
+DROP POLICY IF EXISTS rpc_proxy_appointments_update
+  ON public.appointments;
+CREATE POLICY rpc_proxy_appointments_update
+  ON public.appointments
+  FOR UPDATE
+  TO prontomedic_rpc_owner
+  USING (company_id = public.get_my_company_id())
+  WITH CHECK (company_id = public.get_my_company_id());
+
+DROP POLICY IF EXISTS rpc_proxy_scheduling_history_insert
+  ON public.scheduling_status_history;
+CREATE POLICY rpc_proxy_scheduling_history_insert
+  ON public.scheduling_status_history
+  FOR INSERT
+  TO prontomedic_rpc_owner
+  WITH CHECK (company_id = public.get_my_company_id());
+
+DROP POLICY IF EXISTS rpc_proxy_clinical_outbox_insert
+  ON public.clinical_billing_outbox;
+DROP POLICY IF EXISTS rpc_proxy_clinical_outbox_select
+  ON public.clinical_billing_outbox;
+CREATE POLICY rpc_proxy_clinical_outbox_select
+  ON public.clinical_billing_outbox
+  FOR SELECT
+  TO prontomedic_rpc_owner
+  USING (company_id = public.get_my_company_id());
+
+CREATE POLICY rpc_proxy_clinical_outbox_insert
+  ON public.clinical_billing_outbox
+  FOR INSERT
+  TO prontomedic_rpc_owner
+  WITH CHECK (company_id = public.get_my_company_id());
+
+DROP POLICY IF EXISTS rpc_proxy_clinical_outbox_update
+  ON public.clinical_billing_outbox;
+CREATE POLICY rpc_proxy_clinical_outbox_update
+  ON public.clinical_billing_outbox
+  FOR UPDATE
+  TO prontomedic_rpc_owner
+  USING (company_id = public.get_my_company_id())
+  WITH CHECK (company_id = public.get_my_company_id());
+
 DO $rpc$
 DECLARE
   function_ref REGPROCEDURE;
