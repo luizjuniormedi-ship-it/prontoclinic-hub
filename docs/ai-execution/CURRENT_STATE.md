@@ -5,7 +5,7 @@ Atualizado em 2026-07-13.
 ## Fato tecnico
 
 - Repositorio local: `C:\Users\Meu Computador\AppData\Local\Temp\prontoclinic-hub`.
-- Ultimo commit local conhecido: `9bb1578` (`ci(security): add manual tenant isolation gate`).
+- Ultimo commit local conhecido: `9bb1578` (`ci(security): add manual tenant isolation gate`) mais a correção local de bootstrap em validação.
 - Release funcional conhecida na VPS: `37199ee`.
 - A VPS executou build, migracoes e reload do Nginx na fase 1; a mensagem final de falha do wrapper foi causada por CRLF residual no shell remoto, nao por falha da publicacao.
 - PostgreSQL e backend precisam de nova verificacao operacional apos a ultima publicacao.
@@ -23,6 +23,7 @@ Atualizado em 2026-07-13.
 - A validação local da rodada anterior passou com 476 testes, cobertura completa dentro dos thresholds, type-check, build e lint sem erros; o novo commit adiciona apenas workflow/documentação.
 - O status remoto do commit atual não possui execução GitHub Actions associada; o único status externo reportado é Vercel em falha por limite de build. Isso não constitui falha do código nem substitui o CI do repositório.
 - Foi criado o workflow manual `.github/workflows/f1-runtime-gate.yml`; ele exige Secrets protegidos para dois usuários de empresas distintas e executa somente o runner de isolamento, sem service role e sem DataSIGH.
+- A auditoria estática encontrou e corrigiu no bootstrap o fallback inseguro para o primeiro usuário e para `service_role`; a regra agora falha fechado (`auth.uid()` nulo e role padrão `anon`).
 
 ## Hipotese
 
@@ -38,4 +39,4 @@ O sistema nao esta apto para producao enquanto os testes P0 abaixo nao forem exe
 
 ## Proxima tarefa executavel
 
-Executar o workflow manual `F1 runtime gate` com Secrets homologados; depois registrar a evidência negativa de isolamento por `company_id`, validar autenticação/RBAC e fechar os gates de rollback.
+Executar o workflow manual `F1 runtime gate` com Secrets homologados; depois registrar a evidência negativa de isolamento por `company_id`, validar autenticação/RBAC, rodar o teste de segurança fora do caminho Windows bloqueado e fechar os gates de rollback.
