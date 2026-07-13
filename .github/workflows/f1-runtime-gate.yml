@@ -35,6 +35,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate frontend, proxy and SQL RPC parity
+        run: npm run validate:rpc
+
       # The authenticated HTTP exercise runs in CI, where npm dependencies,
       # ephemeral auth users, and local-auth are already prepared. This job
       # remains the PostgreSQL 18 SQL replay gate to avoid duplicating that stack.
@@ -248,6 +259,15 @@ jobs:
           psql -v ON_ERROR_STOP=1 \
             -v "f4_dblink_connstr=host=127.0.0.1 port=5432 dbname=$PGDATABASE user=$PGUSER password=$PGPASSWORD" \
             -f supabase/tests/f4_professional_payments_secure_gate.sql
+
+      - name: Validate runtime RPC catalog and ACL
+        run: npm run validate:rpc -- --runtime
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 54322
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: postgres
 
       - name: Upload F1 evidence
         if: always()
