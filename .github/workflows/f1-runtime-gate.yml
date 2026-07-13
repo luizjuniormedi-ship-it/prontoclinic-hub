@@ -113,6 +113,7 @@ jobs:
             supabase/migrations/20260712150000_call_center_rls_hardening.sql \
             supabase/migrations/20260712160000_call_center_identity_integrity.sql \
             supabase/migrations/20260712170000_medical_record_prescription_contract.sql \
+            supabase/migrations/20260712180000_medical_records_canonical_columns.sql \
             supabase/release-mvp/011_insurance_authoritative_ledgers.sql \
             supabase/release-mvp/016_service_only_password_resets.sql \
             supabase/release-mvp/017_clinical_safe_functions.sql
