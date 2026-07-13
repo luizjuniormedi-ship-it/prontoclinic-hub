@@ -16,7 +16,7 @@ DECLARE
   v_relation TEXT;
   v_rel RECORD;
   v_proc RECORD;
-  v_blocked_rpc_names CONSTANT TEXT[] := ARRAY[
+  v_operational_rpc_names CONSTANT TEXT[] := ARRAY[
     'create_waitlist_entry_secure', 'close_waitlist_entry_secure',
     'convert_waitlist_to_appointment_secure', 'create_schedule_block_secure',
     'cancel_schedule_block_secure', 'get_professional_available_slots',
@@ -84,11 +84,11 @@ BEGIN
     SELECT p.oid, p.oid::regprocedure AS identity
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = ANY(v_blocked_rpc_names)
+    WHERE n.nspname = 'public' AND p.proname = ANY(v_operational_rpc_names)
   LOOP
     IF has_function_privilege('anon', v_proc.oid, 'EXECUTE')
-       OR has_function_privilege('authenticated', v_proc.oid, 'EXECUTE') THEN
-      RAISE EXCEPTION 'scheduling/reception gate: unsafe legacy RPC remains executable: %', v_proc.identity;
+       OR NOT has_function_privilege('authenticated', v_proc.oid, 'EXECUTE') THEN
+      RAISE EXCEPTION 'scheduling/reception gate: operational RPC ACL is invalid: %', v_proc.identity;
     END IF;
   END LOOP;
 
