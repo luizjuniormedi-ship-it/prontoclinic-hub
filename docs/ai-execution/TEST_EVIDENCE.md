@@ -18,7 +18,7 @@
 - Type-check: aprovado (`npm run type-check`).
 - Build: aprovado (`npm run build`); permanecem apenas avisos de chunk dinâmico já existentes.
 - Lint: concluído sem erros; 485 warnings históricos permanecem registrados.
-- Commit atual da rodada: `fef2264` na branch `codex/tenant-scope-hardening-d551c8e`.
+- Commit funcional mais recente: `086c120` na branch `codex/tenant-scope-hardening-d551c8e`.
 - Correção aplicada: `PATCH` não pode alterar `company_id`; inserções continuam derivando o tenant do perfil autenticado.
 - Correção do CI: a etapa de migração agora usa diretamente `DATABASE_URL`, incluindo a porta publicada `54322` do serviço PostgreSQL; antes, o comando ignorava essa variável e tentava conectar em `localhost:5432`.
 
@@ -77,3 +77,4 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - Commit de evidência atual: `4ce786f`; documentação sincronizada com o head funcional e a correção 2FA permanece registrada.
 - Commit funcional atual: `663be0f`; envio de recurso TISS sem endpoint não simula sucesso. `git diff --check` aprovado.
 - Commit funcional atual: `1fdedac`; respostas TISS sem protocolo real não são marcadas como concluídas. `git diff --check` aprovado.
+- Commit funcional atual: `086c120`; assinatura de prescrição sem pipeline real de PDF/Storage falha fechado e não persiste assinatura nem receita. `git diff --check` aprovado.
