@@ -155,27 +155,28 @@ export default function SchedulePage() {
     // Load only patients referenced in these appointments
     const patientIds = [...new Set(data.map((a) => a.patient_id).filter(Boolean))] as string[];
     if (patientIds.length > 0) {
-      const { data: pats } = await supabase
+      const { data: pats, error: patientsError } = await supabase
         .from("patients")
-        .select("id, full_name, cpf, birth_date, phone, email, sex, insurance_company_id, insurance_plan_id, insurance_card_number, allergies, clinical_alerts, created_at, updated_at")
+        .select("id, full_name, cpf, birth_date, phone, email, sex, insurance_plan_id, insurance_card_number, allergies, clinical_alerts, created_at, updated_at")
         .in("id", patientIds);
+      if (patientsError) throw patientsError;
 
-      // Load insurance names for display
-        const insuranceIds = [...new Set((pats || []).map((p: PatientDbRow) => p.insurance_company_id).filter(Boolean))];
-      let insuranceMap: Record<string, string> = {};
-      if (insuranceIds.length > 0) {
-        const { data: insurances } = await supabase
-          .from("insurance_companies")
+      const planIds = [...new Set((pats || []).map((patient: PatientDbRow) => patient.insurance_plan_id).filter(Boolean))];
+      let planNames: Record<string, string> = {};
+      if (planIds.length > 0) {
+        const { data: plans, error: plansError } = await supabase
+          .from("insurance_plans")
           .select("id, name")
-          .in("id", insuranceIds);
-        if (insurances) {
-          insuranceMap = Object.fromEntries(insurances.map((i: any) => [String(i.id), i.name]));
-        }
+          .in("id", planIds);
+        if (plansError) throw plansError;
+        planNames = Object.fromEntries((plans || []).map((plan: { id: string | number; name: string }) => [String(plan.id), plan.name]));
       }
       setPatients((pats || []).map((row: PatientDbRow) => ({
         id: String(row.id), companyId: undefined, name: row.full_name || "", cpf: row.cpf || "",
         birthDate: row.birth_date || "", phone: row.phone || "", email: row.email || "",
-         gender: row.sex || "O", healthInsurance: row.insurance_company_id ? (insuranceMap[String(row.insurance_company_id)] || "Convênio #" + row.insurance_company_id) : undefined, healthInsuranceNumber: row.insurance_card_number ?? undefined,
+        gender: row.sex || "O",
+        healthInsurance: row.insurance_plan_id ? (planNames[String(row.insurance_plan_id)] || "Plano #" + row.insurance_plan_id) : undefined,
+        healthInsuranceNumber: row.insurance_card_number ?? undefined,
         allergies: row.allergies ?? undefined, clinicalAlerts: row.clinical_alerts ?? undefined,
         createdAt: row.created_at || "", updatedAt: row.updated_at || "",
       })) as Patient[]);
