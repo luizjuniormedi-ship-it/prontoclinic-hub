@@ -63,8 +63,8 @@ jobs:
             supabase/migrations/20260101001200_security_hardening.sql
             supabase/migrations/20260708090000_scheduling_phase1.sql
             supabase/release-mvp/018_professional_schedules_canonical.sql
-            supabase/migrations/20260709210000_scheduling_operations.sql
             supabase/migrations/20260708093000_call_center_phase1.sql
+            supabase/migrations/20260709210000_scheduling_operations.sql
             supabase/migrations/20260709232000_scheduling_confirmations.sql
             supabase/release-mvp/008_canonical_insurance.sql
             supabase/migrations/20260712190000_rbac_schema_baseline.sql
