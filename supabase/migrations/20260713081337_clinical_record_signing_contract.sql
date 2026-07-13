@@ -75,6 +75,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS medical_records_company_appointment_uq
   ON public.medical_records(company_id, appointment_id)
   WHERE company_id IS NOT NULL AND appointment_id IS NOT NULL;
 
+-- Composite tenant FKs are intentionally not added here. At this migration boundary,
+-- appointments, patients and professionals do not yet expose proven UNIQUE
+-- (company_id, id) keys. The secure RPCs and outbox trigger below enforce the same
+-- tenant linkage transactionally without inventing unsupported referenced keys.
+
 CREATE TABLE IF NOT EXISTS public.clinical_billing_outbox (
   id BIGSERIAL PRIMARY KEY,
   company_id UUID NOT NULL REFERENCES public.companies(id),
@@ -363,19 +368,40 @@ AS $function$
 DECLARE
   v_actor RECORD;
   v_professional public.professionals;
+  v_appointment public.appointments;
   v_row public.medical_records;
   v_hash TEXT;
 BEGIN
   SELECT * INTO v_actor FROM public.get_scheduling_actor();
   PERFORM public.assert_medical_record_permission('edit');
-  SELECT * INTO v_professional FROM public.professionals
-   WHERE user_id = v_actor.user_id AND company_id = v_actor.company_id AND lg_ativo = TRUE
-   ORDER BY id LIMIT 1;
-  IF NOT FOUND THEN RAISE EXCEPTION 'Usuario autenticado sem profissional clinico ativo'; END IF;
+  IF COALESCE(lower(v_actor.role_name), '') NOT IN ('medico', 'médico') THEN
+    RAISE EXCEPTION 'Somente perfil medico pode assinar ou finalizar prontuario';
+  END IF;
 
   SELECT * INTO v_row FROM public.medical_records
    WHERE id = p_record_id AND company_id = v_actor.company_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Prontuario nao encontrado'; END IF;
+  IF v_row.appointment_id IS NULL THEN
+    RAISE EXCEPTION 'Prontuario sem agendamento clinico vinculado';
+  END IF;
+
+  SELECT * INTO v_appointment FROM public.appointments
+   WHERE id = v_row.appointment_id AND company_id = v_actor.company_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Agendamento clinico fora da empresa do usuario ou inexistente';
+  END IF;
+  IF v_appointment.patient_id IS DISTINCT FROM v_row.patient_id THEN
+    RAISE EXCEPTION 'Prontuario nao corresponde ao paciente do agendamento';
+  END IF;
+
+  SELECT * INTO v_professional FROM public.professionals
+   WHERE id = v_appointment.professional_id
+     AND user_id = v_actor.user_id
+     AND company_id = v_actor.company_id
+     AND lg_ativo = TRUE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Usuario medico nao esta clinicamente vinculado e atribuido ao agendamento';
+  END IF;
   v_hash := encode(digest(jsonb_build_object(
     'company_id', v_row.company_id, 'patient_id', v_row.patient_id,
     'professional_id', v_professional.id, 'appointment_id', v_row.appointment_id,
@@ -390,7 +416,8 @@ BEGIN
     IF v_row.signed_by = v_actor.user_id AND v_row.content_hash = v_hash THEN RETURN v_row; END IF;
     RAISE EXCEPTION 'Prontuario ja assinado com conteudo ou signatario diferente';
   END IF;
-  IF v_row.professional_id IS NOT NULL AND v_row.professional_id <> v_professional.id THEN
+  IF v_row.professional_id IS NOT NULL
+     AND v_row.professional_id IS DISTINCT FROM v_appointment.professional_id THEN
     RAISE EXCEPTION 'Prontuario pertence a outro profissional';
   END IF;
 
@@ -427,18 +454,23 @@ DECLARE
 BEGIN
   SELECT * INTO v_actor FROM public.get_scheduling_actor();
   PERFORM public.assert_medical_record_permission('create');
-  SELECT * INTO v_professional FROM public.professionals
-   WHERE user_id = v_actor.user_id AND company_id = v_actor.company_id AND lg_ativo = TRUE
-   ORDER BY id LIMIT 1;
-  IF NOT FOUND THEN RAISE EXCEPTION 'Usuario autenticado sem profissional clinico ativo'; END IF;
+  IF COALESCE(lower(v_actor.role_name), '') NOT IN ('medico', 'médico') THEN
+    RAISE EXCEPTION 'Somente perfil medico pode assinar ou finalizar prontuario';
+  END IF;
 
   SELECT * INTO v_appointment FROM public.appointments
    WHERE id = p_appointment_id AND company_id = v_actor.company_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Agendamento fora da empresa do usuario ou inexistente'; END IF;
-  IF v_appointment.professional_id IS DISTINCT FROM v_professional.id THEN
-    RAISE EXCEPTION 'Agendamento pertence a outro profissional';
-  END IF;
   IF v_appointment.patient_id IS NULL THEN RAISE EXCEPTION 'Agendamento sem paciente'; END IF;
+
+  SELECT * INTO v_professional FROM public.professionals
+   WHERE id = v_appointment.professional_id
+     AND user_id = v_actor.user_id
+     AND company_id = v_actor.company_id
+     AND lg_ativo = TRUE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Usuario medico nao esta clinicamente vinculado e atribuido ao agendamento';
+  END IF;
 
   SELECT * INTO v_row FROM public.medical_records
    WHERE company_id = v_actor.company_id AND appointment_id = p_appointment_id FOR UPDATE;
