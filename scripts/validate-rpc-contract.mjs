@@ -239,9 +239,9 @@ async function validateRuntime(proxyNames, classifiedNames, forbiddenNames, fron
       [runtimeNames],
     );
     const schemaAcl = await pool.query(
-      `SELECT COALESCE(array_agg(COALESCE(grantee.rolname, 'PUBLIC')) FILTER (
+      `SELECT COALESCE(jsonb_agg(COALESCE(grantee.rolname, 'PUBLIC')) FILTER (
                 WHERE acl.privilege_type = 'CREATE' AND acl.grantee <> n.nspowner
-              ), ARRAY[]::text[]) AS untrusted_create_roles
+              ), '[]'::jsonb) AS untrusted_create_roles
          FROM pg_namespace n
          CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl, acldefault('n', n.nspowner))) acl
          LEFT JOIN pg_roles grantee ON grantee.oid = acl.grantee
