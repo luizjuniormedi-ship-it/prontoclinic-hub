@@ -49,4 +49,4 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - Teste negativo de isolamento entre empresas.
 - Dry-run real de reconciliacao DataSIGH.
 - CI verde no commit mais recente.
-- O replay do CI confirmou a correção da porta, mas encontrou uma falha estrutural de ordenação: `20260101000000_base_tables.sql` era executada depois de migrations `202512...` que dependiam de `public.patients`. A migration base foi renomeada para `20251231000000_base_tables.sql`; novo replay ainda pendente.
+- O replay do CI confirmou a correção da porta, mas encontrou duas dependências implícitas: a migration base estava depois de migrations `202512...`, e o PostgreSQL limpo não tinha `auth.users`. A base foi renomeada para `20251231000000_base_tables.sql` e foi adicionada a compatibilidade idempotente `20251231000500_auth_compatibility.sql`; novo replay ainda pendente.
