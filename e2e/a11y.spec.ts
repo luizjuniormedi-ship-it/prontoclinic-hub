@@ -32,6 +32,13 @@ function expectNoSeriousViolations(violations: AxeViolation[], route: string) {
   expect(occurrences.length, `Axe encontrou falhas serias/criticas em ${route}`).toBe(0);
 }
 
+async function dismissTransientToasts(page: import('@playwright/test').Page) {
+  const closeButtons = page.getByRole('button', { name: 'Fechar notificacao' });
+  for (let index = (await closeButtons.count()) - 1; index >= 0; index -= 1) {
+    await closeButtons.nth(index).click();
+  }
+}
+
 const protectedRoutes = [
   { name: 'dashboard', path: '/' },
   { name: 'agenda', path: '/schedule' },
@@ -55,6 +62,7 @@ test.describe('Acessibilidade (WCAG 2.1 AA)', () => {
       await page.goto(route.path);
       // Aguardar conteúdo dinâmico estabilizar
       await page.waitForLoadState('networkidle');
+      await dismissTransientToasts(page);
 
       const results = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

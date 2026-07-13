@@ -134,7 +134,7 @@ export default function FinancialPage() {
           <Input placeholder="Buscar paciente..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[120px]"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectTrigger aria-label="Filtrar por status financeiro" className="w-[120px]"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
             <SelectItem value="pendente">Pendente</SelectItem>
@@ -208,7 +208,7 @@ export default function FinancialPage() {
               <div className="space-y-2">
                 <Label className="text-xs">Forma de Pagamento *</Label>
                 <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger aria-label="Forma de pagamento"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {allMethods.map((m) => <SelectItem key={m} value={m}>{methodLabels[m] || m}</SelectItem>)}
                   </SelectContent>
