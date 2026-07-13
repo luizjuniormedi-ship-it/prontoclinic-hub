@@ -277,6 +277,7 @@ const RPC_PERMISSIONS = {
   update_reception_eligibility_secure: { module: 'recepcao', action: 'can_edit' },
   create_billing_secure: { module: 'faturamento', action: 'can_create' },
   update_billing_status_secure: { module: 'faturamento', action: 'can_edit' },
+  list_billing_production_secure: { module: 'faturamento', action: 'can_view' },
   list_billing_financial_summary_secure: { module: 'financeiro', action: 'can_view' },
   get_billing_balance_secure: { module: 'financeiro', action: 'can_view' },
   record_billing_receipt_secure: { module: 'financeiro', action: 'can_create' },

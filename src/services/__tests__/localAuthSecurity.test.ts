@@ -44,6 +44,15 @@ describe("local auth server security invariants", () => {
     expect(source).not.toContain("role === 'admin' || role === 'diretoria'");
   });
 
+  it("autoriza os read models financeiros somente por permissao explicita", () => {
+    expect(source).toContain(
+      "list_billing_production_secure: { module: 'faturamento', action: 'can_view' }",
+    );
+    expect(source).toContain(
+      "list_billing_financial_summary_secure: { module: 'financeiro', action: 'can_view' }",
+    );
+  });
+
   it("executa REST e RPC sob claims e papel PostgreSQL autenticado", () => {
     expect(source).toContain("async function withAuthenticatedDbSession(payload, operation)");
     expect(source).toContain("set_config('request.jwt.claim.sub', $1, true)");
