@@ -64,6 +64,7 @@ jobs:
             supabase/migrations/20260708090000_scheduling_phase1.sql
             supabase/release-mvp/008_canonical_insurance.sql
             supabase/migrations/20260712190000_rbac_schema_baseline.sql
+            supabase/migrations/20260712200000_secure_user_profile_admin.sql
             supabase/migrations/20260712210000_secure_billings.sql
             supabase/migrations/20260712220000_secure_billing_receipts.sql
             supabase/migrations/20260712225000_secure_tiss_foundation.sql
