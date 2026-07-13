@@ -35,6 +35,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The authenticated HTTP exercise runs in CI, where npm dependencies,
+      # ephemeral auth users, and local-auth are already prepared. This job
+      # remains the PostgreSQL 18 SQL replay gate to avoid duplicating that stack.
+      - name: Validate P0 medical record HTTP smoke artifact
+        run: node --check scripts/smoke-medical-record-http.mjs
+
       - name: Install PostgreSQL client
         run: |
           sudo apt-get update
@@ -228,3 +234,4 @@ jobs:
           name: f1-runtime-evidence
           path: artifacts/f1
           if-no-files-found: warn
+
