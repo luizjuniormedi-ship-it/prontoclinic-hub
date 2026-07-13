@@ -601,7 +601,15 @@ export const dispensacoesService = {
     if (!committed.success) {
       throw new Error("Resposta inválida ao confirmar dispensação");
     }
-    return committed.data;
+    const value = committed.data;
+    return {
+      id: value.id!,
+      company_id: value.company_id!,
+      cd_paciente: value.cd_paciente!,
+      dt_dispensacao: value.dt_dispensacao!,
+      cd_usuario: value.cd_usuario!,
+      idempotent_replay: value.idempotent_replay!,
+    };
   },
 
   async getByPaciente(pacienteId: number, days = 90): Promise<Dispensacao[]> {
