@@ -5,7 +5,7 @@ Atualizado em 2026-07-13.
 ## Fato tecnico
 
 - Repositorio local: `C:\Users\Meu Computador\AppData\Local\Temp\prontoclinic-hub`.
-- Ultimo commit local conhecido: `ae62691` (`fix(security): fail closed in bootstrap auth helpers`).
+- Ultimo commit local conhecido: `637d09f` (`fix(db): complete auth compatibility replay schema`).
 - Release funcional conhecida na VPS: `37199ee`.
 - A VPS executou build, migracoes e reload do Nginx na fase 1; a mensagem final de falha do wrapper foi causada por CRLF residual no shell remoto, nao por falha da publicacao.
 - PostgreSQL e backend precisam de nova verificacao operacional apos a ultima publicacao.
