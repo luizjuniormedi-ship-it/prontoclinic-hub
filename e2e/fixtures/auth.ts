@@ -23,7 +23,17 @@ export const test = base.extend<{
         patient: { email: 'paciente@prontomedic.test', password: 'TestPassword123!' }
       }[role];
 
-      await page.goto('/');
+      const isOnAppOrigin = (() => {
+        try {
+          return ['http:', 'https:'].includes(new URL(page.url()).protocol);
+        } catch {
+          return false;
+        }
+      })();
+
+      if (!isOnAppOrigin) {
+        await page.goto('/login');
+      }
       await page.evaluate(() => {
         localStorage.clear();
         sessionStorage.clear();
