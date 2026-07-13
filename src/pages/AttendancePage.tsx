@@ -49,7 +49,11 @@ export default function AttendancePage() {
   const [vitalSigns, setVitalSigns] = useState({ bloodPressure: "", heartRate: "", temperature: "", weight: "", height: "", oxygenSaturation: "" });
 
   useEffect(() => {
-    if (!appointmentId) return;
+    if (!appointmentId) {
+      setError("Identificador do agendamento não informado.");
+      setLoading(false);
+      return;
+    }
     (async () => {
       try {
         const { data: appt, error: ae } = await supabase.from("appointments").select("*").eq("id", appointmentId).maybeSingle();
@@ -57,7 +61,9 @@ export default function AttendancePage() {
         setAppointment(appt);
 
         if (appt.patient_id) {
-          const { data: pat } = await supabase.from("patients").select("id, full_name, birth_date, sex, allergies, clinical_alerts, insurance_plan_id").eq("id", appt.patient_id).maybeSingle();
+          const { data: pat, error: patientError } = await supabase.from("patients").select("id, full_name, birth_date, sex, allergies, clinical_alerts, insurance_plan_id").eq("id", appt.patient_id).maybeSingle();
+          if (patientError) { setError(`Erro ao carregar paciente: ${patientError.message}`); setLoading(false); return; }
+          if (!pat) { setError("Paciente do agendamento não encontrado."); setLoading(false); return; }
           setPatient(pat);
         }
         setLoading(false);

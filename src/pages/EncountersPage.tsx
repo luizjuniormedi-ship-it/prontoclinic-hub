@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Stethoscope, Search, AlertTriangle, ShieldAlert, CheckCircle2, Plus, Activity, ClipboardList } from "lucide-react";
+import { Stethoscope, Search, AlertTriangle, ShieldAlert, CheckCircle2, Activity, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -10,8 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/PageHeader";
-import { LoadingState, EmptyState } from "@/components/StateViews";
-import { encountersService, ENC_STATUS_LABELS, type Encounter, type Diagnosis, type Allergy, type Problem, type Medication, type SafetyAlert } from "@/services/encountersService";
+import { LoadingState, EmptyState, ErrorState } from "@/components/StateViews";
+import { encountersService, ENCOUNTER_MUTATION_BLOCK_REASON, ENC_STATUS_LABELS, type Encounter, type Diagnosis, type Allergy, type Problem, type Medication, type SafetyAlert } from "@/services/encountersService";
 import { toast } from "@/hooks/use-toast";
 import { formatDate } from "@/utils/formatters";
 
@@ -20,6 +20,8 @@ const isSigned = (s: string) => ["assinado", "finalizado"].includes(s);
 export default function EncountersPage() {
   const [encounters, setEncounters] = useState<Encounter[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [openingEncounterId, setOpeningEncounterId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
@@ -29,50 +31,47 @@ export default function EncountersPage() {
   const [problems, setProblems] = useState<Problem[]>([]);
   const [medications, setMedications] = useState<Medication[]>([]);
   const [form, setForm] = useState({ chief_complaint: "", summary: "" });
-  const [busy, setBusy] = useState(false);
 
   // prescrição com checagem de segurança
   const [rxMed, setRxMed] = useState("");
   const [rxAlerts, setRxAlerts] = useState<SafetyAlert[]>([]);
-  const [cidInput, setCidInput] = useState("");
-  const [signName, setSignName] = useState("");
-  const [signOpen, setSignOpen] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
+    setLoadError(null);
     encountersService.list({ status: statusFilter !== "all" ? statusFilter : undefined })
       .then(setEncounters)
-      .catch((e) => toast({ title: "Erro ao carregar atendimentos", description: String(e), variant: "destructive" }))
+      .catch((e) => setLoadError(e instanceof Error ? e.message : "Nao foi possivel carregar os atendimentos."))
       .finally(() => setLoading(false));
   }, [statusFilter]);
 
   useEffect(load, [load]);
 
   const openDetail = async (e: Encounter) => {
-    setDetail(e);
-    setForm({ chief_complaint: e.chief_complaint || "", summary: e.summary || "" });
-    setRxMed(""); setRxAlerts([]); setCidInput("");
-    if (e.patient_id) {
-      const [dx, al, pr, md] = await Promise.all([
-        encountersService.diagnoses(e.id),
-        encountersService.allergies(e.patient_id),
-        encountersService.problems(e.patient_id),
-        encountersService.medications(e.patient_id),
-      ]);
-      setDiagnoses(dx); setAllergies(al); setProblems(pr); setMedications(md);
-      await encountersService.logAccess(e.patient_id, "abriu_prontuario", { encounter_id: e.id });
-    }
-  };
-
-  const saveNote = async () => {
-    if (!detail) return;
-    setBusy(true);
+    setOpeningEncounterId(e.id);
+    setDiagnoses([]); setAllergies([]); setProblems([]); setMedications([]);
+    setRxMed(""); setRxAlerts([]);
     try {
-      await encountersService.update(detail.id, { chief_complaint: form.chief_complaint, summary: form.summary, status: "aguardando_assinatura" });
-      toast({ title: "Evolução salva" });
-      load();
-    } catch (e) { toast({ title: "Erro", description: String(e), variant: "destructive" }); }
-    finally { setBusy(false); }
+      if (e.patient_id) {
+        const [dx, al, pr, md] = await Promise.all([
+          encountersService.diagnoses(e.id),
+          encountersService.allergies(e.patient_id),
+          encountersService.problems(e.patient_id),
+          encountersService.medications(e.patient_id),
+        ]);
+        setDiagnoses(dx); setAllergies(al); setProblems(pr); setMedications(md);
+      }
+      setForm({ chief_complaint: e.chief_complaint || "", summary: e.summary || "" });
+      setDetail(e);
+    } catch (error) {
+      toast({
+        title: "Erro ao abrir prontuario",
+        description: error instanceof Error ? error.message : "Nao foi possivel carregar os dados clinicos.",
+        variant: "destructive",
+      });
+    } finally {
+      setOpeningEncounterId(null);
+    }
   };
 
   const checkRx = async () => {
@@ -85,30 +84,11 @@ export default function EncountersPage() {
     } catch (e) { toast({ title: "Erro", description: String(e), variant: "destructive" }); }
   };
 
-  const addDx = async () => {
-    if (!detail?.patient_id || !cidInput.trim()) return;
-    try {
-      await encountersService.addDiagnosis({ encounter_id: detail.id, patient_id: detail.patient_id, cid_code: cidInput.trim().toUpperCase() });
-      setCidInput("");
-      setDiagnoses(await encountersService.diagnoses(detail.id));
-      toast({ title: "Diagnóstico adicionado" });
-    } catch (e) { toast({ title: "Erro", description: String(e), variant: "destructive" }); }
-  };
-
-  const confirmSign = async () => {
-    if (!detail || !signName.trim()) { toast({ title: "Informe o médico", variant: "destructive" }); return; }
-    setBusy(true);
-    try {
-      await encountersService.sign(detail.id, signName.trim());
-      toast({ title: "Atendimento assinado" });
-      setSignOpen(false); setSignName(""); setDetail(null); load();
-    } catch (e) { toast({ title: "Erro", description: String(e), variant: "destructive" }); }
-    finally { setBusy(false); }
-  };
 
   const filtered = encounters.filter((e) => !search || e.patient_name?.toLowerCase().includes(search.toLowerCase()));
 
   if (loading) return <LoadingState />;
+  if (loadError) return <ErrorState message={loadError} onRetry={load} />;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -142,7 +122,7 @@ export default function EncountersPage() {
                   <TableCell><Badge variant="outline" className="border-0 text-[10px]">{ENC_STATUS_LABELS[e.status] || e.status}</Badge></TableCell>
                   <TableCell className="text-xs">{formatDate(e.created_at)}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{e.signed_by_name || "—"}</TableCell>
-                  <TableCell><Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => openDetail(e)}>Abrir</Button></TableCell>
+                  <TableCell><Button size="sm" variant="ghost" className="h-6 text-[10px]" disabled={openingEncounterId === e.id} onClick={() => void openDetail(e)}>{openingEncounterId === e.id ? "Carregando..." : "Abrir"}</Button></TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -182,16 +162,13 @@ export default function EncountersPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              <div><Label className="text-xs">Queixa principal</Label><Input value={form.chief_complaint} onChange={(e) => setForm({ ...form, chief_complaint: e.target.value })} /></div>
-              <div><Label className="text-xs">Evolução (anamnese, exame, conduta)</Label><Textarea rows={5} value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} /></div>
+              <div className="rounded border border-warning/30 bg-warning/10 p-3 text-xs text-warning">{ENCOUNTER_MUTATION_BLOCK_REASON}</div>
+              <div><Label className="text-xs">Queixa principal</Label><Input value={form.chief_complaint} disabled /></div>
+              <div><Label className="text-xs">Evolução (anamnese, exame, conduta)</Label><Textarea rows={5} value={form.summary} disabled /></div>
 
               {/* Diagnósticos */}
               <div>
                 <Label className="text-xs">Diagnósticos (CID)</Label>
-                <div className="flex gap-2 mt-1">
-                  <Input placeholder="Código CID (ex: I10)" value={cidInput} onChange={(e) => setCidInput(e.target.value)} className="max-w-[180px]" />
-                  <Button size="sm" variant="outline" onClick={addDx}><Plus className="h-3 w-3 mr-1" />Adicionar</Button>
-                </div>
                 <div className="flex flex-wrap gap-1 mt-1">
                   {diagnoses.map((d) => <Badge key={d.id} variant="outline" className="text-[10px]">{d.cid_code} {d.diagnosis_type === "principal" ? "(principal)" : ""}</Badge>)}
                 </div>
@@ -219,19 +196,10 @@ export default function EncountersPage() {
 
           {detail && !isSigned(detail.status) && (
             <DialogFooter>
-              <Button variant="outline" onClick={saveNote} disabled={busy}>Salvar evolução</Button>
-              <Button onClick={() => setSignOpen(true)} disabled={busy}>Assinar atendimento</Button>
+              <Button variant="outline" disabled>Salvar evolução</Button>
+              <Button disabled title={ENCOUNTER_MUTATION_BLOCK_REASON}>Assinar atendimento</Button>
             </DialogFooter>
           )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Assinatura */}
-      <Dialog open={signOpen} onOpenChange={setSignOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Assinar Atendimento</DialogTitle></DialogHeader>
-          <div className="space-y-1.5 py-2"><Label>Médico responsável *</Label><Input value={signName} onChange={(e) => setSignName(e.target.value)} placeholder="Nome + CRM" autoFocus /><p className="text-[10px] text-muted-foreground">Após assinar, o atendimento fica somente-leitura.</p></div>
-          <DialogFooter><Button variant="outline" onClick={() => setSignOpen(false)} disabled={busy}>Cancelar</Button><Button onClick={confirmSign} disabled={busy}>{busy ? "..." : "Assinar"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
