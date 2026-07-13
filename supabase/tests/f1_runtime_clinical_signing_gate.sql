@@ -143,8 +143,19 @@ $gate$;
 
 SET LOCAL app.test_user_id = 'da000000-0000-4000-8000-000000000001';
 DO $gate$
-DECLARE v_count INTEGER;
+DECLARE
+  v_count INTEGER;
+  v_record public.medical_records;
 BEGIN
+  SELECT * INTO v_record
+    FROM public.medical_records
+   WHERE appointment_id = 940021;
+  IF v_record.id IS NULL
+     OR v_record.company_id <> 'ca000000-0000-4000-8000-000000000001'
+     OR v_record.status <> 'signed' THEN
+    RAISE EXCEPTION 'Doctor cannot read own tenant signed medical record';
+  END IF;
+
   SELECT count(*) INTO v_count FROM public.audit_logs_stats;
   IF v_count <> 0 THEN RAISE EXCEPTION 'Doctor can read audit statistics'; END IF;
 END
