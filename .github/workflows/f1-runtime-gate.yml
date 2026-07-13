@@ -207,6 +207,10 @@ jobs:
           psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260713081337_clinical_record_signing_contract.sql
           echo "Running F1 runtime clinical signing gate"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_clinical_signing_gate.sql
+          echo "Applying encounters read model"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260713140000_encounters_read_model.sql
+          echo "Running F1 runtime encounters read-model gate"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_encounters_read_model_gate.sql
           echo "Applying notification and pre-registration tenant hardening"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260713090310_notification_pre_registration_tenant_hardening.sql
           echo "Running notification and pre-registration tenant gate"
