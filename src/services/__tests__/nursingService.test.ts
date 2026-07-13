@@ -2,7 +2,7 @@
  * nursingService.test.ts — Testes do módulo de Enfermagem/Triagem
  *
  * Cobre:
- * - gerarSenha (formato T001, T002)
+ * - RPCs seguras e idempotentes de fila/triagem
  * - calcularNEWS2 (BAIXO 0-4, MEDIO 5-6, ALTO 7+)
  * - classificarManchester (dispneia -> VERMELHO, dor severa -> LARANJA)
  * - fila.chamar (status CHAMADO)
@@ -43,40 +43,62 @@ vi.mock("@/lib/supabase", () => {
 
 import { supabase } from "@/lib/supabase";
 
-describe("nursingService — gerarSenha", () => {
+const filaItem = {
+  id: 42,
+  company_id: "tenant-server",
+  cd_paciente: 7,
+  dt_chegada: "2026-06-22T10:00:00Z",
+  dt_chamada: null,
+  cd_senha: "T001",
+  cd_classificacao_id: 2,
+  tp_status: "AGUARDANDO",
+  ds_queixa_inicial: "Dor",
+  created_at: "2026-06-22T10:00:00Z",
+};
+
+describe("nursingService — fila segura", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("retorna senha no formato T001 quando chamada via RPC com sucesso", async () => {
+  it("enfileira por RPC sem enviar company_id nem ator", async () => {
     (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-      data: "T001",
+      data: { queue_item: filaItem },
       error: null,
     });
-    const senha = await nursingService.fila.gerarSenha("company-uuid");
-    expect(senha).toBe("T001");
-    expect(supabase.rpc).toHaveBeenCalledWith("gerar_senha_triagem", {
-      p_company_id: "company-uuid",
+    const result = await nursingService.fila.adicionar("company-uuid", 7, "Dor", 2, "enqueue-key");
+    expect(result.cd_senha).toBe("T001");
+    expect(supabase.rpc).toHaveBeenCalledWith("enqueue_nursing_triage_secure", {
+      p_patient_id: 7,
+      p_initial_complaint: "Dor",
+      p_classification_id: 2,
+      p_idempotency_key: "enqueue-key",
     });
+    expect(JSON.stringify((supabase.rpc as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1])).not.toMatch(/company|actor/i);
   });
 
-  it("gera senha sequencial T002 quando RPC retorna T002", async () => {
+  it("falha fechado quando a RPC de fila retorna payload inválido", async () => {
     (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-      data: "T002",
+      data: null,
       error: null,
     });
-    const senha = await nursingService.fila.gerarSenha("company-uuid");
-    expect(senha).toBe("T002");
-    expect(senha).toMatch(/^T\d{3}$/);
+    await expect(
+      nursingService.fila.adicionar("company-uuid", 7, "Dor", null, "enqueue-key"),
+    ).rejects.toThrow(/resposta inválida/i);
   });
 
-  it("usa fallback local quando RPC falha", async () => {
-    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("offline"),
-    );
-    const senha = await nursingService.fila.gerarSenha("company-uuid");
-    expect(senha).toMatch(/^T\d+$/);
-    expect(senha.length).toBeGreaterThan(0);
+  it("reutiliza a chave gerada quando o enqueue sem chave explícita é repetido", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ data: null, error: { message: "temporário" } })
+      .mockResolvedValueOnce({ data: { queue_item: filaItem }, error: null });
+
+    await expect(nursingService.fila.adicionar("company-uuid", 7, "Dor")).rejects.toThrow(/temporário/);
+    await nursingService.fila.adicionar("company-uuid", 7, "Dor");
+
+    const firstKey = (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1].p_idempotency_key;
+    const secondKey = (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mock.calls[1][1].p_idempotency_key;
+    expect(firstKey).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(secondKey).toBe(firstKey);
   });
 });
 
@@ -243,27 +265,147 @@ describe("nursingService — fila.chamar", () => {
 
   it("muda status para CHAMADO e seta dt_chamada", async () => {
     const itemChamado = {
-      id: 42,
+      ...filaItem,
       tp_status: "CHAMADO",
       dt_chamada: "2026-06-22T10:30:00Z",
     };
-    const chain: Record<string, unknown> = {
-      update: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: itemChamado, error: null }),
-    };
-    (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue(chain);
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { queue_item: itemChamado },
+      error: null,
+    });
 
-    const result = await nursingService.fila.chamar(42);
+    const result = await nursingService.fila.chamar(42, "call-key");
     expect(result.tp_status).toBe("CHAMADO");
     expect(result.dt_chamada).toBeDefined();
-    expect(chain.update).toHaveBeenCalled();
-    expect(chain.eq).toHaveBeenCalledWith("id", 42);
+    expect(supabase.rpc).toHaveBeenCalledWith("call_nursing_triage_secure", {
+      p_queue_id: 42,
+      p_idempotency_key: "call-key",
+    });
+  });
+});
+
+describe("nursingService — conclusão atômica", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const triagemInput = {
+    company_id: "tenant-client",
+    cd_paciente: 7,
+    cd_appointment: 99,
+    cd_classificacao_id: 2,
+    sinaisVitais: {
+      pressaoSistolica: 120,
+      pressaoDiastolica: 80,
+      frequenciaCardiaca: 75,
+      frequenciaRespiratoria: 16,
+      temperatura: 36.8,
+      saturacaoO2: 98,
+    },
+    glasgow: { ocular: 4, verbal: 5, motor: 6 },
+    queixa_principal: "Dor",
+  };
+
+  it("conclui triagem e NEWS2 em uma única RPC sem company_id nem ator", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        triage: { id: 81, cd_paciente: 7, tp_status: "TRIADO" },
+        news2: { nr_score_total: 0, cd_classificacao_risco: "BAIXO" },
+        queue_item: { ...filaItem, tp_status: "TRIADO" },
+      },
+      error: null,
+    });
+
+    const result = await nursingService.triagem.create(triagemInput, {
+      filaId: 42,
+      idempotencyKey: "complete-key",
+    });
+
+    expect(result.id).toBe(81);
+    expect(supabase.rpc).toHaveBeenCalledWith("complete_nursing_triage_secure", {
+      p_queue_id: 42,
+      p_appointment_id: 99,
+      p_classification_id: 2,
+      p_triage: {
+        queixa_principal: "Dor",
+        historia_doenca_atual: null,
+        medicamentos_uso: null,
+        alergias: null,
+        observacoes_enfermagem: null,
+        sinais_vitais: triagemInput.sinaisVitais,
+        antropometria: null,
+        glasgow: triagemInput.glasgow,
+        nivel_consciencia: "A",
+        status: "TRIADO",
+      },
+      p_idempotency_key: "complete-key",
+    });
+    const payload = (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(Object.keys(payload)).toEqual([
+      "p_queue_id",
+      "p_appointment_id",
+      "p_classification_id",
+      "p_triage",
+      "p_idempotency_key",
+    ]);
+    expect(payload).not.toHaveProperty("p_patient_id");
+    expect(payload).not.toHaveProperty("p_news2");
+    expect(payload).not.toHaveProperty("p_company_id");
+    expect(payload).not.toHaveProperty("p_actor_id");
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it("deriva consciência C quando Glasgow é menor que 15", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        triage: { id: 82, cd_paciente: 7, tp_status: "TRIADO" },
+        news2: { nr_score_total: 3, cd_classificacao_risco: "MEDIO" },
+        queue_item: { ...filaItem, tp_status: "TRIADO" },
+      },
+      error: null,
+    });
+    await nursingService.triagem.create({
+      ...triagemInput,
+      glasgow: { ocular: 3, verbal: 5, motor: 6 },
+    }, { filaId: 42, idempotencyKey: "complete-key-c" });
+
+    expect((supabase.rpc as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1].p_triage)
+      .toEqual(expect.objectContaining({ nivel_consciencia: "C" }));
+  });
+
+  it("propaga erro da RPC e não tenta writes parciais", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: null,
+      error: { message: "fila mudou de estado" },
+    });
+
+    await expect(nursingService.triagem.create(triagemInput, {
+      filaId: 42,
+      idempotencyKey: "complete-key",
+    })).rejects.toThrow(/fila mudou de estado/);
+    expect(supabase.rpc).toHaveBeenCalledTimes(1);
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it("rejeita resposta vazia mesmo sem erro declarado", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ data: null, error: null });
+    await expect(nursingService.triagem.create(triagemInput, {
+      filaId: 42,
+      idempotencyKey: "complete-key",
+    })).rejects.toThrow(/resposta inválida/i);
   });
 });
 
 describe("nursingService — validateTriagem", () => {
+  const sinaisCompletos = {
+    pressaoSistolica: 120,
+    pressaoDiastolica: 80,
+    frequenciaCardiaca: 75,
+    frequenciaRespiratoria: 16,
+    temperatura: 36.8,
+    saturacaoO2: 98,
+  };
+
   it("retorna erro se company_id ausente", () => {
     const err = validateTriagem({
       company_id: "",
@@ -286,7 +428,8 @@ describe("nursingService — validateTriagem", () => {
     const err = validateTriagem({
       company_id: "uuid",
       cd_paciente: 1,
-      sinaisVitais: { escalaDor: 15 },
+      cd_classificacao_id: 2,
+      sinaisVitais: { ...sinaisCompletos, escalaDor: 15 },
     });
     expect(err).toMatch(/dor/i);
   });
@@ -295,7 +438,8 @@ describe("nursingService — validateTriagem", () => {
     const err = validateTriagem({
       company_id: "uuid",
       cd_paciente: 1,
-      sinaisVitais: {},
+      cd_classificacao_id: 2,
+      sinaisVitais: sinaisCompletos,
       glasgow: { ocular: 6, verbal: 4, motor: 5 },
     });
     expect(err).toMatch(/ocular/i);
@@ -305,13 +449,39 @@ describe("nursingService — validateTriagem", () => {
     const err = validateTriagem({
       company_id: "uuid",
       cd_paciente: 1,
-      sinaisVitais: {
-        pressaoSistolica: 120,
-        escalaDor: 3,
-      },
+      cd_classificacao_id: 2,
+      sinaisVitais: { ...sinaisCompletos, escalaDor: 3 },
       glasgow: { ocular: 4, verbal: 5, motor: 6 },
     });
     expect(err).toBeNull();
+  });
+
+  it("exige classificação e todos os sinais necessários ao NEWS2", () => {
+    expect(validateTriagem({
+      company_id: "uuid",
+      cd_paciente: 1,
+      sinaisVitais: sinaisCompletos,
+    })).toMatch(/classificação.*obrigatória/i);
+
+    const requiredSignals = [
+      ["pressaoSistolica", /PAS.*obrigatória/i],
+      ["pressaoDiastolica", /PAD.*obrigatória/i],
+      ["frequenciaCardiaca", /FC.*obrigatória/i],
+      ["frequenciaRespiratoria", /FR.*obrigatória/i],
+      ["temperatura", /temperatura.*obrigatória/i],
+      ["saturacaoO2", /SpO2.*obrigatória/i],
+    ] as const;
+
+    for (const [field, message] of requiredSignals) {
+      const sinais = { ...sinaisCompletos } as Record<string, number | undefined>;
+      sinais[field] = undefined;
+      expect(validateTriagem({
+        company_id: "uuid",
+        cd_paciente: 1,
+        cd_classificacao_id: 2,
+        sinaisVitais: sinais,
+      })).toMatch(message);
+    }
   });
 });
 
@@ -349,3 +519,4 @@ describe("nursingService — calcularPontuacaoNews2 (unidade)", () => {
     expect(calcularPontuacaoNews2("FR", undefined)).toBe(0);
   });
 });
+

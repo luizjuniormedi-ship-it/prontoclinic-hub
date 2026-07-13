@@ -140,11 +140,21 @@ describe("local auth server security invariants", () => {
       "nursing_incidents",
       "nursing_procedures",
       "nursing_shift_handoffs",
+      "triagens",
+      "news2_avaliacoes",
+      "triagem_fila",
     ]) {
       expect(source).toContain(`'${table}'`);
     }
     expect(source).toContain("if (RPC_ONLY_TABLES.has(table))");
     expect(source).toContain("Mutacao permitida somente por RPC segura");
+    for (const rpc of [
+      "enqueue_nursing_triage_secure",
+      "call_nursing_triage_secure",
+      "complete_nursing_triage_secure",
+    ]) {
+      expect(source).toContain(`${rpc}: { module: 'enfermagem'`);
+    }
     expect(source).not.toContain("const result = await pool.query(\n            `INSERT INTO public");
     expect(source).not.toContain("const result = await pool.query(\n            `UPDATE public");
   });

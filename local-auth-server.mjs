@@ -300,6 +300,9 @@ const RPC_PERMISSIONS = {
   report_nursing_incident_secure: { module: 'enfermagem', action: 'can_create' },
   record_nursing_procedure_secure: { module: 'enfermagem', action: 'can_create' },
   create_nursing_shift_handoff_secure: { module: 'enfermagem', action: 'can_create' },
+  enqueue_nursing_triage_secure: { module: 'enfermagem', action: 'can_create' },
+  call_nursing_triage_secure: { module: 'enfermagem', action: 'can_edit' },
+  complete_nursing_triage_secure: { module: 'enfermagem', action: 'can_edit' },
 };
 
 const CENTRAL_PERMISSION_RPCS = new Set([
@@ -312,6 +315,9 @@ const RPC_ONLY_TABLES = new Set([
   'nursing_incidents',
   'nursing_procedures',
   'nursing_shift_handoffs',
+  'triagens',
+  'news2_avaliacoes',
+  'triagem_fila',
 ]);
 
 async function authorizeRpc(profile, functionName) {

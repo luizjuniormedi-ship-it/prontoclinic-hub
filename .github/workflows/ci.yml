@@ -188,6 +188,25 @@ jobs:
           export PGPASSWORD=postgres
           psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_nursing_secure_gate.sql
 
+      - name: Apply nursing triage atomic contract
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260713130000_nursing_triage_atomic_contract.sql
+
+      - name: Run nursing triage atomic gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_nursing_triage_gate.sql
+
+      - name: Run nursing triage real concurrency gate
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 54322
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: postgres
+        run: bash scripts/ci-nursing-triage-concurrency.sh
+
       - name: Type check
         run: npm run type-check
 
@@ -204,6 +223,23 @@ jobs:
            WHERE name = 'admin'
           ON CONFLICT (role_id, module) DO UPDATE
             SET can_view = EXCLUDED.can_view;
+          INSERT INTO public.patients (id, company_id, full_name, lg_ativo)
+          VALUES (991301, '00000000-0000-0000-0000-000000000001', 'CI Nursing Triage Patient', TRUE)
+          ON CONFLICT (id) DO UPDATE
+            SET company_id = EXCLUDED.company_id,
+                full_name = EXCLUDED.full_name,
+                lg_ativo = TRUE;
+          INSERT INTO public.mnct_classificacao_risco (
+            id, company_id, ds_classificacao, cd_cor_hex,
+            nr_tempo_max_atendimento_min, lg_ativo
+          ) VALUES (
+            991301, '00000000-0000-0000-0000-000000000001',
+            'CI TRIAGE YELLOW', '#FACC15', 60, TRUE
+          ) ON CONFLICT (id) DO UPDATE
+            SET company_id = EXCLUDED.company_id,
+                cd_cor_hex = EXCLUDED.cd_cor_hex,
+                nr_tempo_max_atendimento_min = EXCLUDED.nr_tempo_max_atendimento_min,
+                lg_ativo = TRUE;
           SQL
         env:
           PGPASSWORD: postgres
@@ -270,7 +306,39 @@ jobs:
             test "$rpc_status" = "200"
             jq -e 'type == "array"' "$response_file" >/dev/null
           done
-          for table in nursing_medication_administrations nursing_incidents nursing_procedures nursing_shift_handoffs; do
+          enqueue_status=$(curl --silent --show-error --output /tmp/nursing-triage-enqueue.json --write-out '%{http_code}' \
+            -X POST 'http://127.0.0.1:8000/rest/v1/rpc/enqueue_nursing_triage_secure' \
+            -H 'Content-Type: application/json' -H 'apikey: ci-local-auth' \
+            -H "Authorization: Bearer $token" \
+            --data '{"p_patient_id":991301,"p_initial_complaint":"CI atomic triage","p_classification_id":991301,"p_idempotency_key":"91301000-0000-4000-8000-000000000001"}')
+          test "$enqueue_status" = "200"
+          queue_id=$(jq -er '.id // .queue_item.id' /tmp/nursing-triage-enqueue.json)
+          call_status=$(curl --silent --show-error --output /tmp/nursing-triage-call.json --write-out '%{http_code}' \
+            -X POST 'http://127.0.0.1:8000/rest/v1/rpc/call_nursing_triage_secure' \
+            -H 'Content-Type: application/json' -H 'apikey: ci-local-auth' \
+            -H "Authorization: Bearer $token" \
+            --data "{\"p_queue_id\":${queue_id},\"p_idempotency_key\":\"91301000-0000-4000-8000-000000000002\"}")
+          test "$call_status" = "200"
+          complete_payload=$(jq -nc --argjson queue_id "$queue_id" '{
+            p_queue_id:$queue_id,
+            p_appointment_id:null,
+            p_classification_id:991301,
+            p_triage:{
+              queixa_principal:"CI atomic triage",
+              sinais_vitais:{pressaoSistolica:120,pressaoDiastolica:80,frequenciaCardiaca:75,frequenciaRespiratoria:16,temperatura:36.7,saturacaoO2:98,escalaDor:2},
+              glasgow:{ocular:4,verbal:5,motor:6},
+              status:"TRIADO"
+            },
+            p_idempotency_key:"91301000-0000-4000-8000-000000000003"
+          }')
+          complete_status=$(curl --silent --show-error --output /tmp/nursing-triage-complete.json --write-out '%{http_code}' \
+            -X POST 'http://127.0.0.1:8000/rest/v1/rpc/complete_nursing_triage_secure' \
+            -H 'Content-Type: application/json' -H 'apikey: ci-local-auth' \
+            -H "Authorization: Bearer $token" --data "$complete_payload")
+          echo "nursing_triage_http=${enqueue_status}/${call_status}/${complete_status}"
+          test "$complete_status" = "200"
+          jq -e '.triage.tp_status == "TRIADO" and .news2.nr_score_total != null and .queue_item.tp_status == "TRIADO"' /tmp/nursing-triage-complete.json >/dev/null
+          for table in nursing_medication_administrations nursing_incidents nursing_procedures nursing_shift_handoffs triagens news2_avaliacoes triagem_fila; do
             for method in POST PATCH; do
               direct_status=$(curl --silent --show-error --output "/tmp/${table}-${method}.json" --write-out '%{http_code}' \
                 -X "$method" "http://127.0.0.1:8000/rest/v1/${table}?id=eq.1" \

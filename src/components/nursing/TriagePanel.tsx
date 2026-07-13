@@ -28,6 +28,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import {
   nursingService,
+  calcularNEWS2,
   type FilaItem,
   type ClassificacaoRisco,
   type TriagemCreate,
@@ -57,6 +58,15 @@ function formatarEspera(iso: string): string {
   return `${min}min ${seg}s`;
 }
 
+function createIdempotencyKey(): string {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = char === "x" ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
 export function TriagePanel({ companyId }: TriagePanelProps): JSX.Element {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -68,6 +78,8 @@ export function TriagePanel({ companyId }: TriagePanelProps): JSX.Element {
   const [carregando, setCarregando] = useState<boolean>(true);
   const [showForm, setShowForm] = useState<boolean>(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const callKeysRef = useRef<Map<number, string>>(new Map());
+  const completeOperationRef = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
 
   const carregarFila = useCallback(async (): Promise<void> => {
     try {
@@ -107,8 +119,14 @@ export function TriagePanel({ companyId }: TriagePanelProps): JSX.Element {
 
   const handleChamar = useCallback(
     async (item: FilaItem): Promise<void> => {
+      let idempotencyKey = callKeysRef.current.get(item.id);
+      if (!idempotencyKey) {
+        idempotencyKey = createIdempotencyKey();
+        callKeysRef.current.set(item.id, idempotencyKey);
+      }
       try {
-        await nursingService.fila.chamar(item.id);
+        await nursingService.fila.chamar(item.id, idempotencyKey);
+        callKeysRef.current.delete(item.id);
         toast({ title: `Senha ${item.cd_senha} chamada`, description: item.ds_queixa_inicial ?? "" });
         await carregarFila();
       } catch (err: unknown) {
@@ -124,34 +142,32 @@ export function TriagePanel({ companyId }: TriagePanelProps): JSX.Element {
   }, []);
 
   const handleSubmitTriagem = useCallback(
-    async (data: TriagemCreate, cor: ClassificacaoCor): Promise<void> => {
-      const criada = await nursingService.triagem.create(data);
-      // Salvar NEWS2 também
-      try {
-        const sinais = data.sinaisVitais;
-        const glasgowTotal = data.glasgow
-          ? data.glasgow.ocular + data.glasgow.verbal + data.glasgow.motor
-          : 15;
-        const { calcularNEWS2 } = await import("@/services/nursingService");
-        const news2 = calcularNEWS2({
-          frequenciaRespiratoria: sinais.frequenciaRespiratoria,
-          saturacaoO2: sinais.saturacaoO2,
-          temperatura: sinais.temperatura,
-          pressaoSistolica: sinais.pressaoSistolica,
-          frequenciaCardiaca: sinais.frequenciaCardiaca,
-          nivelConsciencia: glasgowTotal < 15 ? 1 : 0,
-        });
-        await nursingService.triagem.salvarNews2(criada.id, data.company_id, news2);
-      } catch (err: unknown) {
-        console.warn("NEWS2 não salvo (opcional):", err);
+    async (data: TriagemCreate, _cor: ClassificacaoCor): Promise<void> => {
+      if (!selecionado) throw new Error("Selecione um paciente da fila para concluir a triagem.");
+      const sinais = data.sinaisVitais;
+      const glasgowTotal = data.glasgow
+        ? data.glasgow.ocular + data.glasgow.verbal + data.glasgow.motor
+        : 15;
+      const news2 = calcularNEWS2({
+        frequenciaRespiratoria: sinais.frequenciaRespiratoria,
+        saturacaoO2: sinais.saturacaoO2,
+        temperatura: sinais.temperatura,
+        pressaoSistolica: sinais.pressaoSistolica,
+        frequenciaCardiaca: sinais.frequenciaCardiaca,
+        nivelConsciencia: glasgowTotal < 15 ? 1 : 0,
+      });
+      const fingerprint = JSON.stringify({ filaId: selecionado.id, data, news2 });
+      let operation = completeOperationRef.current;
+      if (!operation || operation.fingerprint !== fingerprint) {
+        operation = { fingerprint, idempotencyKey: createIdempotencyKey() };
+        completeOperationRef.current = operation;
       }
-      if (selecionado) {
-        try {
-          await nursingService.fila.marcarTriado(selecionado.id);
-        } catch (err: unknown) {
-          console.warn("Não foi possível marcar triado:", err);
-        }
-      }
+      await nursingService.triagem.create(data, {
+        filaId: selecionado.id,
+        news2,
+        idempotencyKey: operation.idempotencyKey,
+      });
+      completeOperationRef.current = null;
       await carregarFila();
       setSelecionado(null);
       setShowForm(false);
@@ -374,3 +390,4 @@ export function TriagePanel({ companyId }: TriagePanelProps): JSX.Element {
 }
 
 export default TriagePanel;
+
