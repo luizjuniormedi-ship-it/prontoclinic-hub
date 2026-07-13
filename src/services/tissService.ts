@@ -606,9 +606,9 @@ export const tissService = {
         const m = txt.match(/<protocolo[^>]*>([^<]+)<\/protocolo>/);
         protocolo = m?.[1];
       } else {
-        // Em homologacao, simular sucesso
-        sent = true;
-        protocolo = `REC_HOM_${Date.now()}`;
+        // Sem endpoint configurado, nunca fabricar protocolo nem marcar como enviado.
+        // O recurso permanece pendente para envio controlado pela operadora.
+        sent = false;
       }
     } catch {
       sent = false;
