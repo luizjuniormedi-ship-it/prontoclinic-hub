@@ -234,6 +234,13 @@ jobs:
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_nursing_triage_gate.sql
           echo "Running nursing triage real concurrency gate"
           bash scripts/ci-nursing-triage-concurrency.sh
+          echo "Applying F4 pharmacy foundation and atomic tenant contract"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260101000015_farmacia.sql
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260713141921_f4_pharmacy_atomic_tenant_contract.sql
+          echo "Running F4 pharmacy ACL, tenant, rollback, idempotency and concurrency gate"
+          psql -v ON_ERROR_STOP=1 \
+            -v "f4_dblink_connstr=host=$PGHOST port=$PGPORT dbname=$PGDATABASE user=$PGUSER password=$PGPASSWORD" \
+            -f supabase/tests/f4_pharmacy_atomic_tenant_gate.sql
 
       - name: Upload F1 evidence
         if: always()
