@@ -22,14 +22,29 @@ import {
   Plus, Trash2, FileDown, Loader2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { pharmacyService, type EstoqueAtual, type Medicamento, type DispensacaoItem } from "@/services/pharmacyService";
+import {
+  pharmacyService,
+  SNGPC_INTEGRATION_STATUS,
+  type DispensacaoCommit,
+  type DispensacaoItem,
+  type EstoqueAtual,
+  type Medicamento,
+} from "@/services/pharmacyService";
 
 type Patient = { id: number; full_name: string; cpf: string | null; birth_date?: string | null };
 
 type ItemSelecionado = DispensacaoItem & {
   ds_produto: string;
-  ds_lote: string;
+  nr_lote: string;
   dt_validade: string;
+  lg_controlado: boolean;
+};
+
+type Confirmacao = {
+  dispensacao: DispensacaoCommit;
+  paciente: Patient;
+  itens: ItemSelecionado[];
+  observacao: string;
 };
 
 export function DispenseWizard() {
@@ -42,8 +57,9 @@ export function DispenseWizard() {
   const [medicamentoSelecionado, setMedicamentoSelecionado] = useState<Medicamento | null>(null);
   const [qtSolicitada, setQtSolicitada] = useState(1);
   const [error, setError] = useState<string | null>(null);
-  const [sucessoMsg, setSucessoMsg] = useState<string | null>(null);
+  const [confirmacao, setConfirmacao] = useState<Confirmacao | null>(null);
   const stepAnnounceRef = useRef<HTMLDivElement>(null);
+  const idempotencyKeyRef = useRef(crypto.randomUUID());
 
   const queryClient = useQueryClient();
 
@@ -84,9 +100,11 @@ export function DispenseWizard() {
   const criarDispensacao = useMutation({
     mutationFn: () => {
       if (!paciente) throw new Error("Paciente não selecionado");
+      setError(null);
       return pharmacyService.dispensacoes.create({
         cd_paciente: paciente.id,
         ds_observacao: observacao || null,
+        idempotency_key: idempotencyKeyRef.current,
         itens: itens.map((i) => ({
           cd_lote: i.cd_lote,
           qt_dispensada: i.qt_dispensada,
@@ -95,20 +113,26 @@ export function DispenseWizard() {
       });
     },
     onSuccess: (d) => {
-      setSucessoMsg(`Dispensação #${d.id} criada com sucesso!`);
+      if (!paciente) return;
+      setConfirmacao({
+        dispensacao: d,
+        paciente,
+        itens: itens.map((item) => ({ ...item })),
+        observacao,
+      });
       queryClient.invalidateQueries({ queryKey: ["dispensacoes"] });
       queryClient.invalidateQueries({ queryKey: ["estoque-atual"] });
       queryClient.invalidateQueries({ queryKey: ["movimentacoes"] });
-      // Reset
-      setPasso(1);
-      setPaciente(null);
-      setItens([]);
-      setObservacao("");
-      setSearchPaciente("");
-      setMedicamentoSelecionado(null);
     },
-    onError: (e: Error) => setError(e.message),
+    onError: (e: unknown) => setError(
+      e instanceof Error ? e.message : "Não foi possível confirmar a dispensação",
+    ),
   });
+
+  const temControlado = useMemo(
+    () => itens.some((item) => item.lg_controlado),
+    [itens],
+  );
 
   // Anuncia mudança de passo (a11y)
   useEffect(() => {
@@ -141,6 +165,10 @@ export function DispenseWizard() {
         );
         return;
       }
+      if (!lote.nr_lote?.trim()) {
+        setError("Número físico do lote indisponível; dispensação bloqueada");
+        return;
+      }
       setItens((prev) => [
         ...prev,
         {
@@ -148,8 +176,9 @@ export function DispenseWizard() {
           qt_dispensada: qtSolicitada,
           vl_unitario: lote.vl_custo_unitario ?? null,
           ds_produto: `${medicamentoSelecionado.cd_principio_ativo} ${medicamentoSelecionado.ds_concentracao ?? ""}`.trim(),
-          ds_lote: String(lote.cd_lote),
+          nr_lote: lote.nr_lote,
           dt_validade: lote.dt_validade,
+          lg_controlado: medicamentoSelecionado.lg_controlado,
         },
       ]);
       setMedicamentoSelecionado(null);
@@ -163,17 +192,21 @@ export function DispenseWizard() {
   }
 
   function gerarRecibo() {
-    if (!paciente) return "";
-    const data = new Date().toLocaleString("pt-BR");
+    if (!confirmacao) return "";
+    const data = new Date(confirmacao.dispensacao.dt_dispensacao).toLocaleString("pt-BR");
     let recibo = `=== RECIBO DE DISPENSACAO ===\n`;
+    recibo += `Dispensacao: #${confirmacao.dispensacao.id}\n`;
     recibo += `Data: ${data}\n`;
-    recibo += `Paciente: ${paciente.full_name}\n`;
-    if (paciente.cpf) recibo += `CPF: ${paciente.cpf}\n`;
+    recibo += `Paciente: ${confirmacao.paciente.full_name}\n`;
+    if (confirmacao.paciente.cpf) recibo += `CPF: ${confirmacao.paciente.cpf}\n`;
     recibo += `\nItens dispensados:\n`;
-    itens.forEach((it, i) => {
-      recibo += `${i + 1}. ${it.ds_produto} — lote ${it.ds_lote} (val. ${new Date(it.dt_validade).toLocaleDateString("pt-BR")}) — ${it.qt_dispensada} un.\n`;
+    confirmacao.itens.forEach((it, i) => {
+      recibo += `${i + 1}. ${it.ds_produto} — lote ${it.nr_lote} (val. ${new Date(it.dt_validade).toLocaleDateString("pt-BR")}) — ${it.qt_dispensada} un.\n`;
     });
-    if (observacao) recibo += `\nObservacao: ${observacao}\n`;
+    if (confirmacao.observacao) recibo += `\nObservacao: ${confirmacao.observacao}\n`;
+    if (confirmacao.itens.some((item) => item.lg_controlado)) {
+      recibo += `\nSNGPC: PENDENTE - integracao externa nao disponivel.\n`;
+    }
     recibo += `\nAssinatura do paciente: ____________________\n`;
     recibo += `Assinatura do farmaceutico: ____________________\n`;
     return recibo;
@@ -188,6 +221,47 @@ export function DispenseWizard() {
     link.download = `dispensacao-${new Date().toISOString().slice(0, 10)}.txt`;
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  function iniciarNovaDispensacao() {
+    setConfirmacao(null);
+    setPasso(1);
+    setPaciente(null);
+    setItens([]);
+    setObservacao("");
+    setSearchPaciente("");
+    setSearchMedicamento("");
+    setMedicamentoSelecionado(null);
+    setQtSolicitada(1);
+    setError(null);
+    idempotencyKeyRef.current = crypto.randomUUID();
+  }
+
+  if (confirmacao) {
+    const contemControlado = confirmacao.itens.some((item) => item.lg_controlado);
+    return (
+      <Card>
+        <CardContent className="space-y-4 pt-6">
+          <div role="status" className="rounded-md bg-green-100 p-3 text-sm text-green-800">
+            <div className="flex items-center gap-2 font-semibold">
+              <CheckCircle2 className="h-4 w-4" />
+              Dispensação #{confirmacao.dispensacao.id} confirmada após o commit.
+            </div>
+          </div>
+          {contemControlado && (
+            <div role="note" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              <strong>SNGPC pendente:</strong> {SNGPC_INTEGRATION_STATUS.message}
+            </div>
+          )}
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={downloadRecibo}>
+              <FileDown className="mr-1 h-4 w-4" />Baixar recibo confirmado
+            </Button>
+            <Button onClick={iniciarNovaDispensacao}>Nova dispensação</Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
 
   return (
@@ -227,12 +301,6 @@ export function DispenseWizard() {
           {error}
         </div>
       )}
-      {sucessoMsg && (
-        <div role="status" className="rounded-md bg-green-100 p-3 text-sm text-green-800">
-          {sucessoMsg}
-        </div>
-      )}
-
       {passo === 1 && (
         <Card>
           <CardContent className="space-y-3 pt-6">
@@ -354,7 +422,7 @@ export function DispenseWizard() {
                         className="flex items-center justify-between text-xs"
                       >
                         <span>
-                          Lote {l.cd_lote} • Val. {new Date(l.dt_validade).toLocaleDateString("pt-BR")}
+                          Lote {l.nr_lote ?? "não informado"} • Val. {new Date(l.dt_validade).toLocaleDateString("pt-BR")}
                         </span>
                         <Badge variant="outline">{l.qt_atual} disp.</Badge>
                       </div>
@@ -393,7 +461,7 @@ export function DispenseWizard() {
                       <div>
                         <div className="font-medium">{it.ds_produto}</div>
                         <div className="text-xs text-muted-foreground">
-                          Lote {it.ds_lote} • Val. {new Date(it.dt_validade).toLocaleDateString("pt-BR")}
+                          Lote {it.nr_lote} • Val. {new Date(it.dt_validade).toLocaleDateString("pt-BR")}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -412,6 +480,12 @@ export function DispenseWizard() {
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {temControlado && (
+              <div role="note" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                <strong>SNGPC pendente:</strong> {SNGPC_INTEGRATION_STATUS.message}
               </div>
             )}
 
@@ -448,23 +522,26 @@ export function DispenseWizard() {
               {observacao && <p className="text-sm"><strong>Observação:</strong> {observacao}</p>}
             </div>
 
+            {temControlado && (
+              <div role="note" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                <strong>SNGPC pendente:</strong> {SNGPC_INTEGRATION_STATUS.message}
+              </div>
+            )}
+
             <ul className="space-y-1 text-sm">
               {itens.map((it, idx) => (
                 <li key={idx} className="flex justify-between border-b py-1">
-                  <span>{it.ds_produto} (lote {it.ds_lote})</span>
+                  <span>{it.ds_produto} (lote {it.nr_lote})</span>
                   <span className="font-semibold">{it.qt_dispensada} un.</span>
                 </li>
               ))}
             </ul>
 
             <div className="flex justify-between gap-2">
-              <Button variant="outline" onClick={() => setPasso(2)}>
+              <Button variant="outline" onClick={() => setPasso(2)} disabled={criarDispensacao.isPending}>
                 <ChevronLeft className="mr-1 h-4 w-4" />Voltar
               </Button>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={downloadRecibo}>
-                  <FileDown className="mr-1 h-4 w-4" />Baixar Recibo
-                </Button>
                 <Button
                   onClick={() => criarDispensacao.mutate()}
                   disabled={criarDispensacao.isPending}
@@ -472,7 +549,7 @@ export function DispenseWizard() {
                   {criarDispensacao.isPending ? (
                     <><Loader2 className="mr-1 h-4 w-4 animate-spin" />Processando...</>
                   ) : (
-                    <><CheckCircle2 className="mr-1 h-4 w-4" />Confirmar Dispensação</>
+                    <><Pill className="mr-1 h-4 w-4" />Confirmar e dispensar</>
                   )}
                 </Button>
               </div>
@@ -483,3 +560,4 @@ export function DispenseWizard() {
     </div>
   );
 }
+
