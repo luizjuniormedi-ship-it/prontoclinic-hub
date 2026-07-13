@@ -159,15 +159,6 @@ export const TISS_GLOSA_CODES: Array<{ codigo: string; descricao: string }> = [
 
 // ── Helpers ────────────────────────────────────────────────────────
 
-function sha256(text: string): Promise<string> {
-  const enc = new TextEncoder().encode(text);
-  return crypto.subtle.digest("SHA-256", enc).then((buf) => {
-    return Array.from(new Uint8Array(buf))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-  });
-}
-
 function xmlEscape(s: string): string {
   if (!s) return "";
   return s
@@ -264,120 +255,9 @@ export const tissService = {
       }>;
     }
   ): Promise<{ xml: string; id: number; hash: string }> {
-    // Buscar contexto
-    const { data: company } = await supabase
-      .from("companies")
-      .select("id, cnpj, razao_social, name")
-      .single();
-    const { data: convenio } = await supabase
-      .from("insurance_companies")
-      .select("name, registro_ans, cnpj")
-      .eq("id", codes.cd_convenio)
-      .single();
-    const { data: paciente } = await supabase
-      .from("patients")
-      .select("full_name, cpf, birth_date, sex")
-      .eq("id", codes.cd_paciente)
-      .single();
-    const { data: prof } = await supabase
-      .from("professionals")
-      .select("full_name, cpf, professional_license")
-      .eq("id", codes.cd_profissional)
-      .single();
-
-    const agora = new Date();
-    const vlTotal = codes.vl_total ?? codes.procedimentos.reduce((acc, p) => acc + p.qt * p.vl_unitario, 0);
-
-    const procs = codes.procedimentos
-      .map(
-        (p) => `
-      <ans:procedimento>
-        <ans:codigoTabela>22</ans:codigoTabela>
-        <ans:codigoProcedimento>${xmlEscape(p.cd_tuss)}</ans:codigoProcedimento>
-        <ans:descricaoProcedimento>${xmlEscape(p.ds_procedimento)}</ans:descricaoProcedimento>
-        <ans:quantidadeExecutada>${p.qt}</ans:quantidadeExecutada>
-        <ans:valorUnitario>${p.vl_unitario.toFixed(2)}</ans:valorUnitario>
-        <ans:valorTotal>${(p.qt * p.vl_unitario).toFixed(2)}</ans:valorTotal>
-      </ans:procedimento>`
-      )
-      .join("");
-
-    const guiaTipo =
-      codes.tipoGuia === "CONSULTA"
-        ? `<ans:guiaConsulta>
-        <ans:numeroGuiaPrestador>${codes.cd_atendimento || appointmentId}</ans:numeroGuiaPrestador>
-        <ans:beneficiario>
-          <ans:numeroCarteira>${xmlEscape(codes.nr_carteira)}</ans:numeroCarteira>
-          <ans:nomeBeneficiario>${xmlEscape(paciente?.full_name || "")}</ans:nomeBeneficiario>
-        </ans:beneficiario>
-        <ans:profissionalExecutante>
-          <ans:nomeProfissional>${xmlEscape(prof?.full_name || "")}</ans:nomeProfissional>
-          <ans:conselhoProfissional>CRM</ans:conselhoProfissional>
-          <ans:numeroConselhoProfissional>${xmlEscape(prof?.professional_license || "")}</ans:numeroConselhoProfissional>
-        </ans:profissionalExecutante>
-        <ans:valorProcedimento>${vlTotal.toFixed(2)}</ans:valorProcedimento>
-      </ans:guiaConsulta>`
-        : `<ans:guiaSP-SADT>
-        <ans:numeroGuiaPrestador>${codes.cd_atendimento || appointmentId}</ans:numeroGuiaPrestador>
-        <ans:beneficiario>
-          <ans:numeroCarteira>${xmlEscape(codes.nr_carteira)}</ans:numeroCarteira>
-          <ans:nomeBeneficiario>${xmlEscape(paciente?.full_name || "")}</ans:nomeBeneficiario>
-        </ans:beneficiario>
-        <ans:procedimentosExecutados>${procs}</ans:procedimentosExecutados>
-        <ans:valorTotal>${vlTotal.toFixed(2)}</ans:valorTotal>
-      </ans:guiaSP-SADT>`;
-
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<ans:mensagemTISS xmlns:ans="http://www.ans.gov.br/padroes/tiss/schemas" versao="3.05.00">
-  <ans:cabecalho>
-    <ans:identificacaoTransacao>
-      <ans:tipoTransacao>ENVIO_LOTE_GUIAS</ans:tipoTransacao>
-      <ans:sequencialTransacao>${agora.getTime()}</ans:sequencialTransacao>
-      <ans:dataRegistroTransacao>${agora.toISOString()}</ans:dataRegistroTransacao>
-      <ans:horaRegistroTransacao>${agora.toTimeString().substring(0, 8)}</ans:horaRegistroTransacao>
-    </ans:identificacaoTransacao>
-    <ans:origem>
-      <ans:identificacaoPrestador>${xmlEscape(company?.cnpj || "")}</ans:identificacaoPrestador>
-    </ans:origem>
-    <ans:destino>
-      <ans:registroANS>${xmlEscape(convenio?.registro_ans || "")}</ans:registroANS>
-    </ans:destino>
-  </ans:cabecalho>
-  <ans:prestadorParaOperadora>
-    <ans:loteGuias>
-      <ans:numeroLote>${Date.now()}</ans:numeroLote>
-      <ans:guias>
-        ${guiaTipo}
-      </ans:guias>
-    </ans:loteGuias>
-  </ans:prestadorParaOperadora>
-</ans:mensagemTISS>`;
-
-    const hash = await sha256(xml);
-
-    // Persistir
-    const { data: row, error } = await supabase
-      .from("tiss_xml")
-      .insert({
-        company_id: company?.id,
-        cd_convenio: codes.cd_convenio,
-        ds_descricao: `${convenio?.name || "Convenio"} - ${codes.tipoGuia} - Apt ${appointmentId}`,
-        ds_filename: `tiss_${appointmentId}_${Date.now()}.xml`,
-        dt_fatura: agora.toISOString().substring(0, 10),
-        ds_tipo_guia: codes.tipoGuia,
-        cd_lote: Date.now(),
-        vl_informado: vlTotal,
-        bl_xml_enviado: xml,
-        ds_hash_envio: hash,
-        ds_versao_tiss: "3.05.00",
-        tp_ambiente: "HOMOLOGACAO",
-        status: "PENDENTE",
-      })
-      .select()
-      .single();
-    if (error) throw error;
-
-    return { xml, id: row.id, hash };
+    void appointmentId;
+    void codes;
+    throw new Error("Geracao XML TISS bloqueada no navegador: operacao exige backend seguro e auditoria");
   },
 
   // ── Envio a Operadora ──────────────────────────────────────────
@@ -407,62 +287,9 @@ export const tissService = {
     vl_glosa: number;
     glosas: Array<{ codigo: string; motivo: string; valor: number }>;
   }> {
-    // Parser simples por regex (em produção, usar DOMParser)
-    const protocoloMatch = returnXML.match(/<ns\d:protocolo[^>]*>([^<]+)<\/ns\d:protocolo>|<protocolo[^>]*>([^<]+)<\/protocolo>/);
-    const protocolo = protocoloMatch?.[1] || protocoloMatch?.[2] || `PROC_${Date.now()}`;
-
-    const valorProcMatch = returnXML.match(/<valorProcessado[^>]*>([0-9.]+)<\/valorProcessado>/);
-    const valorLibMatch = returnXML.match(/<valorLiberado[^>]*>([0-9.]+)<\/valorLiberado>/);
-    const vlProcessado = valorProcMatch ? parseFloat(valorProcMatch[1]) : 0;
-    const vlLiberado = valorLibMatch ? parseFloat(valorLibMatch[1]) : 0;
-    const vlGlosa = vlProcessado - vlLiberado;
-
-    // Extrair glosas (procedimento a procedimento)
-    const glosaRegex = /<glosaItem>([\s\S]*?)<\/glosaItem>/g;
-    const glosas: Array<{ codigo: string; motivo: string; valor: number }> = [];
-    let m;
-    while ((m = glosaRegex.exec(returnXML)) !== null) {
-      const bloco = m[1];
-      const cod = bloco.match(/<codigoGlosa[^>]*>([^<]+)</)?.[1] || "";
-      const mot = bloco.match(/<motivoGlosa[^>]*>([^<]+)</)?.[1] || "";
-      const val = bloco.match(/<valorGlosa[^>]*>([0-9.]+)</)?.[1] || "0";
-      glosas.push({ codigo: cod, motivo: mot, valor: parseFloat(val) });
-    }
-
-    const now = new Date().toISOString();
-    const novoStatus: TissStatus = vlGlosa > 0 ? "GLOSADO" : "PROCESSADO";
-    await supabase
-      .from("tiss_xml")
-      .update({
-        status: novoStatus,
-        dt_retorno: now,
-        bl_xml_retorno: returnXML,
-        ds_protocolo: protocolo,
-        vl_processado: vlProcessado,
-        vl_liberado: vlLiberado,
-        vl_glosa: vlGlosa,
-        cd_user_recebimento: (await supabase.auth.getUser()).data.user?.id,
-        updated_at: now,
-      })
-      .eq("id", tissXmlId);
-
-    // Persistir glosas individuais
-    if (glosas.length > 0) {
-      const { data: company } = await supabase.from("companies").select("id").single();
-      await supabase.from("tiss_glosas").insert(
-        glosas.map((g) => ({
-          cd_tiss_xml: tissXmlId,
-          company_id: company?.id,
-          cd_glosa_code: g.codigo,
-          ds_motivo: g.motivo,
-          vl_glosa: g.valor,
-          dt_glosa: new Date().toISOString().substring(0, 10),
-          ds_status_recurso: "PENDENTE",
-        }))
-      );
-    }
-
-    return { protocolo, vl_processado: vlProcessado, vl_liberado: vlLiberado, vl_glosa: vlGlosa, glosas };
+    void tissXmlId;
+    void returnXML;
+    throw new Error("Processamento de retorno TISS bloqueado no navegador: operacao exige backend seguro e auditoria");
   },
 
   // ── Registro manual de glosa ───────────────────────────────────
@@ -473,30 +300,11 @@ export const tissService = {
     valor: number,
     codigo?: string
   ): Promise<TissGlosa> {
-    const { data: company } = await supabase.from("companies").select("id").single();
-    const { data: row, error } = await supabase
-      .from("tiss_glosas")
-      .insert({
-        cd_tiss_xml: tissXmlId,
-        company_id: company?.id,
-        cd_glosa_code: codigo,
-        ds_motivo: motivo,
-        vl_glosa: valor,
-        dt_glosa: new Date().toISOString().substring(0, 10),
-        ds_status_recurso: "PENDENTE",
-        cd_user_registro: (await supabase.auth.getUser()).data.user?.id,
-      })
-      .select()
-      .single();
-    if (error) throw error;
-
-    // Atualizar status da guia
-    await supabase.rpc("recalc_tiss_total_glosa", { p_id: tissXmlId }).then(() => null, () => null);
-    await supabase
-      .from("tiss_xml")
-      .update({ status: "GLOSADO", updated_at: new Date().toISOString() })
-      .eq("id", tissXmlId);
-    return row as TissGlosa;
+    void tissXmlId;
+    void motivo;
+    void valor;
+    void codigo;
+    throw new Error("Registro de glosa TISS bloqueado no navegador: operacao exige backend seguro e auditoria");
   },
 
   async listGlosas(tissXmlId: number): Promise<TissGlosa[]> {
@@ -512,62 +320,9 @@ export const tissService = {
   // ── Recurso de Glosa ───────────────────────────────────────────
 
   async enviarRecurso(glosaId: number, recursoXML: string): Promise<{ sent: boolean; protocolo?: string }> {
-    const hash = await sha256(recursoXML);
-    const now = new Date().toISOString();
-    let sent = false;
-    let protocolo: string | undefined;
-    try {
-      const { data: glosa } = await supabase
-        .from("tiss_glosas")
-        .select("cd_tiss_xml")
-        .eq("id", glosaId)
-        .single();
-      const { data: xml } = await supabase
-        .from("tiss_xml")
-        .select("cd_convenio, tp_ambiente")
-        .eq("id", glosa?.cd_tiss_xml || 0)
-        .single();
-      const { data: proto } = await supabase
-        .from("tiss_protocols")
-        .select("ds_endpoint")
-        .eq("cd_convenio", xml?.cd_convenio || 0)
-        .eq("tp_ambiente", xml?.tp_ambiente || "HOMOLOGACAO")
-        .eq("lg_active", true)
-        .maybeSingle();
-
-      if (proto) {
-        const res = await fetch(proto.ds_endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "text/xml; charset=utf-8" },
-          body: recursoXML,
-          signal: AbortSignal.timeout(30000),
-        });
-        sent = res.ok;
-        const txt = await res.text();
-        const m = txt.match(/<protocolo[^>]*>([^<]+)<\/protocolo>/);
-        protocolo = m?.[1];
-      } else {
-        // Em homologacao, simular sucesso
-        sent = true;
-        protocolo = `REC_HOM_${Date.now()}`;
-      }
-    } catch {
-      sent = false;
-    }
-
-    await supabase
-      .from("tiss_glosas")
-      .update({
-        lg_recurso_enviado: sent,
-        dt_recurso: now,
-        ds_protocolo_recurso: protocolo,
-        bl_xml_recurso: recursoXML,
-        ds_status_recurso: sent ? "ENVIADO" : "PENDENTE",
-        updated_at: now,
-      })
-      .eq("id", glosaId);
-
-    return { sent, protocolo };
+    void glosaId;
+    void recursoXML;
+    throw new Error("Envio de recurso TISS bloqueado no navegador: operacao exige backend seguro e auditoria");
   },
 
   async gerarXMLRecurso(glosaId: number): Promise<string> {
@@ -710,26 +465,9 @@ export const tissService = {
     companyId: string,
     data: Partial<TissProtocol> & { cd_convenio: number; ds_endpoint: string }
   ): Promise<TissProtocol> {
-    const payload = {
-      company_id: companyId,
-      cd_convenio: data.cd_convenio,
-      ds_endpoint: data.ds_endpoint,
-      ds_versao_tiss: data.ds_versao_tiss || "3.05.00",
-      tp_ambiente: data.tp_ambiente || "HOMOLOGACAO",
-      cd_certificado_a1_path: data.cd_certificado_a1_path,
-      ds_certificado_senha: data.ds_certificado_senha,
-      ds_usuario: data.ds_usuario,
-      ds_senha: data.ds_senha,
-      lg_active: data.lg_active ?? true,
-      ds_observacao: data.ds_observacao,
-    };
-    const { data: row, error } = await supabase
-      .from("tiss_protocols")
-      .upsert(payload, { onConflict: "cd_convenio,tp_ambiente" })
-      .select()
-      .single();
-    if (error) throw error;
-    return row as TissProtocol;
+    void companyId;
+    void data;
+    throw new Error("Configuracao de protocolo TISS bloqueada no navegador: operacao exige backend seguro e auditoria");
   },
 };
 

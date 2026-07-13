@@ -66,16 +66,14 @@ export interface TissLoteListProps {
   filterConvenio: number | "ALL";
   setFilterConvenio: (v: number | "ALL") => void;
   onSelectXml: (xml: TissXml) => void;
-  onOpenGlosa: (xml: TissXml) => void;
 }
 
 interface TissRowProps {
   fatura: TissXml;
   onSelectXml: (xml: TissXml) => void;
-  onOpenGlosa: (xml: TissXml) => void;
 }
 
-const TissRow = memo(function TissRow({ fatura, onSelectXml, onOpenGlosa }: TissRowProps) {
+const TissRow = memo(function TissRow({ fatura, onSelectXml }: TissRowProps) {
   const sb = statusBadge(fatura.status);
   const Icon = sb.icon;
   const convenioNome =
@@ -137,8 +135,8 @@ const TissRow = memo(function TissRow({ fatura, onSelectXml, onOpenGlosa }: Tiss
           {fatura.status === "GLOSADO" && (
             <Button
               size="sm" variant="outline"
-              onClick={() => onOpenGlosa(fatura)}
-              title="Recurso de glosa"
+              disabled
+              title="Recurso de glosa indisponivel ate existir backend TISS seguro"
             >
               <AlertTriangle className="h-3 w-3 text-orange-600" />
             </Button>
@@ -168,7 +166,6 @@ function TissLoteListImpl({
   filterConvenio,
   setFilterConvenio,
   onSelectXml,
-  onOpenGlosa,
 }: TissLoteListProps) {
   const { data: faturas, isLoading } = useQuery({
     queryKey: ["tiss-xml", companyId, mes, ano, filterStatus, filterConvenio],
@@ -277,7 +274,6 @@ function TissLoteListImpl({
                     key={f.id}
                     fatura={f}
                     onSelectXml={onSelectXml}
-                    onOpenGlosa={onOpenGlosa}
                   />
                 ))
               )}

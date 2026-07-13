@@ -59,11 +59,6 @@ export function TissManager() {
     setGlosaDialogOpen(false);
   };
 
-  const handleOpenGlosa = (xml: TissXml) => {
-    setSelectedXml(xml);
-    setGlosaDialogOpen(true);
-  };
-
   return (
     <div className="space-y-4 p-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -74,10 +69,14 @@ export function TissManager() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setProtocolDialogOpen(true)}>
+          <Button
+            variant="outline"
+            disabled
+            title="Protocolos TISS indisponiveis ate existir backend seguro"
+          >
             <Settings2 className="h-4 w-4 mr-1" />Protocolos
           </Button>
-          <Button disabled title="Geracao indisponivel ate ativacao da RPC TISS segura">
+          <Button disabled title="Geracao TISS indisponivel ate existir backend seguro">
             <RefreshCw className="h-4 w-4 mr-1" />
             Gerar Fatura do Mes
           </Button>
@@ -117,7 +116,6 @@ export function TissManager() {
             filterConvenio={filterConvenio}
             setFilterConvenio={setFilterConvenio}
             onSelectXml={handleSelectXml}
-            onOpenGlosa={handleOpenGlosa}
           />
         </TabsContent>
 
@@ -127,7 +125,7 @@ export function TissManager() {
 
         <TabsContent value="glosas" className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Glosas em aberto. Selecione uma fatura GLOSADA na aba "Guias TISS" para enviar recurso.
+            Glosas em aberto. Recursos permanecem indisponiveis ate existir backend TISS seguro.
           </p>
         </TabsContent>
       </Tabs>

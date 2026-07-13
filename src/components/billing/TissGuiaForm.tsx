@@ -153,7 +153,13 @@ export function TissGuiaForm({
               <Button type="button" variant="ghost" onClick={() => setGlosaDialogOpen(false)}>
                 Cancelar
               </Button>
-              <Button type="submit">Registrar</Button>
+              <Button
+                type="submit"
+                disabled
+                title="Registro de glosa indisponivel ate existir backend TISS seguro"
+              >
+                Registrar
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -212,8 +218,12 @@ export function TissGuiaForm({
               <Button type="button" variant="ghost" onClick={() => setProtocolDialogOpen(false)}>
                 Fechar
               </Button>
-              <Button type="submit" disabled={saveProtocolMutation.isPending}>
-                {saveProtocolMutation.isPending ? "Salvando..." : "Salvar"}
+              <Button
+                type="submit"
+                disabled
+                title="Protocolo TISS indisponivel ate existir backend seguro"
+              >
+                Salvar
               </Button>
             </DialogFooter>
           </form>
