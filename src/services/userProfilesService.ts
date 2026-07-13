@@ -116,7 +116,7 @@ export const userProfilesService = {
    * Lista perfis de permissão disponíveis, direto da tabela `roles`
    * (fonte real usada em user_profiles.role_name e role_permissions).
    */
-  async getProfiles(): Promise<Array<{ id: string; name: string; description: string }>> {
+  async getProfiles(): Promise<Array<{ id: string; roleId: number; name: string; description: string }>> {
     const { data, error } = await supabase
       .from("roles")
       .select("id, name, description")
@@ -133,6 +133,7 @@ export const userProfilesService = {
     };
     return (data ?? []).map((r: { id: number; name: string; description: string | null }) => ({
       id: r.name,
+      roleId: r.id,
       name: LABELS[r.name] ?? r.name,
       description: r.description ?? "",
     }));
