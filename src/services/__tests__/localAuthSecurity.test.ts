@@ -111,6 +111,16 @@ describe("local auth server security invariants", () => {
     }
   });
 
+  it("permite somente leitura autenticada do catalogo canonico de papeis", () => {
+    const tableToModule = loadTableToModule();
+
+    expect(tableToModule("roles", "GET")).toBeNull();
+    expect(tableToModule("roles", "HEAD")).toBeNull();
+    expect(tableToModule("roles", "POST")).toBe("admin");
+    expect(tableToModule("roles", "PATCH")).toBe("admin");
+    expect(tableToModule("role_permissions", "GET")).toBe("admin");
+  });
+
   it("mantem tabelas desconhecidas negadas por padrao", () => {
     const tableToModule = loadTableToModule();
 
