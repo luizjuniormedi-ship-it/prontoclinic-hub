@@ -92,7 +92,13 @@ describe("telemedicinaService.criarSala", () => {
     const chain: any = {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: salaFake, error: null }),
+      single: vi
+        .fn()
+        .mockResolvedValueOnce({ data: salaFake, error: null })
+        .mockResolvedValueOnce({
+          data: { ...salaFake, ds_url_daily: "https://test.daily.co/pm-1" },
+          error: null,
+        }),
       update: vi.fn().mockReturnThis(),
     };
     // A criação confirmada atualiza a mesma sala após a resposta do Daily.
