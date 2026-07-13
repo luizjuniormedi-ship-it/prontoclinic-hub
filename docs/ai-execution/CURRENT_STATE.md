@@ -5,7 +5,7 @@ Atualizado em 2026-07-13.
 ## Fato tecnico
 
 - Repositorio local: `C:\Users\Meu Computador\AppData\Local\Temp\prontoclinic-hub`.
-- Ultimo commit local conhecido: `25d9f49` (`fix(ai): fail closed when clinical chatbot is unavailable`).
+- Ultimo commit local conhecido: `241f2fa` (`test(telemedicina): cover room failure update chain`).
 - Release funcional conhecida na VPS: `37199ee`.
 - A VPS executou build, migracoes e reload do Nginx na fase 1; a mensagem final de falha do wrapper foi causada por CRLF residual no shell remoto, nao por falha da publicacao.
 - PostgreSQL e backend precisam de nova verificacao operacional apos a ultima publicacao.
@@ -42,6 +42,7 @@ Atualizado em 2026-07-13.
 - A habilitação de gravação agora falha fechado antes de registrar consentimento quando a integração real de gravação não está configurada; o teste cobre que nenhum RPC é executado nesse caminho.
 - A criação de sala agora exige confirmação do Daily.co; falha ou ausência de configuração marca a sala como `FALHOU` e interrompe o acesso em vez de devolver uma sala local sem URL remota.
 - O chatbot clínico deixou de devolver texto de contingência como se fosse resposta de IA; quando a Edge Function falha, registra a tentativa sem conteúdo e retorna erro explícito.
+- O CI associado ao head anterior concluiu migrations, type-check, lint e build, mas falhou em um teste de Telemedicina por mock incompleto da segunda atualização Supabase; o teste foi corrigido para cobrir a cadeia de atualização e aguarda novo CI.
 
 ## Hipotese
 
