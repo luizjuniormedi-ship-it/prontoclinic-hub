@@ -210,6 +210,10 @@ jobs:
           psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260713100000_lis_atomic_result_release_contract.sql
           echo "Running LIS result tenant gate"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_lis_atomic_result_gate.sql
+          echo "Applying nursing canonical secure contract"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260713120000_nursing_canonical_secure_contract.sql
+          echo "Running nursing tenant and clinical safety gate"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_nursing_secure_gate.sql
 
       - name: Upload F1 evidence
         if: always()

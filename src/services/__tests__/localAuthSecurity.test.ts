@@ -133,9 +133,26 @@ describe("local auth server security invariants", () => {
     expect(source).toContain("withAuthenticatedDbSession(payload");
   });
 
+  it("bloqueia DML direto nas tabelas clinicas de enfermagem", () => {
+    expect(source).toContain("const RPC_ONLY_TABLES = new Set([");
+    for (const table of [
+      "nursing_medication_administrations",
+      "nursing_incidents",
+      "nursing_procedures",
+      "nursing_shift_handoffs",
+    ]) {
+      expect(source).toContain(`'${table}'`);
+    }
+    expect(source).toContain("if (RPC_ONLY_TABLES.has(table))");
+    expect(source).toContain("Mutacao permitida somente por RPC segura");
+    expect(source).not.toContain("const result = await pool.query(\n            `INSERT INTO public");
+    expect(source).not.toContain("const result = await pool.query(\n            `UPDATE public");
+  });
+
   it("mantem dados e count no mesmo cliente e nao mascara falha HEAD", () => {
     expect(source).toContain("const countResult = await client.query(countQuery, values)");
     expect(source).not.toContain("res.writeHead(200, { 'content-range': '0-0/0' })");
     expect(source).toContain("[REST_HEAD_ERROR]");
   });
 });
+

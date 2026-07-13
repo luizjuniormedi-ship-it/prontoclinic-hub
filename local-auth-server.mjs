@@ -156,7 +156,7 @@ function tableToModule(table, method = 'GET') {
     [/^patients$|^paciente|^patient_phones|^telxpac/, 'pacientes'],
     [/^appointments$|^agenda|^professional_schedules|^escala/, 'agenda'],
     // EvoluÃ§Ã£o/procedimentos/incidentes de enfermagem = conteÃºdo clÃ­nico sensÃ­vel â†’ mÃ³dulo prontuario (recepÃ§Ã£o bloqueada por LGPD)
-    [/^nursing_notes|^nursing_procedures|^nursing_incidents|^nursing_medication|^nursing_evolution/, 'prontuario'],
+    [/^nursing_notes|^nursing_procedures|^nursing_incidents|^nursing_medication|^nursing_shift|^nursing_evolution/, 'enfermagem'],
     // Fila de triagem e classificaÃ§Ã£o de risco = mÃ³dulo enfermagem (recepÃ§Ã£o pode ver p/ chamar paciente)
     [/^triagens?$|^triagem_|^nursing_|^mnct_/, 'enfermagem'],
     [/^exames_lab|^lab_/, 'laboratorio'],
@@ -293,11 +293,25 @@ const RPC_PERMISSIONS = {
   record_billing_receipt_secure: { module: 'financeiro', action: 'can_create' },
   reverse_billing_receipt_secure: { module: 'financeiro', action: 'can_edit' },
   save_or_release_lab_result_secure: { module: 'laboratorio', action: 'can_edit' },
+  create_nursing_medication_secure: { module: 'enfermagem', action: 'can_edit' },
+  bedside_check: { module: 'enfermagem', action: 'can_view' },
+  administer_nursing_medication_secure: { module: 'enfermagem', action: 'can_edit' },
+  refuse_nursing_medication_secure: { module: 'enfermagem', action: 'can_edit' },
+  report_nursing_incident_secure: { module: 'enfermagem', action: 'can_create' },
+  record_nursing_procedure_secure: { module: 'enfermagem', action: 'can_create' },
+  create_nursing_shift_handoff_secure: { module: 'enfermagem', action: 'can_create' },
 };
 
 const CENTRAL_PERMISSION_RPCS = new Set([
   'list_tiss_glosas_read_secure',
   'list_tiss_protocols_read_secure',
+]);
+
+const RPC_ONLY_TABLES = new Set([
+  'nursing_medication_administrations',
+  'nursing_incidents',
+  'nursing_procedures',
+  'nursing_shift_handoffs',
 ]);
 
 async function authorizeRpc(profile, functionName) {
@@ -857,6 +871,9 @@ const server = createServer(async (req, res) => {
       }
 
       if (req.method === 'POST') {
+        if (RPC_ONLY_TABLES.has(table)) {
+          return json(res, { error: 'forbidden', message: 'Mutacao permitida somente por RPC segura' }, 403);
+        }
         const body = await parseBody(req);
         if (companyId) {
           if (body.company_id && body.company_id !== companyId) {
@@ -875,10 +892,10 @@ const server = createServer(async (req, res) => {
         const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
         const columns = keys.map(quoteIdent).join(', ');
         try {
-          const result = await pool.query(
+          const result = await withAuthenticatedDbSession(payload, (client) => client.query(
             `INSERT INTO public."${table}" (${columns}) VALUES (${placeholders}) RETURNING *`,
             vals
-          );
+          ));
           const prefer = req.headers.prefer || '';
           if (prefer.includes('return=representation')) {
             return json(res, result.rows[0], 201);
@@ -890,6 +907,9 @@ const server = createServer(async (req, res) => {
       }
 
       if (req.method === 'PATCH') {
+        if (RPC_ONLY_TABLES.has(table)) {
+          return json(res, { error: 'forbidden', message: 'Mutacao permitida somente por RPC segura' }, 403);
+        }
         const body = await parseBody(req);
         const keys = Object.keys(body);
         if (keys.length === 0) return json(res, { error: 'bad_request', message: 'body vazio' }, 400);
@@ -905,10 +925,10 @@ const server = createServer(async (req, res) => {
         const id = idParam?.replace('eq.', '');
         if (!id) return json(res, { error: 'id required for PATCH' }, 400);
         try {
-          const result = await pool.query(
+          const result = await withAuthenticatedDbSession(payload, (client) => client.query(
             `UPDATE public."${table}" SET ${setClause} WHERE id = $${keys.length + 1}${companyId ? ` AND company_id = $${keys.length + 2}` : ''} RETURNING *`,
             companyId ? [...vals, id, companyId] : [...vals, id]
-          );
+          ));
           return json(res, result.rows[0] || {});
         } catch (e) {
           return databaseError(res, 'REST_UPDATE_ERROR', { table, userId: payload.sub }, e);

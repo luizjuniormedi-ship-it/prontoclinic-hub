@@ -178,6 +178,16 @@ jobs:
           export PGPASSWORD=postgres
           psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_lis_atomic_result_gate.sql
 
+      - name: Apply nursing canonical secure contract
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260713120000_nursing_canonical_secure_contract.sql
+
+      - name: Run nursing tenant and clinical safety gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_nursing_secure_gate.sql
+
       - name: Type check
         run: npm run type-check
 
@@ -260,6 +270,28 @@ jobs:
             test "$rpc_status" = "200"
             jq -e 'type == "array"' "$response_file" >/dev/null
           done
+          for table in nursing_medication_administrations nursing_incidents nursing_procedures nursing_shift_handoffs; do
+            for method in POST PATCH; do
+              direct_status=$(curl --silent --show-error --output "/tmp/${table}-${method}.json" --write-out '%{http_code}' \
+                -X "$method" "http://127.0.0.1:8000/rest/v1/${table}?id=eq.1" \
+                -H 'Content-Type: application/json' \
+                -H 'apikey: ci-local-auth' \
+                -H "Authorization: Bearer $token" \
+                --data '{}')
+              echo "${table}_${method}_direct_http=$direct_status"
+              test "$direct_status" = "403"
+            done
+          done
+          reception_token=$(curl --silent --show-error -X POST 'http://127.0.0.1:8000/auth/v1/token?grant_type=password' \
+            -H 'Content-Type: application/json' -H 'apikey: ci-local-auth' \
+            --data '{"email":"recepcao@prontomedic.test","password":"TestPassword123!"}' | jq -r '.access_token')
+          nursing_denied_status=$(curl --silent --show-error --output /tmp/nursing-rbac-denied.json --write-out '%{http_code}' \
+            -X POST 'http://127.0.0.1:8000/rest/v1/rpc/report_nursing_incident_secure' \
+            -H 'Content-Type: application/json' -H 'apikey: ci-local-auth' \
+            -H "Authorization: Bearer $reception_token" \
+            --data '{"p_patient_id":1,"p_incident_type":"teste","p_severity":"leve","p_description":"deve ser negado","p_idempotency_key":"6a000000-0000-4000-8000-000000000099"}')
+          echo "nursing_reception_rpc_http=$nursing_denied_status"
+          test "$nursing_denied_status" = "403"
 
       - name: Lint
         run: npm run lint
