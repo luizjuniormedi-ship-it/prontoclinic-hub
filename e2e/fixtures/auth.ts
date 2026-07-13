@@ -31,7 +31,7 @@ export const test = base.extend<{
       await page.context().clearCookies();
       await page.goto('/login');
       await page.getByLabel('E-mail').fill(creds.email);
-      await page.getByLabel('Senha').fill(creds.password);
+      await page.getByLabel('Senha', { exact: true }).fill(creds.password);
       await page.getByRole('button', { name: /entrar/i }).click();
       await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
     });
