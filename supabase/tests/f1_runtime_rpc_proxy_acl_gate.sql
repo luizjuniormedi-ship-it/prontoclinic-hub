@@ -38,6 +38,7 @@ DECLARE
   authenticated_missing_count INTEGER;
   blocked_rpc_exposure_count INTEGER;
   billing_helper_exposure_count INTEGER;
+  medical_record_policy_count INTEGER;
 BEGIN
   IF NOT EXISTS (
     SELECT 1
@@ -242,6 +243,22 @@ BEGIN
   IF billing_helper_exposure_count <> 0 THEN
     RAISE EXCEPTION 'billing private helpers have unsafe owner or API exposure: %',
       billing_helper_exposure_count;
+  END IF;
+
+  SELECT COUNT(*)
+    INTO medical_record_policy_count
+    FROM pg_policies
+   WHERE schemaname = 'public'
+     AND tablename = 'medical_records'
+     AND policyname = ANY (ARRAY[
+       'rpc_proxy_medical_records_insert',
+       'rpc_proxy_medical_records_update'
+     ])
+     AND roles = ARRAY['prontomedic_rpc_owner']::name[]
+     AND cmd IN ('INSERT', 'UPDATE');
+
+  IF medical_record_policy_count <> 2 THEN
+    RAISE EXCEPTION 'medical_records RPC owner policies are incomplete';
   END IF;
 
   RAISE NOTICE 'F1_RUNTIME_RPC_PROXY_ACL_GATE=PASS';

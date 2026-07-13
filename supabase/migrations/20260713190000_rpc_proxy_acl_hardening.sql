@@ -170,6 +170,32 @@ BEGIN
 END
 $rpc$;
 
+DROP POLICY IF EXISTS rpc_proxy_medical_records_insert
+  ON public.medical_records;
+CREATE POLICY rpc_proxy_medical_records_insert
+  ON public.medical_records
+  FOR INSERT
+  TO prontomedic_rpc_owner
+  WITH CHECK (
+    company_id = public.get_my_company_id()
+    AND public.has_medical_record_permission('create')
+  );
+
+DROP POLICY IF EXISTS rpc_proxy_medical_records_update
+  ON public.medical_records;
+CREATE POLICY rpc_proxy_medical_records_update
+  ON public.medical_records
+  FOR UPDATE
+  TO prontomedic_rpc_owner
+  USING (
+    company_id = public.get_my_company_id()
+    AND public.has_medical_record_permission('edit')
+  )
+  WITH CHECK (
+    company_id = public.get_my_company_id()
+    AND public.has_medical_record_permission('edit')
+  );
+
 DO $rpc$
 DECLARE
   function_ref REGPROCEDURE;
