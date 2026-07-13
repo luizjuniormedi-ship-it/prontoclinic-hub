@@ -5,7 +5,7 @@ Atualizado em 2026-07-13.
 ## Fato tecnico
 
 - Repositorio local: `C:\Users\Meu Computador\AppData\Local\Temp\prontoclinic-hub`.
-- Ultimo commit local conhecido: `663be0f` (`fix(tiss): never simulate appeal submission`).
+- Ultimo commit local conhecido: `1fdedac` (`fix(tiss): require operator protocol in responses`).
 - Release funcional conhecida na VPS: `37199ee`.
 - A VPS executou build, migracoes e reload do Nginx na fase 1; a mensagem final de falha do wrapper foi causada por CRLF residual no shell remoto, nao por falha da publicacao.
 - PostgreSQL e backend precisam de nova verificacao operacional apos a ultima publicacao.
@@ -36,6 +36,7 @@ Atualizado em 2026-07-13.
 - Perfis de usuário deixou de exibir a contagem fixa de oito permissões; a tela agora consulta `role_permissions` e conta pelo `role_id` real.
 - O fluxo 2FA do login deixou de aceitar código não verificado ou redirecionar com sucesso parcial; quando o servidor exige 2FA sem OTP configurado, a sessão é encerrada e o acesso é bloqueado.
 - O TISS deixou de fabricar protocolo e marcar recurso de glosa como enviado quando não há endpoint real; o recurso permanece pendente.
+- O envio e o processamento TISS agora exigem protocolo retornado pela operadora; HTTP 200 ou XML sem protocolo não é tratado como sucesso.
 
 ## Hipotese
 

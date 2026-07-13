@@ -76,3 +76,4 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - Commit seguinte: `163cd47`; o fluxo 2FA passou a falhar fechado e não concede acesso sem validação no servidor. `git diff --check` aprovado.
 - Commit de evidência atual: `4ce786f`; documentação sincronizada com o head funcional e a correção 2FA permanece registrada.
 - Commit funcional atual: `663be0f`; envio de recurso TISS sem endpoint não simula sucesso. `git diff --check` aprovado.
+- Commit funcional atual: `1fdedac`; respostas TISS sem protocolo real não são marcadas como concluídas. `git diff --check` aprovado.
