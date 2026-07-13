@@ -66,3 +66,6 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - A migration `20251231000050_auth_compatibility.sql` foi reforçada para replay limpo; a tabela compatível agora cobre todos os campos consumidos por `scripts/seed-e2e-users.sql` e `local-auth-server.mjs`.
 - O workflow `CI` recebeu uma etapa explícita de seed E2E e verificação das colunas críticas de `auth.users` no PostgreSQL efêmero; essa evidência ainda aguarda execução no GitHub.
 - O backend passou a usar `databaseFailure()` para não devolver mensagens SQL ao cliente; o novo `auth-server-security.test.mjs` cobre esse contrato. A execução ainda aguarda o runner GitHub devido ao bloqueio local do Node.
+- Commit desta rodada: `10e8d47`.
+- Correção funcional: Empresas & Unidades agora gravam empresa/unidade de verdade; a migration `20260713000000_companies_legal_name.sql` preserva a razão social e a tela resolve o nome da empresa vinculada à unidade.
+- Validação desta rodada: `git diff --check` aprovado. `npm run type-check` não iniciou o TypeScript por `EPERM: lstat 'C:\\Users\\Meu Computador'`; não registrar como aprovação de compilação.

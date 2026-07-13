@@ -5,7 +5,7 @@ Atualizado em 2026-07-13.
 ## Fato tecnico
 
 - Repositorio local: `C:\Users\Meu Computador\AppData\Local\Temp\prontoclinic-hub`.
-- Ultimo commit local conhecido: `fef2264` (`fix(auth): hide database errors from clients`).
+- Ultimo commit local conhecido: `10e8d47` (`fix(catalog): persist company and unit registrations`).
 - Release funcional conhecida na VPS: `37199ee`.
 - A VPS executou build, migracoes e reload do Nginx na fase 1; a mensagem final de falha do wrapper foi causada por CRLF residual no shell remoto, nao por falha da publicacao.
 - PostgreSQL e backend precisam de nova verificacao operacional apos a ultima publicacao.
@@ -27,6 +27,9 @@ Atualizado em 2026-07-13.
 - A compatibilidade de `auth.users` agora declara/adiciona de forma idempotente os campos usados pelo seed E2E e pelo auth server local (`encrypted_password`, `email_confirmed_at`, metadados e tokens).
 - O CI agora executa o seed E2E no PostgreSQL efêmero após o replay e verifica as colunas críticas de autenticação antes dos testes de aplicação.
 - A auditoria do backend confirmou que os vetores SQLi históricos estão protegidos; também foi corrigido o vazamento atual de mensagens SQL, que agora é registrado no servidor e substituído por erro genérico na resposta.
+- O módulo Empresas & Unidades deixou de simular sucesso: os formulários agora persistem no PostgreSQL, preservam razão social separada do nome fantasia, carregam dados cadastrais de unidades e exibem o vínculo empresa-unidade.
+- Foi adicionada a migration idempotente `20260713000000_companies_legal_name.sql`; ela não altera o DataSIGH e preenche a razão social histórica com o nome existente apenas quando a coluna está vazia.
+- A validação TypeScript desta rodada foi bloqueada antes do compilador pelo `EPERM` do Node no caminho Windows com espaço; `git diff --check` passou.
 
 ## Hipotese
 
