@@ -1,5 +1,5 @@
 import {
-  SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu,
+  SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { SidebarMenuButton } from "@/components/ui/sidebar";
@@ -72,26 +72,28 @@ export function CollapsibleSection({
       <GroupLabel label={group.label} collapsed={collapsed} />
       <SidebarGroupContent>
         <SidebarMenu>
-          <Collapsible defaultOpen className="group/collapsible">
-            <CollapsibleTrigger asChild>
-              <SidebarMenuButton className="flex items-center justify-between w-full text-sidebar-foreground/80">
-                <span className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide">
-                  <ChevronRight className="h-3.5 w-3.5 transition-transform group-data-[state=open]/collapsible:rotate-90" />
-                  {!collapsed && "Menu"}
-                </span>
-              </SidebarMenuButton>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              {allowedSub.map((sub) => (
-                <div key={sub.groupTitle} className="px-2 mt-2">
-                  {!collapsed && (
-                    <p className="px-2 py-1 text-[10px] uppercase text-sidebar-muted">{sub.groupTitle}</p>
-                  )}
-                  <SidebarSubGroup items={sub.items} collapsed={collapsed} />
-                </div>
-              ))}
-            </CollapsibleContent>
-          </Collapsible>
+          <SidebarMenuItem>
+            <Collapsible defaultOpen className="group/collapsible">
+              <CollapsibleTrigger asChild>
+                <SidebarMenuButton className="flex items-center justify-between w-full text-sidebar-foreground/80">
+                  <span className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide">
+                    <ChevronRight className="h-3.5 w-3.5 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+                    {!collapsed && "Menu"}
+                  </span>
+                </SidebarMenuButton>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                {allowedSub.map((sub) => (
+                  <div key={sub.groupTitle} className="px-2 mt-2">
+                    {!collapsed && (
+                      <p className="px-2 py-1 text-[10px] uppercase text-sidebar-muted">{sub.groupTitle}</p>
+                    )}
+                    <SidebarSubGroup items={sub.items} collapsed={collapsed} />
+                  </div>
+                ))}
+              </CollapsibleContent>
+            </Collapsible>
+          </SidebarMenuItem>
         </SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>
