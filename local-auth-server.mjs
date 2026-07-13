@@ -292,6 +292,7 @@ const RPC_PERMISSIONS = {
   get_billing_balance_secure: { module: 'financeiro', action: 'can_view' },
   record_billing_receipt_secure: { module: 'financeiro', action: 'can_create' },
   reverse_billing_receipt_secure: { module: 'financeiro', action: 'can_edit' },
+  save_or_release_lab_result_secure: { module: 'laboratorio', action: 'can_edit' },
 };
 
 const CENTRAL_PERMISSION_RPCS = new Set([
@@ -941,3 +942,4 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜`);
   console.log(``);
 });
+

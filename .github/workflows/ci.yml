@@ -167,6 +167,17 @@ jobs:
           export PGPASSWORD=postgres
           psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_notification_pre_registration_gate.sql
 
+      - name: Apply LIS foundation and result hardening
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260101000018_lis.sql
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260713100000_lis_atomic_result_release_contract.sql
+
+      - name: Run LIS result tenant gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_lis_atomic_result_gate.sql
+
       - name: Type check
         run: npm run type-check
 

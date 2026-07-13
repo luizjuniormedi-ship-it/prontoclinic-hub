@@ -205,6 +205,11 @@ jobs:
           psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260713090310_notification_pre_registration_tenant_hardening.sql
           echo "Running notification and pre-registration tenant gate"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_notification_pre_registration_gate.sql
+          echo "Applying LIS foundation and result hardening"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260101000018_lis.sql
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260713100000_lis_atomic_result_release_contract.sql
+          echo "Running LIS result tenant gate"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_lis_atomic_result_gate.sql
 
       - name: Upload F1 evidence
         if: always()
