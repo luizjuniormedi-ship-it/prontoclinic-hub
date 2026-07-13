@@ -121,6 +121,16 @@ jobs:
           jq '{rows:(length), first:(.[0] // null)}' /tmp/profile-smoke.json
           test "$profile_status" = "200"
           jq -e 'length == 1 and .[0].id == "11111111-1111-4111-8111-111111111111"' /tmp/profile-smoke.json >/dev/null
+          financial_status=$(curl --silent --show-error --output /tmp/financial-smoke.json --write-out '%{http_code}' \
+            -X POST 'http://127.0.0.1:8000/rest/v1/rpc/list_billing_financial_summary_secure' \
+            -H 'Content-Type: application/json' \
+            -H 'apikey: ci-local-auth' \
+            -H "Authorization: Bearer $token" \
+            --data '{}')
+          echo "financial_summary_smoke_http=$financial_status"
+          jq '{rows:(if type == "array" then length else null end), error}' /tmp/financial-smoke.json
+          test "$financial_status" = "200"
+          jq -e 'type == "array"' /tmp/financial-smoke.json >/dev/null
 
       - name: Lint
         run: npm run lint

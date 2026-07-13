@@ -249,6 +249,12 @@ const RPC_PERMISSIONS = {
   perform_reception_checkin_secure: { module: 'recepcao', action: 'can_create' },
   update_reception_authorization_secure: { module: 'recepcao', action: 'can_edit' },
   update_reception_eligibility_secure: { module: 'recepcao', action: 'can_edit' },
+  create_billing_secure: { module: 'faturamento', action: 'can_create' },
+  update_billing_status_secure: { module: 'faturamento', action: 'can_edit' },
+  list_billing_financial_summary_secure: { module: 'financeiro', action: 'can_view' },
+  get_billing_balance_secure: { module: 'financeiro', action: 'can_view' },
+  record_billing_receipt_secure: { module: 'financeiro', action: 'can_create' },
+  reverse_billing_receipt_secure: { module: 'financeiro', action: 'can_edit' },
 };
 
 async function authorizeRpc(profile, functionName) {
@@ -582,6 +588,7 @@ const server = createServer(async (req, res) => {
         return json(res, val);
       } catch (e) {
         await client.query('ROLLBACK');
+        console.error('[RPC_ERROR]', { function: fnName, userId: payload.sub, message: e.message });
         return json(res, { error: e.message, code: 'PGRST202' }, 400);
       } finally {
         client.release();
