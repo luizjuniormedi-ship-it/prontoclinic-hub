@@ -15,10 +15,37 @@ function loadTableToModule() {
   ) => string | null;
 }
 
+function loadRequiresSecureRpc() {
+  const start = source.indexOf("const RPC_ONLY_TABLES");
+  const end = source.indexOf("async function authorizeRpc");
+  const rpcOnlySource = source.slice(start, end);
+
+  return new Function(`${rpcOnlySource}; return requiresSecureRpc;`)() as (
+    table: string,
+    method: string,
+  ) => boolean;
+}
+
 describe("local auth server security invariants", () => {
   it("nega RPC que nao esteja na allowlist", () => {
     expect(source).not.toContain("if (!required) return { ok: true }");
     expect(source).toContain("if (!required) return { ok: false");
+  });
+
+  it("mapeia RPCs de prontuario explicitamente e mantem o mapa fail-closed", () => {
+    for (const [rpc, action] of [
+      ["create_medical_record_secure", "can_create"],
+      ["update_medical_record_secure", "can_edit"],
+      ["sign_medical_record_secure", "can_edit"],
+      ["finalize_medical_attendance_secure", "can_create"],
+    ]) {
+      expect(source).toContain(
+        `${rpc}: { module: 'prontuario', action: '${action}' }`,
+      );
+    }
+    expect(source).toContain(
+      "if (!required) return { ok: false, reason: `RPC '${functionName}' nao autorizada` }",
+    );
   });
 
   it("aplica company_id derivado do perfil em leitura, insercao e alteracao", () => {
@@ -146,7 +173,7 @@ describe("local auth server security invariants", () => {
     ]) {
       expect(source).toContain(`'${table}'`);
     }
-    expect(source).toContain("if (RPC_ONLY_TABLES.has(table))");
+    expect(source).toContain("if (requiresSecureRpc(table, req.method))");
     expect(source).toContain("Mutacao permitida somente por RPC segura");
     for (const rpc of [
       "enqueue_nursing_triage_secure",
@@ -157,6 +184,17 @@ describe("local auth server security invariants", () => {
     }
     expect(source).not.toContain("const result = await pool.query(\n            `INSERT INTO public");
     expect(source).not.toContain("const result = await pool.query(\n            `UPDATE public");
+  });
+
+  it("bloqueia DML REST em medical_records e preserva leitura", () => {
+    const requiresSecureRpc = loadRequiresSecureRpc();
+
+    for (const method of ["POST", "PATCH", "DELETE"]) {
+      expect(requiresSecureRpc("medical_records", method)).toBe(true);
+    }
+    for (const method of ["GET", "HEAD"]) {
+      expect(requiresSecureRpc("medical_records", method)).toBe(false);
+    }
   });
 
   it("mantem dados e count no mesmo cliente e nao mascara falha HEAD", () => {
