@@ -44,6 +44,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate frontend, proxy and SQL RPC parity
+        run: npm run validate:rpc
+
       - name: Apply database migrations
         run: |
           DATABASE_URL=postgresql://postgres:postgres@localhost:54322/postgres
@@ -62,12 +65,16 @@ jobs:
             supabase/migrations/20251231005000_create_billings_stub.sql
             supabase/migrations/20260101000007_audit_logs.sql
             supabase/migrations/20260101001200_security_hardening.sql
+            supabase/release-mvp/017_clinical_safe_functions.sql
             supabase/migrations/20260708090000_scheduling_phase1.sql
             supabase/release-mvp/018_professional_schedules_canonical.sql
             supabase/migrations/20260708093000_call_center_phase1.sql
             supabase/migrations/20260709210000_scheduling_operations.sql
             supabase/release-mvp/008_canonical_insurance.sql
+            supabase/migrations/20260709223000_scheduling_requirements.sql
             supabase/migrations/20260709232000_scheduling_confirmations.sql
+            supabase/migrations/20260709235000_reception_checkin_core.sql
+            supabase/migrations/20260710001000_reception_authorization_center.sql
             supabase/migrations/20260712170000_medical_record_prescription_contract.sql
             supabase/migrations/20260712180000_medical_records_canonical_columns.sql
             supabase/migrations/20260712130000_secure_medical_records.sql
@@ -262,6 +269,15 @@ jobs:
           psql -v ON_ERROR_STOP=1 \
             -v "f4_dblink_connstr=host=127.0.0.1 port=5432 dbname=$PGDATABASE user=$PGUSER password=$PGPASSWORD" \
             -f supabase/tests/f4_professional_payments_secure_gate.sql
+
+      - name: Validate runtime RPC catalog and ACL
+        run: npm run validate:rpc -- --runtime
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 54322
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: postgres
 
       - name: Type check
         run: npm run type-check
