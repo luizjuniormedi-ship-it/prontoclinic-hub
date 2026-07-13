@@ -44,6 +44,15 @@ jobs:
       - name: Apply database migrations
         run: |
           export PGPASSWORD=postgres
+
+          # Supabase supplies these roles; a clean PostgreSQL service does not.
+          # Create only missing compatibility roles before policy migrations.
+          for role in anon authenticated service_role; do
+            if ! psql "$DATABASE_URL" -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$role'" | grep -q 1; then
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE $role NOLOGIN"
+            fi
+          done
+
           for f in supabase/migrations/*.sql; do
             echo "Applying $f..."
             psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f "$f"

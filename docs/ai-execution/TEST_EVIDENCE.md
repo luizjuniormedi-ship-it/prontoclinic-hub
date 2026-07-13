@@ -49,4 +49,4 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - Teste negativo de isolamento entre empresas.
 - Dry-run real de reconciliacao DataSIGH.
 - CI verde no commit mais recente.
-- O replay do CI confirmou a correção da porta, mas encontrou dependências implícitas de ordem: base, `auth.users` e tabelas de convênios eram usadas antes de existir. A base foi renomeada para `20251231000000_base_tables.sql`, foi adicionada a compatibilidade `20251231000500_auth_compatibility.sql`, e as migrations fundacionais de convênios foram ordenadas antes das alterações dependentes; novo replay ainda pendente.
+- O replay do CI confirmou a correção da porta e da ordem das tabelas, e encontrou a dependência de roles Supabase (`anon`, `authenticated`, `service_role`) ausentes no PostgreSQL limpo. O workflow agora cria apenas as roles ausentes antes do replay; novo CI ainda pendente.
