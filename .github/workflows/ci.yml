@@ -128,7 +128,7 @@ jobs:
             -H "Authorization: Bearer $token" \
             --data '{}')
           echo "financial_summary_smoke_http=$financial_status"
-          jq '{rows:(if type == "array" then length else null end), error}' /tmp/financial-smoke.json
+          jq 'if type == "array" then {rows:length, error:null} else {rows:null, error:(.error // .message // "resposta invalida")} end' /tmp/financial-smoke.json
           test "$financial_status" = "200"
           jq -e 'type == "array"' /tmp/financial-smoke.json >/dev/null
 
