@@ -110,38 +110,32 @@ describe("billingsService — create", () => {
     vi.clearAllMocks();
   });
 
-  it("cria faturamento com status padrão 'em_aberto' e discount=0", async () => {
+  it("cria faturamento por RPC vinculada ao atendimento", async () => {
     const inserted: any = {
       id: "b-99",
       company_id: null,
       patient_id: "patient-uuid",
-      professional_id: null,
+      appointment_id: 201,
       amount: 200,
-      discount: 0,
-      total: 200,
+      tiss_status: "particular",
+      guide_number: null,
       status: "em_aberto",
-      notes: null,
       created_at: "2026-01-01T00:00:00Z",
     };
-    const chain: any = {
-      insert: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: inserted, error: null }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
+    (supabase.rpc as any).mockResolvedValue({ data: inserted, error: null });
 
     const result = await billingsService.create({
-      patient_id: "patient-uuid",
+      appointment_id: "201",
       gross_amount: 200,
-      net_amount: 200,
+      billing_type: "particular",
     });
 
-    expect(supabase.from).toHaveBeenCalledWith("billings");
-    expect(chain.insert).toHaveBeenCalledTimes(1);
-    const insertedArg = chain.insert.mock.calls[0][0];
-    expect(insertedArg.status).toBe("em_aberto");
-    expect(insertedArg.discount).toBe(0);
-    expect(insertedArg.patient_id).toBe("patient-uuid");
+    expect(supabase.rpc).toHaveBeenCalledWith("create_billing_secure", {
+      p_appointment_id: 201,
+      p_amount: 200,
+      p_tiss_status: "particular",
+      p_guide_number: null,
+    });
     expect(result).toEqual(expect.objectContaining({
       id: "b-99",
       patient_id: "patient-uuid",
@@ -152,41 +146,13 @@ describe("billingsService — create", () => {
     }));
   });
 
-  it("preserva status e discount quando fornecidos", async () => {
-    const inserted: any = { id: "b-100" };
-    const chain: any = {
-      insert: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: inserted, error: null }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
-
-    await billingsService.create({
-      patient_id: "patient-uuid",
-      gross_amount: 300,
-      discount: 30,
-      net_amount: 270,
-      status: "pago",
-    });
-
-    const insertedArg = chain.insert.mock.calls[0][0];
-    expect(insertedArg.status).toBe("pago");
-    expect(insertedArg.discount).toBe(30);
-  });
-
   it("lança erro quando supabase retorna error", async () => {
-    const chain: any = {
-      insert: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: null, error: { message: "fk fail" } }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
+    (supabase.rpc as any).mockResolvedValue({ data: null, error: { message: "fk fail" } });
 
     await expect(
       billingsService.create({
-        patient_id: "patient-uuid",
+        appointment_id: "201",
         gross_amount: 100,
-        net_amount: 100,
       })
     ).rejects.toThrow(/Erro ao criar faturamento/);
   });
@@ -197,32 +163,20 @@ describe("billingsService — updateStatus", () => {
     vi.clearAllMocks();
   });
 
-  it("atualiza status do faturamento", async () => {
-    const updated = { id: "b-1", status: "pago" };
-    const chain: any = {
-      update: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: updated, error: null }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
+  it("atualiza status do faturamento por RPC", async () => {
+    const updated = { id: "1", amount: 100, status: "faturado", created_at: "2026-01-01" };
+    (supabase.rpc as any).mockResolvedValue({ data: updated, error: null });
 
-    const result = await billingsService.updateStatus("b-1", "pago");
+    const result = await billingsService.updateStatus("1", "faturado");
 
-    expect(supabase.from).toHaveBeenCalledWith("billings");
-    expect(chain.update).toHaveBeenCalledWith({ status: "pago" });
-    expect(chain.eq).toHaveBeenCalledWith("id", "b-1");
-    expect(result).toEqual(updated);
+    expect(supabase.rpc).toHaveBeenCalledWith("update_billing_status_secure", {
+      p_billing_id: 1, p_status: "faturado", p_reason: null,
+    });
+    expect(result.status).toBe("faturado");
   });
 
   it("lança erro quando supabase retorna error", async () => {
-    const chain: any = {
-      update: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: null, error: { message: "db err" } }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
+    (supabase.rpc as any).mockResolvedValue({ data: null, error: { message: "db err" } });
 
     await expect(billingsService.updateStatus("b-1", "cancelado")).rejects.toThrow(
       /Erro ao atualizar faturamento/

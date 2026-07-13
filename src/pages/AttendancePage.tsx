@@ -124,18 +124,9 @@ export default function AttendancePage() {
         const billingType = patient.insurance_plan_id ? "convenio" : "particular";
 
         await billingsService.create({
-          patient_id: patient.id,
-          professional_id: appointment.professional_id || undefined,
           appointment_id: appointment.id,
-          company_id: appointment.company_id || user?.company_id || undefined,
-          unit_id: appointment.unit_id || user?.primary_unit_id || undefined,
           billing_type: billingType,
           gross_amount: price,
-          net_amount: price,
-          status: "em_aberto",
-          notes: price > 0
-            ? `Valor automático: R$ ${price.toFixed(2)}`
-            : "Preço não configurado — ajuste manualmente",
         });
 
         if (price === 0) {
