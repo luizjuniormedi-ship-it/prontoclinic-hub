@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useNavigate } from "react-router-dom";
 import { systemSettingsService } from "@/services/systemSettingsService";
 import { Calendar, Clock, Package, RotateCcw, Shield, Banknote, Receipt } from "lucide-react";
 
@@ -22,6 +23,7 @@ const roles = [
 
 export default function SettingsPage() {
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const [consultaInterval, setConsultaInterval] = useState("30");
   const [returnValidity, setReturnValidity] = useState("30");
@@ -225,7 +227,7 @@ export default function SettingsPage() {
             {roles.map((r) => (
               <div key={r.name} className="flex items-center justify-between py-2 border-b last:border-0">
                 <div><Badge variant="outline" className={`${r.color} border-0`}>{r.name}</Badge><p className="text-xs text-muted-foreground mt-1">{r.description}</p></div>
-                <Button variant="outline" size="sm" className="h-7 text-xs">Editar</Button>
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => navigate("/admin/profiles")}>Gerenciar perfis</Button>
               </div>
             ))}
           </CardContent>
