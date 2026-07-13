@@ -83,6 +83,28 @@ describe("iaClinicaService — fluxo Edge Function", () => {
     expect(result.sugestoes.length).toBeGreaterThanOrEqual(0);
   });
 
+  it("chatbot falha fechado e registra tentativa sem resposta simulada", async () => {
+    (supabase.functions.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: null,
+      error: { message: "Edge Function indisponível" },
+    });
+    const logInsert = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        single: vi.fn().mockResolvedValue({ data: { id: 2 }, error: null }),
+      }),
+    });
+    (supabase.from as unknown as ReturnType<typeof vi.fn>).mockImplementation((table: string) =>
+      table === "ia_logs" ? { insert: logInsert } : {},
+    );
+
+    await expect(
+      iaClinicaService.chatbot({ mensagem: "Tenho febre", consentimento: true }),
+    ).rejects.toThrow("serviço de chatbot não respondeu");
+    expect(logInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ ds_resposta: null, ds_modelo: "unavailable" }),
+    );
+  });
+
   it("iaLogs.create valida lg_consentimento=true (LGPD)", async () => {
     await expect(
       iaClinicaService.logs.create({

@@ -7,7 +7,7 @@
  *   - Log de auditoria LGPD obrigatório (lg_consentimento)
  *   - Hash SHA-256 da query (preserva PII, permite auditoria)
  *   - Edge Function chamada via Supabase Functions (server-side)
- *   - Fallback para sugestões pré-computadas se Edge Function falhar
+ *   - Fallback para sugestões pré-computadas se Edge Function de CID falhar
  *   - Não substitui diagnóstico médico (apenas apoio)
  *
  * Conformidade:
@@ -267,8 +267,8 @@ export const iaClinicaService = {
     const t0 = performance.now();
     const queryHash = await sha256(parsed.mensagem);
 
-    let resposta = "Não foi possível consultar a IA no momento. Tente novamente.";
-    let modelo = "fallback";
+    let resposta: string;
+    let modelo: string;
 
     try {
       const { data, error } = await supabase.functions.invoke("ia-chatbot", {
@@ -282,16 +282,24 @@ export const iaClinicaService = {
         throw new Error("Resposta inválida");
       }
     } catch {
-      // Fallback: resposta empírica
-      resposta =
-        "Sou o assistente IA do ProntoClinic. No momento estou em modo de contingência. " +
-        "Em produção, esta resposta viria de um LLM treinado em literatura médica. " +
-        "Lembre-se: esta é uma sugestão, não substitui avaliação clínica.";
+      const latenciaMs = Math.round(performance.now() - t0);
+
+      // Registra a tentativa sem fabricar conteúdo clínico ou modelo usado.
+      await iaLogsService.create({
+        tp_consulta: "CHATBOT",
+        ds_query: parsed.mensagem,
+        ds_resposta: null,
+        ds_hash_query: queryHash,
+        vl_latencia_ms: latenciaMs,
+        ds_modelo: "unavailable",
+        lg_consentimento: true,
+        cd_paciente: parsed.cd_paciente ?? null,
+      });
+
+      throw new Error("IA clínica indisponível: o serviço de chatbot não respondeu");
     }
 
     const latenciaMs = Math.round(performance.now() - t0);
-
-    // Log LGPD
     await iaLogsService.create({
       tp_consulta: "CHATBOT",
       ds_query: parsed.mensagem,
