@@ -14,6 +14,7 @@ Atualizado em 2026-07-13.
 - O CI falhou no replay de migrações por usar `localhost:5432` apesar do serviço publicar PostgreSQL em `localhost:54322`; o workflow foi corrigido para usar `DATABASE_URL` integralmente.
 - O replay seguinte confirmou que a porta foi corrigida e revelou a ordem incorreta da migration base; `base_tables` foi renomeada para preceder as migrations `202512...` dependentes.
 - O mesmo replay revelou a dependência externa de `auth.users`; foi adicionada uma migration idempotente de compatibilidade para replay limpo sem substituir a tabela quando ela já existir.
+- O replay seguinte encontrou `insurance_companies` usada antes de sua criação; as migrations fundacionais de pagamento, convênios, planos, vínculos profissionais e tabelas de preço foram reordenadas antes das alterações dependentes.
 
 ## Hipotese
 
