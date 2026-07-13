@@ -25,6 +25,7 @@ Atualizado em 2026-07-13.
 - Foi criado o workflow manual `.github/workflows/f1-runtime-gate.yml`; ele exige Secrets protegidos para dois usuários de empresas distintas e executa somente o runner de isolamento, sem service role e sem DataSIGH.
 - A auditoria estática encontrou e corrigiu no bootstrap o fallback inseguro para o primeiro usuário e para `service_role`; a regra agora falha fechado (`auth.uid()` nulo e role padrão `anon`).
 - A compatibilidade de `auth.users` agora declara/adiciona de forma idempotente os campos usados pelo seed E2E e pelo auth server local (`encrypted_password`, `email_confirmed_at`, metadados e tokens).
+- O CI agora executa o seed E2E no PostgreSQL efêmero após o replay e verifica as colunas críticas de autenticação antes dos testes de aplicação.
 
 ## Hipotese
 

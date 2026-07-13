@@ -64,6 +64,18 @@ jobs:
       - name: Type check
         run: npm run type-check
 
+      - name: Validate auth replay compatibility
+        run: |
+          export PGPASSWORD=postgres
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -v e2e_password="$E2E_SEED_PASSWORD" \
+            -f scripts/seed-e2e-users.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
+            "SELECT column_name FROM information_schema.columns WHERE table_schema = 'auth' AND table_name = 'users' AND column_name IN ('encrypted_password','email_confirmed_at','raw_app_meta_data','raw_user_meta_data') ORDER BY column_name;"
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:54322/postgres
+          E2E_SEED_PASSWORD: ci-only-seed-password
+
       - name: Lint
         run: npm run lint
 
