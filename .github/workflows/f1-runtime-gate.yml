@@ -65,7 +65,7 @@ jobs:
           CREATE SCHEMA IF NOT EXISTS auth;
           CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY);
           CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $f1$
-            SELECT NULL::uuid
+            SELECT NULLIF(current_setting('request.jwt.claim.sub', TRUE), '')::uuid
           $f1$;
           SQL
           for migration in \
@@ -228,4 +228,3 @@ jobs:
           name: f1-runtime-evidence
           path: artifacts/f1
           if-no-files-found: warn
-
