@@ -61,3 +61,10 @@ O sistema nao esta apto para producao enquanto os testes P0 abaixo nao forem exe
 ## Proxima tarefa executavel
 
 Executar o workflow manual `F1 runtime gate` com Secrets homologados; depois registrar a evidência negativa de isolamento por `company_id`, validar autenticação/RBAC, rodar os testes de segurança no CI e fechar os gates de rollback.
+
+## Atualizacao do head 66edb4b
+
+- CI `29288812014` concluido com sucesso em migrations, type-check, lint, build, testes unitarios, seguranca do proxy e cobertura.
+- E2E e a11y continuam condicionados a Secrets de runtime ausentes; o workflow registra o bloqueio sem transformar ausencia de teste em aprovacao.
+- Scanner de segredos local aprovado apos remover senha literal do runbook.
+- Producao continua bloqueada ate haver evidencia executavel de login, isolamento tenant, RLS/owner/BYPASSRLS e rollback.

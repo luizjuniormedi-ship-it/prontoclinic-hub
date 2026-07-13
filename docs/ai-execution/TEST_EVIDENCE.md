@@ -85,3 +85,11 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - CI do commit `124fac1`: migrations, type-check, lint e build aprovados; suíte unitária falhou em 1 teste de Telemedicina (mock não cobria a segunda chamada Supabase). Correção em `241f2fa`; novo CI pendente.
 - CI do commit `083bc83`: migrations, type-check, lint e build aprovados; suíte unitária falhou em 1 asserção porque o mock não retornava a URL após o update. Correção em `6c87d4c`; novo CI pendente.
 - CI do commit `b780c50`: migrations, type-check, lint, build, 480 testes unitários e segurança aprovados; E2E bloqueado por Secrets ausentes. Correção do workflow em `b83cab2` torna o gate explícito e evita falha de a11y sem relatório.
+
+## Evidencia do head 66edb4b
+
+- CI GitHub run `29288812014` (#406): migrations, type-check, lint, build, testes unitarios, seguranca do proxy e cobertura aprovados.
+- O gate de credenciais E2E terminou com sucesso, mas Playwright e a11y foram pulados por ausencia de `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` nos Secrets do repositorio.
+- `npm run secret:scan` local: aprovado, sem segredo conhecido no escopo analisado.
+- Senha literal removida de `PRONTOMEDIC_VPS_CRONOGRAMA.md`; senhas devem ser fornecidas fora do repositorio.
+- O resultado nao substitui o gate F1 com dois tenants reais.
