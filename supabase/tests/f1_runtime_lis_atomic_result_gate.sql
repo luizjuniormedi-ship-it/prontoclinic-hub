@@ -221,7 +221,6 @@ BEGIN
   EXCEPTION WHEN invalid_text_representation THEN NULL;
   END;
   IF EXISTS (SELECT 1 FROM public.exames_lab_resultado WHERE cd_item_pedido = 980044)
-     OR EXISTS (SELECT 1 FROM public.lis_result_mutations WHERE item_id = 980044)
      OR (SELECT tp_status FROM public.exames_lab_pedido_itens WHERE id = 980044) <> 'EM_ANALISE'
      OR (SELECT tp_status FROM public.exames_lab_pedido WHERE id = 980034) <> 'EM_ANALISE' THEN
     RAISE EXCEPTION 'Logical rollback left result, ledger, item or order state';
@@ -272,6 +271,9 @@ DO $gate$
 DECLARE
   v_result_id BIGINT;
 BEGIN
+  IF EXISTS (SELECT 1 FROM public.lis_result_mutations WHERE item_id = 980044) THEN
+    RAISE EXCEPTION 'Logical rollback left an idempotency ledger row';
+  END IF;
   SELECT id INTO v_result_id FROM public.exames_lab_resultado WHERE cd_item_pedido = 980041;
   BEGIN
     UPDATE public.exames_lab_resultado SET ds_observacao = 'mutacao indevida' WHERE id = v_result_id;
