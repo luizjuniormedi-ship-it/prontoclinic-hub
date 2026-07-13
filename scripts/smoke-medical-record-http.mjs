@@ -54,7 +54,7 @@ function medicalRecordPath(params) {
 const createPayload = {
   p_patient_id: 991302,
   p_professional_id: 991302,
-  p_appointment_id: null,
+  p_appointment_id: 991304,
   p_record_date: '2026-07-22',
   p_anamnesis: 'CI HTTP anamnesis',
   p_evolution: 'CI HTTP draft',
