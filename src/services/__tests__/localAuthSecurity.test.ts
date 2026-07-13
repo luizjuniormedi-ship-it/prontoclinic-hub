@@ -96,6 +96,9 @@ describe("local auth server security invariants", () => {
       "list_billing_production_secure: { module: 'faturamento', action: 'can_view' }",
     );
     expect(source).toContain(
+      "list_tiss_read_model_secure: { module: 'faturamento', action: 'can_view' }",
+    );
+    expect(source).toContain(
       "list_billing_financial_summary_secure: { module: 'financeiro', action: 'can_view' }",
     );
   });

@@ -71,6 +71,23 @@ export interface TissXml {
   updated_at: string;
 }
 
+export interface TissReadModel {
+  tiss_xml_id: number;
+  billing_id: number | null;
+  appointment_id: number | null;
+  patient_id: number | null;
+  insurance_plan_id: number | null;
+  insurance_company_id: number | null;
+  insurance_company_name: string | null;
+  insurance_plan_name: string | null;
+  billing_amount: number | null;
+  tiss_created_at: string;
+}
+
+interface TissReadModelRow extends Omit<TissReadModel, "billing_amount"> {
+  billing_amount: number | string | null;
+}
+
 export const TISS_XML_METADATA_COLUMNS =
   "id, cd_fatura, cd_convenio, ds_descricao, ds_filename, dt_fatura, ds_tipo_guia, cd_lote, ds_protocolo, dt_recurso, ds_protocolo_recurso, vl_informado, vl_processado, vl_liberado, vl_glosa, ds_versao_tiss, tp_ambiente, status, ds_motivo_rejeicao, lg_deletado, dt_envio, dt_retorno, dt_pagamento, created_at, updated_at";
 
@@ -183,31 +200,29 @@ function isoToTissDateTime(iso?: string): string {
 export const tissService = {
   // ── CRUD de XMLs ───────────────────────────────────────────────
 
-  async listFaturas(
-    companyId: string,
-    filters?: { status?: TissStatus; mes?: number; ano?: number; cd_convenio?: number }
-  ): Promise<TissXml[]> {
-    let q = supabase
-      .from("tiss_xml")
-      .select(TISS_XML_METADATA_COLUMNS)
-      .eq("company_id", companyId)
-      .eq("lg_deletado", false)
-      .order("dt_fatura", { ascending: false });
-    if (filters?.status) q = q.eq("status", filters.status);
-    if (filters?.cd_convenio) q = q.eq("cd_convenio", filters.cd_convenio);
-    if (filters?.mes && filters?.ano) {
-      const month = String(filters.mes).padStart(2, "0");
-      const lastDay = String(new Date(filters.ano, filters.mes, 0).getDate()).padStart(2, "0");
-      q = q
-        .gte("dt_fatura", `${filters.ano}-${month}-01`)
-        .lte("dt_fatura", `${filters.ano}-${month}-${lastDay}`);
-    }
-    if (filters?.ano && !filters?.mes) {
-      q = q.gte("dt_fatura", `${filters.ano}-01-01`).lte("dt_fatura", `${filters.ano}-12-31`);
-    }
-    const { data, error } = await q.limit(500);
+  async listFaturas(filters?: {
+    mes?: number;
+    ano?: number;
+    insurance_company_id?: number;
+  }): Promise<TissReadModel[]> {
+    const { data, error } = await supabase.rpc("list_tiss_read_model_secure", {
+      p_year: filters?.ano ?? null,
+      p_month: filters?.mes ?? null,
+      p_insurance_company_id: filters?.insurance_company_id ?? null,
+    });
     if (error) throw error;
-    return (data || []) as TissXml[];
+    return ((data || []) as TissReadModelRow[]).map((row) => ({
+      tiss_xml_id: row.tiss_xml_id,
+      billing_id: row.billing_id,
+      appointment_id: row.appointment_id,
+      patient_id: row.patient_id,
+      insurance_plan_id: row.insurance_plan_id,
+      insurance_company_id: row.insurance_company_id,
+      insurance_company_name: row.insurance_company_name,
+      insurance_plan_name: row.insurance_plan_name,
+      billing_amount: row.billing_amount === null ? null : Number(row.billing_amount),
+      tiss_created_at: row.tiss_created_at,
+    }));
   },
 
   async getById(id: number): Promise<TissXml> {
@@ -473,4 +488,3 @@ export const tissService = {
 };
 
 export default tissService;
-

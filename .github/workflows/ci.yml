@@ -123,6 +123,16 @@ jobs:
           export PGPASSWORD=postgres
           psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_scheduling_reception_tenant_gate.sql
 
+      - name: Apply TISS read-only model
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260712235000_tiss_read_model.sql
+
+      - name: Run TISS read-model gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_tiss_read_model_gate.sql
+
       - name: Type check
         run: npm run type-check
 
@@ -256,4 +266,3 @@ jobs:
             test -f scripts/check-a11y-violations.mjs
             node scripts/check-a11y-violations.mjs
           fi
-

@@ -7,7 +7,6 @@ import { memo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import {
   Table,
@@ -25,93 +24,48 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  FileText,
-  Send,
   Eye,
   AlertTriangle,
-  CheckCircle2,
-  DollarSign,
-  XCircle,
   RefreshCw,
 } from "lucide-react";
 import {
   tissService,
-  type TissStatus,
-  type TissXml,
+  type TissReadModel,
 } from "@/services/tissService";
 import { insuranceCompanyService } from "@/services/insuranceService";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-
-function statusBadge(s: TissStatus): { label: string; cls: string; icon: typeof FileText } {
-  const map: Record<TissStatus, { label: string; cls: string; icon: typeof FileText }> = {
-    PENDENTE: { label: "Pendente", cls: "bg-yellow-100 text-yellow-800", icon: FileText },
-    ENVIADO: { label: "Enviado", cls: "bg-blue-100 text-blue-800", icon: Send },
-    PROCESSADO: { label: "Processado", cls: "bg-indigo-100 text-indigo-800", icon: CheckCircle2 },
-    GLOSADO: { label: "Glosado", cls: "bg-orange-100 text-orange-800", icon: AlertTriangle },
-    RECEBIDO: { label: "Recebido", cls: "bg-emerald-100 text-emerald-800", icon: CheckCircle2 },
-    PAGO: { label: "Pago", cls: "bg-green-100 text-green-800", icon: DollarSign },
-    CANCELADO: { label: "Cancelado", cls: "bg-gray-100 text-gray-800", icon: XCircle },
-    REJEITADO: { label: "Rejeitado", cls: "bg-red-100 text-red-800", icon: XCircle },
-  };
-  return map[s] || map.PENDENTE;
-}
 
 export interface TissLoteListProps {
   companyId: string;
   mes: number;
   ano: number;
-  filterStatus: TissStatus | "ALL";
-  setFilterStatus: (s: TissStatus | "ALL") => void;
   filterConvenio: number | "ALL";
   setFilterConvenio: (v: number | "ALL") => void;
-  onSelectXml: (xml: TissXml) => void;
+  onSelectXml: (xml: TissReadModel) => void;
 }
 
 interface TissRowProps {
-  fatura: TissXml;
-  onSelectXml: (xml: TissXml) => void;
+  fatura: TissReadModel;
+  onSelectXml: (xml: TissReadModel) => void;
 }
 
 const TissRow = memo(function TissRow({ fatura, onSelectXml }: TissRowProps) {
-  const sb = statusBadge(fatura.status);
-  const Icon = sb.icon;
-  const convenioNome =
-    (fatura as TissXml & { insurance_companies?: { name: string } }).insurance_companies?.name ||
-    fatura.cd_convenio ||
-    "—";
   return (
     <TableRow
       className="cursor-pointer hover:bg-muted/50"
       onClick={() => onSelectXml(fatura)}
     >
-      <TableCell><code className="text-xs">{fatura.cd_lote || "—"}</code></TableCell>
+      <TableCell><code className="text-xs">#{fatura.tiss_xml_id}</code></TableCell>
+      <TableCell><code className="text-xs">{fatura.billing_id ? `#${fatura.billing_id}` : "—"}</code></TableCell>
+      <TableCell className="text-xs">{fatura.insurance_company_name || "—"}</TableCell>
+      <TableCell className="text-xs">{fatura.insurance_plan_name || "—"}</TableCell>
       <TableCell>
-        <Badge variant="outline">{fatura.ds_tipo_guia || "—"}</Badge>
+        {fatura.billing_amount === null
+          ? "—"
+          : fatura.billing_amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
       </TableCell>
-      <TableCell className="text-xs">{convenioNome}</TableCell>
-      <TableCell>
-        {fatura.ds_protocolo ? (
-          <code className="text-xs">{fatura.ds_protocolo}</code>
-        ) : "—"}
-      </TableCell>
-      <TableCell>
-        {(fatura.vl_informado || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-      </TableCell>
-      <TableCell>
-        {(fatura.vl_liberado || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-      </TableCell>
-      <TableCell>
-        {(fatura.vl_glosa || 0) > 0 ? (
-          <span className="text-orange-600 font-medium">
-            {(fatura.vl_glosa || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-          </span>
-        ) : "—"}
-      </TableCell>
-      <TableCell>
-        <Badge className={sb.cls}>
-          <Icon className="h-3 w-3 mr-1" />
-          {sb.label}
-        </Badge>
+      <TableCell className="text-xs">
+        {new Date(fatura.tiss_created_at).toLocaleDateString("pt-BR")}
       </TableCell>
       <TableCell>
         <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
@@ -122,24 +76,6 @@ const TissRow = memo(function TissRow({ fatura, onSelectXml }: TissRowProps) {
           >
             <Eye className="h-3 w-3" />
           </Button>
-          {fatura.status === "PENDENTE" && (
-            <Button
-              size="sm" variant="default"
-              disabled
-              title="Transmissao indisponivel ate configuracao do backend seguro"
-            >
-              <Send className="h-3 w-3" />
-            </Button>
-          )}
-          {fatura.status === "GLOSADO" && (
-            <Button
-              size="sm" variant="outline"
-              disabled
-              title="Recurso de glosa indisponivel ate existir backend TISS seguro"
-            >
-              <AlertTriangle className="h-3 w-3 text-orange-600" />
-            </Button>
-          )}
         </div>
       </TableCell>
     </TableRow>
@@ -151,20 +87,17 @@ function TissLoteListImpl({
   companyId,
   mes,
   ano,
-  filterStatus,
-  setFilterStatus,
   filterConvenio,
   setFilterConvenio,
   onSelectXml,
 }: TissLoteListProps) {
   const { data: faturas, isLoading, isError, refetch } = useQuery({
-    queryKey: ["tiss-xml", companyId, mes, ano, filterStatus, filterConvenio],
+    queryKey: ["tiss-xml", companyId, mes, ano, filterConvenio],
     queryFn: () =>
-      tissService.listFaturas(companyId, {
+      tissService.listFaturas({
         mes,
         ano,
-        status: filterStatus === "ALL" ? undefined : filterStatus,
-        cd_convenio: filterConvenio === "ALL" ? undefined : filterConvenio,
+        insurance_company_id: filterConvenio === "ALL" ? undefined : filterConvenio,
       }),
     enabled: !!companyId,
   });
@@ -193,18 +126,6 @@ function TissLoteListImpl({
                     <SelectItem key={m} value={String(m)}>
                       {String(m).padStart(2, "0")}/{ano}
                     </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-xs">Status</Label>
-              <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v as TissStatus | "ALL")}>
-                <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">Todos</SelectItem>
-                  {(["PENDENTE", "ENVIADO", "PROCESSADO", "GLOSADO", "PAGO", "REJEITADO"] as TissStatus[]).map((s) => (
-                    <SelectItem key={s} value={s}>{statusBadge(s).label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -247,41 +168,39 @@ function TissLoteListImpl({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Lote</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Convenio</TableHead>
-                <TableHead>Protocolo</TableHead>
-                <TableHead>Informado</TableHead>
-                <TableHead>Liberado</TableHead>
-                <TableHead>Glosa</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>Registro TISS</TableHead>
+                <TableHead>Fatura</TableHead>
+                <TableHead>Operadora</TableHead>
+                <TableHead>Plano</TableHead>
+                <TableHead>Valor</TableHead>
+                <TableHead>Criado em</TableHead>
                 <TableHead className="w-[260px]">Acoes</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8">
+                  <TableCell colSpan={7} className="text-center py-8">
                     <RefreshCw className="h-4 w-4 animate-spin inline mr-2" />
                     Carregando...
                   </TableCell>
                 </TableRow>
               ) : isError ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-destructive">
+                  <TableCell colSpan={7} className="text-center py-8 text-destructive">
                     Guias indisponiveis no momento.
                   </TableCell>
                 </TableRow>
               ) : (faturas || []).length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                     Nenhuma fatura encontrada para os filtros atuais.
                   </TableCell>
                 </TableRow>
               ) : (
                 (faturas || []).map((f) => (
                   <TissRow
-                    key={f.id}
+                    key={f.tiss_xml_id}
                     fatura={f}
                     onSelectXml={onSelectXml}
                   />
@@ -299,4 +218,3 @@ export const TissLoteList = memo(TissLoteListImpl);
 TissLoteList.displayName = "TissLoteList";
 
 export default TissLoteList;
-

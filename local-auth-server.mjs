@@ -285,6 +285,7 @@ const RPC_PERMISSIONS = {
   create_billing_secure: { module: 'faturamento', action: 'can_create' },
   update_billing_status_secure: { module: 'faturamento', action: 'can_edit' },
   list_billing_production_secure: { module: 'faturamento', action: 'can_view' },
+  list_tiss_read_model_secure: { module: 'faturamento', action: 'can_view' },
   list_billing_financial_summary_secure: { module: 'financeiro', action: 'can_view' },
   get_billing_balance_secure: { module: 'financeiro', action: 'can_view' },
   record_billing_receipt_secure: { module: 'financeiro', action: 'can_create' },
@@ -912,4 +913,3 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜`);
   console.log(``);
 });
-

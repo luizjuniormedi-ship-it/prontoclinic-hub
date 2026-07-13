@@ -30,7 +30,7 @@ import { toast } from "sonner";
 import {
   tissService,
   TISS_GLOSA_CODES,
-  type TissXml,
+  type TissReadModel,
 } from "@/services/tissService";
 import { insuranceCompanyService } from "@/services/insuranceService";
 
@@ -38,7 +38,7 @@ export interface TissGuiaFormProps {
   // Glosa form
   glosaDialogOpen: boolean;
   setGlosaDialogOpen: (open: boolean) => void;
-  selectedXml: TissXml | null;
+  selectedXml: TissReadModel | null;
   // Protocol form
   protocolDialogOpen: boolean;
   setProtocolDialogOpen: (open: boolean) => void;
@@ -62,7 +62,7 @@ export function TissGuiaForm({
     const fd = new FormData(e.currentTarget);
     try {
       await tissService.registrarGlosa(
-        selectedXml.id,
+        selectedXml.tiss_xml_id,
         fd.get("motivo") as string,
         Number(fd.get("valor")),
         (fd.get("codigo") as string) || undefined,
@@ -246,4 +246,3 @@ export function TissGuiaForm({
 }
 
 export default TissGuiaForm;
-

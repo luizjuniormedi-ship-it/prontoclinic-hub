@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { TISS_XML_METADATA_COLUMNS, tissService } from "@/services/tissService";
+import { tissService } from "@/services/tissService";
 
 vi.mock("@/lib/supabase", () => ({
   supabase: {
@@ -11,60 +11,62 @@ vi.mock("@/lib/supabase", () => ({
 
 import { supabase } from "@/lib/supabase";
 
-function queryChain(result = { data: [], error: null }) {
-  const chain: any = {
-    select: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockReturnThis(),
-    order: vi.fn().mockReturnThis(),
-    gte: vi.fn().mockReturnThis(),
-    lte: vi.fn().mockReturnThis(),
-    limit: vi.fn().mockResolvedValue(result),
-  };
-  return chain;
-}
-
 describe("tissService.listFaturas", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("consulta colunas locais sem relacionamento PostgREST ausente", async () => {
-    const chain = queryChain();
-    (supabase.from as any).mockReturnValue(chain);
+  it("usa a RPC tenant-safe sem receber company_id do navegador", async () => {
+    (supabase.rpc as any).mockResolvedValue({ data: [], error: null });
 
-    await tissService.listFaturas("company-1");
+    await tissService.listFaturas({
+      mes: 7,
+      ano: 2026,
+      insurance_company_id: 15,
+    });
 
-    expect(supabase.from).toHaveBeenCalledWith("tiss_xml");
-    expect(chain.select).toHaveBeenCalledWith(TISS_XML_METADATA_COLUMNS);
-    expect(TISS_XML_METADATA_COLUMNS).not.toMatch(/bl_xml|ds_hash|cd_user|cd_origem|company_id/);
-    expect(chain.eq).toHaveBeenCalledWith("company_id", "company-1");
-    expect(chain.eq).toHaveBeenCalledWith("lg_deletado", false);
-    expect(chain.limit).toHaveBeenCalledWith(500);
+    expect(supabase.rpc).toHaveBeenCalledWith("list_tiss_read_model_secure", {
+      p_year: 2026,
+      p_month: 7,
+      p_insurance_company_id: 15,
+    });
+    expect(supabase.from).not.toHaveBeenCalled();
   });
 
-  it("filtra o mes inteiro, inclusive fevereiro bissexto", async () => {
-    const chain = queryChain();
-    (supabase.from as any).mockReturnValue(chain);
+  it("mapeia somente o DTO canonico e elimina cd_convenio da projecao", async () => {
+    (supabase.rpc as any).mockResolvedValue({
+      data: [{
+        tiss_xml_id: 10,
+        billing_id: 20,
+        appointment_id: null,
+        patient_id: null,
+        insurance_plan_id: 30,
+        insurance_company_id: 40,
+        insurance_company_name: "Operator A",
+        insurance_plan_name: "Plan A",
+        billing_amount: "125.50",
+        tiss_created_at: "2026-07-10T12:00:00Z",
+        cd_convenio: 999,
+        dt_fatura: "2026-07-10",
+        status: "PENDENTE",
+      }],
+      error: null,
+    });
 
-    await tissService.listFaturas("company-1", { mes: 2, ano: 2024 });
+    const [row] = await tissService.listFaturas();
 
-    expect(chain.gte).toHaveBeenCalledWith("dt_fatura", "2024-02-01");
-    expect(chain.lte).toHaveBeenCalledWith("dt_fatura", "2024-02-29");
-  });
-
-  it("filtra o ano completo quando o mes nao e informado", async () => {
-    const chain = queryChain();
-    (supabase.from as any).mockReturnValue(chain);
-
-    await tissService.listFaturas("company-1", { ano: 2026 });
-
-    expect(chain.gte).toHaveBeenCalledWith("dt_fatura", "2026-01-01");
-    expect(chain.lte).toHaveBeenCalledWith("dt_fatura", "2026-12-31");
+    expect(row.billing_amount).toBe(125.5);
+    expect(row.insurance_company_name).toBe("Operator A");
+    expect(row).not.toHaveProperty("cd_convenio");
+    expect(row).not.toHaveProperty("dt_fatura");
+    expect(row).not.toHaveProperty("status");
   });
 
   it("propaga erro do banco para a camada de interface", async () => {
-    const chain = queryChain({ data: null, error: { message: "DB indisponivel" } });
-    (supabase.from as any).mockReturnValue(chain);
+    (supabase.rpc as any).mockResolvedValue({
+      data: null,
+      error: { message: "DB indisponivel" },
+    });
 
-    await expect(tissService.listFaturas("company-1")).rejects.toMatchObject({
+    await expect(tissService.listFaturas()).rejects.toMatchObject({
       message: "DB indisponivel",
     });
   });
@@ -144,4 +146,3 @@ describe("tissService safety gates", () => {
     expectNoBrowserSideEffects();
   });
 });
-

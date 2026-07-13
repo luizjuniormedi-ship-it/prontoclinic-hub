@@ -189,6 +189,10 @@ jobs:
           psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260712234000_scheduling_reception_tenant_hardening.sql
           echo "Running F1 runtime scheduling/reception tenant gate"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_scheduling_reception_tenant_gate.sql
+          echo "Applying TISS read-only model"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260712235000_tiss_read_model.sql
+          echo "Running F1 runtime TISS read-model gate"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_tiss_read_model_gate.sql
 
       - name: Upload F1 evidence
         if: always()
@@ -197,4 +201,3 @@ jobs:
           name: f1-runtime-evidence
           path: artifacts/f1
           if-no-files-found: warn
-

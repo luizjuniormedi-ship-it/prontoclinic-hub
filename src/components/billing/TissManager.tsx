@@ -4,7 +4,7 @@
  * Espelha SIGH.xml (544 registros) + SIGH.recurso_de_glosa
  *
  * Sub-componentes:
- *   - TissStats.tsx       — totalizadores + graficos
+ *   - TissStats.tsx       — totalizadores canonicos
  *   - TissLoteList.tsx    — tabela de faturas
  *   - TissGuiaForm.tsx    — dialogs de glosa/protocolo
  *   - TissXmlPreview.tsx  — modal de detalhes
@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Settings2, RefreshCw } from "lucide-react";
-import { tissService, type TissStatus, type TissXml } from "@/services/tissService";
+import { tissService, type TissReadModel } from "@/services/tissService";
 import { useAuth } from "@/hooks/useAuth";
 import { TissStats } from "./TissStats";
 import { TissLoteList } from "./TissLoteList";
@@ -38,9 +38,8 @@ export function TissManager() {
   const hoje = new Date();
   const [mes, setMes] = useState(hoje.getMonth() + 1);
   const [ano, setAno] = useState(hoje.getFullYear());
-  const [filterStatus, setFilterStatus] = useState<TissStatus | "ALL">("ALL");
   const [filterConvenio, setFilterConvenio] = useState<number | "ALL">("ALL");
-  const [selectedXml, setSelectedXml] = useState<TissXml | null>(null);
+  const [selectedXml, setSelectedXml] = useState<TissReadModel | null>(null);
   const [glosaDialogOpen, setGlosaDialogOpen] = useState(false);
   const [protocolDialogOpen, setProtocolDialogOpen] = useState(false);
 
@@ -54,7 +53,7 @@ export function TissManager() {
     return () => window.removeEventListener("tiss:mes-change", handler);
   }, []);
 
-  const handleSelectXml = (xml: TissXml) => {
+  const handleSelectXml = (xml: TissReadModel) => {
     setSelectedXml(xml);
     setGlosaDialogOpen(false);
   };
@@ -65,7 +64,7 @@ export function TissManager() {
         <div>
           <h1 className="text-2xl font-bold">Faturamento TISS</h1>
           <p className="text-muted-foreground">
-            XMLs de faturamento eletronico de convenios (espelha SIGH.xml)
+            Referencias canonicas de faturamento conveniado em modo somente leitura
           </p>
         </div>
         <div className="flex gap-2">
@@ -84,7 +83,7 @@ export function TissManager() {
       </div>
 
       {/* Totalizadores + charts (sub-componente) */}
-      <TissStats companyId={companyId} ano={ano} />
+      <TissStats ano={ano} />
 
       {/* Selecao de ano (compartilhada entre abas) */}
       <div className="flex items-center gap-2">
@@ -102,7 +101,6 @@ export function TissManager() {
       <Tabs defaultValue="guias" className="w-full">
         <TabsList>
           <TabsTrigger value="guias">Guias TISS</TabsTrigger>
-          <TabsTrigger value="charts">Graficos</TabsTrigger>
           <TabsTrigger value="glosas">Glosas</TabsTrigger>
         </TabsList>
 
@@ -111,16 +109,10 @@ export function TissManager() {
             companyId={companyId}
             mes={mes}
             ano={ano}
-            filterStatus={filterStatus}
-            setFilterStatus={setFilterStatus}
             filterConvenio={filterConvenio}
             setFilterConvenio={setFilterConvenio}
             onSelectXml={handleSelectXml}
           />
-        </TabsContent>
-
-        <TabsContent value="charts" className="space-y-4">
-          <TissStats companyId={companyId} ano={ano} />
         </TabsContent>
 
         <TabsContent value="glosas" className="space-y-3">

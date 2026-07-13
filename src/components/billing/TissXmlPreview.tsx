@@ -12,10 +12,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { TissXml } from "@/services/tissService";
+import type { TissReadModel } from "@/services/tissService";
 
 export interface TissXmlPreviewProps {
-  xml: TissXml | null;
+  xml: TissReadModel | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -27,28 +27,21 @@ export function TissXmlPreview({ xml, open, onOpenChange }: TissXmlPreviewProps)
         {xml && (
           <>
             <DialogHeader>
-              <DialogTitle>Detalhes da Fatura #{xml.id}</DialogTitle>
+              <DialogTitle>Registro TISS #{xml.tiss_xml_id}</DialogTitle>
               <DialogDescription>
-                {xml.ds_descricao} — {xml.dt_fatura}
+                Referencias canonicas de faturamento em modo somente leitura.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <div><b>Status:</b> {xml.status}</div>
-                <div><b>Tipo Guia:</b> {xml.ds_tipo_guia}</div>
-                <div><b>Lote:</b> {xml.cd_lote || "—"}</div>
-                <div><b>Protocolo:</b> {xml.ds_protocolo || "—"}</div>
-                <div><b>Informado:</b> R$ {(xml.vl_informado || 0).toFixed(2)}</div>
-                <div><b>Liberado:</b> R$ {(xml.vl_liberado || 0).toFixed(2)}</div>
-                <div><b>Glosa:</b> R$ {(xml.vl_glosa || 0).toFixed(2)}</div>
-                <div><b>Versao TISS:</b> {xml.ds_versao_tiss}</div>
+                <div><b>Fatura:</b> {xml.billing_id ? `#${xml.billing_id}` : "—"}</div>
+                <div><b>Atendimento:</b> {xml.appointment_id ? `#${xml.appointment_id}` : "—"}</div>
+                <div><b>Paciente:</b> {xml.patient_id ? `#${xml.patient_id}` : "—"}</div>
+                <div><b>Operadora:</b> {xml.insurance_company_name || "—"}</div>
+                <div><b>Plano:</b> {xml.insurance_plan_name || "—"}</div>
+                <div><b>Valor:</b> {xml.billing_amount === null ? "—" : xml.billing_amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</div>
+                <div><b>Criado em:</b> {new Date(xml.tiss_created_at).toLocaleString("pt-BR")}</div>
               </div>
-
-              {xml.ds_motivo_rejeicao && (
-                <div className="p-3 bg-red-50 text-red-800 rounded">
-                  <b>Motivo da rejeicao:</b> {xml.ds_motivo_rejeicao}
-                </div>
-              )}
             </div>
             <DialogFooter>
               <Button variant="ghost" onClick={() => onOpenChange(false)}>Fechar</Button>
@@ -61,4 +54,3 @@ export function TissXmlPreview({ xml, open, onOpenChange }: TissXmlPreviewProps)
 }
 
 export default TissXmlPreview;
-
