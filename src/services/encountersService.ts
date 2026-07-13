@@ -1,24 +1,15 @@
-/**
- * encountersService — Prontuário Eletrônico / PEP (Fases 1 e 2)
- *
- * Consome o backend clínico: encounters, diagnósticos, lista de problemas,
- * alergias/medicações, segurança de prescrição, escalas e anamnese/exame estruturados.
- * Regras (bloqueio pós-assinatura, status_history, log de acesso) por trigger no Postgres.
- */
+/** Leitura canônica do Prontuário Eletrônico / PEP. */
 import { supabase } from "@/lib/supabase";
 
-export type EncounterStatus =
-  | "agendado" | "checkin_realizado" | "aguardando_triagem" | "em_triagem" | "triagem_concluida"
-  | "aguardando_atendimento" | "em_atendimento" | "aguardando_exame" | "aguardando_retorno" | "em_observacao"
-  | "em_procedimento" | "aguardando_prescricao" | "aguardando_assinatura" | "finalizado" | "assinado"
-  | "reaberto" | "cancelado" | "faltou" | "alta_ambulatorial" | "encaminhado" | "internado";
+export type EncounterStatus = "draft" | "signed" | "legacy_locked";
 
 export interface Encounter {
   id: string;
+  company_id: string | null;
   patient_id: number | null;
   professional_id: number | null;
   appointment_id: number | null;
-  encounter_type: string;
+  encounter_type: string | null;
   status: EncounterStatus;
   priority: string;
   chief_complaint: string | null;
@@ -28,14 +19,8 @@ export interface Encounter {
   started_at: string | null;
   finished_at: string | null;
   created_at: string;
-  patient_name?: string;
+  patient_name: string | null;
 }
-
-export interface Diagnosis { id: number; encounter_id: string; cid_code: string; cid_description: string | null; diagnosis_type: string; status: string; }
-export interface Problem { id: number; patient_id: number; cid_code: string | null; problem_description: string; status: string; severity: string | null; }
-export interface Allergy { id: number; patient_id: number; allergen: string; reaction: string | null; severity: string; status: string; }
-export interface Medication { id: number; patient_id: number; medication: string; dose: string | null; frequency: string | null; status: string; }
-export interface SafetyAlert { alert_type: string; severity: string; descricao: string; }
 
 export const ENCOUNTER_MUTATION_BLOCK_REASON =
   "Alterações clínicas e assinatura estão indisponíveis até a publicação das RPCs canônicas de atendimento.";
@@ -44,35 +29,25 @@ function blockUnsafeMutation(): never {
   throw new Error(ENCOUNTER_MUTATION_BLOCK_REASON);
 }
 
-export const ENC_STATUS_LABELS: Partial<Record<EncounterStatus, string>> = {
-  aguardando_atendimento: "Aguardando atendimento", em_atendimento: "Em atendimento",
-  aguardando_assinatura: "Aguardando assinatura", finalizado: "Finalizado", assinado: "Assinado",
-  reaberto: "Reaberto", cancelado: "Cancelado", alta_ambulatorial: "Alta", encaminhado: "Encaminhado",
-  internado: "Internado", em_observacao: "Em observação", em_triagem: "Em triagem",
+export const ENC_STATUS_LABELS: Record<EncounterStatus, string> = {
+  draft: "Rascunho",
+  signed: "Assinado",
+  legacy_locked: "Legado bloqueado",
 };
 
 export const encountersService = {
   async list(filters?: { status?: string; patient_id?: number }): Promise<Encounter[]> {
-    let q = supabase.from("encounters").select("*").is("deleted_at", null)
-      .order("created_at", { ascending: false }).limit(200);
+    let q = supabase.from("v_encounters_read_model").select("*");
     if (filters?.status) q = q.eq("status", filters.status);
-    if (filters?.patient_id) q = q.eq("patient_id", filters.patient_id);
-    const { data, error } = await q;
-    if (error) throw new Error(error.message);
-    const rows = (data || []) as unknown as Encounter[];
-    const pids = [...new Set(rows.map((r) => r.patient_id).filter(Boolean))];
-    const nameById: Record<string, string> = {};
-    if (pids.length > 0) {
-      const { data: pats, error: patientsError } = await supabase.from("patients").select("id, full_name").in("id", pids as number[]);
-      if (patientsError) throw new Error(`Erro ao identificar pacientes: ${patientsError.message}`);
-      for (const p of (pats || []) as Array<{ id: number; full_name: string }>) nameById[String(p.id)] = p.full_name;
-    }
-    return rows.map((r) => ({ ...r, patient_name: r.patient_id ? nameById[String(r.patient_id)] : undefined }));
+    if (filters?.patient_id !== undefined) q = q.eq("patient_id", filters.patient_id);
+    const { data, error } = await q.order("created_at", { ascending: false }).limit(200);
+    if (error) throw new Error(`Erro ao buscar atendimentos: ${error.message}`);
+    return (data || []) as unknown as Encounter[];
   },
 
   async get(id: string): Promise<Encounter | null> {
-    const { data, error } = await supabase.from("encounters").select("*").eq("id", id).maybeSingle();
-    if (error) throw new Error(error.message);
+    const { data, error } = await supabase.from("v_encounters_read_model").select("*").eq("id", id).maybeSingle();
+    if (error) throw new Error(`Erro ao buscar atendimento: ${error.message}`);
     return (data as unknown as Encounter) || null;
   },
 
@@ -86,57 +61,6 @@ export const encountersService = {
 
   async sign(_id: string): Promise<void> {
     blockUnsafeMutation();
-  },
-
-  // ── Diagnósticos ──
-  async diagnoses(encounterId: string): Promise<Diagnosis[]> {
-    const { data, error } = await supabase.from("encounter_diagnoses").select("*").eq("encounter_id", encounterId);
-    if (error) throw new Error(error.message);
-    return (data || []) as unknown as Diagnosis[];
-  },
-  async addDiagnosis(_diagnosis: { encounter_id: string; patient_id: number; cid_code: string; cid_description?: string; diagnosis_type?: string; status?: string }): Promise<void> {
-    blockUnsafeMutation();
-  },
-
-  // ── Problemas / Alergias / Medicações (por paciente) ──
-  async problems(patientId: number): Promise<Problem[]> {
-    const { data, error } = await supabase.from("patient_problem_list").select("*").eq("patient_id", patientId);
-    if (error) throw new Error(error.message);
-    return (data || []) as unknown as Problem[];
-  },
-  async allergies(patientId: number): Promise<Allergy[]> {
-    const { data, error } = await supabase.from("patient_allergies").select("*").eq("patient_id", patientId).eq("status", "ativa");
-    if (error) throw new Error(error.message);
-    return (data || []) as unknown as Allergy[];
-  },
-  async medications(patientId: number): Promise<Medication[]> {
-    const { data, error } = await supabase.from("patient_medications").select("*").eq("patient_id", patientId).eq("status", "em_uso");
-    if (error) throw new Error(error.message);
-    return (data || []) as unknown as Medication[];
-  },
-  async addAllergy(_patientId: number, _allergen: string, _severity = "moderada", _reaction?: string): Promise<void> {
-    blockUnsafeMutation();
-  },
-  async addProblem(_patientId: number, _description: string, _cid?: string, _severity?: string): Promise<void> {
-    blockUnsafeMutation();
-  },
-
-  // ── Segurança de prescrição (RPC) ──
-  async checkPrescriptionSafety(patientId: number, medication: string): Promise<SafetyAlert[]> {
-    const { data, error } = await supabase.rpc("check_prescription_safety", { p_patient_id: patientId, p_medication: medication });
-    if (error) throw new Error(error.message);
-    // RPC retorna array de tuplas ou objetos; normaliza para {alert_type,severity,descricao}
-    const raw = data as unknown;
-    if (Array.isArray(raw)) {
-      return raw.map((x) => {
-        if (typeof x === "object" && x !== null) return x as SafetyAlert;
-        // tupla string "(alergia,grave,\"...\")"
-        const s = String(x).replace(/^\(|\)$/g, "");
-        const parts = s.split(",");
-        return { alert_type: parts[0] || "", severity: parts[1] || "", descricao: parts.slice(2).join(",").replace(/^"|"$/g, "") };
-      });
-    }
-    return [];
   },
 
   // ── Escalas ──
@@ -207,3 +131,4 @@ export const encountersService = {
     blockUnsafeMutation();
   },
 };
+
