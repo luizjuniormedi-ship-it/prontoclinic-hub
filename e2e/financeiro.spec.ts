@@ -1,12 +1,23 @@
 import { test, expect } from './fixtures/auth';
 
+async function openFinancialAndAssertRuntime(page: import('@playwright/test').Page, path = '/financial') {
+  const responsePromise = page.waitForResponse((response) =>
+    response.url().includes('/rest/v1/rpc/list_billing_financial_summary_secure')
+  );
+  await page.goto(path);
+  const response = await responsePromise;
+  if (!response.ok()) {
+    throw new Error(`Resumo financeiro falhou: HTTP ${response.status()} ${await response.text()}`);
+  }
+}
+
 test.describe('Financeiro e faturamento - contrato operacional', () => {
   test.beforeEach(async ({ loginAs }) => {
     await loginAs('admin');
   });
 
   test('exibe contas a receber sem criar cobranca arbitraria', async ({ page }) => {
-    await page.goto('/financial');
+    await openFinancialAndAssertRuntime(page);
 
     await expect(page).toHaveURL(/\/financial$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Contas a Receber' })).toBeVisible();
@@ -33,7 +44,7 @@ test.describe('Financeiro e faturamento - contrato operacional', () => {
   });
 
   test('rota antiga de contas redireciona para o contrato financeiro comprovado', async ({ page }) => {
-    await page.goto('/billing-accounts');
+    await openFinancialAndAssertRuntime(page, '/billing-accounts');
 
     await expect(page).toHaveURL(/\/financial$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Contas a Receber' })).toBeVisible();
