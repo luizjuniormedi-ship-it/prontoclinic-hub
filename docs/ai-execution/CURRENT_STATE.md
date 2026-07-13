@@ -5,7 +5,7 @@ Atualizado em 2026-07-13.
 ## Fato tecnico
 
 - Repositorio local: `C:\Users\Meu Computador\AppData\Local\Temp\prontoclinic-hub`.
-- Ultimo commit local conhecido: `e75db24` antes da correção do workflow de migração.
+- Ultimo commit local conhecido: `4c526c8` (`test(coverage): cover service edge paths`).
 - Release funcional conhecida na VPS: `37199ee`.
 - A VPS executou build, migracoes e reload do Nginx na fase 1; a mensagem final de falha do wrapper foi causada por CRLF residual no shell remoto, nao por falha da publicacao.
 - PostgreSQL e backend precisam de nova verificacao operacional apos a ultima publicacao.
@@ -20,6 +20,7 @@ Atualizado em 2026-07-13.
 - O replay seguinte chegou às funções operacionais de agenda e encontrou `professional_schedules` sem tabela base; foi adicionada uma migration idempotente com as janelas usadas pelo cálculo de disponibilidade.
 - O replay seguinte chegou ao fluxo de recepção e encontrou as tabelas de autorização/elegibilidade ausentes; foi adicionada a fundação operacional antes da centralização em `insurance_*`.
 - O replay seguinte chegou ao histórico oficial e identificou a ausência de `quantity_used`; a coluna foi adicionada para suportar controle de quantidade e prevenção de glosa.
+- A validação local da rodada `4c526c8` passou com 476 testes, cobertura completa dentro dos thresholds, type-check, build e lint sem erros.
 
 ## Hipotese
 
@@ -35,4 +36,4 @@ O sistema nao esta apto para producao enquanto os testes P0 abaixo nao forem exe
 
 ## Proxima tarefa executavel
 
-Executar healthcheck pos-deploy, validar autenticacao/RBAC e criar evidencia negativa de isolamento por `company_id`.
+Obter execução verde do CI para `4c526c8`; depois executar healthcheck pós-deploy, validar autenticação/RBAC e criar evidência negativa de isolamento por `company_id`.
