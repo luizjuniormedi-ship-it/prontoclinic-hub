@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { DollarSign, Search, TrendingUp, Calendar, Receipt } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -39,6 +39,7 @@ export default function FinancialPage() {
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentKey, setPaymentKey] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const paymentInFlightRef = useRef(false);
   const { toast } = useToast();
 
   const loadAll = useCallback(async () => {
@@ -81,12 +82,13 @@ export default function FinancialPage() {
   const totalPending = transactions.reduce((s, t) => s + t.balance_amount, 0);
 
   const handleMarkPaid = async () => {
-    if (!paymentDialog || !paymentKey) return;
+    if (!paymentDialog || !paymentKey || paymentInFlightRef.current) return;
     const amount = Number(paymentAmount);
     if (!Number.isFinite(amount) || amount <= 0 || amount > paymentDialog.balance_amount) {
       toast({ title: "Valor de pagamento inválido", variant: "destructive" });
       return;
     }
+    paymentInFlightRef.current = true;
     setSaving(true);
     try {
       await financialService.recordPayment(paymentDialog.id, amount, paymentMethod, paymentKey);
@@ -97,6 +99,7 @@ export default function FinancialPage() {
     } catch (err) {
       toast({ title: "Erro", description: (err as Error).message, variant: "destructive" });
     } finally {
+      paymentInFlightRef.current = false;
       setSaving(false);
     }
   };
@@ -201,7 +204,7 @@ export default function FinancialPage() {
                 <p className="text-xs text-muted-foreground">Saldo em aberto</p>
                 <p className="text-lg font-bold text-primary">{formatCurrency(paymentDialog.balance_amount)}</p>
               </div>
-              <div className="space-y-2"><Label className="text-xs">Valor recebido *</Label><Input type="number" min="0.01" step="0.01" max={paymentDialog.balance_amount} value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} /></div>
+              <div className="space-y-2"><Label htmlFor="payment-amount" className="text-xs">Valor recebido *</Label><Input id="payment-amount" type="number" min="0.01" step="0.01" max={paymentDialog.balance_amount} value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} /></div>
               <div className="space-y-2">
                 <Label className="text-xs">Forma de Pagamento *</Label>
                 <Select value={paymentMethod} onValueChange={setPaymentMethod}>
@@ -214,7 +217,7 @@ export default function FinancialPage() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPaymentDialog(null)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => setPaymentDialog(null)} disabled={saving}>Cancelar</Button>
             <Button onClick={handleMarkPaid} disabled={saving}>{saving ? "Salvando..." : "Confirmar"}</Button>
           </DialogFooter>
         </DialogContent>

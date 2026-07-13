@@ -142,7 +142,7 @@ jobs:
         run: npx playwright install --with-deps chromium firefox webkit
 
       - name: Run E2E tests
-        run: npm run test:e2e -- --project=chromium e2e/auth.spec.ts e2e/operational-smoke.spec.ts
+        run: npm run test:e2e -- --project=chromium e2e/auth.spec.ts e2e/operational-smoke.spec.ts e2e/financeiro.spec.ts
         env:
           CI: true
           E2E_BASE_URL: http://localhost:4173
