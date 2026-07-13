@@ -341,4 +341,3 @@ timeout --foreground "${TRIAGE_CONCURRENCY_TIMEOUT_SECONDS}s" \
 cleanup_done=1
 
 echo "NURSING_TRIAGE_CONCURRENCY_OK (PostgreSQL 18, eight synchronized psql sessions)"
-
