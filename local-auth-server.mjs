@@ -274,6 +274,10 @@ const RPC_PERMISSIONS = {
   get_scheduling_requirements: { module: 'agenda', action: 'can_view' },
   current_company_id: { module: 'admin', action: 'can_view' },
   calc_imc: { module: 'prontuario', action: 'can_view' },
+  create_medical_record_secure: { module: 'prontuario', action: 'can_create' },
+  update_medical_record_secure: { module: 'prontuario', action: 'can_edit' },
+  sign_medical_record_secure: { module: 'prontuario', action: 'can_edit' },
+  finalize_medical_attendance_secure: { module: 'prontuario', action: 'can_create' },
   create_appointment_with_requirements_secure: { module: 'agenda', action: 'can_create' },
   refresh_confirmation_queue_secure: { module: 'agenda', action: 'can_edit' },
   record_confirmation_attempt_secure: { module: 'agenda', action: 'can_edit' },
@@ -311,6 +315,7 @@ const CENTRAL_PERMISSION_RPCS = new Set([
 ]);
 
 const RPC_ONLY_TABLES = new Set([
+  'medical_records',
   'nursing_medication_administrations',
   'nursing_incidents',
   'nursing_procedures',
@@ -319,6 +324,12 @@ const RPC_ONLY_TABLES = new Set([
   'news2_avaliacoes',
   'triagem_fila',
 ]);
+
+const RPC_ONLY_METHODS = new Set(['POST', 'PATCH', 'DELETE']);
+
+function requiresSecureRpc(table, method) {
+  return RPC_ONLY_TABLES.has(table) && RPC_ONLY_METHODS.has(method);
+}
 
 async function authorizeRpc(profile, functionName) {
   const required = RPC_PERMISSIONS[functionName];
@@ -692,6 +703,10 @@ const server = createServer(async (req, res) => {
       if (!decision.ok) return json(res, { error: 'forbidden', message: decision.reason }, 403);
       const companyId = await requiredCompanyScope(profile, table);
 
+      if (requiresSecureRpc(table, req.method)) {
+        return json(res, { error: 'forbidden', message: 'Mutacao permitida somente por RPC segura' }, 403);
+      }
+
       if (req.method === 'GET') {
         // Parse select columns (strip embedded relations like "payment_source:payment_sources(name,type)")
         const selectParam = url.searchParams.get('select');
@@ -877,9 +892,6 @@ const server = createServer(async (req, res) => {
       }
 
       if (req.method === 'POST') {
-        if (RPC_ONLY_TABLES.has(table)) {
-          return json(res, { error: 'forbidden', message: 'Mutacao permitida somente por RPC segura' }, 403);
-        }
         const body = await parseBody(req);
         if (companyId) {
           if (body.company_id && body.company_id !== companyId) {
@@ -913,9 +925,6 @@ const server = createServer(async (req, res) => {
       }
 
       if (req.method === 'PATCH') {
-        if (RPC_ONLY_TABLES.has(table)) {
-          return json(res, { error: 'forbidden', message: 'Mutacao permitida somente por RPC segura' }, 403);
-        }
         const body = await parseBody(req);
         const keys = Object.keys(body);
         if (keys.length === 0) return json(res, { error: 'bad_request', message: 'body vazio' }, 400);
