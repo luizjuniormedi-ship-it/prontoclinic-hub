@@ -52,10 +52,15 @@ function collectFrontendRpcs() {
       if (ts.isVariableDeclaration(node) && node.initializer && isRpcMember(node.initializer)) {
         shapeErrors.push(`RPC_ALIAS_FORBIDDEN ${path.relative(root, file)}`);
       }
-      if (ts.isBinaryExpression(node) && isRpcMember(node.right)) {
+      if (ts.isBinaryExpression(node)
+        && node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+        && isRpcMember(node.right)) {
         shapeErrors.push(`RPC_ALIAS_FORBIDDEN ${path.relative(root, file)}`);
       }
-      if (ts.isBinaryExpression(node) && /\brpc\b/.test(node.left.getText(sourceFile))) {
+      if (ts.isBinaryExpression(node)
+        && node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+        && ts.isObjectLiteralExpression(node.left)
+        && node.left.properties.some((item) => propertyName(item.name) === 'rpc')) {
         shapeErrors.push(`RPC_DESTRUCTURING_ASSIGNMENT_FORBIDDEN ${path.relative(root, file)}`);
       }
       if (ts.isCallExpression(node)) {
@@ -149,6 +154,7 @@ function collectProxyPermissions() {
       }
     }
     if (ts.isBinaryExpression(node)
+      && ts.isAssignmentOperator(node.operatorToken.kind)
       && ((ts.isPropertyAccessExpression(node.left)
           && ts.isIdentifier(node.left.expression)
           && node.left.expression.text === 'RPC_PERMISSIONS')
@@ -164,6 +170,7 @@ function collectProxyPermissions() {
       shapeErrors.push('RPC_PERMISSIONS_ALIAS_FORBIDDEN');
     }
     if (ts.isBinaryExpression(node)
+      && node.operatorToken.kind === ts.SyntaxKind.EqualsToken
       && ts.isIdentifier(node.right)
       && node.right.text === 'RPC_PERMISSIONS') {
       shapeErrors.push('RPC_PERMISSIONS_ALIAS_FORBIDDEN');
@@ -231,6 +238,10 @@ async function validateRuntime(proxyNames, classifiedNames, forbiddenNames, fron
               ), '[]'::jsonb) AS input_argument_names,
               has_function_privilege('authenticated', p.oid, 'EXECUTE') AS authenticated_execute,
               has_function_privilege('anon', p.oid, 'EXECUTE') AS anon_execute,
+              CASE
+                WHEN to_regrole('app_prontomedic') IS NULL THEN FALSE
+                ELSE has_function_privilege('app_prontomedic', p.oid, 'EXECUTE')
+              END AS backend_execute,
               EXISTS (
                 SELECT 1
                   FROM aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) acl
@@ -270,7 +281,8 @@ async function validateRuntime(proxyNames, classifiedNames, forbiddenNames, fron
       const searchPath = row.function_config.find((setting) => setting.startsWith('search_path='));
       if (!searchPath) errors.push(`RUNTIME_SECURITY_DEFINER_SEARCH_PATH_MISSING ${name}`);
       else {
-        const rawPath = searchPath.slice('search_path='.length).trim();
+        const configuredPath = searchPath.slice('search_path='.length).trim();
+        const rawPath = configuredPath === '""' ? '' : configuredPath;
         const schemas = rawPath === ''
           ? []
           : rawPath.split(',').map((item) => item.trim().replaceAll('"', ''));
@@ -296,14 +308,17 @@ async function validateRuntime(proxyNames, classifiedNames, forbiddenNames, fron
       }
       if (rows.length > 1) errors.push(`RUNTIME_PROXY_RPC_OVERLOAD_UNDECLARED ${name} count=${rows.length}`);
       for (const row of rows) {
+        const hasExpectedSignature = Object.prototype.hasOwnProperty.call(allowlist.signatures || {}, name);
         const expectedSignature = allowlist.signatures?.[name];
-        if (!expectedSignature) errors.push(`RUNTIME_SIGNATURE_CONTRACT_MISSING ${name} observed=${row.signature}`);
+        if (!hasExpectedSignature) errors.push(`RUNTIME_SIGNATURE_CONTRACT_MISSING ${name} observed=${row.signature}`);
         else if (expectedSignature !== row.signature) {
           errors.push(`RUNTIME_SIGNATURE_DRIFT ${name} expected=${expectedSignature} actual=${row.signature}`);
         }
         validateFunctionSafety(name, row);
         validateFrontendArguments(name, row);
         if (row.public_execute) errors.push(`RUNTIME_PUBLIC_EXECUTE ${name}(${row.signature})`);
+        if (row.anon_execute) errors.push(`RUNTIME_ANON_EXECUTE ${name}(${row.signature})`);
+        if (row.backend_execute) errors.push(`RUNTIME_BACKEND_DIRECT_EXECUTE ${name}(${row.signature})`);
         if (!row.authenticated_execute) errors.push(`RUNTIME_AUTHENTICATED_EXECUTE_MISSING ${name}(${row.signature})`);
       }
     }
@@ -314,7 +329,7 @@ async function validateRuntime(proxyNames, classifiedNames, forbiddenNames, fron
       if (rows.length > 1) errors.push(`RUNTIME_NONPROXY_RPC_OVERLOAD_UNDECLARED ${name} count=${rows.length}`);
       for (const row of rows) {
         validateFrontendArguments(name, row);
-        const exposed = row.public_execute || row.authenticated_execute || row.anon_execute;
+        const exposed = row.public_execute || row.authenticated_execute || row.anon_execute || row.backend_execute;
         if (exposed) {
           validateFunctionSafety(name, row);
           errors.push(`RUNTIME_NONPROXY_RPC_EXPOSED ${name}(${row.signature})`);
@@ -338,6 +353,7 @@ const proxyPermissions = proxyInventory.permissions;
 const proxy = normalize(Object.keys(proxyPermissions));
 const sqlDefinitions = collectRepositorySqlDefinitions();
 const snapshot = normalize(allowlist.functions || []);
+const signatureNames = normalize(Object.keys(allowlist.signatures || {}));
 const classified = normalize(Object.keys(contract.classifications || {}));
 const forbidden = normalize(Object.keys(contract.forbiddenFrontendRpcs || {}));
 const errors = [];
@@ -352,6 +368,8 @@ if (frontend.length !== contract.expectedFrontendCount) errors.push(`FRONTEND_CO
 if (proxy.length !== allowlist.expectedCount) errors.push(`PROXY_COUNT_DRIFT expected=${allowlist.expectedCount} actual=${proxy.length}`);
 for (const name of difference(proxy, snapshot)) errors.push(`ALLOWLIST_SNAPSHOT_MISSING ${name}`);
 for (const name of difference(snapshot, proxy)) errors.push(`ALLOWLIST_SNAPSHOT_STALE ${name}`);
+for (const name of difference(proxy, signatureNames)) errors.push(`ALLOWLIST_SIGNATURE_MISSING ${name}`);
+for (const name of difference(signatureNames, proxy)) errors.push(`ALLOWLIST_SIGNATURE_STALE ${name}`);
 for (const name of proxy) {
   const expected = allowlist.permissions?.[name];
   const actual = proxyPermissions[name];

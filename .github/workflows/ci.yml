@@ -270,6 +270,18 @@ jobs:
             -v "f4_dblink_connstr=host=127.0.0.1 port=5432 dbname=$PGDATABASE user=$PGUSER password=$PGPASSWORD" \
             -f supabase/tests/f4_professional_payments_secure_gate.sql
 
+      - name: Apply RPC proxy ACL hardening
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres \
+            -f supabase/migrations/20260713190000_rpc_proxy_acl_hardening.sql
+
+      - name: Run RPC proxy ACL gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres \
+            -f supabase/tests/f1_runtime_rpc_proxy_acl_gate.sql
+
       - name: Validate runtime RPC catalog and ACL
         run: npm run validate:rpc -- --runtime
         env:

@@ -336,6 +336,9 @@ const RPC_PERMISSIONS = {
   enqueue_nursing_triage_secure: { module: 'enfermagem', action: 'can_create' },
   call_nursing_triage_secure: { module: 'enfermagem', action: 'can_edit' },
   complete_nursing_triage_secure: { module: 'enfermagem', action: 'can_edit' },
+  calcular_valor_estoque: { module: 'farmacia', action: 'can_view' },
+  dispensar_estoque: { module: 'farmacia', action: 'can_edit' },
+  registrar_movimentacao_estoque: { module: 'farmacia', action: 'can_edit' },
 };
 
 const CENTRAL_PERMISSION_RPCS = new Set([

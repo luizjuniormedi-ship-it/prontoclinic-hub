@@ -259,6 +259,10 @@ jobs:
           psql -v ON_ERROR_STOP=1 \
             -v "f4_dblink_connstr=host=127.0.0.1 port=5432 dbname=$PGDATABASE user=$PGUSER password=$PGPASSWORD" \
             -f supabase/tests/f4_professional_payments_secure_gate.sql
+          echo "Applying RPC proxy ACL hardening"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260713190000_rpc_proxy_acl_hardening.sql
+          echo "Running RPC proxy ACL gate"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_rpc_proxy_acl_gate.sql
 
       - name: Validate runtime RPC catalog and ACL
         run: npm run validate:rpc -- --runtime

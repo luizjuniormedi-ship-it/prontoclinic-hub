@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "expectedFrontendCount": 72,
-  "expectedClassifiedGapCount": 31,
+  "expectedClassifiedGapCount": 28,
   "expectedClassificationCounts": {
-    "candidate": 12,
+    "candidate": 9,
     "contract_fix": 19,
     "replacement_required": 0
   },
@@ -17,7 +17,6 @@
       "action": "can_edit",
       "reason": "tenant e periodo devem ser derivados e validados server-side"
     },
-    "calcular_valor_estoque": { "status": "candidate", "module": "farmacia", "action": "can_view" },
     "cancel_pre_cadastro": { "status": "candidate", "module": "recepcao", "action": "can_edit" },
     "complete_call_center_task_secure": {
       "status": "contract_fix",
@@ -61,7 +60,6 @@
       "action": "can_edit",
       "reason": "tenant e escopo devem ser derivados server-side"
     },
-    "dispensar_estoque": { "status": "candidate", "module": "farmacia", "action": "can_edit" },
     "finalizar_sala_telemedicina": {
       "status": "contract_fix",
       "module": "telemedicina",
@@ -113,7 +111,6 @@
       "action": "can_create",
       "reason": "consentimento exige identidade, finalidade, versao e prova auditavel server-side"
     },
-    "registrar_movimentacao_estoque": { "status": "candidate", "module": "farmacia", "action": "can_edit" },
     "renew_pre_cadastro_confirmation": { "status": "candidate", "module": "recepcao", "action": "can_edit" },
     "retry_notification": {
       "status": "contract_fix",
