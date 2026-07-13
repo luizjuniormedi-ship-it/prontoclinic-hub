@@ -5,7 +5,7 @@ Atualizado em 2026-07-13.
 ## Fato tecnico
 
 - Repositorio local: `C:\Users\Meu Computador\AppData\Local\Temp\prontoclinic-hub`.
-- Ultimo commit local conhecido: `d53e5de` (`fix(telemedicina): fail closed without recording integration`).
+- Ultimo commit local conhecido: `d132b97` (`fix(telemedicina): require remote room before access`).
 - Release funcional conhecida na VPS: `37199ee`.
 - A VPS executou build, migracoes e reload do Nginx na fase 1; a mensagem final de falha do wrapper foi causada por CRLF residual no shell remoto, nao por falha da publicacao.
 - PostgreSQL e backend precisam de nova verificacao operacional apos a ultima publicacao.
@@ -40,6 +40,7 @@ Atualizado em 2026-07-13.
 - A assinatura de prescrição em Telemedicina deixou de marcar a prescrição como assinada ou criar receita com URL falsa; enquanto o pipeline real de PDF/Storage não existir, a operação falha fechado sem efeitos persistidos.
 - O contrato de falha fechada da assinatura agora possui teste unitário que verifica ausência de atualização da prescrição e de inserção de receita.
 - A habilitação de gravação agora falha fechado antes de registrar consentimento quando a integração real de gravação não está configurada; o teste cobre que nenhum RPC é executado nesse caminho.
+- A criação de sala agora exige confirmação do Daily.co; falha ou ausência de configuração marca a sala como `FALHOU` e interrompe o acesso em vez de devolver uma sala local sem URL remota.
 
 ## Hipotese
 
