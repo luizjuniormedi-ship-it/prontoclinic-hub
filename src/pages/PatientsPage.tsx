@@ -139,7 +139,7 @@ export default function PatientsPage() {
                     <TableCell className="text-xs">{p.phone ? maskPhone(p.phone) : "—"}</TableCell>
                     <TableCell className="text-xs">{p.insurance_plan_id ? (insuranceNames[String(p.insurance_plan_id)] || "Conv. #" + p.insurance_plan_id) : <span className="text-muted-foreground">Particular</span>}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={`text-[10px] border-0 ${p.lg_ativo === false ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success"}`}>
+                      <Badge variant="outline" className={`text-[10px] border-0 text-foreground ${p.lg_ativo === false ? "bg-destructive/15" : "bg-success/15"}`}>
                         {p.lg_ativo === false ? "Inativo" : "Ativo"}
                       </Badge>
                     </TableCell>
@@ -167,4 +167,3 @@ export default function PatientsPage() {
     </div>
   );
 }
-
