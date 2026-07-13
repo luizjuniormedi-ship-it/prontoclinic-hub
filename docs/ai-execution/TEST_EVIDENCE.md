@@ -75,3 +75,4 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - Commit seguinte: `6c11d3a`; a contagem de permissões dos perfis agora vem de `role_permissions`, sem valor estimado fixo. `git diff --check` aprovado.
 - Commit seguinte: `163cd47`; o fluxo 2FA passou a falhar fechado e não concede acesso sem validação no servidor. `git diff --check` aprovado.
 - Commit de evidência atual: `4ce786f`; documentação sincronizada com o head funcional e a correção 2FA permanece registrada.
+- Commit funcional atual: `663be0f`; envio de recurso TISS sem endpoint não simula sucesso. `git diff --check` aprovado.
