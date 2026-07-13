@@ -56,6 +56,10 @@ describe("medicalRecordsService", () => {
         prescription: null,
           vital_signs: null,
           notes: null,
+          status: "draft",
+          signed_at: null,
+          signed_by: null,
+          content_hash: null,
           created_at: "2026-06-15T10:00:00Z",
         },
         {
@@ -72,6 +76,10 @@ describe("medicalRecordsService", () => {
         prescription: null,
           vital_signs: null,
           notes: null,
+          status: "draft",
+          signed_at: null,
+          signed_by: null,
+          content_hash: null,
           created_at: "2026-01-01T10:00:00Z",
         },
       ];
@@ -122,6 +130,10 @@ describe("medicalRecordsService", () => {
         prescription: null,
         vital_signs: null,
         notes: null,
+        status: "draft",
+        signed_at: null,
+        signed_by: null,
+        content_hash: null,
         created_at: "2026-06-15T10:00:00Z",
       };
       const chain = {
@@ -194,4 +206,41 @@ describe("medicalRecordsService", () => {
       });
     });
   });
+
+  describe("finalizeAttendance", () => {
+    it("finaliza e assina o atendimento por uma única RPC", async () => {
+      const finalized = { id: 10, appointment_id: 303, status: "signed" };
+      (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+        data: finalized,
+        error: null,
+      });
+
+      const result = await medicalRecordsService.finalizeAttendance({
+        appointment_id: "303",
+        anamnesis: "Queixa",
+        evolution: "Evolução",
+        vital_signs: { pa: "120/80" },
+      });
+
+      expect(result.status).toBe("signed");
+      expect(supabase.rpc).toHaveBeenCalledWith("finalize_medical_attendance_secure", {
+        p_appointment_id: 303,
+        p_record_date: null,
+        p_anamnesis: "Queixa",
+        p_evolution: "Evolução",
+        p_diagnosis: null,
+        p_prescription: null,
+        p_vital_signs: { pa: "120/80" },
+        p_notes: null,
+      });
+    });
+
+    it("rejeita appointment_id não numérico antes da RPC", async () => {
+      await expect(medicalRecordsService.finalizeAttendance({
+        appointment_id: "inválido",
+      })).rejects.toThrow(/appointment_id/);
+      expect(supabase.rpc).not.toHaveBeenCalled();
+    });
+  });
 });
+

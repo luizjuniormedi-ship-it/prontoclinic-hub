@@ -116,6 +116,7 @@ jobs:
             supabase/migrations/20260712170000_medical_record_prescription_contract.sql \
             supabase/migrations/20260712180000_medical_records_canonical_columns.sql \
             supabase/migrations/20260712190000_rbac_schema_baseline.sql \
+            supabase/migrations/20260713081337_clinical_record_signing_contract.sql \
             supabase/migrations/20260712200000_secure_user_profile_admin.sql \
             supabase/migrations/20260712210000_secure_billings.sql \
             supabase/migrations/20260712220000_secure_billing_receipts.sql \
@@ -167,6 +168,8 @@ jobs:
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_tenant_behavior_gate.sql
           echo "Running F1 runtime operational behavior gate"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_operational_behavior_gate.sql
+          echo "Running F1 runtime clinical signing gate"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_clinical_signing_gate.sql
           echo "Running F1 runtime RBAC behavior gate"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_rbac_behavior_gate.sql
           echo "Running F1 runtime billing behavior gate"
@@ -205,3 +208,4 @@ jobs:
           name: f1-runtime-evidence
           path: artifacts/f1
           if-no-files-found: warn
+

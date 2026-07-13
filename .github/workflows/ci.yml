@@ -67,7 +67,11 @@ jobs:
             supabase/migrations/20260709210000_scheduling_operations.sql
             supabase/migrations/20260709232000_scheduling_confirmations.sql
             supabase/release-mvp/008_canonical_insurance.sql
+            supabase/migrations/20260712170000_medical_record_prescription_contract.sql
+            supabase/migrations/20260712180000_medical_records_canonical_columns.sql
+            supabase/migrations/20260712130000_secure_medical_records.sql
             supabase/migrations/20260712190000_rbac_schema_baseline.sql
+            supabase/migrations/20260713081337_clinical_record_signing_contract.sql
             supabase/migrations/20260712200000_secure_user_profile_admin.sql
             supabase/migrations/20260712210000_secure_billings.sql
             supabase/migrations/20260712220000_secure_billing_receipts.sql
@@ -92,6 +96,11 @@ jobs:
         run: |
           export PGPASSWORD=postgres
           psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_tiss_foundation_gate.sql
+
+      - name: Run clinical signing gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_clinical_signing_gate.sql
 
       - name: Run billing production read-model gate
         run: |
@@ -298,3 +307,4 @@ jobs:
             test -f scripts/check-a11y-violations.mjs
             node scripts/check-a11y-violations.mjs
           fi
+

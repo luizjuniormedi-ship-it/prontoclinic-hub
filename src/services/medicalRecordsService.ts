@@ -16,6 +16,10 @@ export interface DbMedicalRecord {
   prescription: string | null;
   vital_signs: Record<string, any> | null;
   notes: string | null;
+  status: 'draft' | 'signed';
+  signed_at: string | null;
+  signed_by: string | null;
+  content_hash: string | null;
   created_at: string;
 }
 
@@ -31,6 +35,17 @@ export interface MedicalRecordInput {
   diagnosis?: string;
   prescription?: string;
   vital_signs?: Record<string, any>;
+  notes?: string;
+}
+
+export interface FinalizeMedicalAttendanceInput {
+  appointment_id: string;
+  record_date?: string;
+  anamnesis?: string;
+  evolution?: string;
+  diagnosis?: string;
+  prescription?: string;
+  vital_signs?: Record<string, unknown>;
   notes?: string;
 }
 
@@ -96,4 +111,24 @@ export const medicalRecordsService = {
     if (error) throw new Error('Erro ao atualizar prontuário: ' + error.message);
     return data as DbMedicalRecord;
   },
+
+  async finalizeAttendance(input: FinalizeMedicalAttendanceInput): Promise<DbMedicalRecord> {
+    if (!input.appointment_id || !/^\d+$/.test(input.appointment_id)) {
+      throw new Error('appointment_id deve ser um identificador numérico');
+    }
+
+    const { data, error } = await supabase.rpc('finalize_medical_attendance_secure', {
+      p_appointment_id: Number(input.appointment_id),
+      p_record_date: input.record_date || null,
+      p_anamnesis: input.anamnesis || null,
+      p_evolution: input.evolution || null,
+      p_diagnosis: input.diagnosis || null,
+      p_prescription: input.prescription || null,
+      p_vital_signs: input.vital_signs || null,
+      p_notes: input.notes || null,
+    });
+    if (error) throw new Error('Erro ao finalizar atendimento: ' + error.message);
+    return data as DbMedicalRecord;
+  },
 };
+
