@@ -181,6 +181,29 @@ describe("telemedicinaService.finalizar", () => {
   });
 });
 
+describe("telemedicinaService.assinarPrescricao", () => {
+  it("falha fechado sem marcar ou criar receita sem PDF/Storage real", async () => {
+    const chain: any = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      update: vi.fn().mockReturnThis(),
+      insert: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: { id: 7, cd_paciente: 10, cd_medico: 20 },
+        error: null,
+      }),
+    };
+    (supabase.from as any).mockReturnValue(chain);
+
+    await expect(
+      telemedicinaService.assinarPrescricao(7, "hash", "certificado"),
+    ).rejects.toThrow("armazenamento real do PDF ainda não está configurado");
+
+    expect(chain.update).not.toHaveBeenCalled();
+    expect(chain.insert).not.toHaveBeenCalled();
+  });
+});
+
 describe("telemedicinaService.enviarMensagem", () => {
   it("insere mensagem no banco e retorna registro criado", async () => {
     const msg = {
