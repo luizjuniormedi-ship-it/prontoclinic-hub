@@ -223,6 +223,14 @@ jobs:
            WHERE name = 'admin'
           ON CONFLICT (role_id, module) DO UPDATE
             SET can_view = EXCLUDED.can_view;
+          INSERT INTO public.role_permissions (role_id, module, can_view, can_edit)
+          SELECT id, 'agenda', TRUE, TRUE
+            FROM public.roles
+           WHERE name = 'recepcao'
+          ON CONFLICT (role_id, module) DO UPDATE
+            SET can_view = EXCLUDED.can_view,
+                can_edit = EXCLUDED.can_edit,
+                updated_at = NOW();
           INSERT INTO public.patients (id, company_id, full_name, lg_ativo)
           VALUES
             (991301, '00000000-0000-0000-0000-000000000001', 'CI Nursing Triage Patient', TRUE),
