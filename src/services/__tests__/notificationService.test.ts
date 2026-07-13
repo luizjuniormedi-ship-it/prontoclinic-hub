@@ -11,8 +11,8 @@
  *   - markAsRead(id)                    → markSent (atualiza status e provider info)
  *   - markAllAsRead(userId)             → queueAppointmentCancellation
  *                                          (cancela notificações PENDING em lote)
- *   - getUserPreferences(userId)        → setPreference (LGPD opt-out, lê company_id)
- *   - updateUserPreferences             → setPreference (upsert em notification_preferences)
+ *   - getUserPreferences(userId)        → setPreference (LGPD opt-out via RPC)
+ *   - updateUserPreferences             → setPreference (RPC tenant-safe)
  *   - queue_notification RPC            → enqueue (chamada rpc com parâmetros corretos)
  */
 
@@ -302,30 +302,25 @@ describe("notificationService", () => {
         eq: vi.fn().mockReturnThis(),
         single: vi.fn().mockResolvedValue({ data: fakeAppointment, error: null }),
       });
-      // update notifications (cancela PENDING) — 2 eq encadeados
-      const updateSpy = vi.fn().mockReturnThis();
-      const chainCancel = {
-        update: updateSpy,
-        eq: vi.fn().mockReturnThis(),
-      };
-      (chainCancel as unknown as {
-        then: (r: (v: unknown) => unknown) => unknown;
-      }).then = (r: (v: unknown) => unknown) => r({ error: null });
-      (supabase.from as ReturnType<typeof vi.fn>).mockReturnValueOnce(chainCancel);
-      // enqueue → rpc
-      (supabase.rpc as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        data: "nid-cancel",
-        error: null,
-      });
+      (supabase.rpc as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ data: true, error: null })
+        .mockResolvedValueOnce({ data: "nid-cancel", error: null });
 
-      await notificationService.queueAppointmentCancellation(100, "Paciente solicitou");
+      const id = await notificationService.queueAppointmentCancellation(
+        100,
+        "Paciente solicitou",
+      );
 
-      // update chamado com status CANCELLED
-      expect(updateSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          status: "CANCELLED",
-          updated_at: expect.any(String),
-        }),
+      expect(id).toBe("nid-cancel");
+      expect(supabase.rpc).toHaveBeenNthCalledWith(
+        1,
+        "cancel_pending_appointment_notifications",
+        { p_appointment_id: 100 },
+      );
+      expect(supabase.rpc).toHaveBeenNthCalledWith(
+        2,
+        "queue_notification",
+        expect.objectContaining({ p_appointment_id: 100 }),
       );
     });
 
@@ -339,6 +334,23 @@ describe("notificationService", () => {
       const id = await notificationService.queueAppointmentCancellation(999, "motivo");
       expect(id).toBeNull();
       expect(supabase.rpc).not.toHaveBeenCalled();
+    });
+
+    it("não enfileira cancelamento quando a RPC de cancelamento falha", async () => {
+      (supabase.from as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: fakeAppointment, error: null }),
+      });
+      (supabase.rpc as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        data: null,
+        error: { message: "forbidden" },
+      });
+
+      const id = await notificationService.queueAppointmentCancellation(100, "motivo");
+
+      expect(id).toBeNull();
+      expect(supabase.rpc).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -441,23 +453,41 @@ describe("notificationService", () => {
     });
   });
 
-  // ===========================================================================
-  // getUserPreferences(userId) — proxy: setPreference (lê company_id via RPC)
-  // ===========================================================================
-  describe("getUserPreferences(userId) — proxy: setPreference (LGPD opt-out, lê current_company_id)", () => {
-    it("lê company_id via RPC current_company_id antes de upsert", async () => {
+  describe("retry", () => {
+    it("delega o retry manual à RPC tenant-safe", async () => {
       (supabase.rpc as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        data: COMPANY_ID,
+        data: true,
         error: null,
       });
-      const upsertSpy = vi.fn().mockReturnThis();
-      const chain = {
-        upsert: upsertSpy,
-      };
-      (chain as unknown as { then: (r: (v: unknown) => unknown) => unknown }).then =
-        (r: (v: unknown) => unknown) => r({ error: null });
-      (supabase.from as ReturnType<typeof vi.fn>).mockReturnValue(chain);
 
+      const ok = await notificationService.retry("nid-retry");
+
+      expect(ok).toBe(true);
+      expect(supabase.rpc).toHaveBeenCalledWith("retry_notification", {
+        p_notification_id: "nid-retry",
+      });
+      expect(supabase.from).not.toHaveBeenCalled();
+    });
+
+    it("retorna false quando a RPC de retry falha", async () => {
+      (supabase.rpc as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        data: null,
+        error: { message: "retry denied" },
+      });
+
+      expect(await notificationService.retry("nid-denied")).toBe(false);
+    });
+  });
+
+  // ===========================================================================
+  // getUserPreferences(userId) — proxy: setPreference (RPC tenant-safe)
+  // ===========================================================================
+  describe("getUserPreferences(userId) — proxy: setPreference via RPC", () => {
+    it("envia destinatário, canal, estado e motivo à RPC", async () => {
+      (supabase.rpc as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        data: true,
+        error: null,
+      });
       const ok = await notificationService.setPreference(
         {
           recipientType: "PATIENT",
@@ -466,125 +496,25 @@ describe("notificationService", () => {
           recipientEmail: "maria@example.com",
         },
         "EMAIL",
-        true,
+        false,
       );
 
       expect(ok).toBe(true);
-      expect(supabase.rpc).toHaveBeenCalledWith("current_company_id");
-      expect(supabase.from).toHaveBeenCalledWith("notification_preferences");
-      expect(upsertSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          company_id: COMPANY_ID,
-          recipient_type: "PATIENT",
-          recipient_id: 5,
-          channel: "EMAIL",
-          is_enabled: true,
-        }),
-        expect.objectContaining({
-          onConflict: "company_id,recipient_id,recipient_type,channel",
-        }),
-      );
-    });
-
-    it("retorna false quando companyId ausente (sem company_id no contexto)", async () => {
-      (supabase.rpc as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        data: null,
-        error: null,
+      expect(supabase.rpc).toHaveBeenCalledWith("set_notification_preference", {
+        p_recipient_type: "PATIENT",
+        p_recipient_id: 5,
+        p_channel: "EMAIL",
+        p_enabled: false,
+        p_reason: "Opt-out via perfil",
       });
-
-      const ok = await notificationService.setPreference(
-        {
-          recipientType: "PATIENT",
-          recipientId: 5,
-          recipientName: "Maria",
-        },
-        "SMS",
-        false,
-      );
-
-      expect(ok).toBe(false);
-      // upsert NÃO deve ter sido chamado
       expect(supabase.from).not.toHaveBeenCalled();
     });
 
-    it("marca unsubscribed_at quando enabled=false (opt-out LGPD)", async () => {
+    it("envia motivo nulo ao reativar a preferência", async () => {
       (supabase.rpc as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        data: COMPANY_ID,
+        data: true,
         error: null,
       });
-      const upsertSpy = vi.fn().mockReturnThis();
-      const chain = {
-        upsert: upsertSpy,
-      };
-      (chain as unknown as { then: (r: (v: unknown) => unknown) => unknown }).then =
-        (r: (v: unknown) => unknown) => r({ error: null });
-      (supabase.from as ReturnType<typeof vi.fn>).mockReturnValue(chain);
-
-      await notificationService.setPreference(
-        {
-          recipientType: "PROFESSIONAL",
-          recipientId: 7,
-          recipientName: "Dr. Lima",
-        },
-        "WHATSAPP",
-        false,
-      );
-
-      const payload = upsertSpy.mock.calls[0][0] as Record<string, unknown>;
-      expect(payload.is_enabled).toBe(false);
-      expect(payload.unsubscribed_at).toEqual(expect.any(String));
-      expect(payload.unsubscribe_reason).toBe("Opt-out via perfil");
-    });
-  });
-
-  // ===========================================================================
-  // updateUserPreferences(userId, prefs) — proxy: setPreference (upsert completo)
-  // ===========================================================================
-  describe("updateUserPreferences(userId, prefs) — proxy: setPreference", () => {
-    it("aplica múltiplos canais como preferências (validação de formato de entrada)", async () => {
-      (supabase.rpc as ReturnType<typeof vi.fn>).mockResolvedValue({
-        data: COMPANY_ID,
-        error: null,
-      });
-      const upsertSpy = vi.fn().mockReturnThis();
-      const chain = {
-        upsert: upsertSpy,
-      };
-      (chain as unknown as { then: (r: (v: unknown) => unknown) => unknown }).then =
-        (r: (v: unknown) => unknown) => r({ error: null });
-      (supabase.from as ReturnType<typeof vi.fn>).mockReturnValue(chain);
-
-      const recipient = {
-        recipientType: "STAFF" as const,
-        recipientId: 99,
-        recipientName: "Recepção",
-      };
-
-      // Atualizar 4 canais (1 por chamada)
-      for (const channel of ["EMAIL", "SMS", "WHATSAPP", "PUSH"] as const) {
-        await notificationService.setPreference(recipient, channel, true);
-      }
-
-      // Deve ter chamado upsert 4 vezes
-      expect(upsertSpy).toHaveBeenCalledTimes(4);
-      const channelsChamados = upsertSpy.mock.calls.map(
-        (c) => (c[0] as Record<string, unknown>).channel,
-      );
-      expect(channelsChamados).toEqual(["EMAIL", "SMS", "WHATSAPP", "PUSH"]);
-    });
-
-    it("retorna false quando upsert falha (error do banco)", async () => {
-      (supabase.rpc as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        data: COMPANY_ID,
-        error: null,
-      });
-      const chain = {
-        upsert: vi.fn().mockReturnThis(),
-      };
-      (chain as unknown as { then: (r: (v: unknown) => unknown) => unknown }).then =
-        (r: (v: unknown) => unknown) =>
-          r({ error: { message: "constraint violation" } });
-      (supabase.from as ReturnType<typeof vi.fn>).mockReturnValue(chain);
 
       const ok = await notificationService.setPreference(
         {
@@ -596,7 +526,30 @@ describe("notificationService", () => {
         true,
       );
 
-      expect(ok).toBe(false);
+      expect(ok).toBe(true);
+      expect(supabase.rpc).toHaveBeenCalledWith(
+        "set_notification_preference",
+        expect.objectContaining({ p_enabled: true, p_reason: null }),
+      );
+    });
+
+    it("retorna false quando a RPC falha", async () => {
+      (supabase.rpc as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        data: null,
+        error: { message: "forbidden" },
+      });
+
+      expect(
+        await notificationService.setPreference(
+        {
+          recipientType: "PATIENT",
+          recipientId: 5,
+          recipientName: "Maria",
+        },
+        "EMAIL",
+        true,
+        ),
+      ).toBe(false);
     });
   });
 
@@ -676,3 +629,4 @@ describe("notificationService", () => {
     });
   });
 });
+
