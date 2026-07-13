@@ -166,6 +166,7 @@ BEGIN;
 SET LOCAL statement_timeout = '15s';
 SET LOCAL lock_timeout = '10s';
 SET LOCAL ROLE authenticated;
+SELECT set_config('app.test_user_id', :'actor_id', TRUE);
 SELECT set_config('request.jwt.claim.sub', :'actor_id', TRUE);
 SELECT pg_sleep(GREATEST(EXTRACT(EPOCH FROM (:'start_at'::timestamptz - clock_timestamp())), 0));
 SELECT public.enqueue_nursing_triage_secure(
