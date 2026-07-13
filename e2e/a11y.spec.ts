@@ -1,6 +1,37 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
+test.use({ reducedMotion: 'reduce' });
+
+type AxeViolation = Awaited<ReturnType<AxeBuilder['analyze']>>['violations'][number];
+
+function expectNoSeriousViolations(violations: AxeViolation[], route: string) {
+  const serious = violations.filter((violation) =>
+    ['serious', 'critical'].includes(violation.impact ?? '')
+  );
+  const occurrences = serious.flatMap((violation) =>
+    violation.nodes.slice(0, 3).map((node) => ({
+      route,
+      impact: violation.impact,
+      rule: violation.id,
+      target: node.target.join(' > '),
+      html: node.html.replace(/\s+/g, ' ').slice(0, 240),
+    }))
+  );
+
+  if (occurrences.length > 0) {
+    console.error(
+      occurrences
+        .map((item) =>
+          `A11Y ${item.impact} ${item.rule} route=${item.route}\n  target=${item.target}\n  html=${item.html}`
+        )
+        .join('\n')
+    );
+  }
+
+  expect(occurrences.length, `Axe encontrou falhas serias/criticas em ${route}`).toBe(0);
+}
+
 const protectedRoutes = [
   { name: 'dashboard', path: '/' },
   { name: 'agenda', path: '/schedule' },
@@ -29,14 +60,7 @@ test.describe('Acessibilidade (WCAG 2.1 AA)', () => {
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
         .analyze();
 
-      // Reportar violações com contexto, mas falhar só em impact >= serious
-      const serious = results.violations.filter((v) =>
-        ['serious', 'critical'].includes(v.impact ?? '')
-      );
-      if (serious.length > 0) {
-        console.log('Violações sérias/críticas:', JSON.stringify(serious, null, 2));
-      }
-      expect(serious).toEqual([]);
+      expectNoSeriousViolations(results.violations, route.path);
     });
   }
 
@@ -49,10 +73,7 @@ test.describe('Acessibilidade (WCAG 2.1 AA)', () => {
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze();
 
-    const serious = results.violations.filter((v) =>
-      ['serious', 'critical'].includes(v.impact ?? '')
-    );
-    expect(serious).toEqual([]);
+    expectNoSeriousViolations(results.violations, '/login');
   });
 
   test('pré-cadastro público não tem violações', async ({ page }) => {
@@ -63,9 +84,6 @@ test.describe('Acessibilidade (WCAG 2.1 AA)', () => {
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze();
 
-    const serious = results.violations.filter((v) =>
-      ['serious', 'critical'].includes(v.impact ?? '')
-    );
-    expect(serious).toEqual([]);
+    expectNoSeriousViolations(results.violations, '/pre-cadastro');
   });
 });
