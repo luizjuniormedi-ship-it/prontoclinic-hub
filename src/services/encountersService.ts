@@ -63,69 +63,6 @@ export const encountersService = {
     blockUnsafeMutation();
   },
 
-  // ── Escalas ──
-  async scores(): Promise<Array<{ code: string; name: string; category: string }>> {
-    const { data, error } = await supabase.from("clinical_scores").select("code, name, category").order("name");
-    if (error) throw new Error(error.message);
-    return (data || []) as unknown as Array<{ code: string; name: string; category: string }>;
-  },
-  async calcImc(peso: number, alturaCm: number): Promise<{ imc: number; classificacao: string } | null> {
-    const { data, error } = await supabase.rpc("calc_imc", { p_peso: peso, p_altura_cm: alturaCm });
-    if (error) throw new Error(error.message);
-    const raw = data as unknown;
-    if (Array.isArray(raw) && raw.length > 0) {
-      const x = raw[0];
-      if (typeof x === "object" && x !== null) return x as { imc: number; classificacao: string };
-      const s = String(x).replace(/^\(|\)$/g, "").split(",");
-      return { imc: parseFloat(s[0]), classificacao: (s[1] || "").replace(/^"|"$/g, "") };
-    }
-    return null;
-  },
-  async saveScoreResult(_result: { patient_id: number; encounter_id?: string; score_code: string; inputs: Record<string, unknown>; result: number; classification: string }): Promise<void> {
-    blockUnsafeMutation();
-  },
-
-  // ── Templates / Checklists ──
-  async templates(specialty?: string): Promise<Array<{ id: number; specialty: string; template_type: string; name: string; content: string }>> {
-    let q = supabase.from("clinical_templates").select("*").eq("lg_ativo", true);
-    if (specialty) q = q.eq("specialty", specialty);
-    const { data, error } = await q;
-    if (error) throw new Error(error.message);
-    return (data || []) as unknown as Array<{ id: number; specialty: string; template_type: string; name: string; content: string }>;
-  },
-
-  // ── Tarefas clínicas ──
-  async tasks(filters?: { status?: string; module?: string }): Promise<Array<{ id: number; description: string; target_module: string; priority: string; status: string; patient_id: number }>> {
-    let q = supabase.from("clinical_tasks").select("*").order("created_at", { ascending: false }).limit(100);
-    if (filters?.status) q = q.eq("status", filters.status);
-    if (filters?.module) q = q.eq("target_module", filters.module);
-    const { data, error } = await q;
-    if (error) throw new Error(error.message);
-    return (data || []) as unknown as Array<{ id: number; description: string; target_module: string; priority: string; status: string; patient_id: number }>;
-  },
-  async createTask(_task: { patient_id: number; encounter_id?: string; target_module: string; description: string; priority?: string }): Promise<void> {
-    blockUnsafeMutation();
-  },
-  async completeTask(_id: number): Promise<void> {
-    blockUnsafeMutation();
-  },
-
-  // ── Timeline clínica longitudinal ──
-  async timeline(patientId: number): Promise<Array<{ event_type: string; event_id: string; event_date: string | null; title: string | null; detail: string | null; professional: string | null }>> {
-    const { data, error } = await supabase.from("v_patient_timeline")
-      .select("*").eq("patient_id", patientId).order("event_date", { ascending: false }).limit(200);
-    if (error) throw new Error(error.message);
-    return (data || []) as unknown as Array<{ event_type: string; event_id: string; event_date: string | null; title: string | null; detail: string | null; professional: string | null }>;
-  },
-
-  // ── Prescrições (para receita digital) ──
-  async prescriptions(patientId: number): Promise<Array<{ id: number; ds_prescricao: string | null; dt_prescricao: string | null }>> {
-    const { data, error } = await supabase.from("prescricoes_medicas").select("id, ds_prescricao, dt_prescricao")
-      .eq("patient_id", patientId).order("dt_prescricao", { ascending: false }).limit(50);
-    if (error) throw new Error(error.message);
-    return (data || []) as unknown as Array<{ id: number; ds_prescricao: string | null; dt_prescricao: string | null }>;
-  },
-
   // ── Log de acesso (auditoria/emergência) ──
   async logAccess(_patientId: number, _acao: string, _opts?: { encounter_id?: string; emergency?: boolean; justificativa?: string; user_name?: string }): Promise<void> {
     blockUnsafeMutation();
