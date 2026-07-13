@@ -224,11 +224,36 @@ jobs:
           ON CONFLICT (role_id, module) DO UPDATE
             SET can_view = EXCLUDED.can_view;
           INSERT INTO public.patients (id, company_id, full_name, lg_ativo)
-          VALUES (991301, '00000000-0000-0000-0000-000000000001', 'CI Nursing Triage Patient', TRUE)
+          VALUES
+            (991301, '00000000-0000-0000-0000-000000000001', 'CI Nursing Triage Patient', TRUE),
+            (991302, '00000000-0000-0000-0000-000000000001', 'CI Medical Record Patient', TRUE)
           ON CONFLICT (id) DO UPDATE
             SET company_id = EXCLUDED.company_id,
                 full_name = EXCLUDED.full_name,
                 lg_ativo = TRUE;
+          INSERT INTO public.professionals (id, company_id, user_id, full_name, lg_ativo)
+          VALUES (
+            991302, '00000000-0000-0000-0000-000000000001',
+            '22222222-2222-4222-8222-222222222222', 'CI Medical Record Doctor', TRUE
+          ) ON CONFLICT (id) DO UPDATE
+            SET company_id = EXCLUDED.company_id,
+                user_id = EXCLUDED.user_id,
+                full_name = EXCLUDED.full_name,
+                lg_ativo = TRUE;
+          INSERT INTO public.appointments (
+            id, company_id, patient_id, professional_id,
+            appointment_date, start_time, end_time, status
+          ) VALUES (
+            991302, '00000000-0000-0000-0000-000000000001', 991302, 991302,
+            DATE '2026-07-22', TIME '09:00', TIME '09:30', 'in_progress'
+          ) ON CONFLICT (id) DO UPDATE
+            SET company_id = EXCLUDED.company_id,
+                patient_id = EXCLUDED.patient_id,
+                professional_id = EXCLUDED.professional_id,
+                appointment_date = EXCLUDED.appointment_date,
+                start_time = EXCLUDED.start_time,
+                end_time = EXCLUDED.end_time,
+                status = EXCLUDED.status;
           INSERT INTO public.mnct_classificacao_risco (
             id, company_id, ds_classificacao, cd_cor_hex,
             nr_tempo_max_atendimento_min, lg_ativo
@@ -360,6 +385,9 @@ jobs:
             --data '{"p_patient_id":1,"p_incident_type":"teste","p_severity":"leve","p_description":"deve ser negado","p_idempotency_key":"6a000000-0000-4000-8000-000000000099"}')
           echo "nursing_reception_rpc_http=$nursing_denied_status"
           test "$nursing_denied_status" = "403"
+
+      - name: Smoke P0 medical record HTTP contract
+        run: node scripts/smoke-medical-record-http.mjs
 
       - name: Lint
         run: npm run lint
