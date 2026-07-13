@@ -98,6 +98,7 @@ jobs:
           CREATE ROLE app_owner NOLOGIN NOSUPERUSER NOBYPASSRLS;
           ALTER TABLE public.medical_records OWNER TO app_owner;
           ALTER TABLE public.billings OWNER TO app_owner;
+          ALTER TABLE public.tiss_xml OWNER TO app_owner;
           ALTER TABLE public.insurance_authorizations OWNER TO app_owner;
           ALTER TABLE public.insurance_eligibility_checks OWNER TO app_owner;
           ALTER TABLE public.audit_logs OWNER TO app_owner;
@@ -118,6 +119,7 @@ jobs:
             supabase/migrations/20260712200000_secure_user_profile_admin.sql \
             supabase/migrations/20260712210000_secure_billings.sql \
             supabase/migrations/20260712220000_secure_billing_receipts.sql \
+            supabase/migrations/20260712225000_secure_tiss_foundation.sql \
             supabase/migrations/20260712230000_financial_summary_rpc.sql \
             supabase/release-mvp/011_insurance_authoritative_ledgers.sql \
             supabase/release-mvp/016_service_only_password_resets.sql \
@@ -126,6 +128,22 @@ jobs:
             echo "Applying baseline: $artifact"
             psql -v ON_ERROR_STOP=1 -1 -f "$artifact"
           done
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          ALTER TABLE public.user_profiles OWNER TO app_owner;
+          ALTER TABLE public.patients OWNER TO app_owner;
+          ALTER TABLE public.professionals OWNER TO app_owner;
+          ALTER TABLE public.appointments OWNER TO app_owner;
+          ALTER TABLE public.medical_records OWNER TO app_owner;
+          ALTER TABLE public.billings OWNER TO app_owner;
+          ALTER TABLE public.insurance_authorizations OWNER TO app_owner;
+          ALTER TABLE public.insurance_eligibility_checks OWNER TO app_owner;
+          ALTER TABLE public.audit_logs OWNER TO app_owner;
+          ALTER TABLE public.scheduling_contact_logs OWNER TO app_owner;
+          ALTER TABLE public.scheduling_call_center_tasks OWNER TO app_owner;
+          ALTER TABLE public.roles OWNER TO app_owner;
+          ALTER TABLE public.role_permissions OWNER TO app_owner;
+          ALTER TABLE public.tiss_xml OWNER TO app_owner;
+          SQL
           echo "Running clinical safe function contract"
           psql -v ON_ERROR_STOP=1 <<'SQL'
           DO $f1$
@@ -153,6 +171,8 @@ jobs:
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_billing_behavior_gate.sql
           echo "Running F1 runtime receipt ledger gate"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_receipts_behavior_gate.sql
+          echo "Running F1 runtime TISS foundation gate"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_tiss_foundation_gate.sql
 
       - name: Upload F1 evidence
         if: always()

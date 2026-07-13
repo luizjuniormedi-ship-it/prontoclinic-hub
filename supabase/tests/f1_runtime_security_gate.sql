@@ -10,7 +10,7 @@ DECLARE
     'medical_records', 'billings', 'insurance_authorizations',
     'insurance_eligibility_checks', 'audit_logs',
     'scheduling_contact_logs', 'scheduling_call_center_tasks',
-    'roles', 'role_permissions'
+    'roles', 'role_permissions', 'tiss_xml'
   ];
   rel RECORD;
   role_record RECORD;
@@ -38,9 +38,11 @@ BEGIN
 
   FOR rel IN
     SELECT c.relname, c.relowner::regrole::text AS owner_name,
+           owner_role.rolbypassrls AS owner_bypassrls,
            c.relrowsecurity, c.relforcerowsecurity
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_roles owner_role ON owner_role.oid = c.relowner
     WHERE n.nspname = 'public' AND c.relname = ANY(protected_tables)
   LOOP
     IF rel.relrowsecurity IS NOT TRUE THEN
@@ -48,6 +50,9 @@ BEGIN
     END IF;
     IF rel.owner_name IN ('anon', 'authenticated') THEN
       RAISE EXCEPTION 'F1 runtime: browser role owns public.%', rel.relname;
+    END IF;
+    IF rel.owner_bypassrls IS TRUE THEN
+      RAISE EXCEPTION 'F1 runtime: owner % of public.% has BYPASSRLS', rel.owner_name, rel.relname;
     END IF;
   END LOOP;
 
@@ -68,7 +73,7 @@ BEGIN
     WHERE n.nspname = 'public'
       AND c.relname IN (
         'scheduling_contact_logs', 'scheduling_call_center_tasks',
-        'roles', 'role_permissions'
+        'roles', 'role_permissions', 'tiss_xml'
       )
   LOOP
     IF rel.relforcerowsecurity IS NOT TRUE THEN

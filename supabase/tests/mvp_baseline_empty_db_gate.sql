@@ -8,7 +8,7 @@ DECLARE
   required_tables CONSTANT TEXT[] := ARRAY[
     'companies', 'user_profiles', 'patients', 'professionals', 'appointments',
     'insurance_companies', 'insurance_plans', 'insurance_authorizations',
-    'insurance_eligibility_checks', 'billings', 'medical_records'
+    'insurance_eligibility_checks', 'billings', 'medical_records', 'tiss_xml'
   ];
 BEGIN
   FOREACH required_name IN ARRAY required_tables LOOP
@@ -40,6 +40,25 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'billings_company_appointment_fkey') THEN
     RAISE EXCEPTION 'MVP baseline missing billing composite FK';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_attribute
+    WHERE attrelid = 'public.tiss_xml'::regclass
+      AND attname = 'company_id' AND attnotnull
+  ) THEN
+    RAISE EXCEPTION 'MVP baseline requires tiss_xml.company_id NOT NULL';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_attribute
+    WHERE attrelid = 'public.tiss_xml'::regclass
+      AND attname IN (
+        'billing_id', 'appointment_id', 'patient_id',
+        'insurance_plan_id', 'insurance_authorization_id'
+      ) AND NOT attisdropped
+    GROUP BY attrelid
+    HAVING count(*) = 5
+  ) THEN
+    RAISE EXCEPTION 'MVP baseline missing canonical TISS reference columns';
   END IF;
 END
 $$;
