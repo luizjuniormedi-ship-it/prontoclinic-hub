@@ -107,7 +107,16 @@ BEGIN
     END IF;
   END LOOP;
 
-  IF has_function_privilege('PUBLIC', v_function, 'EXECUTE')
+  IF EXISTS (
+       SELECT 1
+       FROM pg_proc AS procedure
+       CROSS JOIN LATERAL aclexplode(
+         COALESCE(procedure.proacl, acldefault('f', procedure.proowner))
+       ) AS privilege
+       WHERE procedure.oid = v_function
+         AND privilege.grantee = 0
+         AND privilege.privilege_type = 'EXECUTE'
+     )
      OR has_function_privilege('anon', v_function, 'EXECUTE')
      OR has_function_privilege('service_role', v_function, 'EXECUTE')
      OR NOT has_function_privilege('authenticated', v_function, 'EXECUTE') THEN
