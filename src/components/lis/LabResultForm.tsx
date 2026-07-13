@@ -31,6 +31,7 @@ import {
   valorReferencia,
   classificar,
   type LabResultSecurePayload,
+  type LabPedidoStatus,
   type LabResultadoTipo,
   type ResultadoLab,
   type ValorReferencia,
