@@ -136,6 +136,76 @@ describe("dicomIntegrationService — getOrthancConfigTemplate", () => {
   });
 });
 
+describe("dicomIntegrationService — exportPendingWorklist", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("formata e marca todos os itens pendentes como exportados", async () => {
+    (worklistQueueService.list as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([
+      mockWorklistItem,
+      { ...mockWorklistItem, id: "wl2", accession_number: "ACC002" },
+    ]);
+    (worklistQueueService.markExported as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+
+    const result = await dicomIntegrationService.exportPendingWorklist();
+
+    expect(result.count).toBe(2);
+    expect(result.exported[0]["0008,0050"]).toBe("ACC001");
+    expect(worklistQueueService.list).toHaveBeenCalledWith({ status: "pending" });
+    expect(worklistQueueService.markExported).toHaveBeenCalledWith("wl1");
+    expect(worklistQueueService.markExported).toHaveBeenCalledWith("wl2");
+  });
+});
+
+describe("dicomIntegrationService — handleStudyReceived", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("retorna null quando a notificação não possui accession", async () => {
+    await expect(dicomIntegrationService.handleStudyReceived({
+      ID: "study-1",
+      Path: "/studies/1",
+      PatientID: "p1",
+      StudyInstanceUID: "1.2.3",
+    })).resolves.toBeNull();
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it("cria estudo, atualiza item e abre laudo rascunho", async () => {
+    const queueSelect = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: [{ ...mockWorklistItem, id: "wl1", imaging_order_item_id: "i1" }], error: null }),
+    };
+    const studyInsert = {
+      insert: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: "study-1" }, error: null }),
+    };
+    const queueUpdate = { update: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ error: null }) };
+    const reportInsert = { insert: vi.fn().mockResolvedValue({ data: null, error: null }) };
+    (supabase.from as unknown as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce(queueSelect)
+      .mockReturnValueOnce(studyInsert)
+      .mockReturnValueOnce(queueUpdate)
+      .mockReturnValueOnce(reportInsert);
+    (imagingOrderItemsService.updateStatus as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+
+    const result = await dicomIntegrationService.handleStudyReceived({
+      ID: "study-1",
+      Path: "/studies/1",
+      PatientID: "p1",
+      StudyInstanceUID: "1.2.3",
+      AccessionNumber: "ACC001",
+      StudyDate: "20260622",
+      Modality: "CT",
+    });
+
+    expect(result?.id).toBe("study-1");
+    expect(imagingOrderItemsService.updateStatus).toHaveBeenCalledWith("i1", "recebido_pacs");
+    expect(queueUpdate.update).toHaveBeenCalledWith(expect.objectContaining({ status: "acquired" }));
+    expect(reportInsert.insert).toHaveBeenCalledWith(expect.objectContaining({ status: "draft", pacs_study_id: "study-1" }));
+  });
+});
+
 describe("dicomIntegrationService — cancelOrder", () => {
   beforeEach(() => {
     vi.clearAllMocks();

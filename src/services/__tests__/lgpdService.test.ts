@@ -134,6 +134,124 @@ describe("lgpdService — updateConsentimento", () => {
     expect(payload.dt_revocacao).toBeDefined();
     expect(payload.motivo_revocacao).toBe("OPT_OUT_PELO_TITULAR");
   });
+
+  it("traduz erro de unicidade do banco", async () => {
+    (supabase.from as any).mockReturnValue({
+      insert: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ error: { code: "23505", message: "duplicate" } }),
+    });
+    await expect(lgpdService.updateConsentimento(1, CANAL.EMAIL, true))
+      .rejects.toThrow(/Ja existe um consentimento/);
+  });
+});
+
+describe("lgpdService — consultas e anonimização", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("retorna consentimentos e converte falha de consulta em erro de domínio", async () => {
+    const chain = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis() };
+    (chain as any).then = (resolve: any) => resolve({ data: [{ id: 1 }], error: null });
+    (supabase.from as any).mockReturnValue(chain);
+    await expect(lgpdService.getConsentimentos(1)).resolves.toEqual([{ id: 1 }]);
+
+    const failed = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis() };
+    (failed as any).then = (resolve: any) => resolve({ data: null, error: { message: "db down" } });
+    (supabase.from as any).mockReturnValue(failed);
+    await expect(lgpdService.getConsentimentos(1)).rejects.toThrow(/Erro ao listar consentimentos/);
+  });
+
+  it("propaga erro da RPC de anonimização", async () => {
+    (supabase.rpc as any).mockResolvedValue({ data: null, error: { message: "rpc down" } });
+    await expect(lgpdService.executeEsquecimento(1, "INATIVO_5_ANOS"))
+      .rejects.toThrow(/Erro ao anonimizar paciente/);
+  });
+
+  it("usa lista vazia quando a consulta de consentimentos não retorna dados", async () => {
+    const chain = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis() };
+    (chain as any).then = (resolve: any) => resolve({ data: null, error: null });
+    (supabase.from as any).mockReturnValue(chain);
+    await expect(lgpdService.getConsentimentos(1)).resolves.toEqual([]);
+  });
+
+  it("rejeita consentimento com patientId não inteiro", async () => {
+    await expect(lgpdService.getConsentimentos(1.5)).rejects.toThrow(/patientId invalido/);
+  });
+
+  it("usa lista vazia quando não há pacientes anonimizáveis", async () => {
+    const chain = { select: vi.fn().mockReturnThis(), limit: vi.fn().mockResolvedValue({ data: null, error: null }) };
+    (supabase.from as any).mockReturnValue(chain);
+    await expect(lgpdService.getPacientesAnonimizaveis()).resolves.toEqual([]);
+  });
+
+  it("traduz erro genérico ao registrar consentimento", async () => {
+    (supabase.from as any).mockReturnValue({
+      insert: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: null, error: { code: "500", message: "db down" } }),
+    });
+    await expect(lgpdService.updateConsentimento(1, CANAL.EMAIL, true))
+      .rejects.toThrow(/Erro ao registrar consentimento/);
+  });
+
+  it("valida patientId não inteiro na anonimizacao", async () => {
+    await expect(lgpdService.executeEsquecimento(1.5, "INATIVO_5_ANOS"))
+      .rejects.toThrow(/patientId invalido/);
+  });
+
+  it("trata falha ao listar política de retenção", async () => {
+    const chain = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis() };
+    (chain as any).then = (resolve: any) => resolve({ data: null, error: { message: "db down" } });
+    (supabase.from as any).mockReturnValue(chain);
+    await expect(lgpdService.getPoliticaRetencao("company-uuid"))
+      .rejects.toThrow(/Erro ao listar politica/);
+  });
+
+  it("trata solicitação inexistente no workflow", async () => {
+    const chain = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }) };
+    (supabase.from as any).mockReturnValue(chain);
+    await expect(lgpdService.processarSolicitacao(1, "concluir"))
+      .rejects.toThrow(/Solicitacao nao encontrada/);
+  });
+
+  it("executa job em massa e contabiliza falhas individuais", async () => {
+    const listChain = { select: vi.fn().mockReturnThis(), limit: vi.fn().mockResolvedValue({
+      data: [{ id: 1 }, { id: 2 }], error: null,
+    }) };
+    (supabase.from as any).mockReturnValue(listChain);
+    (supabase.rpc as any)
+      .mockResolvedValueOnce({ data: { ok: true }, error: null })
+      .mockResolvedValueOnce({ data: null, error: { message: "blocked" } });
+    await expect(lgpdService.executarAnonimizacaoMassa()).resolves.toEqual({
+      sucesso: 1,
+      falha: 1,
+      erros: [{ id: 2, erro: "Erro ao anonimizar paciente: blocked" }],
+    });
+  });
+
+  it("lista solicitações com e sem filtro de status", async () => {
+    const chain = { select: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis() };
+    (chain as any).then = (resolve: any) => resolve({ data: [], error: null });
+    (supabase.from as any).mockReturnValue(chain);
+    await expect(lgpdService.getSolicitacoes()).resolves.toEqual([]);
+    await expect(lgpdService.getSolicitacoes("PENDENTE")).resolves.toEqual([]);
+    expect(chain.eq).toHaveBeenCalledWith("status", "PENDENTE");
+  });
+
+  it("rejeita processamento sem motivo suficiente", async () => {
+    const lookup = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      update: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: { id: 1, tipo: "ACESSO", status: "PENDENTE", dt_prazo: new Date(Date.now() + 86400000).toISOString() },
+        error: null,
+      }),
+    };
+    (supabase.from as any).mockReturnValue(lookup);
+    await expect(lgpdService.processarSolicitacao(1, "rejeitar", { motivoRejeicao: "curto" }))
+      .rejects.toThrow(/motivoRejeicao obrigatorio/);
+  });
 });
 
 describe("lgpdService — requestAcesso (prazo 15 dias)", () => {

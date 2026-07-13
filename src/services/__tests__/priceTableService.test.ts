@@ -190,4 +190,25 @@ describe("priceTableService — getAll com filtros", () => {
 
     await expect(priceTableService.getAll()).rejects.toThrow(/DB down/);
   });
+
+  it("conta preços", async () => {
+    const chain: any = { select: vi.fn().mockResolvedValue({ count: 12, error: null }) };
+    (supabase.from as any).mockReturnValue(chain);
+    await expect(priceTableService.count()).resolves.toBe(12);
+  });
+
+  it("cria, atualiza, remove e cria em lote", async () => {
+    const createChain: any = { insert: vi.fn().mockReturnThis(), select: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: { id: 1 }, error: null }) };
+    (supabase.from as any).mockReturnValueOnce(createChain);
+    await priceTableService.create({ description: "x" });
+    const updateChain: any = { update: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), select: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: { id: 1 }, error: null }) };
+    (supabase.from as any).mockReturnValueOnce(updateChain);
+    await priceTableService.update(1, { description: "y" });
+    const deleteChain: any = { delete: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ error: null }) };
+    (supabase.from as any).mockReturnValueOnce(deleteChain);
+    await priceTableService.delete(1);
+    const bulkChain: any = { insert: vi.fn().mockReturnThis(), select: vi.fn().mockResolvedValue({ data: [{ id: 1 }], error: null }) };
+    (supabase.from as any).mockReturnValueOnce(bulkChain);
+    await expect(priceTableService.bulkCreate([{ description: "z" }])).resolves.toHaveLength(1);
+  });
 });
