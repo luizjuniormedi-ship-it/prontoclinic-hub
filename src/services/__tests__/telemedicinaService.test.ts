@@ -204,6 +204,16 @@ describe("telemedicinaService.assinarPrescricao", () => {
   });
 });
 
+describe("telemedicinaService.habilitarGravacao", () => {
+  it("falha fechado sem registrar consentimento como gravação ativa", async () => {
+    await expect(
+      telemedicinaService.habilitarGravacao("sala-uuid-1", true),
+    ).rejects.toThrow("integração real de gravação ainda não está configurada");
+
+    expect(supabase.rpc).not.toHaveBeenCalled();
+  });
+});
+
 describe("telemedicinaService.enviarMensagem", () => {
   it("insere mensagem no banco e retorna registro criado", async () => {
     const msg = {

@@ -486,9 +486,14 @@ class TelemedicinaService {
       await this.registrarConsentimento(salaId, false);
       return { habilitada: false };
     }
-    await this.registrarConsentimento(salaId, true);
-    // Em produção: chama Daily.co /recordings/start
-    return { habilitada: true };
+
+    // O consentimento não pode ser apresentado como gravação ativa. A chamada
+    // Daily.co /recordings/start e o callback que persistirá a URL ainda não
+    // estão implementados; falhar antes do RPC evita registrar consentimento
+    // como se a gravação tivesse iniciado.
+    throw new Error(
+      "Gravação indisponível: integração real de gravação ainda não está configurada",
+    );
   }
 
   async registrarConsentimento(salaId: string, consentimento: boolean): Promise<void> {
