@@ -53,6 +53,17 @@ BEGIN
     RAISE EXCEPTION 'prontomedic_rpc_owner must receive authenticated RLS policies';
   END IF;
 
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_roles
+     WHERE rolname = 'app_prontomedic'
+       AND NOT rolinherit
+       AND NOT rolsuper
+       AND NOT rolbypassrls
+  ) OR NOT pg_has_role('app_prontomedic', 'authenticated', 'MEMBER') THEN
+    RAISE EXCEPTION 'app_prontomedic must assume authenticated explicitly without inherited privileges';
+  END IF;
+
   SELECT COUNT(*)
     INTO unsafe_owner_count
     FROM pg_proc function_row
@@ -103,7 +114,15 @@ BEGIN
               AND acl.privilege_type = 'EXECUTE'
          )),
          COUNT(*) FILTER (WHERE has_function_privilege('anon', function_row.oid, 'EXECUTE')),
-         COUNT(*) FILTER (WHERE has_function_privilege('app_prontomedic', function_row.oid, 'EXECUTE')),
+         COUNT(*) FILTER (WHERE EXISTS (
+           SELECT 1
+             FROM aclexplode(COALESCE(
+               function_row.proacl,
+               acldefault('f', function_row.proowner)
+             )) acl
+            WHERE acl.grantee = to_regrole('app_prontomedic')::oid
+              AND acl.privilege_type = 'EXECUTE'
+         )),
          COUNT(*) FILTER (WHERE NOT has_function_privilege('authenticated', function_row.oid, 'EXECUTE'))
     INTO public_execute_count, anon_execute_count, backend_execute_count,
          authenticated_missing_count
@@ -154,7 +173,15 @@ BEGIN
        )
        OR has_function_privilege('anon', function_row.oid, 'EXECUTE')
        OR has_function_privilege('authenticated', function_row.oid, 'EXECUTE')
-       OR has_function_privilege('app_prontomedic', function_row.oid, 'EXECUTE')
+       OR EXISTS (
+         SELECT 1
+           FROM aclexplode(COALESCE(
+             function_row.proacl,
+             acldefault('f', function_row.proowner)
+           )) acl
+          WHERE acl.grantee = to_regrole('app_prontomedic')::oid
+            AND acl.privilege_type = 'EXECUTE'
+       )
      );
 
   IF blocked_rpc_exposure_count <> 0 THEN

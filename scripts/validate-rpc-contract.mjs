@@ -238,10 +238,12 @@ async function validateRuntime(proxyNames, classifiedNames, forbiddenNames, fron
               ), '[]'::jsonb) AS input_argument_names,
               has_function_privilege('authenticated', p.oid, 'EXECUTE') AS authenticated_execute,
               has_function_privilege('anon', p.oid, 'EXECUTE') AS anon_execute,
-              CASE
-                WHEN to_regrole('app_prontomedic') IS NULL THEN FALSE
-                ELSE has_function_privilege('app_prontomedic', p.oid, 'EXECUTE')
-              END AS backend_execute,
+              EXISTS (
+                SELECT 1
+                  FROM aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) acl
+                 WHERE acl.grantee = to_regrole('app_prontomedic')::oid
+                   AND acl.privilege_type = 'EXECUTE'
+              ) AS backend_direct_execute,
               EXISTS (
                 SELECT 1
                   FROM aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) acl
@@ -318,7 +320,7 @@ async function validateRuntime(proxyNames, classifiedNames, forbiddenNames, fron
         validateFrontendArguments(name, row);
         if (row.public_execute) errors.push(`RUNTIME_PUBLIC_EXECUTE ${name}(${row.signature})`);
         if (row.anon_execute) errors.push(`RUNTIME_ANON_EXECUTE ${name}(${row.signature})`);
-        if (row.backend_execute) errors.push(`RUNTIME_BACKEND_DIRECT_EXECUTE ${name}(${row.signature})`);
+        if (row.backend_direct_execute) errors.push(`RUNTIME_BACKEND_DIRECT_EXECUTE ${name}(${row.signature})`);
         if (!row.authenticated_execute) errors.push(`RUNTIME_AUTHENTICATED_EXECUTE_MISSING ${name}(${row.signature})`);
       }
     }
@@ -329,7 +331,7 @@ async function validateRuntime(proxyNames, classifiedNames, forbiddenNames, fron
       if (rows.length > 1) errors.push(`RUNTIME_NONPROXY_RPC_OVERLOAD_UNDECLARED ${name} count=${rows.length}`);
       for (const row of rows) {
         validateFrontendArguments(name, row);
-        const exposed = row.public_execute || row.authenticated_execute || row.anon_execute || row.backend_execute;
+        const exposed = row.public_execute || row.authenticated_execute || row.anon_execute || row.backend_direct_execute;
         if (exposed) {
           validateFunctionSafety(name, row);
           errors.push(`RUNTIME_NONPROXY_RPC_EXPOSED ${name}(${row.signature})`);
