@@ -27,17 +27,6 @@ BEGIN
 END
 $setup$;
 
--- The standalone F1 bootstrap intentionally starts with auth.uid() returning
--- NULL. Multi-session tests need the same JWT claim contract used by Supabase
--- and the main CI bootstrap because a transactional gate override is rolled back.
-CREATE OR REPLACE FUNCTION auth.uid()
-RETURNS UUID
-LANGUAGE sql
-STABLE
-AS $auth$
-  SELECT NULLIF(current_setting('request.jwt.claim.sub', TRUE), '')::UUID
-$auth$;
-
 DO $setup$
 BEGIN
   IF EXISTS (
@@ -109,4 +98,3 @@ INSERT INTO public.mnct_classificacao_risco(
 COMMIT;
 
 \echo 'NURSING_TRIAGE_CONCURRENCY_SETUP_OK'
-
