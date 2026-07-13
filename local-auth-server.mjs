@@ -144,6 +144,12 @@ const SCHEDULING_CATALOG_TABLES = new Set([
 
 function tableToModule(table, method = 'GET') {
   const t = table.toLowerCase();
+  // O nome canonico do papel e necessario para montar a sessao de qualquer
+  // usuario autenticado. O catalogo e global e somente leitura; as permissoes
+  // detalhadas continuam protegidas pelo modulo administrativo.
+  if (t === 'roles') {
+    return method === 'GET' || method === 'HEAD' ? null : 'admin';
+  }
   // Unidade e catalogo operacional compartilhado: leitura autenticada e
   // tenant-scoped; escrita continua restrita ao modulo administrativo.
   if (t === 'units') {
