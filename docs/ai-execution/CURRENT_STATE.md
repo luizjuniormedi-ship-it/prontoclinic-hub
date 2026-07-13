@@ -12,6 +12,7 @@ Atualizado em 2026-07-13.
 - A verificacao somente leitura de 2026-07-13 confirmou PostgreSQL, backend PM2, Nginx e frontend ativos; login e isolamento entre tenants ainda nao foram provados.
 - O healthcheck local confirmou PostgreSQL, mas nao confirmou auth: o processo Node encerrou com `EPERM` do sandbox antes de escutar a porta 8000.
 - O CI falhou no replay de migrações por usar `localhost:5432` apesar do serviço publicar PostgreSQL em `localhost:54322`; o workflow foi corrigido para usar `DATABASE_URL` integralmente.
+- O replay seguinte confirmou que a porta foi corrigida e revelou a ordem incorreta da migration base; `base_tables` foi renomeada para preceder as migrations `202512...` dependentes.
 
 ## Hipotese
 

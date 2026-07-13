@@ -49,4 +49,4 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - Teste negativo de isolamento entre empresas.
 - Dry-run real de reconciliacao DataSIGH.
 - CI verde no commit mais recente.
-- Replay de migrações no CI após a correção da porta ainda pendente de execução do GitHub Actions.
+- O replay do CI confirmou a correção da porta, mas encontrou uma falha estrutural de ordenação: `20260101000000_base_tables.sql` era executada depois de migrations `202512...` que dependiam de `public.patients`. A migration base foi renomeada para `20251231000000_base_tables.sql`; novo replay ainda pendente.
