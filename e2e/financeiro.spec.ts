@@ -1,11 +1,18 @@
 import { test, expect } from './fixtures/auth';
 
 async function openFinancialAndAssertRuntime(page: import('@playwright/test').Page, path = '/financial') {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
   const responsePromise = page.waitForResponse((response) =>
     response.url().includes('/rest/v1/rpc/list_billing_financial_summary_secure')
-  );
+  , { timeout: 3000 }).catch(() => null);
   await page.goto(path);
   const response = await responsePromise;
+  if (!response) {
+    const headings = await page.getByRole('heading').allTextContents();
+    const body = (await page.locator('body').innerText()).replace(/\s+/g, ' ').slice(0, 1000);
+    throw new Error(`Resumo financeiro nao foi solicitado. headings=${JSON.stringify(headings)} pageErrors=${JSON.stringify(pageErrors)} body=${body}`);
+  }
   if (!response.ok()) {
     throw new Error(`Resumo financeiro falhou: HTTP ${response.status()} ${await response.text()}`);
   }
