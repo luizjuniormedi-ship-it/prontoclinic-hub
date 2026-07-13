@@ -231,10 +231,34 @@ jobs:
             SET company_id = EXCLUDED.company_id,
                 full_name = EXCLUDED.full_name,
                 lg_ativo = TRUE;
+          INSERT INTO public.patients (
+            id, company_id, full_name, birth_date, sex,
+            allergies, clinical_alerts, lg_ativo
+          ) VALUES (
+            991303, '00000000-0000-0000-0000-000000000001',
+            'CI Paciente Prontuario E2E', DATE '1985-03-15', 'F',
+            'Dipirona', 'Hipertensao controlada', TRUE
+          ) ON CONFLICT (id) DO UPDATE
+            SET company_id = EXCLUDED.company_id,
+                full_name = EXCLUDED.full_name,
+                birth_date = EXCLUDED.birth_date,
+                sex = EXCLUDED.sex,
+                allergies = EXCLUDED.allergies,
+                clinical_alerts = EXCLUDED.clinical_alerts,
+                lg_ativo = TRUE;
           INSERT INTO public.professionals (id, company_id, user_id, full_name, lg_ativo)
           VALUES (
             991302, '00000000-0000-0000-0000-000000000001',
             '22222222-2222-4222-8222-222222222222', 'CI Medical Record Doctor', TRUE
+          ) ON CONFLICT (id) DO UPDATE
+            SET company_id = EXCLUDED.company_id,
+                user_id = EXCLUDED.user_id,
+                full_name = EXCLUDED.full_name,
+                lg_ativo = TRUE;
+          INSERT INTO public.professionals (id, company_id, user_id, full_name, lg_ativo)
+          VALUES (
+            991303, '00000000-0000-0000-0000-000000000001',
+            '22222222-2222-4222-8222-222222222222', 'CI Medico Prontuario E2E', TRUE
           ) ON CONFLICT (id) DO UPDATE
             SET company_id = EXCLUDED.company_id,
                 user_id = EXCLUDED.user_id,
@@ -249,6 +273,10 @@ jobs:
           ), (
             991304, '00000000-0000-0000-0000-000000000001', 991302, 991302,
             DATE '2026-07-22', TIME '10:00', TIME '10:30', 'in_progress'
+          ), (
+            991303, '00000000-0000-0000-0000-000000000001', 991303, 991303,
+            (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date,
+            TIME '11:00', TIME '11:30', 'waiting'
           ) ON CONFLICT (id) DO UPDATE
             SET company_id = EXCLUDED.company_id,
                 patient_id = EXCLUDED.patient_id,
@@ -417,7 +445,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run E2E tests
-        run: npm run test:e2e -- --project=chromium e2e/auth.spec.ts e2e/operational-smoke.spec.ts e2e/financeiro.spec.ts e2e/a11y.spec.ts
+        run: npm run test:e2e -- --project=chromium e2e/auth.spec.ts e2e/operational-smoke.spec.ts e2e/financeiro.spec.ts e2e/a11y.spec.ts e2e/prontuario.spec.ts
         env:
           CI: true
           E2E_BASE_URL: http://localhost:4173
