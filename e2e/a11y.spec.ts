@@ -1,4 +1,4 @@
-import { test, expect, type Page } from './fixtures/backend-health';
+import { test, expect, type Page } from './fixtures/auth';
 import AxeBuilder from '@axe-core/playwright';
 
 test.use({ reducedMotion: 'reduce' });
@@ -48,17 +48,9 @@ const protectedRoutes = [
 ];
 
 test.describe('Acessibilidade (WCAG 2.1 AA)', () => {
-  test.beforeEach(async ({ page }) => {
-    // Login como admin antes de testar rotas protegidas
-    await page.goto('/login');
-    await page.getByLabel('E-mail').fill('admin@prontomedic.test');
-    await page.getByRole('textbox', { name: 'Senha' }).fill('TestPassword123!');
-    await page.getByRole('button', { name: /entrar/i }).click();
-    await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
-  });
-
   for (const route of protectedRoutes) {
-    test(`${route.name} não tem violações de acessibilidade`, async ({ page }) => {
+    test(`${route.name} não tem violações de acessibilidade`, async ({ page, loginAs }) => {
+      await loginAs('admin');
       await page.goto(route.path);
       // Aguardar conteúdo dinâmico estabilizar
       await page.waitForLoadState('networkidle');
@@ -73,8 +65,6 @@ test.describe('Acessibilidade (WCAG 2.1 AA)', () => {
   }
 
   test('página de login não tem violações', async ({ page }) => {
-    // Limpa sessão antes
-    await page.context().clearCookies();
     await page.goto('/login');
 
     const results = await new AxeBuilder({ page })
@@ -85,7 +75,6 @@ test.describe('Acessibilidade (WCAG 2.1 AA)', () => {
   });
 
   test('pré-cadastro público não tem violações', async ({ page }) => {
-    await page.context().clearCookies();
     await page.goto('/pre-cadastro');
 
     const results = await new AxeBuilder({ page })
@@ -95,3 +84,4 @@ test.describe('Acessibilidade (WCAG 2.1 AA)', () => {
     expectNoSeriousViolations(results.violations, '/pre-cadastro');
   });
 });
+
