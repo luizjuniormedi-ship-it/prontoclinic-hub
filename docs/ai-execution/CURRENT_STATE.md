@@ -5,7 +5,7 @@ Atualizado em 2026-07-13.
 ## Fato tecnico
 
 - Repositorio local: `C:\Users\Meu Computador\AppData\Local\Temp\prontoclinic-hub`.
-- Ultimo commit local conhecido: `9bb1578` (`ci(security): add manual tenant isolation gate`) mais a correção local de bootstrap em validação.
+- Ultimo commit local conhecido: `ae62691` (`fix(security): fail closed in bootstrap auth helpers`).
 - Release funcional conhecida na VPS: `37199ee`.
 - A VPS executou build, migracoes e reload do Nginx na fase 1; a mensagem final de falha do wrapper foi causada por CRLF residual no shell remoto, nao por falha da publicacao.
 - PostgreSQL e backend precisam de nova verificacao operacional apos a ultima publicacao.
