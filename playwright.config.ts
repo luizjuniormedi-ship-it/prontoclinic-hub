@@ -30,7 +30,8 @@ export default defineConfig({
   ],
   webServer: process.env.CI
     ? {
-        command: 'npm run build && npm run preview',
+        // O workflow de CI ja conclui o build antes de iniciar o Playwright.
+        command: 'npm run preview',
         port: 4173,
         reuseExistingServer: !process.env.CI,
         timeout: 120000

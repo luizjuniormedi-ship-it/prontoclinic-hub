@@ -18,6 +18,7 @@ import { Appointment, AppointmentStatus, Patient } from "@/types";
 import type { AppointmentTypeLiteral, AppointmentStatusForBadge } from "@/types/missing";
 import { useToast } from "@/hooks/use-toast";
 import { calculateAge } from "@/utils/formatters";
+import { getReceptionOperationalDate } from "@/utils/receptionOperationalDate";
 import { useDebounce } from "@/hooks/useDebounce";
 import { CheckinReadiness, ReceptionPendingItem, receptionService } from "@/services/receptionService";
 
@@ -69,7 +70,7 @@ export default function ReceptionPage() {
   const debouncedSearch = useDebounce(search, 300);
   const navigate = useNavigate();
   const { toast } = useToast();
-  const today = new Date().toISOString().split("T")[0];
+  const today = getReceptionOperationalDate();
 
   const loadAll = useCallback(async () => {
     try {
