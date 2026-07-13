@@ -26,6 +26,7 @@ Atualizado em 2026-07-13.
 - A auditoria estática encontrou e corrigiu no bootstrap o fallback inseguro para o primeiro usuário e para `service_role`; a regra agora falha fechado (`auth.uid()` nulo e role padrão `anon`).
 - A compatibilidade de `auth.users` agora declara/adiciona de forma idempotente os campos usados pelo seed E2E e pelo auth server local (`encrypted_password`, `email_confirmed_at`, metadados e tokens).
 - O CI agora executa o seed E2E no PostgreSQL efêmero após o replay e verifica as colunas críticas de autenticação antes dos testes de aplicação.
+- A auditoria do backend confirmou que os vetores SQLi históricos estão protegidos; também foi corrigido o vazamento atual de mensagens SQL, que agora é registrado no servidor e substituído por erro genérico na resposta.
 
 ## Hipotese
 
@@ -41,4 +42,4 @@ O sistema nao esta apto para producao enquanto os testes P0 abaixo nao forem exe
 
 ## Proxima tarefa executavel
 
-Executar o workflow manual `F1 runtime gate` com Secrets homologados; depois registrar a evidência negativa de isolamento por `company_id`, validar autenticação/RBAC, rodar o teste de segurança fora do caminho Windows bloqueado e fechar os gates de rollback.
+Executar o workflow manual `F1 runtime gate` com Secrets homologados; depois registrar a evidência negativa de isolamento por `company_id`, validar autenticação/RBAC, rodar os testes de segurança no CI e fechar os gates de rollback.

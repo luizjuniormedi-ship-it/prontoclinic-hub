@@ -291,6 +291,11 @@ function parseBody(req, maxBytes = 1024 * 1024) {
   });
 }
 
+function databaseFailure(res, error, code) {
+  console.error(`[DB_ERROR:${code}]`, error);
+  return json(res, { error: 'internal_error', code }, 500);
+}
+
 const loginAttempts = new Map();
 const LOGIN_MAX_ATTEMPTS = Number(process.env.LOGIN_MAX_ATTEMPTS || 5);
 const LOGIN_WINDOW_MS = Number(process.env.LOGIN_WINDOW_MS || 15 * 60 * 1000);
@@ -550,7 +555,7 @@ const server = createServer(async (req, res) => {
         return json(res, val);
       } catch (e) {
         await client.query('ROLLBACK');
-        return json(res, { error: e.message, code: 'PGRST202' }, 400);
+        return databaseFailure(res, e, 'PGRST202');
       } finally {
         client.release();
       }
@@ -757,7 +762,7 @@ const server = createServer(async (req, res) => {
           }
           return json(res, result.rows);
         } catch (e) {
-          return json(res, { error: e.message, code: 'PGRST000' }, 400);
+          return databaseFailure(res, e, 'PGRST000');
         }
       }
 
@@ -789,7 +794,7 @@ const server = createServer(async (req, res) => {
           }
           return json(res, {}, 201);
         } catch (e) {
-          return json(res, { error: e.message }, 400);
+          return databaseFailure(res, e, 'REST_INSERT');
         }
       }
 
@@ -820,7 +825,7 @@ const server = createServer(async (req, res) => {
           );
           return json(res, result.rows[0] || {});
         } catch (e) {
-          return json(res, { error: e.message }, 400);
+          return databaseFailure(res, e, 'REST_UPDATE');
         }
       }
     }
@@ -830,7 +835,7 @@ const server = createServer(async (req, res) => {
 
   } catch (err) {
     console.error('[ERROR]', err);
-    json(res, { error: err.message }, err.statusCode || 500);
+    json(res, { error: err.statusCode ? 'request_error' : 'internal_error' }, err.statusCode || 500);
   }
 });
 
