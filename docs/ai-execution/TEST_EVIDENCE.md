@@ -49,4 +49,4 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - Teste negativo de isolamento entre empresas.
 - Dry-run real de reconciliacao DataSIGH.
 - CI verde no commit mais recente.
-- O replay do CI confirmou a correção da porta e da ordem das tabelas, e encontrou a dependência de roles Supabase (`anon`, `authenticated`, `service_role`) ausentes no PostgreSQL limpo. O workflow agora cria apenas as roles ausentes antes do replay; novo CI ainda pendente.
+- O replay do CI confirmou a correção da porta, da ordem das tabelas e das roles, e encontrou `auth.uid()` ausente no PostgreSQL limpo. A compatibilidade agora cria a função inerte apenas quando ela não existe, preservando a implementação Supabase; novo CI ainda pendente.
