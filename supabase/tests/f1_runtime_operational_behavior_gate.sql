@@ -22,6 +22,14 @@ VALUES
   ('33333333-3333-4333-8333-333333333333', 'Operator', 'operator@test.local', 'admin',
    'cccccccc-cccc-4ccc-8ccc-cccccccccccc');
 
+INSERT INTO auth.users (id) VALUES
+  ('55555555-5555-4555-8555-555555555555');
+
+INSERT INTO public.user_profiles (id, full_name, email, role_name, company_id)
+VALUES
+  ('55555555-5555-4555-8555-555555555555', 'Doctor', 'doctor@test.local', 'doctor',
+   'cccccccc-cccc-4ccc-8ccc-cccccccccccc');
+
 INSERT INTO public.units (id, company_id, cd_codigo, ds_nome)
 OVERRIDING SYSTEM VALUE VALUES
   (930001, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'U1', 'Unit 1');
@@ -145,6 +153,8 @@ END
 $f1$;
 
 
+SET LOCAL app.test_user_id = '55555555-5555-4555-8555-555555555555';
+
 DO $f1$
 DECLARE
   v_record RECORD;
@@ -182,6 +192,8 @@ BEGIN
   END;
 END
 $f1$;
+
+SET LOCAL app.test_user_id = '33333333-3333-4333-8333-333333333333';
 
 DO $f1$
 DECLARE
