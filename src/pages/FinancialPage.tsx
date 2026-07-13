@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { DollarSign, Search, TrendingUp, TrendingDown, Calendar, Plus, Receipt } from "lucide-react";
+import { DollarSign, Search, TrendingUp, Calendar, Receipt } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/PageHeader";
@@ -9,55 +9,43 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { financialService, DbFinancialTransaction } from "@/services/financialService";
-import { billingsService } from "@/services/financialService";
-import { professionalsLookup, DbProfessional } from "@/services/appointmentsService";
 import { Patient } from "@/types";
-import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 
 const formatCurrency = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const formatDate = (d: string) => { try { return new Date(d + "T00:00:00").toLocaleDateString("pt-BR"); } catch { return d; } };
+const formatDate = (d: string) => {
+  const parsed = new Date(d.includes("T") ? d : `${d}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? d : parsed.toLocaleDateString("pt-BR");
+};
 
-const statusLabels: Record<string, string> = { pendente: "Pendente", pago: "Pago", cancelado: "Cancelado" };
-const statusColors: Record<string, string> = { pendente: "bg-warning/10 text-warning", pago: "bg-success/10 text-success", cancelado: "bg-muted text-muted-foreground" };
+const statusLabels: Record<string, string> = { pendente: "Pendente", parcial: "Parcial", pago: "Pago", cancelado: "Cancelado" };
+const statusColors: Record<string, string> = { pendente: "bg-warning/10 text-warning", parcial: "bg-primary/10 text-primary", pago: "bg-success/10 text-success", cancelado: "bg-muted text-muted-foreground" };
 const methodLabels: Record<string, string> = { dinheiro: "Dinheiro", pix: "PIX", cartao_debito: "Déb.", cartao_credito: "Créd.", transferencia: "Transf.", convenio: "Convênio" };
 const allMethods = ["dinheiro", "pix", "cartao_debito", "cartao_credito", "transferencia", "convenio"];
 
 export default function FinancialPage() {
   const [transactions, setTransactions] = useState<DbFinancialTransaction[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
-  const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [paymentDialog, setPaymentDialog] = useState<DbFinancialTransaction | null>(null);
   const [paymentMethod, setPaymentMethod] = useState("pix");
-  const [newOpen, setNewOpen] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentKey, setPaymentKey] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const { user } = useAuth();
   const { toast } = useToast();
-
-  // New transaction form
-  const [newPatientId, setNewPatientId] = useState("");
-  const [newAmount, setNewAmount] = useState("");
-  const [newMethod, setNewMethod] = useState("pix");
-  const [newDueDate, setNewDueDate] = useState(new Date().toISOString().split("T")[0]);
-  const [newNotes, setNewNotes] = useState("");
 
   const loadAll = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const [txns, profs] = await Promise.all([
-        financialService.getAll(),
-        professionalsLookup.getAll(),
-      ]);
+      const txns = await financialService.getAll();
       const patientIds = Array.from(new Set(txns.map((t) => t.patient_id).filter((id): id is string => Boolean(id))));
       const chunks: string[][] = [];
       for (let i = 0; i < patientIds.length; i += 100) chunks.push(patientIds.slice(i, i + 100));
@@ -70,7 +58,6 @@ export default function FinancialPage() {
       });
       setTransactions(txns);
       setPatients(patientRows.map((p: any) => ({ id: String(p.id), name: p.full_name || "" } as Patient)));
-      setProfessionals(profs);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -81,7 +68,6 @@ export default function FinancialPage() {
   useEffect(() => { loadAll(); }, [loadAll]);
 
   const getPatientName = (id: string | null, fallback?: string | null) => fallback || patients.find((p) => p.id === id)?.name || "—";
-  const getProfName = (id: string | null) => professionals.find((p) => p.id === id)?.full_name || "—";
 
   const filtered = transactions.filter((t) => {
     const q = search.toLowerCase();
@@ -91,46 +77,22 @@ export default function FinancialPage() {
     return matchSearch && matchStatus;
   });
 
-  const totalPaid = transactions.filter((t) => t.status === "pago" || t.status === "faturado").reduce((s, t) => s + (Number(t.amount) || 0), 0);
-  const totalPending = transactions.filter((t) => t.status === "pendente" || t.status === "em_aberto").reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  const totalPaid = transactions.reduce((s, t) => s + t.received_amount, 0);
+  const totalPending = transactions.reduce((s, t) => s + t.balance_amount, 0);
 
   const handleMarkPaid = async () => {
-    if (!paymentDialog) return;
-    setSaving(true);
-    try {
-      await financialService.markPaid(paymentDialog.id, paymentMethod);
-      toast({ title: "Pagamento registrado!" });
-      setPaymentDialog(null);
-      loadAll();
-    } catch (err) {
-      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleCreateTransaction = async () => {
-    if (!newPatientId || !newAmount) {
-      toast({ title: "Preencha paciente e valor", variant: "destructive" });
+    if (!paymentDialog || !paymentKey) return;
+    const amount = Number(paymentAmount);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > paymentDialog.balance_amount) {
+      toast({ title: "Valor de pagamento inválido", variant: "destructive" });
       return;
     }
     setSaving(true);
     try {
-      await financialService.create({
-        patient_id: newPatientId,
-        company_id: user?.company_id || undefined,
-        unit_id: user?.primary_unit_id || undefined,
-        amount: Number(newAmount),
-        payment_method: newMethod,
-        due_date: newDueDate,
-        notes: newNotes.trim() || undefined,
-        status: "pendente",
-      });
-      toast({ title: "Cobrança criada!" });
-      setNewOpen(false);
-      setNewPatientId("");
-      setNewAmount("");
-      setNewNotes("");
+      await financialService.recordPayment(paymentDialog.id, amount, paymentMethod, paymentKey);
+      toast({ title: "Pagamento registrado!" });
+      setPaymentDialog(null);
+      setPaymentKey(null);
       loadAll();
     } catch (err) {
       toast({ title: "Erro", description: (err as Error).message, variant: "destructive" });
@@ -145,9 +107,8 @@ export default function FinancialPage() {
   return (
     <div className="space-y-6 animate-fade-in">
       <PageHeader
-        title="Financeiro"
-        description="Transações e cobranças"
-        actions={<Button onClick={() => setNewOpen(true)}><Plus className="mr-2 h-4 w-4" />Nova Cobrança</Button>}
+        title="Contas a Receber"
+        description="Cobranças originadas de atendimentos e respectivos saldos"
       />
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
@@ -174,6 +135,7 @@ export default function FinancialPage() {
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
             <SelectItem value="pendente">Pendente</SelectItem>
+            <SelectItem value="parcial">Parcial</SelectItem>
             <SelectItem value="pago">Pago</SelectItem>
             <SelectItem value="cancelado">Cancelado</SelectItem>
           </SelectContent>
@@ -189,7 +151,7 @@ export default function FinancialPage() {
               <TableRow>
                 <TableHead>Paciente</TableHead>
                 <TableHead>Valor</TableHead>
-                <TableHead>Desconto</TableHead>
+                <TableHead>Recebido</TableHead>
                 <TableHead>Pgto</TableHead>
                 <TableHead>Vencimento</TableHead>
                 <TableHead>Pago em</TableHead>
@@ -202,7 +164,7 @@ export default function FinancialPage() {
                 <TableRow key={t.id} className={t.status === "pendente" ? "" : t.status === "cancelado" ? "opacity-50" : ""}>
                   <TableCell className="font-medium text-sm">{getPatientName(t.patient_id, t.patient_name)}</TableCell>
                   <TableCell className="font-medium text-sm">{formatCurrency(t.amount)}</TableCell>
-                  <TableCell className="text-xs">{t.discount > 0 ? `-${formatCurrency(t.discount)}` : "—"}</TableCell>
+                  <TableCell className="text-xs">{formatCurrency(t.received_amount)}</TableCell>
                   <TableCell className="text-xs">{t.payment_method ? (methodLabels[t.payment_method] || t.payment_method) : "—"}</TableCell>
                   <TableCell className="text-xs">{t.due_date ? formatDate(t.due_date) : "—"}</TableCell>
                   <TableCell className="text-xs">{t.payment_date ? formatDate(t.payment_date) : "—"}</TableCell>
@@ -212,8 +174,8 @@ export default function FinancialPage() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {t.status === "pendente" && (
-                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setPaymentDialog(t); setPaymentMethod("pix"); }}>
+                    {t.balance_amount > 0 && t.status !== "cancelado" && (
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setPaymentDialog(t); setPaymentMethod("pix"); setPaymentAmount(String(t.balance_amount)); setPaymentKey(crypto.randomUUID()); }}>
                         Registrar
                       </Button>
                     )}
@@ -236,8 +198,10 @@ export default function FinancialPage() {
             <div className="space-y-4">
               <div className="rounded-lg bg-muted/50 p-3 space-y-1">
                 <p className="font-medium text-sm">{getPatientName(paymentDialog.patient_id, paymentDialog.patient_name)}</p>
-                <p className="text-lg font-bold text-primary">{formatCurrency(paymentDialog.amount)}</p>
+                <p className="text-xs text-muted-foreground">Saldo em aberto</p>
+                <p className="text-lg font-bold text-primary">{formatCurrency(paymentDialog.balance_amount)}</p>
               </div>
+              <div className="space-y-2"><Label className="text-xs">Valor recebido *</Label><Input type="number" min="0.01" step="0.01" max={paymentDialog.balance_amount} value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} /></div>
               <div className="space-y-2">
                 <Label className="text-xs">Forma de Pagamento *</Label>
                 <Select value={paymentMethod} onValueChange={setPaymentMethod}>
@@ -256,44 +220,6 @@ export default function FinancialPage() {
         </DialogContent>
       </Dialog>
 
-      {/* New transaction dialog */}
-      <Dialog open={newOpen} onOpenChange={setNewOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Nova Cobrança</DialogTitle>
-            <DialogDescription>Registre uma cobrança.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Paciente *</Label>
-              <Select value={newPatientId} onValueChange={setNewPatientId}>
-                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                <SelectContent>
-                  {patients.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2"><Label>Valor *</Label><Input type="number" placeholder="0.00" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} /></div>
-              <div className="space-y-2"><Label>Vencimento</Label><Input type="date" value={newDueDate} onChange={(e) => setNewDueDate(e.target.value)} /></div>
-            </div>
-            <div className="space-y-2">
-              <Label>Forma de Pagamento</Label>
-              <Select value={newMethod} onValueChange={setNewMethod}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {allMethods.map((m) => <SelectItem key={m} value={m}>{methodLabels[m] || m}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2"><Label>Observações</Label><Textarea rows={2} value={newNotes} onChange={(e) => setNewNotes(e.target.value)} /></div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setNewOpen(false)}>Cancelar</Button>
-            <Button onClick={handleCreateTransaction} disabled={saving}>{saving ? "Salvando..." : "Registrar"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

@@ -89,6 +89,8 @@ export interface DbFinancialTransaction {
   professional_id: string | null;
   appointment_id: string | null;
   amount: number;
+  received_amount: number;
+  balance_amount: number;
   discount: number;
   payment_method: string | null;
   status: string;
@@ -99,70 +101,30 @@ export interface DbFinancialTransaction {
   patient_name?: string | null;
 }
 
-export interface FinancialTransactionInput {
-  company_id?: string;
-  unit_id?: string;
-  patient_id: string;
-  billing_id?: string;
-  professional_id?: string;
-  appointment_id?: string;
-  amount: number;
-  discount?: number;
-  payment_method?: string;
-  status?: string;
-  due_date?: string;
-  payment_date?: string;
-  notes?: string;
-}
-
 export const financialService = {
   async getAll(): Promise<DbFinancialTransaction[]> {
-    const { data, error } = await supabase
-      .from('financial_transactions')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(2000);
+    const { data, error } = await supabase.rpc('list_billing_financial_summary_secure');
     if (error) throw new Error(`Erro ao buscar transações: ${error.message}`);
-    return data || [];
+    return (data || []).map((row: any) => ({
+      id: String(row.billing_id), company_id: row.company_id, unit_id: null,
+      patient_id: row.patient_id == null ? null : String(row.patient_id),
+      billing_id: String(row.billing_id), professional_id: null,
+      appointment_id: row.appointment_id == null ? null : String(row.appointment_id),
+      amount: Number(row.billed_amount) || 0,
+      received_amount: Number(row.received_amount) || 0,
+      balance_amount: Number(row.balance_amount) || 0,
+      discount: 0, payment_method: row.last_payment_method,
+      status: row.financial_status, due_date: row.due_date,
+      payment_date: row.last_payment_at, notes: null,
+      created_at: row.created_at,
+    }));
   },
 
-  async create(input: FinancialTransactionInput): Promise<DbFinancialTransaction> {
-    const row: Record<string, any> = { ...input };
-    if (!row.status) row.status = 'pendente';
-    if (row.discount === undefined) row.discount = 0;
-
-    const { data, error } = await supabase
-      .from('financial_transactions')
-      .insert(row)
-      .select()
-      .single();
-    if (error) throw new Error(`Erro ao criar transação: ${error.message}`);
-    return data;
-  },
-
-  async markPaid(id: string, paymentMethod: string): Promise<DbFinancialTransaction> {
-    const { data, error } = await supabase
-      .from('financial_transactions')
-      .update({
-        status: 'pago',
-        payment_method: paymentMethod,
-        payment_date: new Date().toISOString().split('T')[0],
-      })
-      .eq('id', id)
-      .select()
-      .single();
+  async recordPayment(id: string, amount: number, paymentMethod: string, idempotencyKey: string): Promise<void> {
+    const { error } = await supabase.rpc('record_billing_receipt_secure', {
+      p_billing_id: Number(id), p_amount: amount,
+      p_payment_method: paymentMethod, p_idempotency_key: idempotencyKey,
+    });
     if (error) throw new Error(`Erro ao registrar pagamento: ${error.message}`);
-    return data;
-  },
-
-  async updateStatus(id: string, status: string): Promise<DbFinancialTransaction> {
-    const { data, error } = await supabase
-      .from('financial_transactions')
-      .update({ status })
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) throw new Error(`Erro ao atualizar transação: ${error.message}`);
-    return data;
   },
 };

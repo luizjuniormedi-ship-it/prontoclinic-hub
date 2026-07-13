@@ -28,7 +28,8 @@ SET LOCAL ROLE authenticated;
 SET LOCAL app.test_user_id='31111111-0000-4000-8000-000000000001';
 DO $f1$
 DECLARE v_bill_a public.billings; v_bill_b public.billings; v_receipt public.billing_receipts;
- v_again public.billing_receipts; v_reversal public.billing_receipts; v_balance RECORD; v_denied BOOLEAN;
+ v_again public.billing_receipts; v_reversal public.billing_receipts; v_balance RECORD;
+ v_summary RECORD; v_denied BOOLEAN;
 BEGIN
  SELECT * INTO v_bill_a FROM public.create_billing_secure(950005,150,NULL,NULL);
  PERFORM set_config('app.test_user_id','32222222-0000-4000-8000-000000000001',TRUE);
@@ -69,8 +70,24 @@ BEGIN
  IF v_balance.received_amount <> 100 OR v_balance.balance_amount <> 50 THEN
    RAISE EXCEPTION 'F1 reversal balance mismatch: %', row_to_json(v_balance);
  END IF;
+ SELECT * INTO v_summary FROM public.list_billing_financial_summary_secure()
+  WHERE billing_id=v_bill_a.id;
+ IF v_summary.received_amount <> 100 OR v_summary.balance_amount <> 50
+    OR v_summary.financial_status <> 'parcial'
+    OR v_summary.last_payment_method <> 'cartao' THEN
+   RAISE EXCEPTION 'F1 financial summary mismatch: %', row_to_json(v_summary);
+ END IF;
+
+ v_denied:=FALSE;
+ BEGIN
+   PERFORM 1 FROM public.billing_receipts LIMIT 1;
+ EXCEPTION WHEN insufficient_privilege THEN v_denied:=TRUE; END;
+ IF NOT v_denied THEN RAISE EXCEPTION 'F1 direct receipt SELECT accepted'; END IF;
 
  PERFORM set_config('app.test_user_id','32222222-0000-4000-8000-000000000001',TRUE);
+ IF EXISTS (SELECT 1 FROM public.list_billing_financial_summary_secure() WHERE billing_id=v_bill_a.id) THEN
+   RAISE EXCEPTION 'F1 cross-tenant financial summary exposed';
+ END IF;
  v_denied:=FALSE;
  BEGIN
    PERFORM public.record_billing_receipt_secure(v_bill_a.id,1,'pix','32222222-1111-4111-8111-111111111111');

@@ -118,6 +118,7 @@ jobs:
             supabase/migrations/20260712200000_secure_user_profile_admin.sql \
             supabase/migrations/20260712210000_secure_billings.sql \
             supabase/migrations/20260712220000_secure_billing_receipts.sql \
+            supabase/migrations/20260712230000_financial_summary_rpc.sql \
             supabase/release-mvp/011_insurance_authoritative_ledgers.sql \
             supabase/release-mvp/016_service_only_password_resets.sql \
             supabase/release-mvp/017_clinical_safe_functions.sql
