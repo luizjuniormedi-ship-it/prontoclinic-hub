@@ -224,7 +224,7 @@ describe("medicalRecordsService", () => {
 
       expect(result.status).toBe("signed");
       expect(supabase.rpc).toHaveBeenCalledWith("finalize_medical_attendance_secure", {
-        p_appointment_id: 303,
+        p_appointment_id: "303",
         p_record_date: null,
         p_anamnesis: "Queixa",
         p_evolution: "Evolução",
@@ -240,6 +240,17 @@ describe("medicalRecordsService", () => {
         appointment_id: "inválido",
       })).rejects.toThrow(/appointment_id/);
       expect(supabase.rpc).not.toHaveBeenCalled();
+    });
+
+    it("preserva BIGINT acima de Number.MAX_SAFE_INTEGER como string", async () => {
+      (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+        data: { id: "1", status: "signed" }, error: null,
+      });
+      await medicalRecordsService.finalizeAttendance({ appointment_id: "9007199254740993" });
+      expect(supabase.rpc).toHaveBeenCalledWith(
+        "finalize_medical_attendance_secure",
+        expect.objectContaining({ p_appointment_id: "9007199254740993" }),
+      );
     });
   });
 });

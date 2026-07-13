@@ -110,7 +110,7 @@ export default function AttendancePage() {
         vital_signs: Object.keys(vs).length > 0 ? vs : undefined,
       });
 
-      toast({ title: "Atendimento finalizado e prontuário assinado" });
+      toast({ title: "Atendimento finalizado", description: "Prontuário assinado e faturamento encaminhado." });
       navigate("/reception");
     } catch (err) {
       toast({ title: "Erro ao salvar", description: (err as Error).message, variant: "destructive" });

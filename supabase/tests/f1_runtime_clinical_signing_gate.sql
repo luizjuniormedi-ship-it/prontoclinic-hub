@@ -45,7 +45,8 @@ INSERT INTO public.appointments
   (id, company_id, patient_id, professional_id, appointment_date, start_time, end_time, status)
 OVERRIDING SYSTEM VALUE VALUES
   (940021, 'ca000000-0000-4000-8000-000000000001', 940011, 940001, DATE '2026-07-21', TIME '09:00', TIME '09:30', 'in_progress'),
-  (940022, 'cb000000-0000-4000-8000-000000000002', 940012, 940002, DATE '2026-07-21', TIME '10:00', TIME '10:30', 'in_progress');
+  (940022, 'cb000000-0000-4000-8000-000000000002', 940012, 940002, DATE '2026-07-21', TIME '10:00', TIME '10:30', 'in_progress'),
+  (940023, 'ca000000-0000-4000-8000-000000000001', 940011, 940001, DATE '2026-07-21', TIME '11:00', TIME '11:30', NULL);
 
 SET LOCAL ROLE authenticated;
 SET LOCAL app.test_user_id = 'da000000-0000-4000-8000-000000000001';
@@ -85,6 +86,15 @@ BEGIN
     RAISE EXCEPTION 'Divergent retry was accepted';
   EXCEPTION WHEN OTHERS THEN
     IF SQLERRM NOT LIKE '%Finalizacao repetida diverge%' THEN RAISE; END IF;
+  END;
+
+  BEGIN
+    PERFORM public.finalize_medical_attendance_secure(
+      940023, DATE '2026-07-21', 'Status nulo', NULL, NULL, NULL, NULL, NULL
+    );
+    RAISE EXCEPTION 'Appointment with NULL status was finalized';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM NOT LIKE '%deve estar em andamento%' THEN RAISE; END IF;
   END;
 
   BEGIN
@@ -131,6 +141,15 @@ BEGIN
 END
 $gate$;
 
+SET LOCAL app.test_user_id = 'da000000-0000-4000-8000-000000000001';
+DO $gate$
+DECLARE v_count INTEGER;
+BEGIN
+  SELECT count(*) INTO v_count FROM public.audit_logs_stats;
+  IF v_count <> 0 THEN RAISE EXCEPTION 'Doctor can read audit statistics'; END IF;
+END
+$gate$;
+
 SET LOCAL app.test_user_id = 'ab000000-0000-4000-8000-000000000002';
 DO $gate$
 DECLARE v_count INTEGER;
@@ -138,6 +157,10 @@ BEGIN
   SELECT count(*) INTO v_count FROM public.audit_logs_stats
    WHERE company_id = 'ca000000-0000-4000-8000-000000000001';
   IF v_count <> 0 THEN RAISE EXCEPTION 'Tenant B saw Tenant A audit rows'; END IF;
+
+  SELECT count(*) INTO v_count FROM public.medical_records
+   WHERE company_id = 'ca000000-0000-4000-8000-000000000001';
+  IF v_count <> 0 THEN RAISE EXCEPTION 'Tenant B saw Tenant A medical records'; END IF;
 END
 $gate$;
 
@@ -147,6 +170,8 @@ DO $gate$
 DECLARE
   v_record_id BIGINT;
   v_security_invoker BOOLEAN;
+  v_rls BOOLEAN;
+  v_force_rls BOOLEAN;
 BEGIN
   SELECT id INTO v_record_id FROM public.medical_records WHERE appointment_id = 940021;
   BEGIN
@@ -171,6 +196,15 @@ BEGIN
     RAISE EXCEPTION 'audit_logs_stats is not security_invoker';
   END IF;
 
+  SELECT c.relrowsecurity, c.relforcerowsecurity
+    INTO v_rls, v_force_rls
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public' AND c.relname = 'medical_records';
+  IF v_rls IS NOT TRUE OR v_force_rls IS NOT TRUE THEN
+    RAISE EXCEPTION 'medical_records RLS is not enabled and forced';
+  END IF;
+
   IF (SELECT count(*) FROM public.medical_records WHERE appointment_id = 940021) <> 1 THEN
     RAISE EXCEPTION 'Appointment has duplicate medical records';
   END IF;
@@ -181,8 +215,55 @@ BEGIN
        WHERE appointment_id = 940021 AND to_status = 'completed') <> 1 THEN
     RAISE EXCEPTION 'Atomic status history row missing or duplicated';
   END IF;
+  IF (SELECT count(*) FROM public.clinical_billing_outbox
+       WHERE company_id = 'ca000000-0000-4000-8000-000000000001'
+         AND appointment_id = 940021
+         AND status = 'pending') <> 1 THEN
+    RAISE EXCEPTION 'Billing outbox row missing or duplicated';
+  END IF;
 END
 $gate$;
+
+INSERT INTO public.medical_records (
+  company_id, patient_id, professional_id, record_date,
+  status, content_hash
+) VALUES (
+  'ca000000-0000-4000-8000-000000000001', 940011, 940001, DATE '2026-07-20',
+  'legacy_locked', repeat('0', 64)
+);
+
+DO $gate$
+DECLARE v_legacy_id BIGINT;
+BEGIN
+  SELECT id INTO v_legacy_id FROM public.medical_records
+   WHERE company_id = 'ca000000-0000-4000-8000-000000000001'
+     AND status = 'legacy_locked' LIMIT 1;
+  BEGIN
+    UPDATE public.medical_records SET notes = 'mutacao indevida' WHERE id = v_legacy_id;
+    RAISE EXCEPTION 'Legacy clinical record mutation was accepted';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM NOT LIKE '%registros legados%' THEN RAISE; END IF;
+  END;
+END
+$gate$;
+
+SET LOCAL ROLE service_role;
+DO $gate$
+BEGIN
+  BEGIN
+    INSERT INTO public.clinical_billing_outbox (
+      company_id, appointment_id, medical_record_id
+    ) VALUES (
+      'ca000000-0000-4000-8000-000000000001', 940022,
+      (SELECT id FROM public.medical_records WHERE appointment_id = 940021)
+    );
+    RAISE EXCEPTION 'Cross-tenant billing outbox link was accepted';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM NOT LIKE '%vinculo incoerente%' THEN RAISE; END IF;
+  END;
+END
+$gate$;
+RESET ROLE;
 
 ROLLBACK;
 

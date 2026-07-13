@@ -16,7 +16,7 @@ export interface DbMedicalRecord {
   prescription: string | null;
   vital_signs: Record<string, any> | null;
   notes: string | null;
-  status: 'draft' | 'signed';
+  status: 'draft' | 'signed' | 'legacy_locked';
   signed_at: string | null;
   signed_by: string | null;
   content_hash: string | null;
@@ -118,7 +118,7 @@ export const medicalRecordsService = {
     }
 
     const { data, error } = await supabase.rpc('finalize_medical_attendance_secure', {
-      p_appointment_id: Number(input.appointment_id),
+      p_appointment_id: input.appointment_id,
       p_record_date: input.record_date || null,
       p_anamnesis: input.anamnesis || null,
       p_evolution: input.evolution || null,
