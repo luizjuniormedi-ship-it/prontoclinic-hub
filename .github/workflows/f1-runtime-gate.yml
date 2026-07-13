@@ -109,12 +109,12 @@ jobs:
             supabase/migrations/20260712100000_authorization_audit_timestamps.sql \
             supabase/migrations/20260712110000_secure_appointment_metadata_update.sql \
             supabase/migrations/20260712120000_secure_patient_update.sql \
+            supabase/migrations/20260712170000_medical_record_prescription_contract.sql \
+            supabase/migrations/20260712180000_medical_records_canonical_columns.sql \
             supabase/migrations/20260712130000_secure_medical_records.sql \
             supabase/migrations/20260712140000_secure_call_center_mutations.sql \
             supabase/migrations/20260712150000_call_center_rls_hardening.sql \
             supabase/migrations/20260712160000_call_center_identity_integrity.sql \
-            supabase/migrations/20260712170000_medical_record_prescription_contract.sql \
-            supabase/migrations/20260712180000_medical_records_canonical_columns.sql \
             supabase/migrations/20260712190000_rbac_schema_baseline.sql \
             supabase/migrations/20260712200000_secure_user_profile_admin.sql \
             supabase/migrations/20260712210000_secure_billings.sql \
@@ -186,7 +186,7 @@ jobs:
           echo "Running F1 runtime reception RBAC defaults gate"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_reception_rbac_defaults_gate.sql
           echo "Applying scheduling/reception tenant hardening"
-          psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260712234000_scheduling_reception_tenant_hardening.sql
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260712234500_scheduling_reception_tenant_hardening.sql
           echo "Running F1 runtime scheduling/reception tenant gate"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_scheduling_reception_tenant_gate.sql
           echo "Applying TISS read-only model"
