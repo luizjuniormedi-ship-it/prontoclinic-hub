@@ -261,8 +261,14 @@ class TelemedicinaService {
       .single();
     if (selErr || !sala) throw new Error(selErr?.message ?? "Sala não encontrada");
 
-    // 3. Criar a sala no Daily.co (best-effort — se falhar, ainda retornamos
-    //    a sala local para que o médico possa tentar novamente)
+    const markRoomAsFailed = async () => {
+      await supabase
+        .from("telemedicina_salas")
+        .update({ tp_status: "FALHOU" })
+        .eq("id", sala.id);
+    };
+
+    // 3. A consulta só pode ser liberada quando a sala remota existir.
     let meetingUrl: string | null = null;
     if (env.VITE_DAILY_API_KEY && env.VITE_DAILY_DOMAIN && sala.ds_sala_daily) {
       try {
@@ -289,12 +295,16 @@ class TelemedicinaService {
         if (updErr) throw new Error(updErr.message);
         return upd as TelemedSala;
       } catch (err) {
-        // Mantém a sala local mesmo se Daily falhar — UI mostra retry
         console.warn("[telemedicina] Daily.co room create falhou:", err);
-        return sala as TelemedSala;
+        await markRoomAsFailed();
+        throw new Error("Não foi possível criar a sala de telemedicina no provedor");
       }
     }
-    return sala as TelemedSala;
+
+    await markRoomAsFailed();
+    throw new Error(
+      "Telemedicina indisponível: integração Daily.co não está configurada",
+    );
   }
 
   // 2.2. Entrar na sala com token de acesso

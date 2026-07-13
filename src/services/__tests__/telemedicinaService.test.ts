@@ -4,7 +4,7 @@
  * Testes unitários do módulo de Telemedicina.
  *
  * Cobre:
- *   - criarSala retorna UUID e cria sala no Daily (best-effort)
+ *   - criarSala só libera a sala após confirmação do Daily
  *   - entrarSala valida token e gera meeting token
  *   - finalizar chama RPC com métricas
  *   - enviarMensagem insere no banco
@@ -113,6 +113,23 @@ describe("telemedicinaService.criarSala", () => {
   it("lança erro se RPC falhar", async () => {
     (supabase.rpc as any).mockResolvedValueOnce({ data: null, error: { message: "Appointment not found" } });
     await expect(telemedicinaService.criarSala(999)).rejects.toThrow("Appointment not found");
+  });
+
+  it("marca a sala como falha quando o Daily não responde", async () => {
+    (supabase.rpc as any).mockResolvedValueOnce({ data: "sala-uuid-1", error: null });
+    const chain: any = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: salaFake, error: null }),
+      update: vi.fn().mockReturnThis(),
+    };
+    (supabase.from as any).mockReturnValue(chain);
+    fetchMock.mockRejectedValueOnce(new Error("Daily indisponível"));
+
+    await expect(telemedicinaService.criarSala(1)).rejects.toThrow(
+      "Não foi possível criar a sala de telemedicina no provedor",
+    );
+    expect(chain.update).toHaveBeenCalledWith({ tp_status: "FALHOU" });
   });
 });
 
