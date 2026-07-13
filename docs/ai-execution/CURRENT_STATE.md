@@ -1,16 +1,17 @@
 # Estado Atual de Execucao
 
-Atualizado em 2026-07-10.
+Atualizado em 2026-07-13.
 
 ## Fato tecnico
 
 - Repositorio local: `C:\Users\Meu Computador\AppData\Local\Temp\prontoclinic-hub`.
-- Ultimo commit local conhecido: `5435d60`.
+- Ultimo commit local conhecido: `e75db24` antes da correção do workflow de migração.
 - Release funcional conhecida na VPS: `37199ee`.
 - A VPS executou build, migracoes e reload do Nginx na fase 1; a mensagem final de falha do wrapper foi causada por CRLF residual no shell remoto, nao por falha da publicacao.
 - PostgreSQL e backend precisam de nova verificacao operacional apos a ultima publicacao.
 - A verificacao somente leitura de 2026-07-13 confirmou PostgreSQL, backend PM2, Nginx e frontend ativos; login e isolamento entre tenants ainda nao foram provados.
 - O healthcheck local confirmou PostgreSQL, mas nao confirmou auth: o processo Node encerrou com `EPERM` do sandbox antes de escutar a porta 8000.
+- O CI falhou no replay de migrações por usar `localhost:5432` apesar do serviço publicar PostgreSQL em `localhost:54322`; o workflow foi corrigido para usar `DATABASE_URL` integralmente.
 
 ## Hipotese
 

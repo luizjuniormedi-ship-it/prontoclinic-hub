@@ -2,7 +2,7 @@
 
 ## Ultima evidencia local registrada
 
-- Testes: 32 arquivos, 446 testes aprovados.
+- Testes: 32 arquivos, 447 testes aprovados.
 - Build: aprovado pelo `tsc -b` e `vite build`.
 - Lint: 0 erros e 430 warnings.
 - Sintaxe do backend: `node --check local-auth-server.mjs` aprovado.
@@ -17,6 +17,7 @@
 - Build: aprovado (`npm run build`); permanecem apenas avisos de chunk dinâmico já existentes.
 - Lint: concluído sem erros; 430 warnings históricos permanecem registrados.
 - Correção aplicada: `PATCH` não pode alterar `company_id`; inserções continuam derivando o tenant do perfil autenticado.
+- Correção do CI: a etapa de migração agora usa diretamente `DATABASE_URL`, incluindo a porta publicada `54322` do serviço PostgreSQL; antes, o comando ignorava essa variável e tentava conectar em `localhost:5432`.
 
 ## Evidencia VPS somente leitura
 
@@ -48,3 +49,4 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - Teste negativo de isolamento entre empresas.
 - Dry-run real de reconciliacao DataSIGH.
 - CI verde no commit mais recente.
+- Replay de migrações no CI após a correção da porta ainda pendente de execução do GitHub Actions.
