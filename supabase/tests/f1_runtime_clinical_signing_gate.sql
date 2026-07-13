@@ -247,6 +247,12 @@ BEGIN
 END
 $gate$;
 
+SELECT set_config(
+  'app.test_record_id',
+  (SELECT id::TEXT FROM public.medical_records WHERE appointment_id = 940021),
+  TRUE
+);
+
 SET LOCAL ROLE service_role;
 DO $gate$
 BEGIN
@@ -255,7 +261,7 @@ BEGIN
       company_id, appointment_id, medical_record_id
     ) VALUES (
       'ca000000-0000-4000-8000-000000000001', 940022,
-      (SELECT id FROM public.medical_records WHERE appointment_id = 940021)
+      current_setting('app.test_record_id')::BIGINT
     );
     RAISE EXCEPTION 'Cross-tenant billing outbox link was accepted';
   EXCEPTION WHEN OTHERS THEN
