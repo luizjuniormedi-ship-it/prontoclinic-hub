@@ -11,6 +11,7 @@
 import { createServer } from 'http';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import pg from 'pg';
+import { scopeInsertBody, scopePatchBody } from './local-auth-security.mjs';
 const { Pool } = pg;
 
 const PORT = Number(process.env.LOCAL_AUTH_PORT || 8000);
@@ -761,12 +762,11 @@ const server = createServer(async (req, res) => {
       }
 
       if (req.method === 'POST') {
-        const body = await parseBody(req);
-        if (companyId) {
-          if (body.company_id && body.company_id !== companyId) {
-            return json(res, { error: 'forbidden', message: 'company_id nao pertence ao perfil autenticado' }, 403);
-          }
-          body.company_id = companyId;
+        let body = await parseBody(req);
+        try {
+          body = scopeInsertBody(body, companyId);
+        } catch (error) {
+          return json(res, { error: 'forbidden', message: error.message }, error.statusCode || 403);
         }
         const keys = Object.keys(body);
         if (keys.length === 0) return json(res, { error: 'bad_request', message: 'body vazio' }, 400);
@@ -794,7 +794,12 @@ const server = createServer(async (req, res) => {
       }
 
       if (req.method === 'PATCH') {
-        const body = await parseBody(req);
+        let body = await parseBody(req);
+        try {
+          body = scopePatchBody(body, companyId);
+        } catch (error) {
+          return json(res, { error: 'forbidden', message: error.message }, error.statusCode || 403);
+        }
         const keys = Object.keys(body);
         if (keys.length === 0) return json(res, { error: 'bad_request', message: 'body vazio' }, 400);
         for (const key of keys) {
