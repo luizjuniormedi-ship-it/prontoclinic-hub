@@ -148,7 +148,7 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button type="submit" className="w-full hover:bg-primary" disabled={loading}>
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Entrar
               </Button>
@@ -196,7 +196,7 @@ export default function LoginPage() {
                   required
                 />
               </div>
-              <Button type="submit" className="w-full" disabled={loading || twoFactorCode.length < 6}>
+              <Button type="submit" className="w-full hover:bg-primary" disabled={loading || twoFactorCode.length < 6}>
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Verificar
               </Button>
@@ -218,3 +218,4 @@ export default function LoginPage() {
     </div>
   );
 }
+
