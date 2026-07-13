@@ -38,9 +38,8 @@ BEGIN
 
   SELECT * INTO v_actor
     FROM public.user_profiles
-   WHERE (id = auth.uid() OR user_id = auth.uid())
+   WHERE id = auth.uid()
      AND COALESCE(lg_ativo, TRUE) = TRUE
-   ORDER BY CASE WHEN id = auth.uid() THEN 0 ELSE 1 END
    LIMIT 1;
 
   IF NOT FOUND
