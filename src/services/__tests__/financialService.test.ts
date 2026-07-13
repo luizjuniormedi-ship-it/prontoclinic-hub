@@ -48,6 +48,8 @@ describe("billingsService — getAll", () => {
         tiss_status: "consulta",
         dt_vencimento: null,
         dt_pagamento: null,
+        patient_name: "Paciente Um",
+        professional_name: "Dra. Um",
         created_at: "2026-01-01T00:00:00Z",
       },
       {
@@ -61,45 +63,34 @@ describe("billingsService — getAll", () => {
         tiss_status: "exame",
         dt_vencimento: null,
         dt_pagamento: "2026-01-02",
+        patient_name: "Paciente Dois",
+        professional_name: "Dr. Dois",
         created_at: "2026-01-02T00:00:00Z",
       },
     ];
 
-    const chain: any = {
-      select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockResolvedValue({ data: rows, error: null }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
+    (supabase.rpc as any).mockResolvedValue({ data: rows, error: null });
 
     const result = await billingsService.getAll();
 
-    expect(supabase.from).toHaveBeenCalledWith("billings");
+    expect(supabase.rpc).toHaveBeenCalledWith("list_billing_production_secure");
     expect(result).toHaveLength(2);
     expect(result[0].id).toBe("b-1");
     expect(result[0].net_amount).toBe(250);
+    expect(result[0].patient_name).toBe("Paciente Um");
+    expect(result[0].professional_name).toBe("Dra. Um");
     expect(result[1].status).toBe("paid");
   });
 
   it("retorna array vazio quando não há dados", async () => {
-    const chain: any = {
-      select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockResolvedValue({ data: null, error: null }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
+    (supabase.rpc as any).mockResolvedValue({ data: null, error: null });
 
     const result = await billingsService.getAll();
     expect(result).toEqual([]);
   });
 
   it("lança erro quando supabase retorna error", async () => {
-    const chain: any = {
-      select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockResolvedValue({ data: null, error: { message: "boom" } }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
+    (supabase.rpc as any).mockResolvedValue({ data: null, error: { message: "boom" } });
 
     await expect(billingsService.getAll()).rejects.toThrow(/Erro ao buscar faturamentos/);
   });
@@ -261,3 +252,4 @@ describe("financialService — recordPayment", () => {
     );
   });
 });
+

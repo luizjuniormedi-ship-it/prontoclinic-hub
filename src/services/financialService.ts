@@ -16,6 +16,8 @@ export interface DbBilling {
   status: string;
   notes: string | null;
   created_at: string;
+  patient_name: string | null;
+  professional_name: string | null;
 }
 
 export interface BillingInput {
@@ -39,17 +41,13 @@ const mapBilling = (row: any): DbBilling => ({
   status: row.status,
   notes: row.guide_number ? `Guia: ${row.guide_number}` : null,
   created_at: row.created_at,
+  patient_name: row.patient_name || null,
+  professional_name: row.professional_name || null,
 });
 
 export const billingsService = {
   async getAll(): Promise<DbBilling[]> {
-    const { data, error } = await supabase
-      .from('billings')
-      .select(
-        'id, company_id, patient_id, appointment_id, amount, status, guide_number, tiss_status, dt_vencimento, dt_pagamento, created_at',
-      )
-      .order('created_at', { ascending: false })
-      .limit(2000);
+    const { data, error } = await supabase.rpc('list_billing_production_secure');
 
     if (error) throw new Error(`Erro ao buscar faturamentos: ${error.message}`);
 
@@ -128,3 +126,4 @@ export const financialService = {
     if (error) throw new Error(`Erro ao registrar pagamento: ${error.message}`);
   },
 };
+

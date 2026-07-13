@@ -8,9 +8,6 @@ import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState, ErrorState } from "@/components/StateViews";
 import { StatsCard } from "@/components/StatsCard";
 import { billingsService, DbBilling } from "@/services/financialService";
-import { professionalsLookup, DbProfessional } from "@/services/appointmentsService";
-import { Patient } from "@/types";
-import { supabase } from "@/lib/supabase";
 
 const formatCurrency = (v: number | null | undefined) => (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -23,8 +20,6 @@ const billingTypeLabels: Record<string, string> = { particular: "Particular", co
 
 export default function BillingProductionPage() {
   const [billings, setBillings] = useState<DbBilling[]>([]);
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -34,21 +29,8 @@ export default function BillingProductionPage() {
     try {
       setLoading(true);
       setError(null);
-      const [b, profs] = await Promise.all([
-        billingsService.getAll(),
-        professionalsLookup.getAll(),
-      ]);
-      const patientIds = Array.from(new Set(b.map((item) => item.patient_id).filter((id): id is string => Boolean(id))));
-      const chunks: string[][] = [];
-      for (let i = 0; i < patientIds.length; i += 100) chunks.push(patientIds.slice(i, i + 100));
-      const responses = await Promise.all(chunks.map((ids) => supabase.from("patients").select("id, full_name").in("id", ids)));
-      const patientRows = responses.flatMap(({ data, error: patientError }) => {
-        if (patientError) throw patientError;
-        return data || [];
-      });
+      const b = await billingsService.getAll();
       setBillings(b);
-      setPatients(patientRows.map((p: any) => ({ id: String(p.id), name: p.full_name || "" } as Patient)));
-      setProfessionals(profs);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -58,13 +40,13 @@ export default function BillingProductionPage() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  const getPatientName = (id: string | null) => patients.find((p) => p.id === id)?.name || "—";
-  const getProfName = (id: string | null) => professionals.find((p) => p.id === id)?.full_name || "—";
+  const getPatientName = (billing: DbBilling) => billing.patient_name || "—";
+  const getProfName = (billing: DbBilling) => billing.professional_name || "—";
 
   const filtered = billings.filter((b) => {
     const q = search.toLowerCase();
-    const patName = getPatientName(b.patient_id).toLowerCase();
-    const profName = getProfName(b.professional_id).toLowerCase();
+    const patName = getPatientName(b).toLowerCase();
+    const profName = getProfName(b).toLowerCase();
     const matchSearch = !search || patName.includes(q) || profName.includes(q);
     const matchStatus = statusFilter === "all" || b.status === statusFilter;
     return matchSearch && matchStatus;
@@ -118,8 +100,8 @@ export default function BillingProductionPage() {
             <TableBody>
               {filtered.map((b) => (
                 <TableRow key={b.id}>
-                  <TableCell className="font-medium text-sm">{getPatientName(b.patient_id)}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{getProfName(b.professional_id)}</TableCell>
+                  <TableCell className="font-medium text-sm">{getPatientName(b)}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{getProfName(b)}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className="border-0 bg-primary/10 text-primary text-[10px]">
                       {billingTypeLabels[b.billing_type || ""] || b.billing_type || "—"}
@@ -143,3 +125,4 @@ export default function BillingProductionPage() {
     </div>
   );
 }
+
