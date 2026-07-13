@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from './fixtures/backend-health';
 import AxeBuilder from '@axe-core/playwright';
 
 test.use({ reducedMotion: 'reduce' });
@@ -32,7 +32,7 @@ function expectNoSeriousViolations(violations: AxeViolation[], route: string) {
   expect(occurrences.length, `Axe encontrou falhas serias/criticas em ${route}`).toBe(0);
 }
 
-async function dismissTransientToasts(page: import('@playwright/test').Page) {
+async function dismissTransientToasts(page: Page) {
   const closeButtons = page.getByRole('button', { name: 'Fechar notificacao' });
   for (let index = (await closeButtons.count()) - 1; index >= 0; index -= 1) {
     await closeButtons.nth(index).click();

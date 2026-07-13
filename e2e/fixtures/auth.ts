@@ -1,4 +1,4 @@
-import { test as base, expect, Page } from '@playwright/test';
+import { test as base, expect, type Page } from './backend-health';
 
 export type UserRole = 'admin' | 'doctor' | 'reception' | 'patient';
 
@@ -33,3 +33,4 @@ export const test = base.extend<{
 });
 
 export { expect };
+export type { Page };

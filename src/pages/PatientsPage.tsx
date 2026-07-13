@@ -16,7 +16,6 @@ import { friendlyError } from "@/utils/friendlyError";
 interface PatientRow {
   id: string;
   full_name: string;
-  social_name: string | null;
   cpf: string | null;
   birth_date: string | null;
   phone: string | null;
@@ -58,7 +57,7 @@ export default function PatientsPage() {
       setError(null);
       let query = supabase
         .from("patients")
-        .select("id, full_name, social_name, cpf, birth_date, phone, email, sex, insurance_plan_id, allergies, clinical_alerts, status", { count: "exact" });
+        .select("id, full_name, cpf, birth_date, phone, email, sex, insurance_plan_id, allergies, clinical_alerts, status", { count: "exact" });
 
       if (debouncedSearch.trim()) {
         const q = debouncedSearch.trim();
@@ -130,7 +129,7 @@ export default function PatientsPage() {
                   <TableRow key={p.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/patients/${p.id}`)}>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <span className="font-medium">{p.social_name || p.full_name}</span>
+                        <span className="font-medium">{p.full_name}</span>
                         {p.allergies && <AlertTriangle className="h-3 w-3 text-destructive" />}
                         {p.clinical_alerts && <AlertTriangle className="h-3 w-3 text-warning" />}
                       </div>

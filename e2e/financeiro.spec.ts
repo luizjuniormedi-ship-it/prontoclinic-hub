@@ -1,6 +1,6 @@
-import { test, expect } from './fixtures/auth';
+import { test, expect, type Page } from './fixtures/auth';
 
-async function openFinancialAndAssertRuntime(page: import('@playwright/test').Page, path = '/financial') {
+async function openFinancialAndAssertRuntime(page: Page, path = '/financial') {
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   const responsePromise = page.waitForResponse((response) =>

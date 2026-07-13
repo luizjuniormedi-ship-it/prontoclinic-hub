@@ -72,6 +72,7 @@ jobs:
             supabase/migrations/20260712225000_secure_tiss_foundation.sql
             supabase/migrations/20260712230000_financial_summary_rpc.sql
             supabase/migrations/20260712231000_billing_production_read_model.sql
+            supabase/migrations/20260712232000_operational_schema_contracts.sql
           )
           for migration in "${migrations[@]}"; do
             if [[ "$migration" == *"20260712225000_secure_tiss_foundation.sql" ]]; then
@@ -92,6 +93,11 @@ jobs:
         run: |
           export PGPASSWORD=postgres
           psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_billing_behavior_gate.sql
+
+      - name: Run operational schema contract gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_schema_contract_gate.sql
 
       - name: Type check
         run: npm run type-check
@@ -226,4 +232,3 @@ jobs:
             test -f scripts/check-a11y-violations.mjs
             node scripts/check-a11y-violations.mjs
           fi
-

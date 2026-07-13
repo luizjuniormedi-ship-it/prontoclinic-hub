@@ -123,6 +123,7 @@ jobs:
             supabase/migrations/20260712225000_secure_tiss_foundation.sql \
             supabase/migrations/20260712230000_financial_summary_rpc.sql \
             supabase/migrations/20260712231000_billing_production_read_model.sql \
+            supabase/migrations/20260712232000_operational_schema_contracts.sql \
             supabase/release-mvp/011_insurance_authoritative_ledgers.sql \
             supabase/release-mvp/016_service_only_password_resets.sql \
             supabase/release-mvp/017_clinical_safe_functions.sql
@@ -171,6 +172,8 @@ jobs:
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_rbac_behavior_gate.sql
           echo "Running F1 runtime billing behavior gate"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_billing_behavior_gate.sql
+          echo "Running F1 runtime schema contract gate"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_schema_contract_gate.sql
           echo "Running F1 runtime receipt ledger gate"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_receipts_behavior_gate.sql
           echo "Running F1 runtime TISS foundation gate"
@@ -183,4 +186,3 @@ jobs:
           name: f1-runtime-evidence
           path: artifacts/f1
           if-no-files-found: warn
-
