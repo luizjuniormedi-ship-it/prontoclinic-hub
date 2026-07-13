@@ -611,6 +611,8 @@ function VirtualizedDayList({
           return (
             <div
               key={virtualRow.key}
+              role="row"
+              aria-rowindex={virtualRow.index + 1}
               data-index={virtualRow.index}
               style={{
                 position: "absolute",
@@ -627,7 +629,6 @@ function VirtualizedDayList({
                 patient={patient}
                 allAppointments={appointmentsLookup}
                 onQuickAction={onQuickAction}
-                rowIndex={virtualRow.index}
               />
             </div>
           );
@@ -636,3 +637,4 @@ function VirtualizedDayList({
     </div>
   );
 }
+
