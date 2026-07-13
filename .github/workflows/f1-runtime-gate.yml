@@ -241,6 +241,13 @@ jobs:
           psql -v ON_ERROR_STOP=1 \
             -v "f4_dblink_connstr=host=127.0.0.1 port=5432 dbname=$PGDATABASE user=$PGUSER password=$PGPASSWORD" \
             -f supabase/tests/f4_pharmacy_atomic_tenant_gate.sql
+          echo "Applying F4 professional payments foundation and secure contract"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260101000030_professional_payments.sql
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260713170000_professional_payments_secure_contract.sql
+          echo "Running F4 professional payments ACL, tenant, state, replay and concurrency gate"
+          psql -v ON_ERROR_STOP=1 \
+            -v "f4_dblink_connstr=host=127.0.0.1 port=5432 dbname=$PGDATABASE user=$PGUSER password=$PGPASSWORD" \
+            -f supabase/tests/f4_professional_payments_secure_gate.sql
 
       - name: Upload F1 evidence
         if: always()
