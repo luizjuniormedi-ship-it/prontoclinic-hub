@@ -10,8 +10,11 @@ async function openFinancialAndAssertRuntime(page: import('@playwright/test').Pa
   const response = await responsePromise;
   if (!response) {
     const headings = await page.getByRole('heading').allTextContents();
-    const body = (await page.locator('body').innerText()).replace(/\s+/g, ' ').slice(0, 1000);
-    throw new Error(`Resumo financeiro nao foi solicitado. headings=${JSON.stringify(headings)} pageErrors=${JSON.stringify(pageErrors)} body=${body}`);
+    const errorHeading = page.getByRole('heading', { name: 'Erro' });
+    const errorText = await errorHeading.count()
+      ? (await errorHeading.locator('..').innerText()).replace(/\s+/g, ' ')
+      : 'sem ErrorState';
+    throw new Error(`Resumo financeiro nao foi solicitado. headings=${JSON.stringify(headings)} pageErrors=${JSON.stringify(pageErrors)} errorState=${errorText}`);
   }
   if (!response.ok()) {
     throw new Error(`Resumo financeiro falhou: HTTP ${response.status()} ${await response.text()}`);
