@@ -20,7 +20,7 @@ import { supabase } from "@/lib/supabase";
 import type {
   Specialty, ConsultationType, ExamType, ProcedureType,
   TherapyService, HealthInsurancePlan, Room, AttendanceType,
-  Company, Unit,
+  Company, Unit, UnitType,
 } from "@/types";
 
 // ── Zod Schemas (validação defensiva) ────────────────────────────────────────
@@ -46,13 +46,17 @@ const unitRowSchema = z.object({
   id: z.union([z.number(), z.string()]),
   cd_codigo: z.string(),
   ds_nome: z.string(),
+  company_id: z.string().nullable().optional(),
+  ds_razao_social: z.string().nullable().optional(),
+  nr_cnpj: z.string().nullable().optional(),
+  tp_unidade: z.string().nullable().optional(),
+  ds_endereco: z.string().nullable().optional(),
+  ds_cidade: z.string().nullable().optional(),
+  ds_uf: z.string().nullable().optional(),
+  nr_telefone: z.string().nullable().optional(),
+  ds_email: z.string().nullable().optional(),
   lg_principal: z.boolean().nullable().optional(),
   lg_ativo: z.boolean().nullable().optional(),
-});
-
-const companyRowSchema = z.object({
-  id: z.string(),
-  name: z.string(),
 });
 
 const insurancePlanRowSchema = z.object({
@@ -250,7 +254,7 @@ export const unitsService = {
   async getAll(onlyActive = true): Promise<Unit[]> {
     let q = supabase
       .from("units")
-      .select("id, cd_codigo, ds_nome, lg_principal, lg_ativo")
+      .select("id, company_id, cd_codigo, ds_nome, ds_razao_social, nr_cnpj, tp_unidade, ds_endereco, ds_cidade, ds_uf, nr_telefone, ds_email, lg_principal, lg_ativo")
       .order("lg_principal", { ascending: false })
       .order("ds_nome");
     if (onlyActive) q = q.eq("lg_ativo", true);
@@ -262,15 +266,15 @@ export const unitsService = {
         id: String(parsed.id),
         code: parsed.cd_codigo,
         name: parsed.ds_nome,
-        companyId: "",
+        companyId: parsed.company_id ?? "",
         companyName: "",
-        cnpj: undefined,
-        address: "",
-        city: "",
-        state: "",
-        phone: "",
-        email: "",
-        type: parsed.lg_principal ? "matriz" : "filial",
+        cnpj: parsed.nr_cnpj ?? undefined,
+        address: parsed.ds_endereco ?? "",
+        city: parsed.ds_cidade ?? "",
+        state: parsed.ds_uf ?? "",
+        phone: parsed.nr_telefone ?? "",
+        email: parsed.ds_email ?? "",
+        type: parsed.tp_unidade?.toLowerCase() === "laboratorio" ? "laboratorio" : ["ambulatorio", "consultorio"].includes(parsed.tp_unidade?.toLowerCase() ?? "") ? "ambulatorio" : parsed.lg_principal ? "matriz" : "filial",
         status: parsed.lg_ativo === false ? "inactive" : "active",
       };
     });
@@ -304,6 +308,33 @@ export const unitsService = {
       };
     });
   },
+
+  async create(input: {
+    companyId: string;
+    code: string;
+    name: string;
+    type: UnitType;
+    address?: string;
+    city?: string;
+    state?: string;
+    phone?: string;
+    email?: string;
+  }): Promise<void> {
+    const { error } = await supabase.from("units").insert({
+      company_id: input.companyId,
+      cd_codigo: input.code,
+      ds_nome: input.name,
+      tp_unidade: input.type === "ambulatorio" ? "CONSULTORIO" : input.type === "laboratorio" ? "LABORATORIO" : input.type.toUpperCase(),
+      ds_endereco: input.address || null,
+      ds_cidade: input.city || null,
+      ds_uf: input.state || null,
+      nr_telefone: input.phone || null,
+      ds_email: input.email || null,
+      lg_principal: input.type === "matriz",
+      lg_ativo: true,
+    });
+    if (error) throw new Error(`Erro ao cadastrar unidade: ${error.message}`);
+  },
 };
 
 // ── Companies ────────────────────────────────────────────────────────────────
@@ -312,12 +343,12 @@ export const companiesService = {
   async getAll(): Promise<Company[]> {
     const { data, error } = await supabase
       .from("companies")
-      .select("id, name, cnpj, phone, email, lg_ativo, created_at")
+      .select("id, name, ds_razao_social, cnpj, phone, email, lg_ativo, created_at")
       .order("name");
     if (error) throw new Error(`Erro ao listar empresas: ${error.message}`);
-    return (data ?? []).map((row: { id: string; name: string; cnpj?: string | null; phone?: string | null; email?: string | null; lg_ativo?: boolean | null; created_at?: string | null }): Company => ({
+    return (data ?? []).map((row: { id: string; name: string; ds_razao_social?: string | null; cnpj?: string | null; phone?: string | null; email?: string | null; lg_ativo?: boolean | null; created_at?: string | null }): Company => ({
       id: row.id,
-      legalName: row.name,
+      legalName: row.ds_razao_social ?? row.name,
       tradeName: row.name,
       cnpj: row.cnpj ?? "",
       phone: row.phone ?? "",
@@ -325,6 +356,18 @@ export const companiesService = {
       status: row.lg_ativo === false ? "inactive" : "active",
       createdAt: row.created_at ?? new Date().toISOString(),
     }));
+  },
+
+  async create(input: { legalName: string; tradeName: string; cnpj: string; phone?: string; email?: string }): Promise<void> {
+    const { error } = await supabase.from("companies").insert({
+      name: input.tradeName || input.legalName,
+      ds_razao_social: input.legalName || input.tradeName,
+      cnpj: input.cnpj || null,
+      phone: input.phone || null,
+      email: input.email || null,
+      lg_ativo: true,
+    });
+    if (error) throw new Error(`Erro ao cadastrar empresa: ${error.message}`);
   },
 };
 
