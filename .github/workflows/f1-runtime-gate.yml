@@ -115,6 +115,7 @@ jobs:
             supabase/migrations/20260712170000_medical_record_prescription_contract.sql \
             supabase/migrations/20260712180000_medical_records_canonical_columns.sql \
             supabase/migrations/20260712190000_rbac_schema_baseline.sql \
+            supabase/migrations/20260712200000_secure_user_profile_admin.sql \
             supabase/release-mvp/011_insurance_authoritative_ledgers.sql \
             supabase/release-mvp/016_service_only_password_resets.sql \
             supabase/release-mvp/017_clinical_safe_functions.sql
