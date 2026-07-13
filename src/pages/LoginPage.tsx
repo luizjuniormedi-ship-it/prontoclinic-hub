@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { useToast } from "@/hooks/use-toast";
 
 type LoginError = { title: string; description?: string } | null;
 
@@ -37,9 +36,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<LoginError>(null);
-  const { login, isAuthenticated } = useAuth();
+  const { login, logout, isAuthenticated } = useAuth();
   const navigate = useNavigate();
-  const { toast } = useToast();
 
   if (isAuthenticated) {
     return <Navigate to="/" replace />;
@@ -62,7 +60,10 @@ export default function LoginPage() {
       const needs2FA = (result as { requires2FA?: boolean }).requires2FA;
       if (needs2FA) {
         setRequires2FA(true);
-        toast({ title: "Código 2FA enviado para seu e-mail." });
+        setError({
+          title: "Verificação em duas etapas necessária.",
+          description: "O servidor exigiu 2FA, mas este ambiente ainda não possui verificação OTP configurada.",
+        });
         return;
       }
       navigate("/");
@@ -78,11 +79,14 @@ export default function LoginPage() {
       return;
     }
     setLoading(true);
-    // Simulação: backend final chamaria supabase.auth.verifyOtp ou similar.
-    // Por enquanto, tratamos como sucesso parcial e pedimos para re-entrar.
+    await logout();
     setLoading(false);
-    toast({ title: "Verificação adicional em desenvolvimento." });
-    navigate("/");
+    setRequires2FA(false);
+    setTwoFactorCode("");
+    setError({
+      title: "Verificação 2FA indisponível.",
+      description: "O acesso foi bloqueado porque o código não foi validado pelo servidor.",
+    });
   };
 
   return (
