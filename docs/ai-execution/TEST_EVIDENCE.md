@@ -29,6 +29,8 @@
 
 Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui login real, teste negativo entre dois tenants ou rollback reproduzivel.
 
+- Runner P0 adicionado em `scripts/tenant-isolation-integration.mjs`; execucao contra dois usuarios reais ainda pendente de credenciais autorizadas para tenants distintos.
+
 ## Evidencia VPS registrada pelo usuario
 
 - SSH funcional com a chave de reset.
