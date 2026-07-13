@@ -31,7 +31,6 @@ export interface AppointmentCardProps {
   patient: Patient | undefined;
   allAppointments: Appointment[];
   onQuickAction: (action: string, a: Appointment) => void;
-  rowIndex: number;
 }
 
 function AppointmentCardImpl({
@@ -39,7 +38,6 @@ function AppointmentCardImpl({
   patient,
   allAppointments,
   onQuickAction,
-  rowIndex,
 }: AppointmentCardProps) {
   const age = patient?.birthDate ? calculateAge(patient.birthDate) : null;
   const insurance = patient?.healthInsurance || (a as any).insuranceName || "Particular";
@@ -49,7 +47,7 @@ function AppointmentCardImpl({
     <Card
       role="gridcell"
       tabIndex={0}
-      aria-rowindex={rowIndex + 1}
+      aria-colindex={1}
       aria-label={`${a.time}, ${a.patientName}, com ${a.doctorName}${a.specialty ? `, ${a.specialty}` : ""}, status ${a.status}, ${a.duration} minutos${allergies ? `. Alerta: alergias ${allergies}` : ""}`}
       className={`hover:shadow-md transition-shadow ${statusBorderColors[a.status] || ""}`}
     >
@@ -63,9 +61,9 @@ function AppointmentCardImpl({
           <div className="border-l pl-3 flex-1 min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
               <AppointmentPreviewPopover appointment={a} patient={patient} appointments={allAppointments}>
-                <span className="font-medium text-sm truncate cursor-pointer hover:text-primary transition-colors">
+                <button type="button" className="font-medium text-sm truncate cursor-pointer hover:text-primary transition-colors">
                   {a.patientName}
-                </span>
+                </button>
               </AppointmentPreviewPopover>
               {age != null && (
                 <span className="text-[10px] text-muted-foreground">{age}a</span>
@@ -82,7 +80,7 @@ function AppointmentCardImpl({
             <p className="text-xs text-muted-foreground truncate">
               {a.serviceName || a.typeLabel || ""}
             </p>
-            <p className="text-xs text-muted-foreground/70 truncate">
+            <p className="text-xs text-muted-foreground truncate">
               {a.doctorName}{a.specialty ? ` • ${a.specialty}` : ""}
             </p>
             <div className="flex items-center gap-2 flex-wrap">
@@ -110,8 +108,7 @@ function arePropsEqual(prev: AppointmentCardProps, next: AppointmentCardProps): 
     prev.appointment === next.appointment &&
     prev.patient === next.patient &&
     prev.allAppointments === next.allAppointments &&
-    prev.onQuickAction === next.onQuickAction &&
-    prev.rowIndex === next.rowIndex
+    prev.onQuickAction === next.onQuickAction
   );
 }
 
@@ -119,3 +116,4 @@ export const AppointmentCard = memo(AppointmentCardImpl, arePropsEqual);
 AppointmentCard.displayName = "AppointmentCard";
 
 export default AppointmentCard;
+
