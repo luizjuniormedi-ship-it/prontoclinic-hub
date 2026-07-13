@@ -452,17 +452,28 @@ BEGIN
     RETURN v_existing.response;
   END IF;
 
-  SELECT item.*, pedido.*
-    INTO v_item, v_order
-    FROM public.exames_lab_pedido_itens AS item
-    JOIN public.exames_lab_pedido AS pedido
-      ON pedido.id = item.cd_pedido
-     AND pedido.company_id = item.company_id
+  SELECT pedido.*
+    INTO v_order
+    FROM public.exames_lab_pedido AS pedido
+    JOIN public.exames_lab_pedido_itens AS item
+      ON item.cd_pedido = pedido.id
+     AND item.company_id = pedido.company_id
    WHERE item.id = p_item_id
-     AND item.company_id = v_company_id
-   FOR UPDATE OF item, pedido;
+     AND pedido.company_id = v_company_id
+   FOR UPDATE OF pedido;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Item laboratorial inexistente ou fora do tenant do ator';
+  END IF;
+
+  SELECT item.*
+    INTO v_item
+    FROM public.exames_lab_pedido_itens AS item
+   WHERE item.id = p_item_id
+     AND item.company_id = v_company_id
+     AND item.cd_pedido = v_order.id
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Item laboratorial inconsistente com o pedido';
   END IF;
   IF v_item.tp_status IS DISTINCT FROM p_expected_status THEN
     RAISE EXCEPTION 'Status esperado divergente: esperado %, atual %', p_expected_status, v_item.tp_status;
