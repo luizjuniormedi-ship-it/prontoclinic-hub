@@ -222,8 +222,13 @@ async function validateRuntime(proxyNames, classifiedNames, forbiddenNames, fron
               owner.rolname AS owner_name,
               owner.rolsuper AS owner_superuser,
               owner.rolbypassrls AS owner_bypassrls,
-              p.proargnames AS argument_names,
-              p.proargmodes AS argument_modes,
+              COALESCE((
+                SELECT jsonb_agg(p.proargnames[subscript] ORDER BY subscript)
+                  FROM generate_subscripts(p.proargnames, 1) AS subscript
+                 WHERE COALESCE(p.proargmodes[subscript], 'i'::"char") = ANY (
+                   ARRAY['i'::"char", 'b'::"char", 'v'::"char"]
+                 )
+              ), '[]'::jsonb) AS input_argument_names,
               has_function_privilege('authenticated', p.oid, 'EXECUTE') AS authenticated_execute,
               has_function_privilege('anon', p.oid, 'EXECUTE') AS anon_execute,
               EXISTS (
@@ -265,17 +270,20 @@ async function validateRuntime(proxyNames, classifiedNames, forbiddenNames, fron
       const searchPath = row.function_config.find((setting) => setting.startsWith('search_path='));
       if (!searchPath) errors.push(`RUNTIME_SECURITY_DEFINER_SEARCH_PATH_MISSING ${name}`);
       else {
-        const schemas = searchPath.slice('search_path='.length).split(',').map((item) => item.trim().replaceAll('"', ''));
-        if (schemas.some((schema) => !['pg_catalog', 'public'].includes(schema))) errors.push(`RUNTIME_UNSAFE_SECURITY_DEFINER_SEARCH_PATH ${name} value=${searchPath}`);
+        const rawPath = searchPath.slice('search_path='.length).trim();
+        const schemas = rawPath === ''
+          ? []
+          : rawPath.split(',').map((item) => item.trim().replaceAll('"', ''));
+        const hasUnsafeSchema = schemas.some((schema) => !['pg_catalog', 'public', 'pg_temp'].includes(schema));
+        const pgTempIsNotLast = schemas.includes('pg_temp') && schemas.at(-1) !== 'pg_temp';
+        if (hasUnsafeSchema || pgTempIsNotLast) errors.push(`RUNTIME_UNSAFE_SECURITY_DEFINER_SEARCH_PATH ${name} value=${searchPath}`);
         if (schemas.includes('public') && publicSchemaWritable) errors.push(`RUNTIME_WRITABLE_SCHEMA_IN_SECURITY_DEFINER_PATH ${name}`);
       }
     };
     const validateFrontendArguments = (name, row) => {
       const expected = frontendArgumentNames[name];
       if (!expected) return;
-      const names = row.argument_names || [];
-      const modes = row.argument_modes || names.map(() => 'i');
-      const inputs = names.filter((_, index) => ['i', 'b', 'v'].includes(modes[index] || 'i'));
+      const inputs = row.input_argument_names || [];
       for (const argument of expected) {
         if (!inputs.includes(argument)) errors.push(`RUNTIME_RPC_ARGUMENT_MISSING ${name} argument=${argument} signature=${row.signature}`);
       }
@@ -305,9 +313,10 @@ async function validateRuntime(proxyNames, classifiedNames, forbiddenNames, fron
       if (classification?.status === 'candidate' && rows.length === 0) errors.push(`RUNTIME_CANDIDATE_RPC_MISSING ${name}`);
       if (rows.length > 1) errors.push(`RUNTIME_NONPROXY_RPC_OVERLOAD_UNDECLARED ${name} count=${rows.length}`);
       for (const row of rows) {
-        validateFunctionSafety(name, row);
         validateFrontendArguments(name, row);
-        if (row.public_execute || row.authenticated_execute || row.anon_execute) {
+        const exposed = row.public_execute || row.authenticated_execute || row.anon_execute;
+        if (exposed) {
+          validateFunctionSafety(name, row);
           errors.push(`RUNTIME_NONPROXY_RPC_EXPOSED ${name}(${row.signature})`);
         }
       }
