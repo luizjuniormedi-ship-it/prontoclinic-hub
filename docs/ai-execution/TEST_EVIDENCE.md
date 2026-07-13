@@ -56,3 +56,5 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - O replay seguinte chegou ao módulo de agendamento e encontrou `professional_schedules` referenciada sem migration de criação; foi adicionada uma fundação idempotente para as janelas de disponibilidade.
 - O replay seguinte chegou à recepção e encontrou as tabelas operacionais de autorização/elegibilidade ausentes; foi adicionada a fundação idempotente que alimenta o registro central de convênios.
 - O replay seguinte chegou ao ledger oficial de Convênios e identificou `quantity_used` ausente no registro operacional; a coluna foi adicionada para controlar autorizado versus utilizado.
+- A execução GitHub `29218077341` observada no navegador pertence ao PR #1 (`pull/1/merge`, head `2652fad`), não ao PR #2 atual; sua falha E2E financeira não deve ser atribuída ao head `eb793a6`.
+- A auditoria do branch atual confirma migrations para `price_tables`, `professional_payments`, `exames_lab_catalogo`, `scheduling_waitlist`, `scheduling_blocks`, `reception_authorizations`, `reception_eligibility_checks` e compatibilidade operacional de TISS.
