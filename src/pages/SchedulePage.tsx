@@ -157,7 +157,7 @@ export default function SchedulePage() {
     if (patientIds.length > 0) {
       const { data: pats, error: patientsError } = await supabase
         .from("patients")
-        .select("id, full_name, cpf, birth_date, phone, email, sex, insurance_plan_id, insurance_card_number, allergies, clinical_alerts, created_at, updated_at")
+        .select("id, full_name, cpf, birth_date, phone, email, sex, insurance_plan_id, allergies, clinical_alerts, created_at, updated_at")
         .in("id", patientIds);
       if (patientsError) throw patientsError;
 
@@ -176,7 +176,7 @@ export default function SchedulePage() {
         birthDate: row.birth_date || "", phone: row.phone || "", email: row.email || "",
         gender: row.sex || "O",
         healthInsurance: row.insurance_plan_id ? (planNames[String(row.insurance_plan_id)] || "Plano #" + row.insurance_plan_id) : undefined,
-        healthInsuranceNumber: row.insurance_card_number ?? undefined,
+        healthInsuranceNumber: undefined,
         allergies: row.allergies ?? undefined, clinicalAlerts: row.clinical_alerts ?? undefined,
         createdAt: row.created_at || "", updatedAt: row.updated_at || "",
       })) as Patient[]);
