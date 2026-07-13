@@ -144,6 +144,11 @@ const SCHEDULING_CATALOG_TABLES = new Set([
 
 function tableToModule(table, method = 'GET') {
   const t = table.toLowerCase();
+  // Unidade e catalogo operacional compartilhado: leitura autenticada e
+  // tenant-scoped; escrita continua restrita ao modulo administrativo.
+  if (t === 'units') {
+    return method === 'GET' || method === 'HEAD' ? null : 'admin';
+  }
   if (SCHEDULING_CATALOG_TABLES.has(t)) {
     return method === 'GET' || method === 'HEAD' ? 'agenda' : 'admin';
   }
@@ -213,10 +218,15 @@ async function requiredCompanyScope(profile, table) {
   return profile.company_id;
 }
 
-// cache de permissÃµes por role (evita query a cada request)
-const permCache = new Map();
-async function loadRolePerms(role) {
-  if (permCache.has(role)) return permCache.get(role);
+// Somente leituras podem usar cache curto. Mutacoes sempre consultam o catalogo
+// para que uma revogacao tenha efeito na chamada seguinte.
+const VIEW_PERMISSION_CACHE_TTL_MS = 5_000;
+const viewPermissionCache = new Map();
+async function loadRolePerms(role, action = 'can_view') {
+  const cacheable = action === 'can_view';
+  const cached = cacheable ? viewPermissionCache.get(role) : null;
+  if (cached?.expiresAt > Date.now()) return cached.permissions;
+  if (cached) viewPermissionCache.delete(role);
   try {
     const r = await pool.query(
       `SELECT rp.module, rp.can_view, rp.can_create, rp.can_edit, rp.can_delete
@@ -224,7 +234,12 @@ async function loadRolePerms(role) {
         WHERE ro.name = $1`, [role]);
     const m = {};
     for (const row of r.rows) m[row.module] = row;
-    permCache.set(role, m);
+    if (cacheable) {
+      viewPermissionCache.set(role, {
+        permissions: m,
+        expiresAt: Date.now() + VIEW_PERMISSION_CACHE_TTL_MS,
+      });
+    }
     return m;
   } catch (error) {
     // Missing permission catalog is fail-closed: deny non-admin access without
@@ -232,7 +247,12 @@ async function loadRolePerms(role) {
     if (error?.code === '42P01') {
       console.error(`[RBAC_CATALOG_MISSING] role_permissions/roles for role ${role}`);
       const denied = {};
-      permCache.set(role, denied);
+      if (cacheable) {
+        viewPermissionCache.set(role, {
+          permissions: denied,
+          expiresAt: Date.now() + VIEW_PERMISSION_CACHE_TTL_MS,
+        });
+      }
       return denied;
     }
     throw error;
@@ -253,10 +273,10 @@ async function authorize(profile, table, method) {
     // tabelas de referÃªncia: leitura liberada, escrita sÃ³ admin (jÃ¡ retornou acima)
     return METHOD_TO_ACTION[method] === 'can_view' ? { ok: true } : { ok: false, reason: 'escrita em tabela de referÃªncia exige admin' };
   }
-  const perms = await loadRolePerms(role);
+  const action = METHOD_TO_ACTION[method] || 'can_view';
+  const perms = await loadRolePerms(role, action);
   const rule = perms[module];
   if (!rule) return { ok: false, reason: `role '${role}' sem acesso ao mÃ³dulo '${module}'` };
-  const action = METHOD_TO_ACTION[method] || 'can_view';
   if (!rule[action]) return { ok: false, reason: `role '${role}' nÃ£o pode '${action}' em '${module}'` };
   return { ok: true };
 }
@@ -296,6 +316,9 @@ const RPC_PERMISSIONS = {
   get_billing_balance_secure: { module: 'financeiro', action: 'can_view' },
   record_billing_receipt_secure: { module: 'financeiro', action: 'can_create' },
   reverse_billing_receipt_secure: { module: 'financeiro', action: 'can_edit' },
+  create_professional_payment: { module: 'financeiro', action: 'can_create' },
+  list_professional_payments: { module: 'financeiro', action: 'can_view' },
+  transition_professional_payment: { module: 'financeiro', action: 'can_edit' },
   save_or_release_lab_result_secure: { module: 'laboratorio', action: 'can_edit' },
   create_nursing_medication_secure: { module: 'enfermagem', action: 'can_edit' },
   bedside_check: { module: 'enfermagem', action: 'can_view' },
@@ -313,6 +336,41 @@ const CENTRAL_PERMISSION_RPCS = new Set([
   'list_tiss_glosas_read_secure',
   'list_tiss_protocols_read_secure',
 ]);
+
+const STRUCTURED_ROW_RPCS = new Set([
+  'create_professional_payment',
+  'list_professional_payments',
+  'transition_professional_payment',
+]);
+
+function buildRpcQuery(functionName, parameterNames) {
+  if (!Object.prototype.hasOwnProperty.call(RPC_PERMISSIONS, functionName) || !isIdentifier(functionName)) {
+    throw new Error(`RPC '${functionName}' nao autorizada`);
+  }
+  for (const parameterName of parameterNames) {
+    if (!isIdentifier(parameterName)) {
+      throw new Error(`parametro RPC invalido: ${parameterName}`);
+    }
+  }
+
+  const namedArgs = parameterNames
+    .map((parameterName, index) => `${quoteIdent(parameterName)} => $${index + 1}`)
+    .join(', ');
+  const qualifiedFunction = `public.${quoteIdent(functionName)}`;
+  if (STRUCTURED_ROW_RPCS.has(functionName)) {
+    return `SELECT to_jsonb(r) AS result FROM ${qualifiedFunction}(${namedArgs}) AS r`;
+  }
+  return `SELECT ${qualifiedFunction}(${namedArgs}) AS result`;
+}
+
+function serializeRpcResult(functionName, rows) {
+  if (STRUCTURED_ROW_RPCS.has(functionName)) {
+    return rows.map((row) => row.result);
+  }
+  if (rows.length === 0) return [];
+  if (rows.length > 1) return rows.map((row) => row.result);
+  return rows[0].result;
+}
 
 const RPC_ONLY_TABLES = new Set([
   'medical_records',
@@ -341,7 +399,7 @@ async function authorizeRpc(profile, functionName) {
     return { ok: true };
   }
 
-  const permissions = await loadRolePerms(role);
+  const permissions = await loadRolePerms(role, required.action);
   const rule = permissions[required.module];
   if (!rule?.[required.action]) {
     return { ok: false, reason: `role '${role}' nao pode '${required.action}' em '${required.module}'` };
@@ -654,18 +712,13 @@ const server = createServer(async (req, res) => {
           return json(res, { error: 'bad_request', message: `parÃ¢metro RPC invÃ¡lido: ${key}` }, 400);
         }
       }
-      // monta SELECT fn(p1 => $1, p2 => $2) com params nomeados
-      const namedArgs = keys.map((k, i) => `"${k}" => $${i + 1}`).join(', ');
       const vals = keys.map((k) => body[k]);
       try {
+        const rpcQuery = buildRpcQuery(fnName, keys);
         const result = await withAuthenticatedDbSession(payload, (client) =>
-          client.query(`SELECT public."${fnName}"(${namedArgs}) AS result`, vals)
+          client.query(rpcQuery, vals)
         );
-        const val = result.rows.length === 0
-          ? []
-          : result.rows.length > 1
-            ? result.rows.map((row) => row.result)
-            : result.rows[0].result;
+        const val = serializeRpcResult(fnName, result.rows);
         return json(res, val);
       } catch (e) {
         return databaseError(
