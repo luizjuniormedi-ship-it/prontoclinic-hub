@@ -9,7 +9,8 @@ DECLARE
     'user_profiles', 'patients', 'professionals', 'appointments',
     'medical_records', 'billings', 'insurance_authorizations',
     'insurance_eligibility_checks', 'audit_logs',
-    'scheduling_contact_logs', 'scheduling_call_center_tasks'
+    'scheduling_contact_logs', 'scheduling_call_center_tasks',
+    'roles', 'role_permissions'
   ];
   rel RECORD;
   role_record RECORD;
@@ -65,7 +66,10 @@ BEGIN
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public'
-      AND c.relname IN ('scheduling_contact_logs', 'scheduling_call_center_tasks')
+      AND c.relname IN (
+        'scheduling_contact_logs', 'scheduling_call_center_tasks',
+        'roles', 'role_permissions'
+      )
   LOOP
     IF rel.relforcerowsecurity IS NOT TRUE THEN
       RAISE EXCEPTION 'F1 runtime: FORCE RLS disabled on public.%', rel.relname;
