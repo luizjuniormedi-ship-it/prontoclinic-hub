@@ -227,6 +227,24 @@ jobs:
           PGDATABASE: postgres
         run: bash scripts/ci-nursing-triage-concurrency.sh
 
+      - name: Apply F4 pharmacy atomic tenant contract
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260101000015_farmacia.sql
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260713141921_f4_pharmacy_atomic_tenant_contract.sql
+
+      - name: Run F4 pharmacy runtime gate
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 54322
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: postgres
+        run: |
+          psql -v ON_ERROR_STOP=1 \
+            -v "f4_dblink_connstr=host=$PGHOST port=$PGPORT dbname=$PGDATABASE user=$PGUSER password=$PGPASSWORD" \
+            -f supabase/tests/f4_pharmacy_atomic_tenant_gate.sql
+
       - name: Type check
         run: npm run type-check
 
