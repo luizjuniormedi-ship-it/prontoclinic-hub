@@ -18,7 +18,7 @@
 - Type-check: aprovado (`npm run type-check`).
 - Build: aprovado (`npm run build`); permanecem apenas avisos de chunk dinâmico já existentes.
 - Lint: concluído sem erros; 485 warnings históricos permanecem registrados.
-- Commit atual da rodada: `637d09f` na branch `codex/tenant-scope-hardening-d551c8e`.
+- Commit atual da rodada: `6aa40d1` na branch `codex/tenant-scope-hardening-d551c8e`.
 - Correção aplicada: `PATCH` não pode alterar `company_id`; inserções continuam derivando o tenant do perfil autenticado.
 - Correção do CI: a etapa de migração agora usa diretamente `DATABASE_URL`, incluindo a porta publicada `54322` do serviço PostgreSQL; antes, o comando ignorava essa variável e tentava conectar em `localhost:5432`.
 
@@ -51,7 +51,7 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - Login real com perfil operacional.
 - Teste negativo de isolamento entre empresas.
 - Dry-run real de reconciliacao DataSIGH.
-- CI verde no commit mais recente (a execução ainda não foi associada pelo GitHub ao SHA `637d09f`).
+- CI verde no commit mais recente (a execução ainda não foi associada pelo GitHub ao SHA `6aa40d1`).
 - O replay do CI confirmou a correção da porta, da ordem das tabelas e das roles, e encontrou `auth.uid()` ausente no PostgreSQL limpo. A compatibilidade agora cria a função inerte apenas quando ela não existe, preservando a implementação Supabase; novo CI ainda pendente.
 - O replay seguinte chegou ao módulo de agendamento e encontrou `professional_schedules` referenciada sem migration de criação; foi adicionada uma fundação idempotente para as janelas de disponibilidade.
 - O replay seguinte chegou à recepção e encontrou as tabelas operacionais de autorização/elegibilidade ausentes; foi adicionada a fundação idempotente que alimenta o registro central de convênios.
