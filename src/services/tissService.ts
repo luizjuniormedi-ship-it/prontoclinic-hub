@@ -71,33 +71,8 @@ export interface TissXml {
   updated_at: string;
 }
 
-export const TISS_XML_METADATA_COLUMNS = [
-  "id",
-  "cd_fatura",
-  "cd_convenio",
-  "ds_descricao",
-  "ds_filename",
-  "dt_fatura",
-  "ds_tipo_guia",
-  "cd_lote",
-  "ds_protocolo",
-  "dt_recurso",
-  "ds_protocolo_recurso",
-  "vl_informado",
-  "vl_processado",
-  "vl_liberado",
-  "vl_glosa",
-  "ds_versao_tiss",
-  "tp_ambiente",
-  "status",
-  "ds_motivo_rejeicao",
-  "lg_deletado",
-  "dt_envio",
-  "dt_retorno",
-  "dt_pagamento",
-  "created_at",
-  "updated_at",
-].join(", ");
+export const TISS_XML_METADATA_COLUMNS =
+  "id, cd_fatura, cd_convenio, ds_descricao, ds_filename, dt_fatura, ds_tipo_guia, cd_lote, ds_protocolo, dt_recurso, ds_protocolo_recurso, vl_informado, vl_processado, vl_liberado, vl_glosa, ds_versao_tiss, tp_ambiente, status, ds_motivo_rejeicao, lg_deletado, dt_envio, dt_retorno, dt_pagamento, created_at, updated_at";
 
 export interface TissGlosa {
   id: number;
@@ -116,22 +91,8 @@ export interface TissGlosa {
   updated_at: string;
 }
 
-const TISS_GLOSA_METADATA_COLUMNS = [
-  "id",
-  "cd_tiss_xml",
-  "cd_glosa_code",
-  "ds_motivo",
-  "vl_glosa",
-  "dt_glosa",
-  "lg_recurso_enviado",
-  "dt_recurso",
-  "ds_protocolo_recurso",
-  "ds_status_recurso",
-  "cd_procedimento_tuss",
-  "cd_executante",
-  "created_at",
-  "updated_at",
-].join(", ");
+const TISS_GLOSA_METADATA_COLUMNS =
+  "id, cd_tiss_xml, cd_glosa_code, ds_motivo, vl_glosa, dt_glosa, lg_recurso_enviado, dt_recurso, ds_protocolo_recurso, ds_status_recurso, cd_procedimento_tuss, cd_executante, created_at, updated_at";
 
 export interface TissProtocol {
   id: number;
@@ -146,18 +107,19 @@ export interface TissProtocol {
   updated_at: string;
 }
 
-const TISS_PROTOCOL_METADATA_COLUMNS = [
-  "id",
-  "cd_convenio",
-  "ds_versao_tiss",
-  "tp_ambiente",
-  "lg_active",
-  "ds_observacao",
-  "dt_ultimo_teste",
-  "ds_status_teste",
-  "created_at",
-  "updated_at",
-].join(", ");
+const TISS_PROTOCOL_METADATA_COLUMNS =
+  "id, cd_convenio, ds_versao_tiss, tp_ambiente, lg_active, ds_observacao, dt_ultimo_teste, ds_status_teste, created_at, updated_at";
+
+interface TissXmlRecursoRelation {
+  cd_convenio?: number;
+  ds_protocolo?: string;
+  dt_fatura?: string;
+  vl_glosa?: number;
+}
+
+function firstRelated<T>(relation: T | T[] | null | undefined): T | undefined {
+  return Array.isArray(relation) ? relation[0] : relation ?? undefined;
+}
 
 // ── Códigos TISS (tabela oficial ANS, subset) ──────────────────────
 
@@ -370,6 +332,8 @@ export const tissService = {
       .single();
     if (!glosa) throw new Error("Glosa nao encontrada");
 
+    const tissXml = firstRelated<TissXmlRecursoRelation>(glosa.tiss_xml);
+
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <ans:mensagemTISS xmlns:ans="http://www.ans.gov.br/padroes/tiss/schemas" versao="3.05.00">
   <ans:cabecalho>
@@ -381,8 +345,8 @@ export const tissService = {
   </ans:cabecalho>
   <ans:operadoraParaPrestador>
     <ans:recursoGlosa>
-      <ans:protocoloGlosaOriginal>${xmlEscape(glosa.tiss_xml?.ds_protocolo || "")}</ans:protocoloGlosaOriginal>
-      <ans:dataGlosaOriginal>${isoToTissDate(glosa.tiss_xml?.dt_fatura)}</ans:dataGlosaOriginal>
+      <ans:protocoloGlosaOriginal>${xmlEscape(tissXml?.ds_protocolo || "")}</ans:protocoloGlosaOriginal>
+      <ans:dataGlosaOriginal>${isoToTissDate(tissXml?.dt_fatura)}</ans:dataGlosaOriginal>
       <ans:codigoGlosa>${xmlEscape(glosa.cd_glosa_code || "")}</ans:codigoGlosa>
       <ans:motivoGlosa>${xmlEscape(glosa.ds_motivo || "")}</ans:motivoGlosa>
       <ans:valorGlosa>${glosa.vl_glosa.toFixed(2)}</ans:valorGlosa>

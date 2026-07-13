@@ -233,7 +233,7 @@ export function TissGuiaForm({
             <ul className="text-sm space-y-1 mt-2 max-h-40 overflow-y-auto">
               {(protocols || []).map((p) => (
                 <li key={p.id} className="p-2 border rounded">
-                  <b>{p.tp_ambiente}</b> — {p.ds_endpoint}
+                  <b>{p.tp_ambiente}</b> — TISS {p.ds_versao_tiss}
                   {p.dt_ultimo_teste && <span className="text-xs ml-2 text-muted-foreground">ultimo teste: {new Date(p.dt_ultimo_teste).toLocaleString()}</span>}
                 </li>
               ))}
@@ -246,3 +246,4 @@ export function TissGuiaForm({
 }
 
 export default TissGuiaForm;
+
