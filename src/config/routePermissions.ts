@@ -11,6 +11,7 @@ export const ROLES = {
   GESTOR: "gestor",
   ADMINISTRATIVO: "administrativo",
   ENFERMAGEM: "enfermagem",
+  FARMACIA: "farmacia",
 } as const;
 
 export type RoleName = (typeof ROLES)[keyof typeof ROLES];
@@ -34,6 +35,12 @@ const ROLE_ALIASES: Record<string, RoleName> = {
   gestor: "gestor",
   gerente: "gestor",
   administrativo: "administrativo",
+  "farmácia": "farmacia",
+  farmacia: "farmacia",
+  "farmacêutico": "farmacia",
+  farmaceutico: "farmacia",
+  "farmacêutica": "farmacia",
+  farmaceutica: "farmacia",
 };
 
 /**
@@ -74,7 +81,7 @@ const routePermissionMap: Record<string, PermissionEntry> = {
   "/admin": [ROLES.ADMIN, ROLES.ADMINISTRATIVO],
   "/meus-agendamentos": "*", // portal do paciente (qualquer usuario logado)
   "/nursing": [ROLES.ADMIN, ROLES.MEDICO, ROLES.RECEPCAO, ROLES.ENFERMAGEM], // triagem + cuidados
-  "/pharmacy": [ROLES.ADMIN, ROLES.MEDICO, ROLES.GESTOR, ROLES.ADMINISTRATIVO],
+  "/pharmacy": [ROLES.ADMIN, ROLES.FARMACIA],
   "/bi": [ROLES.ADMIN, ROLES.GESTOR, ROLES.MEDICO, ROLES.FINANCEIRO],
   "/telemedicina": [ROLES.ADMIN, ROLES.MEDICO, ROLES.GESTOR],
   "/lab": [ROLES.ADMIN, ROLES.MEDICO, ROLES.GESTOR, ROLES.DIAGNOSTICO],
@@ -132,3 +139,4 @@ export function getAccessiblePrefixes(roleName: string | null | undefined): stri
     })
     .map(([prefix]) => prefix);
 }
+
