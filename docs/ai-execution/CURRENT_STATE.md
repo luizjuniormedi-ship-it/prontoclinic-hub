@@ -5,7 +5,7 @@ Atualizado em 2026-07-13.
 ## Fato tecnico
 
 - Repositorio local: `C:\Users\Meu Computador\AppData\Local\Temp\prontoclinic-hub`.
-- Ultimo commit local conhecido: `4657b75` (`fix(settings): link role management to profiles`).
+- Ultimo commit local conhecido: `6c11d3a` (`fix(rbac): show real profile permission counts`).
 - Release funcional conhecida na VPS: `37199ee`.
 - A VPS executou build, migracoes e reload do Nginx na fase 1; a mensagem final de falha do wrapper foi causada por CRLF residual no shell remoto, nao por falha da publicacao.
 - PostgreSQL e backend precisam de nova verificacao operacional apos a ultima publicacao.
@@ -33,6 +33,7 @@ Atualizado em 2026-07-13.
 - Os botões Editar de Empresas e Unidades agora atualizam o registro real; a atualização de unidade exige `id` e `company_id` no filtro.
 - Cadastros Mestres agora permitem criar e editar Especialidades com persistência real, substituindo o botão sem ação.
 - Configurações deixou de exibir ação RBAC sem destino; o botão agora encaminha ao gerenciador real de perfis.
+- Perfis de usuário deixou de exibir a contagem fixa de oito permissões; a tela agora consulta `role_permissions` e conta pelo `role_id` real.
 
 ## Hipotese
 

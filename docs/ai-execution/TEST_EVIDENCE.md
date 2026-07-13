@@ -72,3 +72,4 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - Commit seguinte: `a822a7c`; os botões Editar de Empresas/Unidades passaram a persistir atualizações, com escopo de tenant na unidade. `git diff --check` permaneceu aprovado.
 - Commit seguinte: `7eeeb66`; Especialidades agora possuem criação e edição persistentes. `git diff --check` permaneceu aprovado; compilação continua aguardando ambiente Node funcional.
 - Commit seguinte: `4657b75`; a ação de perfis em Configurações agora abre o gerenciador real. `git diff --check` aprovado.
+- Commit seguinte: `6c11d3a`; a contagem de permissões dos perfis agora vem de `role_permissions`, sem valor estimado fixo. `git diff --check` aprovado.
