@@ -27,7 +27,7 @@ INSERT INTO auth.users (id) VALUES
 
 INSERT INTO public.user_profiles (id, full_name, email, role_name, company_id)
 VALUES
-  ('55555555-5555-4555-8555-555555555555', 'Doctor', 'doctor@test.local', 'doctor',
+  ('55555555-5555-4555-8555-555555555555', 'Doctor', 'doctor@test.local', 'medico',
    'cccccccc-cccc-4ccc-8ccc-cccccccccccc');
 
 INSERT INTO public.units (id, company_id, cd_codigo, ds_nome)
