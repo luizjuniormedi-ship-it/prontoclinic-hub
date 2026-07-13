@@ -75,11 +75,10 @@ const financialItems: MenuGroup = {
     {
       groupTitle: "Operação",
       items: [
-        { title: "Contas", url: "/billing-accounts", icon: Receipt },
+        { title: "Contas a receber", url: "/financial", icon: DollarSign },
         { title: "Produção", url: "/billing-production", icon: Receipt },
         { title: "TISS", url: "/admin/tiss", icon: FileSpreadsheet },
         { title: "Repasse", url: "/professional-payment", icon: Banknote },
-        { title: "Financeiro", url: "/financial", icon: DollarSign },
       ],
     },
   ],

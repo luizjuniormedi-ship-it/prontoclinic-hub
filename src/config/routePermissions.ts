@@ -67,7 +67,6 @@ const routePermissionMap: Record<string, PermissionEntry> = {
   "/dicom": [ROLES.ADMIN, ROLES.DIAGNOSTICO],
   "/financial": [ROLES.ADMIN, ROLES.FINANCEIRO, ROLES.GESTOR],
   "/billing-production": [ROLES.ADMIN, ROLES.FINANCEIRO, ROLES.GESTOR],
-  "/billing-accounts": [ROLES.ADMIN, ROLES.FINANCEIRO, ROLES.GESTOR],
   "/professional-payment": [ROLES.ADMIN, ROLES.FINANCEIRO],
   "/settings": [ROLES.ADMIN, ROLES.GESTOR, ROLES.ADMINISTRATIVO],
   "/master-data": [ROLES.ADMIN, ROLES.ADMINISTRATIVO],
