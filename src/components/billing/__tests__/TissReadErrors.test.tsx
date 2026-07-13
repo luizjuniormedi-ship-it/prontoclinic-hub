@@ -9,20 +9,6 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: unknown) => useQueryMock(options),
 }));
 
-vi.mock("recharts", () => ({
-  BarChart: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
-  Bar: () => null,
-  XAxis: () => null,
-  YAxis: () => null,
-  Tooltip: () => null,
-  ResponsiveContainer: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
-  CartesianGrid: () => null,
-  Legend: () => null,
-  PieChart: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
-  Pie: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
-  Cell: () => null,
-}));
-
 describe("erros de leitura TISS", () => {
   const refetch = vi.fn();
 
@@ -40,8 +26,6 @@ describe("erros de leitura TISS", () => {
         companyId="company-1"
         mes={7}
         ano={2026}
-        filterStatus="ALL"
-        setFilterStatus={vi.fn()}
         filterConvenio="ALL"
         setFilterConvenio={vi.fn()}
         onSelectXml={vi.fn()}
@@ -55,7 +39,7 @@ describe("erros de leitura TISS", () => {
   });
 
   it("exibe falha dos indicadores e permite repetir apenas a leitura", () => {
-    render(<TissStats companyId="company-1" ano={2026} />);
+    render(<TissStats ano={2026} />);
 
     expect(screen.getByRole("alert")).toHaveTextContent("Nao foi possivel carregar os indicadores TISS");
     fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
