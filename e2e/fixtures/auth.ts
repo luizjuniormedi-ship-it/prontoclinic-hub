@@ -23,9 +23,15 @@ export const test = base.extend<{
         patient: { email: 'paciente@prontomedic.test', password: 'TestPassword123!' }
       }[role];
 
+      await page.goto('/');
+      await page.evaluate(() => {
+        localStorage.clear();
+        sessionStorage.clear();
+      });
+      await page.context().clearCookies();
       await page.goto('/login');
       await page.getByLabel('E-mail').fill(creds.email);
-      await page.getByRole('textbox', { name: 'Senha' }).fill(creds.password);
+      await page.getByLabel('Senha').fill(creds.password);
       await page.getByRole('button', { name: /entrar/i }).click();
       await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
     });
@@ -34,3 +40,4 @@ export const test = base.extend<{
 
 export { expect };
 export type { Page };
+
