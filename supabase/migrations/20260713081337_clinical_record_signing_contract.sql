@@ -187,6 +187,16 @@ AS $function$
   )
 $function$;
 
+DROP POLICY IF EXISTS medical_records_tenant_select ON public.medical_records;
+CREATE POLICY medical_records_tenant_select
+  ON public.medical_records
+  FOR SELECT
+  TO authenticated
+  USING (
+    company_id = public.get_my_company_id()
+    AND public.has_medical_record_permission('view')
+  );
+
 DROP FUNCTION IF EXISTS public.assert_medical_record_permission();
 
 CREATE OR REPLACE FUNCTION public.assert_medical_record_permission(p_action TEXT DEFAULT 'view')
