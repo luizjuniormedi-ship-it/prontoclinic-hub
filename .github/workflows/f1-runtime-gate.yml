@@ -178,6 +178,10 @@ jobs:
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_receipts_behavior_gate.sql
           echo "Running F1 runtime TISS foundation gate"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_tiss_foundation_gate.sql
+          echo "Applying tenant surface hardening"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260712233000_tenant_surface_hardening.sql
+          echo "Running F1 runtime tenant surface gate"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_tenant_surface_gate.sql
 
       - name: Upload F1 evidence
         if: always()

@@ -4,6 +4,17 @@ import { describe, expect, it } from "vitest";
 
 const source = readFileSync(resolve(process.cwd(), "local-auth-server.mjs"), "utf8");
 
+function loadTableToModule() {
+  const start = source.indexOf("const REFERENCE_TABLES");
+  const end = source.indexOf("const METHOD_TO_ACTION");
+  const tableMappingSource = source.slice(start, end);
+
+  return new Function(`${tableMappingSource}; return tableToModule;`)() as (
+    table: string,
+    method?: string,
+  ) => string | null;
+}
+
 describe("local auth server security invariants", () => {
   it("nega RPC que nao esteja na allowlist", () => {
     expect(source).not.toContain("if (!required) return { ok: true }");
@@ -44,6 +55,42 @@ describe("local auth server security invariants", () => {
     expect(source).not.toContain("role === 'admin' || role === 'diretoria'");
   });
 
+  it("autoriza leitura dos catalogos operacionais pela agenda", () => {
+    const tableToModule = loadTableToModule();
+
+    for (const table of [
+      "professionals",
+      "specialties",
+      "appointment_types",
+      "services_catalog",
+    ]) {
+      expect(tableToModule(table, "GET")).toBe("agenda");
+      expect(tableToModule(table, "HEAD")).toBe("agenda");
+    }
+  });
+
+  it("exige semantica administrativa para alterar catalogos da agenda", () => {
+    const tableToModule = loadTableToModule();
+
+    for (const table of [
+      "professionals",
+      "specialties",
+      "appointment_types",
+      "services_catalog",
+    ]) {
+      expect(tableToModule(table, "POST")).toBe("admin");
+      expect(tableToModule(table, "PATCH")).toBe("admin");
+      expect(tableToModule(table, "DELETE")).toBe("admin");
+    }
+  });
+
+  it("mantem tabelas desconhecidas negadas por padrao", () => {
+    const tableToModule = loadTableToModule();
+
+    expect(tableToModule("unmapped_catalog", "GET")).toBe("__unmapped__");
+    expect(source).toContain("const module = tableToModule(table, method);");
+  });
+
   it("autoriza os read models financeiros somente por permissao explicita", () => {
     expect(source).toContain(
       "list_billing_production_secure: { module: 'faturamento', action: 'can_view' }",
@@ -69,4 +116,3 @@ describe("local auth server security invariants", () => {
     expect(source).toContain("[REST_HEAD_ERROR]");
   });
 });
-
