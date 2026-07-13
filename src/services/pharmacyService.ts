@@ -118,8 +118,17 @@ export const dispensacaoSchema = z.object({
   cd_paciente: z.number().int().positive(),
   cd_appointment: z.number().int().positive().optional().nullable(),
   cd_prescricao_id: z.number().int().positive().optional().nullable(),
-  ds_observacao: z.string().optional().nullable(),
+  ds_observacao: z.string().max(4000).optional().nullable(),
+  idempotency_key: z.string().uuid("Chave de idempotência inválida"),
   itens: z.array(dispensacaoItemSchema).min(1, "Ao menos um item é obrigatório"),
+}).superRefine((value, ctx) => {
+  if (value.cd_prescricao_id != null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["cd_prescricao_id"],
+      message: "Prescrição canônica ainda não está disponível; vínculo bloqueado",
+    });
+  }
 });
 
 export const receitaControladaSchema = z.object({
@@ -186,6 +195,30 @@ export type ReceitaControlada = z.infer<typeof receitaControladaSchema> & {
   dt_sngpc_envio?: string | null;
   created_at: string;
 };
+
+export type DispensacaoCommit = {
+  id: number;
+  company_id: string;
+  cd_paciente: number;
+  dt_dispensacao: string;
+  cd_usuario: string;
+  idempotent_replay: boolean;
+};
+
+const dispensacaoCommitSchema = z.object({
+  id: z.number().int().positive(),
+  company_id: z.string().min(1),
+  cd_paciente: z.number().int().positive(),
+  dt_dispensacao: z.string().datetime({ offset: true }),
+  cd_usuario: z.string().min(1),
+  idempotent_replay: z.boolean(),
+});
+
+export const SNGPC_INTEGRATION_STATUS = {
+  integrated: false,
+  state: "PENDENTE_INTEGRACAO",
+  message: "SNGPC não integrado. O envio permanece pendente de confirmação externa.",
+} as const;
 
 export type EstoqueAtual = {
   cd_lote: number;
@@ -397,7 +430,9 @@ export const lotesService = {
       .from("v_estoque_atual")
       .select("*")
       .eq(column, produtoId)
-      .in("status_validade", ["OK", "VENCE_30_DIAS", "VENCE_90_DIAS"]);
+      .in("status_validade", ["OK", "VENCE_30_DIAS", "VENCE_90_DIAS"])
+      .order("dt_validade", { ascending: true })
+      .order("cd_lote", { ascending: true });
     if (error) throw new Error(`Erro: ${error.message}`);
     return (data ?? []) as EstoqueAtual[];
   },
@@ -414,7 +449,8 @@ export const lotesService = {
       .from("v_estoque_atual")
       .select("*")
       .lte("dt_validade", limite.toISOString().slice(0, 10))
-      .order("dt_validade", { ascending: true });
+      .order("dt_validade", { ascending: true })
+      .order("cd_lote", { ascending: true });
     if (error) throw new Error(`Erro: ${error.message}`);
     return (data ?? []) as EstoqueAtual[];
   },
@@ -475,6 +511,9 @@ export const movimentacoesService = {
     if (!pacienteId || pacienteId <= 0) {
       throw new Error("Paciente é obrigatório");
     }
+    if (prescricaoId != null) {
+      throw new Error("Prescrição canônica ainda não está disponível; vínculo bloqueado");
+    }
     const { data, error } = await supabase.rpc("registrar_movimentacao_estoque", {
       p_lote_id: loteId,
       p_tipo: "SAIDA",
@@ -482,7 +521,7 @@ export const movimentacoesService = {
       p_motivo: motivo ?? "Dispensação",
       p_paciente_id: pacienteId,
       p_appointment_id: appointmentId ?? null,
-      p_prescricao_id: prescricaoId ?? null,
+      p_prescricao_id: null,
     });
     if (error) throw new Error(`Erro: ${error.message}`);
     const row = Array.isArray(data) ? data[0] : data;
@@ -539,50 +578,30 @@ export const movimentacoesService = {
 
 export const dispensacoesService = {
   /**
-   * Cria uma dispensação com seus itens.
-   * Para cada item, registra movimentação de SAÍDA do lote.
-   * Tudo em uma transação lógica — se algum item falhar, abortar.
+   * Confirma cabeçalho, itens e baixas de estoque em uma única transação no banco.
+   * Não há escrita alternativa nem rollback no navegador.
    */
-  async create(input: z.infer<typeof dispensacaoSchema>): Promise<Dispensacao> {
+  async create(input: z.infer<typeof dispensacaoSchema>): Promise<DispensacaoCommit> {
     const parsed = dispensacaoSchema.parse(input);
-    // 1. Cria a dispensação
-    const { data: disp, error: dispErr } = await supabase
-      .from("dispensacoes")
-      .insert({
-        cd_paciente: parsed.cd_paciente,
-        cd_appointment: parsed.cd_appointment ?? null,
-        cd_prescricao_id: parsed.cd_prescricao_id ?? null,
-        ds_observacao: parsed.ds_observacao ?? null,
-      })
-      .select()
-      .single();
-    if (dispErr) throw new Error(`Erro ao criar dispensação: ${dispErr.message}`);
-    const dispRow = disp as Dispensacao;
-
-    // 2. Para cada item, registra movimentação + insere em dispensacao_itens
-    for (const item of parsed.itens) {
-      const mov = await movimentacoesService.saida(
-        item.cd_lote,
-        item.qt_dispensada,
-        parsed.cd_paciente,
-        "Dispensação de receita",
-        parsed.cd_appointment ?? undefined,
-        parsed.cd_prescricao_id ?? undefined,
-      );
-      const { error: itemErr } = await supabase.from("dispensacao_itens").insert({
-        cd_dispensacao: dispRow.id,
+    const { data, error } = await supabase.rpc("dispensar_estoque", {
+      p_idempotency_key: parsed.idempotency_key,
+      p_paciente_id: parsed.cd_paciente,
+      p_itens: parsed.itens.map((item) => ({
         cd_lote: item.cd_lote,
         qt_dispensada: item.qt_dispensada,
-        vl_unitario: item.vl_unitario ?? null,
-      });
-      if (itemErr) {
-        // Rollback manual: remover a dispensação pai e a movimentação
-        await supabase.from("dispensacoes").delete().eq("id", dispRow.id);
-        throw new Error(`Erro ao inserir item (movimentação ${mov.id}): ${itemErr.message}`);
-      }
-    }
+      })),
+      p_appointment_id: parsed.cd_appointment ?? null,
+      p_prescricao_id: parsed.cd_prescricao_id ?? null,
+      p_observacao: parsed.ds_observacao?.trim() || null,
+    });
+    if (error) throw new Error(error.message);
 
-    return dispRow;
+    const row = Array.isArray(data) ? data[0] : data;
+    const committed = dispensacaoCommitSchema.safeParse(row);
+    if (!committed.success) {
+      throw new Error("Resposta inválida ao confirmar dispensação");
+    }
+    return committed.data;
   },
 
   async getByPaciente(pacienteId: number, days = 90): Promise<Dispensacao[]> {
@@ -609,6 +628,8 @@ export const dispensacoesService = {
 };
 
 export const receitasControladasService = {
+  integrationStatus: SNGPC_INTEGRATION_STATUS,
+
   async create(input: z.infer<typeof receitaControladaSchema>): Promise<ReceitaControlada> {
     const parsed = receitaControladaSchema.parse(input);
     const { data, error } = await supabase
@@ -640,23 +661,8 @@ export const receitasControladasService = {
     return (data ?? []) as ReceitaControlada[];
   },
 
-  /**
-   * Marca a receita como enviada ao SNGPC/ANVISA.
-   * Em produção, integraria com a API real da ANVISA;
-   * aqui apenas marcamos a flag para fins de auditoria.
-   */
-  async enviarSNGPC(receitaId: number): Promise<ReceitaControlada> {
-    const { data, error } = await supabase
-      .from("receitas_controladas")
-      .update({
-        lg_sngpc_enviado: true,
-        dt_sngpc_envio: new Date().toISOString(),
-      })
-      .eq("id", receitaId)
-      .select()
-      .single();
-    if (error) throw new Error(`Erro: ${error.message}`);
-    return data as ReceitaControlada;
+  async enviarSNGPC(_receitaId: number): Promise<never> {
+    throw new Error(SNGPC_INTEGRATION_STATUS.message);
   },
 };
 
@@ -774,3 +780,4 @@ export const pharmacyService = {
   receitasControladas: receitasControladasService,
   reports: pharmacyReportsService,
 };
+
