@@ -111,7 +111,7 @@ export default function AttendancePage() {
       });
 
       toast({ title: "Atendimento finalizado", description: "Prontuário assinado e faturamento encaminhado." });
-      navigate("/reception");
+      navigate("/records");
     } catch (err) {
       toast({ title: "Erro ao salvar", description: (err as Error).message, variant: "destructive" });
     } finally {
@@ -120,7 +120,7 @@ export default function AttendancePage() {
   };
 
   if (loading) return <LoadingState />;
-  if (error) return <ErrorState message={error} onRetry={() => navigate("/reception")} />;
+  if (error) return <ErrorState message={error} onRetry={() => navigate("/records")} />;
   if (!patient || !appointment) return <ErrorState message="Dados não encontrados" />;
 
   return (
@@ -130,7 +130,7 @@ export default function AttendancePage() {
         description="Registro do prontuário médico"
         actions={
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => navigate("/reception")}><ArrowLeft className="mr-1 h-4 w-4" />Voltar</Button>
+            <Button variant="outline" onClick={() => navigate("/records")}><ArrowLeft className="mr-1 h-4 w-4" />Voltar</Button>
             <Button onClick={handleSave} disabled={saving}>
               {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}
               {saving ? "Salvando..." : "Finalizar Atendimento"}
