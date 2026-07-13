@@ -69,13 +69,25 @@ INSERT INTO public.insurance_plans (id, company_id, insurance_company_id, name) 
   (970003, '51111111-aaaa-4111-8111-111111111111', 970001, 'Plan A'),
   (970004, '52222222-bbbb-4222-8222-222222222222', 970002, 'Plan B');
 
-INSERT INTO public.billings (id, company_id, amount) OVERRIDING SYSTEM VALUE VALUES
-  (970005, '51111111-aaaa-4111-8111-111111111111', 125.50),
-  (970006, '52222222-bbbb-4222-8222-222222222222', 250.00);
-INSERT INTO public.tiss_xml (id, company_id, billing_id, insurance_plan_id, created_at)
+INSERT INTO public.patients (id, company_id, full_name) OVERRIDING SYSTEM VALUE VALUES
+  (970009, '51111111-aaaa-4111-8111-111111111111', 'TISS Patient A'),
+  (970010, '52222222-bbbb-4222-8222-222222222222', 'TISS Patient B');
+INSERT INTO public.appointments (
+  id, company_id, patient_id, appointment_date, start_time, status
+) OVERRIDING SYSTEM VALUE VALUES
+  (970011, '51111111-aaaa-4111-8111-111111111111', 970009, CURRENT_DATE, '09:00', 'completed'),
+  (970012, '52222222-bbbb-4222-8222-222222222222', 970010, CURRENT_DATE, '10:00', 'completed');
+INSERT INTO public.billings (
+  id, company_id, patient_id, appointment_id, amount, status
+) OVERRIDING SYSTEM VALUE VALUES
+  (970005, '51111111-aaaa-4111-8111-111111111111', 970009, 970011, 125.50, 'em_aberto'),
+  (970006, '52222222-bbbb-4222-8222-222222222222', 970010, 970012, 250.00, 'em_aberto');
+INSERT INTO public.tiss_xml (
+  id, company_id, billing_id, appointment_id, patient_id, insurance_plan_id, created_at
+)
 OVERRIDING SYSTEM VALUE VALUES
-  (970007, '51111111-aaaa-4111-8111-111111111111', 970005, 970003, '2026-07-10T12:00:00Z'),
-  (970008, '52222222-bbbb-4222-8222-222222222222', 970006, 970004, '2026-07-10T13:00:00Z');
+  (970007, '51111111-aaaa-4111-8111-111111111111', 970005, 970011, 970009, 970003, '2026-07-10T12:00:00Z'),
+  (970008, '52222222-bbbb-4222-8222-222222222222', 970006, 970012, 970010, 970004, '2026-07-10T13:00:00Z');
 
 SET LOCAL ROLE authenticated;
 SET LOCAL app.test_user_id = '51111111-0000-4000-8000-000000000001';
@@ -94,6 +106,8 @@ BEGIN
   SELECT * INTO v_row
   FROM public.list_tiss_read_model_secure(2026, 7, NULL);
   IF v_row.tiss_xml_id <> 970007
+     OR v_row.appointment_id <> 970011
+     OR v_row.patient_id <> 970009
      OR v_row.insurance_plan_id <> 970003
      OR v_row.insurance_company_id <> 970001
      OR v_row.insurance_company_name <> 'Operator A'
