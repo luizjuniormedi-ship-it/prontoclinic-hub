@@ -19,6 +19,7 @@ Atualizado em 2026-07-13.
 - O replay seguinte avançou até as policies e encontrou `auth.uid()` ausente; a compatibilidade agora cria essa função apenas em banco sem implementação Supabase.
 - O replay seguinte chegou às funções operacionais de agenda e encontrou `professional_schedules` sem tabela base; foi adicionada uma migration idempotente com as janelas usadas pelo cálculo de disponibilidade.
 - O replay seguinte chegou ao fluxo de recepção e encontrou as tabelas de autorização/elegibilidade ausentes; foi adicionada a fundação operacional antes da centralização em `insurance_*`.
+- O replay seguinte chegou ao histórico oficial e identificou a ausência de `quantity_used`; a coluna foi adicionada para suportar controle de quantidade e prevenção de glosa.
 
 ## Hipotese
 

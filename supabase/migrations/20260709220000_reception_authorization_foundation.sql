@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS public.reception_authorizations (
   valid_until DATE,
   quantity_requested INTEGER NOT NULL DEFAULT 1,
   quantity_authorized INTEGER NOT NULL DEFAULT 0,
+  quantity_used INTEGER NOT NULL DEFAULT 0,
   requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   authorized_at TIMESTAMPTZ,
   denied_at TIMESTAMPTZ,
