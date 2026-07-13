@@ -5,7 +5,7 @@ Atualizado em 2026-07-13.
 ## Fato tecnico
 
 - Repositorio local: `C:\Users\Meu Computador\AppData\Local\Temp\prontoclinic-hub`.
-- Ultimo commit local conhecido: `163cd47` (`fix(auth): fail closed on unverified two-factor flow`).
+- Ultimo commit local conhecido: `4ce786f` (`docs(ai): record two-factor fail-closed fix`).
 - Release funcional conhecida na VPS: `37199ee`.
 - A VPS executou build, migracoes e reload do Nginx na fase 1; a mensagem final de falha do wrapper foi causada por CRLF residual no shell remoto, nao por falha da publicacao.
 - PostgreSQL e backend precisam de nova verificacao operacional apos a ultima publicacao.
