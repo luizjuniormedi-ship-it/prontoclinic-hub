@@ -60,3 +60,4 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - A auditoria do branch atual confirma migrations para `price_tables`, `professional_payments`, `exames_lab_catalogo`, `scheduling_waitlist`, `scheduling_blocks`, `reception_authorizations`, `reception_eligibility_checks` e compatibilidade operacional de TISS.
 - O workflow `.github/workflows/ci.yml` permite `workflow_dispatch`, mas ainda não há execução verde associada ao head `c873dac`.
 - O status Vercel do head está em falha por limite de build (`build-rate-limit`); esse bloqueio externo não foi tratado como aprovação ou falha do gate de testes.
+- O workflow manual `F1 runtime gate` foi adicionado em `.github/workflows/f1-runtime-gate.yml`; ele falha explicitamente quando algum Secret obrigatório estiver ausente e não imprime valores sensíveis.

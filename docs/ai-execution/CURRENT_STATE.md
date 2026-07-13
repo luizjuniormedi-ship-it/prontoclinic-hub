@@ -22,6 +22,7 @@ Atualizado em 2026-07-13.
 - O replay seguinte chegou ao histórico oficial e identificou a ausência de `quantity_used`; a coluna foi adicionada para suportar controle de quantidade e prevenção de glosa.
 - A validação local da rodada `c873dac` passou com 476 testes, cobertura completa dentro dos thresholds, type-check, build e lint sem erros.
 - O status remoto do commit atual não possui execução GitHub Actions associada; o único status externo reportado é Vercel em falha por limite de build. Isso não constitui falha do código nem substitui o CI do repositório.
+- Foi criado o workflow manual `.github/workflows/f1-runtime-gate.yml`; ele exige Secrets protegidos para dois usuários de empresas distintas e executa somente o runner de isolamento, sem service role e sem DataSIGH.
 
 ## Hipotese
 
@@ -37,4 +38,4 @@ O sistema nao esta apto para producao enquanto os testes P0 abaixo nao forem exe
 
 ## Proxima tarefa executavel
 
-Obter execução verde do CI para `c873dac`; depois executar healthcheck pós-deploy, validar autenticação/RBAC e criar evidência negativa de isolamento por `company_id`.
+Executar o workflow manual `F1 runtime gate` com Secrets homologados; depois registrar a evidência negativa de isolamento por `company_id`, validar autenticação/RBAC e fechar os gates de rollback.
