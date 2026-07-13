@@ -315,7 +315,7 @@ jobs:
           retention-days: 30
 
       - name: Install Playwright
-        run: npx playwright install --with-deps chromium firefox webkit
+        run: npx playwright install --with-deps chromium
 
       - name: Run E2E tests
         run: npm run test:e2e -- --project=chromium e2e/auth.spec.ts e2e/operational-smoke.spec.ts e2e/financeiro.spec.ts e2e/a11y.spec.ts
