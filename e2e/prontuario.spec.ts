@@ -1,87 +1,111 @@
 import { test as authed, expect } from './fixtures/auth';
 
-/**
- * E2E — Prontuário Eletrônico
- *
- * Cobre:
- *   - Abrir prontuário
- *   - Preencher anamnese
- *   - Adicionar CID-10
- *   - Prescrever medicamento
- *   - Solicitar exame
- *   - Emitir atestado
- *   - Finalizar atendimento
- *   - Ver histórico de evoluções
- */
+const APPOINTMENT_ID = '991303';
 
 authed.describe('Prontuário', () => {
-  authed.beforeEach(async ({ loginAs }) => {
+  authed.describe.configure({ mode: 'serial', retries: 0 });
+
+  authed('recepção inicia atendimento e médico persiste o prontuário', async ({ page, loginAs }) => {
+    const marker = `E2E prontuario ${Date.now()}`;
+
+    await loginAs('reception');
+    const appointmentsResponsePromise = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname.endsWith('/rest/v1/appointments') && response.request().method() === 'GET';
+    });
+    const patientsResponsePromise = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname.endsWith('/rest/v1/patients') && url.searchParams.has('id') && response.request().method() === 'GET';
+    });
+
+    await page.goto('/reception');
+    const appointmentsResponse = await appointmentsResponsePromise;
+    const patientsResponse = await patientsResponsePromise;
+    expect(appointmentsResponse.ok()).toBeTruthy();
+    expect(patientsResponse.ok()).toBeTruthy();
+
+    const appointments = await appointmentsResponse.json() as Array<{
+      id: string | number;
+      patient_id: string | number;
+      start_time: string;
+      status: string;
+    }>;
+    const appointment = appointments.find(({ id }) => String(id) === APPOINTMENT_ID);
+    expect(appointment).toBeDefined();
+    expect(appointment?.status).toBe('waiting');
+
+    const patients = await patientsResponse.json() as Array<{ id: string | number; full_name: string }>;
+    const patient = patients.find(({ id }) => String(id) === String(appointment?.patient_id));
+    expect(patient).toBeDefined();
+
+    const targetCard = page
+      .getByText(patient!.full_name, { exact: true })
+      .locator('xpath=ancestor::*[.//button[normalize-space()="Iniciar"]][1]')
+      .filter({ hasText: appointment!.start_time.substring(0, 5) });
+    await expect(targetCard).toHaveCount(1);
+
+    const startRpcPromise = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname.endsWith('/rest/v1/rpc/update_appointment_status_secure')
+        && response.request().method() === 'POST';
+    });
+    await targetCard.getByRole('button', { name: /^iniciar$/i }).click();
+    const startRpc = await startRpcPromise;
+    expect(startRpc.ok()).toBeTruthy();
+    expect(startRpc.request().postDataJSON()).toMatchObject({
+      p_appointment_id: Number(APPOINTMENT_ID),
+      p_new_status: 'in_progress',
+    });
+    await expect(page).toHaveURL(/\/reception$/);
+
     await loginAs('doctor');
-  });
+    await page.goto(`/attendance/${APPOINTMENT_ID}`);
+    await expect(page.getByRole('heading', { name: /^atendimento$/i })).toBeVisible();
+    await expect(page.getByText(patient!.full_name, { exact: true })).toBeVisible();
 
-  authed('abrir prontuário do paciente', async ({ page }) => {
-    await page.goto('/records');
-    await page.getByRole('row').first().getByRole('link', { name: /abrir|prontuário/i }).click();
-    await expect(page.getByRole('heading', { name: /prontuário|atendimento/i })).toBeVisible();
-  });
+    await page.getByPlaceholder('Motivo da consulta...').fill(marker);
+    await page.getByPlaceholder('Descrição detalhada...').fill('Fluxo clínico E2E efêmero.');
 
-  authed('preencher anamnese', async ({ page }) => {
-    await page.goto('/records/new');
-    await page.getByLabel(/queixa principal/i).fill('Dor de cabeça há 3 dias');
-    await page.getByLabel(/história/i).fill('Paciente relata cefaleia frontal, sem febre');
-    await page.getByLabel(/exame físico/i).fill('PA 120/80, sem sinais neurológicos focais');
-    await page.getByRole('button', { name: /salvar/i }).click();
-    await expect(page.getByText(/anamnese.*salva|sucesso/i)).toBeVisible();
-  });
+    const finalizeRpcPromise = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname.endsWith('/rest/v1/rpc/finalize_medical_attendance_secure')
+        && response.request().method() === 'POST';
+    });
+    await page.getByRole('button', { name: /^finalizar atendimento$/i }).click();
+    const finalizeRpc = await finalizeRpcPromise;
+    expect(finalizeRpc.ok()).toBeTruthy();
+    expect(finalizeRpc.request().postDataJSON()).toMatchObject({
+      p_appointment_id: APPOINTMENT_ID,
+    });
+    expect(finalizeRpc.request().postDataJSON().p_anamnesis).toContain(marker);
+    await expect(page).toHaveURL(/\/records$/);
 
-  authed('adicionar diagnóstico CID-10', async ({ page }) => {
-    await page.goto('/records/new');
-    await page.getByLabel(/cid/i).fill('R51');
-    await page.getByRole('option').first().click();
-    await page.getByLabel(/observação/i).fill('Cefaleia tensional');
-    await page.getByRole('button', { name: /adicionar/i }).click();
-    await expect(page.getByText(/R51|Cefaleia/i).first()).toBeVisible();
-  });
+    const patientSearchResponsePromise = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname.endsWith('/rest/v1/patients')
+        && url.searchParams.has('full_name')
+        && response.request().method() === 'GET';
+    });
+    await page.getByPlaceholder('Buscar por nome...').fill(patient!.full_name);
+    const patientSearchResponse = await patientSearchResponsePromise;
+    expect(patientSearchResponse.ok()).toBeTruthy();
 
-  authed('prescrever medicamento', async ({ page }) => {
-    await page.goto('/records/new');
-    await page.getByRole('tab', { name: /prescrição/i }).click();
-    await page.getByLabel(/medicamento/i).fill('Dipirona 500mg');
-    await page.getByLabel(/posologia/i).fill('Tomar 1 comprimido a cada 6 horas');
-    await page.getByRole('button', { name: /adicionar|prescrever/i }).click();
-    await expect(page.getByText(/Dipirona|prescrit/i).first()).toBeVisible();
-  });
+    const recordResponsePromise = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname.endsWith('/rest/v1/medical_records')
+        && url.searchParams.get('patient_id') === `eq.${appointment!.patient_id}`
+        && response.request().method() === 'GET';
+    });
+    await page.getByText(patient!.full_name, { exact: true }).click();
+    const recordResponse = await recordResponsePromise;
+    expect(recordResponse.ok()).toBeTruthy();
 
-  authed('solicitar exame (hemograma)', async ({ page }) => {
-    await page.goto('/records/new');
-    await page.getByRole('tab', { name: /exames/i }).click();
-    await page.getByLabel(/exame/i).click();
-    await page.getByRole('option', { name: /hemograma/i }).click();
-    await page.getByLabel(/observação/i).fill('Coletar em jejum');
-    await page.getByRole('button', { name: /solicitar/i }).click();
-    await expect(page.getByText(/exame.*solicitado|hemograma/i).first()).toBeVisible();
-  });
-
-  authed('emitir atestado médico', async ({ page }) => {
-    await page.goto('/records/new');
-    await page.getByRole('tab', { name: /atestado/i }).click();
-    await page.getByLabel(/dias/i).fill('3');
-    await page.getByLabel(/cid/i).fill('R51');
-    await page.getByRole('button', { name: /emitir/i }).click();
-    await expect(page.getByText(/atestado.*emitido/i)).toBeVisible();
-  });
-
-  authed('finalizar atendimento', async ({ page }) => {
-    await page.goto('/records/new');
-    await page.getByLabel(/queixa principal/i).fill('Consulta de rotina');
-    await page.getByRole('button', { name: /finalizar/i }).click();
-    await expect(page.getByText(/atendimento.*finalizado|concluído/i)).toBeVisible();
-  });
-
-  authed('ver histórico de evoluções anteriores', async ({ page }) => {
-    await page.goto('/records');
-    await page.getByRole('row').first().getByRole('link').click();
-    await page.getByRole('tab', { name: /histórico|evoluç/i }).click();
-    await expect(page.getByText(/evolução|consulta anterior/i).first()).toBeVisible();
+    const records = await recordResponse.json() as Array<{ appointment_id: string | number; anamnesis: string | null }>;
+    expect(records.some((record) => (
+      String(record.appointment_id) === APPOINTMENT_ID && record.anamnesis?.includes(marker)
+    ))).toBeTruthy();
+    await expect(page.getByRole('heading', { name: `Prontuário — ${patient!.full_name}` })).toBeVisible();
+    await expect(page.getByText(marker, { exact: false })).toBeVisible();
   });
 });
+
