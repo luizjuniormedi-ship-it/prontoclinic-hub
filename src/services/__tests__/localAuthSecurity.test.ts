@@ -99,8 +99,28 @@ describe("local auth server security invariants", () => {
       "list_tiss_read_model_secure: { module: 'faturamento', action: 'can_view' }",
     );
     expect(source).toContain(
+      "list_tiss_glosas_read_secure: { module: 'faturamento', action: 'can_view' }",
+    );
+    expect(source).toContain(
+      "list_tiss_protocols_read_secure: { module: 'faturamento', action: 'can_view' }",
+    );
+    expect(source).toContain(
       "list_billing_financial_summary_secure: { module: 'financeiro', action: 'can_view' }",
     );
+    expect(source).toContain("const permissions = await loadRolePerms(role)");
+    expect(source).toContain("if (!rule?.[required.action])");
+    expect(source).toContain("const CENTRAL_PERMISSION_RPCS = new Set([");
+    expect(source).toContain(
+      "role === 'admin' && !CENTRAL_PERMISSION_RPCS.has(functionName)",
+    );
+  });
+
+  it("nao expoe mensagens PostgreSQL nas respostas HTTP", () => {
+    expect(source).toContain("function databaseError(res, scope, context, error");
+    expect(source).toContain("message: 'Database request failed'");
+    expect(source).toContain("console.error(`[${scope}]`, context, error)");
+    expect(source).not.toContain("{ error: e.message");
+    expect(source).toContain("message: 'Internal server error'");
   });
 
   it("executa REST e RPC sob claims e papel PostgreSQL autenticado", () => {

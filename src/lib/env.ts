@@ -57,8 +57,6 @@ const envSchema = z.object({
     ),
   VITE_DICOM_BUCKET: z.string().optional(),
   VITE_TISS_VERSION: z.string().default("3.05.00"),
-  VITE_TISS_CERT_PATH: z.string().optional(),
-  VITE_TISS_CERT_PASSWORD: z.string().optional(),
   VITE_TISS_AMBIENTE: z.enum(["HOMOLOGACAO", "PRODUCAO"]).default("HOMOLOGACAO"),
 });
 

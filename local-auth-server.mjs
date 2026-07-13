@@ -286,11 +286,18 @@ const RPC_PERMISSIONS = {
   update_billing_status_secure: { module: 'faturamento', action: 'can_edit' },
   list_billing_production_secure: { module: 'faturamento', action: 'can_view' },
   list_tiss_read_model_secure: { module: 'faturamento', action: 'can_view' },
+  list_tiss_glosas_read_secure: { module: 'faturamento', action: 'can_view' },
+  list_tiss_protocols_read_secure: { module: 'faturamento', action: 'can_view' },
   list_billing_financial_summary_secure: { module: 'financeiro', action: 'can_view' },
   get_billing_balance_secure: { module: 'financeiro', action: 'can_view' },
   record_billing_receipt_secure: { module: 'financeiro', action: 'can_create' },
   reverse_billing_receipt_secure: { module: 'financeiro', action: 'can_edit' },
 };
+
+const CENTRAL_PERMISSION_RPCS = new Set([
+  'list_tiss_glosas_read_secure',
+  'list_tiss_protocols_read_secure',
+]);
 
 async function authorizeRpc(profile, functionName) {
   const required = RPC_PERMISSIONS[functionName];
@@ -298,7 +305,7 @@ async function authorizeRpc(profile, functionName) {
   if (!profile || !profile.lg_ativo) return { ok: false, reason: 'usuario invalido/inativo' };
 
   const role = (profile.role_name || '').toLowerCase();
-  if (role === 'admin') {
+  if (role === 'admin' && !CENTRAL_PERMISSION_RPCS.has(functionName)) {
     return { ok: true };
   }
 
@@ -335,6 +342,15 @@ function cors(req, res) {
 function json(res, data, status = 200) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
+}
+
+function databaseError(res, scope, context, error, code = 'PGRST000') {
+  console.error(`[${scope}]`, context, error);
+  return json(res, {
+    error: 'database_error',
+    message: 'Database request failed',
+    code,
+  }, 400);
 }
 
 function parseBody(req, maxBytes = 1024 * 1024) {
@@ -620,8 +636,13 @@ const server = createServer(async (req, res) => {
             : result.rows[0].result;
         return json(res, val);
       } catch (e) {
-        console.error('[RPC_ERROR]', { function: fnName, userId: payload.sub, message: e.message });
-        return json(res, { error: e.message, code: 'PGRST202' }, 400);
+        return databaseError(
+          res,
+          'RPC_ERROR',
+          { function: fnName, userId: payload.sub },
+          e,
+          'PGRST202',
+        );
       }
     }
 
@@ -830,7 +851,7 @@ const server = createServer(async (req, res) => {
           }
           return json(res, result.rows);
         } catch (e) {
-          return json(res, { error: e.message, code: 'PGRST000' }, 400);
+          return databaseError(res, 'REST_READ_ERROR', { table, userId: payload.sub }, e);
         }
       }
 
@@ -863,7 +884,7 @@ const server = createServer(async (req, res) => {
           }
           return json(res, {}, 201);
         } catch (e) {
-          return json(res, { error: e.message }, 400);
+          return databaseError(res, 'REST_INSERT_ERROR', { table, userId: payload.sub }, e);
         }
       }
 
@@ -889,7 +910,7 @@ const server = createServer(async (req, res) => {
           );
           return json(res, result.rows[0] || {});
         } catch (e) {
-          return json(res, { error: e.message }, 400);
+          return databaseError(res, 'REST_UPDATE_ERROR', { table, userId: payload.sub }, e);
         }
       }
     }
@@ -899,7 +920,14 @@ const server = createServer(async (req, res) => {
 
   } catch (err) {
     console.error('[ERROR]', err);
-    json(res, { error: err.message }, err.statusCode || 500);
+    const status = Number.isInteger(err?.statusCode) ? err.statusCode : 500;
+    json(
+      res,
+      status < 500
+        ? { error: 'request_error', message: err.message }
+        : { error: 'internal_error', message: 'Internal server error' },
+      status,
+    );
   }
 });
 

@@ -36,7 +36,7 @@ import { insuranceCompanyService } from "@/services/insuranceService";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export interface TissLoteListProps {
-  companyId: string;
+  companyId?: string;
   mes: number;
   ano: number;
   filterConvenio: number | "ALL";
@@ -84,7 +84,6 @@ const TissRow = memo(function TissRow({ fatura, onSelectXml }: TissRowProps) {
 TissRow.displayName = "TissRow";
 
 function TissLoteListImpl({
-  companyId,
   mes,
   ano,
   filterConvenio,
@@ -92,14 +91,13 @@ function TissLoteListImpl({
   onSelectXml,
 }: TissLoteListProps) {
   const { data: faturas, isLoading, isError, refetch } = useQuery({
-    queryKey: ["tiss-xml", companyId, mes, ano, filterConvenio],
+    queryKey: ["tiss-xml", mes, ano, filterConvenio],
     queryFn: () =>
       tissService.listFaturas({
         mes,
         ano,
         insurance_company_id: filterConvenio === "ALL" ? undefined : filterConvenio,
       }),
-    enabled: !!companyId,
   });
 
   const { data: convenios } = useQuery({

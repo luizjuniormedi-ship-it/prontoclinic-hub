@@ -193,6 +193,10 @@ jobs:
           psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260712235000_tiss_read_model.sql
           echo "Running F1 runtime TISS read-model gate"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_tiss_read_model_gate.sql
+          echo "Applying TISS glosa/protocol read models"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260712236000_tiss_glosa_protocol_read_models.sql
+          echo "Running F1 runtime TISS glosa/protocol read gate"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_tiss_glosa_protocol_read_gate.sql
 
       - name: Upload F1 evidence
         if: always()

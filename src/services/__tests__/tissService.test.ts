@@ -70,6 +70,143 @@ describe("tissService.listFaturas", () => {
       message: "DB indisponivel",
     });
   });
+
+  it("rejeita DTO de guia com ID, valor ou data essencial invalida sem ecoar o payload", async () => {
+    (supabase.rpc as any).mockResolvedValue({
+      data: [{
+        tiss_xml_id: 0,
+        billing_id: 20,
+        appointment_id: null,
+        patient_id: null,
+        insurance_plan_id: 30,
+        insurance_company_id: 40,
+        insurance_company_name: "Operator A",
+        insurance_plan_name: "Plan A",
+        billing_amount: "valor-secreto-invalido",
+        tiss_created_at: "data-invalida",
+      }],
+      error: null,
+    });
+
+    await expect(tissService.listFaturas()).rejects.toThrow("Resposta TISS invalida para guias.");
+    await expect(tissService.listFaturas()).rejects.not.toThrow("valor-secreto-invalido");
+  });
+});
+
+describe("tissService tenant-safe read models", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("lista glosas por RPC sem company_id e descarta campos extras", async () => {
+    (supabase.rpc as any).mockResolvedValue({
+      data: [{
+        id: 1,
+        tiss_xml_id: 2,
+        billing_id: 3,
+        denial_code: "7101",
+        denial_reason: "Motivo",
+        denial_amount: "12.50",
+        denial_date: "2026-07-12",
+        appeal_sent: false,
+        appeal_date: null,
+        appeal_protocol: null,
+        appeal_status: "PENDENTE",
+        procedure_code: null,
+        executor_code: null,
+        created_at: "2026-07-12T12:00:00Z",
+        updated_at: "2026-07-12T12:00:00Z",
+        company_id: "tenant-canary",
+        bl_xml_recurso: "secret-canary",
+      }],
+      error: null,
+    });
+
+    const [row] = await tissService.listGlosas(2);
+
+    expect(supabase.rpc).toHaveBeenCalledWith("list_tiss_glosas_read_secure", {
+      p_tiss_xml_id: 2,
+    });
+    expect(row.denial_amount).toBe(12.5);
+    expect(row).not.toHaveProperty("company_id");
+    expect(row).not.toHaveProperty("bl_xml_recurso");
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it("lista protocolos sem argumentos e elimina todos os canarios secretos", async () => {
+    (supabase.rpc as any).mockResolvedValue({
+      data: [{
+        id: 10,
+        insurance_company_id: 20,
+        insurance_company_name: "Operator A",
+        tiss_version: "3.05.00",
+        environment: "HOMOLOGACAO",
+        active: true,
+        last_test_at: null,
+        last_test_status: null,
+        created_at: "2026-07-12T12:00:00Z",
+        updated_at: "2026-07-12T12:00:00Z",
+        company_id: "tenant-canary",
+        ds_endpoint: "https://secret.invalid",
+        ds_certificado_senha: "secret-canary",
+        ds_observacao: "private-note",
+      }],
+      error: null,
+    });
+
+    const [row] = await tissService.listProtocols();
+
+    expect(supabase.rpc).toHaveBeenCalledWith("list_tiss_protocols_read_secure");
+    expect(row.insurance_company_name).toBe("Operator A");
+    expect(row).not.toHaveProperty("company_id");
+    expect(row).not.toHaveProperty("ds_endpoint");
+    expect(row).not.toHaveProperty("ds_certificado_senha");
+    expect(row).not.toHaveProperty("ds_observacao");
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it("rejeita glosa com valor, data ou status fora do contrato", async () => {
+    (supabase.rpc as any).mockResolvedValue({
+      data: [{
+        id: 1,
+        tiss_xml_id: 2,
+        billing_id: null,
+        denial_code: null,
+        denial_reason: null,
+        denial_amount: -1,
+        denial_date: "2026-02-30",
+        appeal_sent: false,
+        appeal_date: null,
+        appeal_protocol: null,
+        appeal_status: "DESCONHECIDO",
+        procedure_code: null,
+        executor_code: null,
+        created_at: "2026-07-12T12:00:00Z",
+        updated_at: "2026-07-12T12:00:00Z",
+      }],
+      error: null,
+    });
+
+    await expect(tissService.listGlosas()).rejects.toThrow("Resposta TISS invalida para glosas.");
+  });
+
+  it("rejeita protocolo com IDs, ambiente ou datas essenciais invalidos", async () => {
+    (supabase.rpc as any).mockResolvedValue({
+      data: [{
+        id: 10,
+        insurance_company_id: -20,
+        insurance_company_name: "Operator A",
+        tiss_version: "3.05.00",
+        environment: "SANDBOX",
+        active: true,
+        last_test_at: "ontem",
+        last_test_status: null,
+        created_at: "2026-07-12T12:00:00Z",
+        updated_at: "2026-07-12T12:00:00Z",
+      }],
+      error: null,
+    });
+
+    await expect(tissService.listProtocols()).rejects.toThrow("Resposta TISS invalida para protocolos.");
+  });
 });
 
 describe("tissService safety gates", () => {
@@ -132,6 +269,13 @@ describe("tissService safety gates", () => {
   it("bloqueia enviarRecurso antes de qualquer fetch ou acesso Supabase", async () => {
     await expect(tissService.enviarRecurso(10, "<recurso />")).rejects.toThrow(
       "Envio de recurso TISS bloqueado no navegador"
+    );
+    expectNoBrowserSideEffects();
+  });
+
+  it("bloqueia a geracao de XML de recurso antes de qualquer leitura direta", async () => {
+    await expect(tissService.gerarXMLRecurso(10)).rejects.toThrow(
+      "Geracao de recurso TISS bloqueada no navegador"
     );
     expectNoBrowserSideEffects();
   });

@@ -25,22 +25,17 @@ import {
 } from "@/components/ui/select";
 import { Settings2, RefreshCw } from "lucide-react";
 import { tissService, type TissReadModel } from "@/services/tissService";
-import { useAuth } from "@/hooks/useAuth";
 import { TissStats } from "./TissStats";
 import { TissLoteList } from "./TissLoteList";
-import { TissGuiaForm } from "./TissGuiaForm";
+import { TissGlosaList, TissGuiaForm } from "./TissGuiaForm";
 import { TissXmlPreview } from "./TissXmlPreview";
 
 export function TissManager() {
-  const { user } = useAuth();
-  // companyId era acessado do useAuth legado; hoje vem do user.company_id
-  const companyId = user?.company_id ?? "";
   const hoje = new Date();
   const [mes, setMes] = useState(hoje.getMonth() + 1);
   const [ano, setAno] = useState(hoje.getFullYear());
   const [filterConvenio, setFilterConvenio] = useState<number | "ALL">("ALL");
   const [selectedXml, setSelectedXml] = useState<TissReadModel | null>(null);
-  const [glosaDialogOpen, setGlosaDialogOpen] = useState(false);
   const [protocolDialogOpen, setProtocolDialogOpen] = useState(false);
 
   // Listen to cross-component mes-change events from TissLoteList
@@ -55,7 +50,6 @@ export function TissManager() {
 
   const handleSelectXml = (xml: TissReadModel) => {
     setSelectedXml(xml);
-    setGlosaDialogOpen(false);
   };
 
   return (
@@ -70,8 +64,8 @@ export function TissManager() {
         <div className="flex gap-2">
           <Button
             variant="outline"
-            disabled
-            title="Protocolos TISS indisponiveis ate existir backend seguro"
+            onClick={() => setProtocolDialogOpen(true)}
+            title="Consultar metadados dos protocolos"
           >
             <Settings2 className="h-4 w-4 mr-1" />Protocolos
           </Button>
@@ -106,7 +100,6 @@ export function TissManager() {
 
         <TabsContent value="guias" className="space-y-3">
           <TissLoteList
-            companyId={companyId}
             mes={mes}
             ano={ano}
             filterConvenio={filterConvenio}
@@ -117,26 +110,23 @@ export function TissManager() {
 
         <TabsContent value="glosas" className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Glosas em aberto. Recursos permanecem indisponiveis ate existir backend TISS seguro.
+            Todas as glosas. Recursos permanecem indisponiveis ate existir backend TISS seguro.
           </p>
+          <TissGlosaList />
         </TabsContent>
       </Tabs>
 
       {/* Modal de Detalhes (preview) */}
       <TissXmlPreview
         xml={selectedXml}
-        open={!!selectedXml && !glosaDialogOpen}
+        open={!!selectedXml}
         onOpenChange={(o) => !o && setSelectedXml(null)}
       />
 
       {/* Dialogs de formularios (glosa + protocolo) */}
       <TissGuiaForm
-        glosaDialogOpen={glosaDialogOpen}
-        setGlosaDialogOpen={setGlosaDialogOpen}
-        selectedXml={selectedXml}
         protocolDialogOpen={protocolDialogOpen}
         setProtocolDialogOpen={setProtocolDialogOpen}
-        companyId={companyId}
       />
     </div>
   );

@@ -133,6 +133,16 @@ jobs:
           export PGPASSWORD=postgres
           psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_tiss_read_model_gate.sql
 
+      - name: Apply TISS glosa and protocol read models
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/migrations/20260712236000_tiss_glosa_protocol_read_models.sql
+
+      - name: Run TISS glosa and protocol read gate
+        run: |
+          export PGPASSWORD=postgres
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f supabase/tests/f1_runtime_tiss_glosa_protocol_read_gate.sql
+
       - name: Type check
         run: npm run type-check
 
@@ -140,7 +150,16 @@ jobs:
         run: npm run test:contract:cors
 
       - name: Seed ephemeral auth users
-        run: psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres -d postgres -f scripts/ci-seed-e2e.sql
+        run: |
+          psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres -d postgres -f scripts/ci-seed-e2e.sql
+          psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres -d postgres <<'SQL'
+          INSERT INTO public.role_permissions (role_id, module, can_view)
+          SELECT id, 'faturamento', TRUE
+            FROM public.roles
+           WHERE name = 'admin'
+          ON CONFLICT (role_id, module) DO UPDATE
+            SET can_view = EXCLUDED.can_view;
+          SQL
         env:
           PGPASSWORD: postgres
 
@@ -193,6 +212,19 @@ jobs:
           jq 'if type == "array" then {rows:length, error:null} else {rows:null, error:(.error // .message // "resposta invalida")} end' /tmp/financial-smoke.json
           test "$financial_status" = "200"
           jq -e 'type == "array"' /tmp/financial-smoke.json >/dev/null
+          for rpc in list_tiss_glosas_read_secure list_tiss_protocols_read_secure; do
+            response_file="/tmp/${rpc}.json"
+            rpc_status=$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+              -X POST "http://127.0.0.1:8000/rest/v1/rpc/${rpc}" \
+              -H 'Content-Type: application/json' \
+              -H 'apikey: ci-local-auth' \
+              -H "Authorization: Bearer $token" \
+              --data '{}')
+            echo "${rpc}_smoke_http=$rpc_status"
+            jq 'if type == "array" then {rows:length} else {error:(.error // .message // "resposta invalida")} end' "$response_file"
+            test "$rpc_status" = "200"
+            jq -e 'type == "array"' "$response_file" >/dev/null
+          done
 
       - name: Lint
         run: npm run lint

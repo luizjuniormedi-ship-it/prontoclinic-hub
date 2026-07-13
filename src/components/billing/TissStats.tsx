@@ -17,7 +17,7 @@ export interface TissStatsProps {
 }
 
 export function TissStats({ ano }: TissStatsProps) {
-  const { data: rows, isError, refetch } = useQuery({
+  const { data: rows, isLoading, isError, refetch } = useQuery({
     queryKey: ["tiss-read-model-stats", ano],
     queryFn: () => tissService.listFaturas({ ano }),
   });
@@ -43,7 +43,14 @@ export function TissStats({ ano }: TissStatsProps) {
         </Alert>
       )}
 
-      {!isError && (
+      {isLoading && !isError && (
+        <div role="status" aria-live="polite" className="flex min-h-24 items-center justify-center text-sm text-muted-foreground">
+          <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+          Carregando indicadores TISS...
+        </div>
+      )}
+
+      {!isLoading && !isError && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Card>
             <CardHeader className="p-3 pb-1">
