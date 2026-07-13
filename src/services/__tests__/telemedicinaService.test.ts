@@ -95,7 +95,8 @@ describe("telemedicinaService.criarSala", () => {
       single: vi.fn().mockResolvedValue({ data: salaFake, error: null }),
       update: vi.fn().mockReturnThis(),
     };
-    (supabase.from as any).mockReturnValueOnce(chain);
+    // A criação confirmada atualiza a mesma sala após a resposta do Daily.
+    (supabase.from as any).mockReturnValue(chain);
 
     // Mock fetch para Daily.co (criar room)
     fetchMock.mockResolvedValueOnce({
@@ -107,6 +108,7 @@ describe("telemedicinaService.criarSala", () => {
 
     const result = await telemedicinaService.criarSala(1);
     expect(result).toBeDefined();
+    expect(result.ds_url_daily).toBe("https://test.daily.co/pm-1");
     expect(supabase.rpc).toHaveBeenCalledWith("criar_sala_telemedicina", { p_appointment_id: 1 });
   });
 
