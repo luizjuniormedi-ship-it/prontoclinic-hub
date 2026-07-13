@@ -71,3 +71,4 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - Validação desta rodada: `git diff --check` aprovado. `npm run type-check` não iniciou o TypeScript por `EPERM: lstat 'C:\\Users\\Meu Computador'`; não registrar como aprovação de compilação.
 - Commit seguinte: `a822a7c`; os botões Editar de Empresas/Unidades passaram a persistir atualizações, com escopo de tenant na unidade. `git diff --check` permaneceu aprovado.
 - Commit seguinte: `7eeeb66`; Especialidades agora possuem criação e edição persistentes. `git diff --check` permaneceu aprovado; compilação continua aguardando ambiente Node funcional.
+- Commit seguinte: `4657b75`; a ação de perfis em Configurações agora abre o gerenciador real. `git diff --check` aprovado.
