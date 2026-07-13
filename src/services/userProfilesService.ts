@@ -32,6 +32,17 @@ export const userProfileSchema = z.object({
 
 export type UserProfileInput = z.infer<typeof userProfileSchema>;
 
+const userProfileUpdateSchema = userProfileSchema
+  .pick({
+    full_name: true,
+    role_id: true,
+    primary_unit_id: true,
+    phone: true,
+    cpf: true,
+    lg_ativo: true,
+  })
+  .partial();
+
 export interface UserProfileWithEmail {
   id: string;
   email: string;
@@ -97,13 +108,12 @@ export const userProfilesService = {
   },
 
   async update(id: string, input: Partial<UserProfileInput>): Promise<UserProfileWithEmail> {
-    const parsed = userProfileSchema.partial().parse(input);
-    const { data, error } = await supabase
-      .from("user_profiles")
-      .update(parsed)
-      .eq("id", id)
-      .select()
-      .single();
+    const targetId = z.string().uuid().parse(id);
+    const parsed = userProfileUpdateSchema.parse(input);
+    const { data, error } = await supabase.rpc("update_user_profile_secure", {
+      p_target_user_id: targetId,
+      p_patch: parsed,
+    });
     if (error) throw new Error(`Erro: ${error.message}`);
     return data as UserProfileWithEmail;
   },
