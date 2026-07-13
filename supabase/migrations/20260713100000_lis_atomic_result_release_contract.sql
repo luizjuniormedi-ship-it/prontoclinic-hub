@@ -15,6 +15,18 @@ BEGIN
 END
 $role$;
 
+DO $role$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'lis_data_owner') THEN
+    CREATE ROLE lis_data_owner
+      NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+  ELSE
+    ALTER ROLE lis_data_owner
+      NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+  END IF;
+END
+$role$;
+
 ALTER TABLE public.exames_lab_pedido_itens
   ADD COLUMN IF NOT EXISTS company_id UUID;
 ALTER TABLE public.exames_lab_resultado
@@ -157,6 +169,14 @@ CREATE TABLE IF NOT EXISTS public.lis_result_mutations (
   CONSTRAINT lis_result_mutations_company_idempotency_uq
     UNIQUE (company_id, idempotency_key)
 );
+
+GRANT USAGE, CREATE ON SCHEMA public TO lis_data_owner;
+ALTER TABLE public.exames_lab_pedido OWNER TO lis_data_owner;
+ALTER TABLE public.exames_lab_pedido_itens OWNER TO lis_data_owner;
+ALTER TABLE public.exames_lab_resultado OWNER TO lis_data_owner;
+ALTER TABLE public.exames_lab_alerta_critico OWNER TO lis_data_owner;
+ALTER TABLE public.lis_result_mutations OWNER TO lis_data_owner;
+REVOKE CREATE ON SCHEMA public FROM lis_data_owner;
 
 ALTER TABLE public.exames_lab_pedido ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.exames_lab_pedido FORCE ROW LEVEL SECURITY;
