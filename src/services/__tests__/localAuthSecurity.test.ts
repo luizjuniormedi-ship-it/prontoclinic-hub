@@ -134,7 +134,10 @@ describe("local auth server security invariants", () => {
     expect(source).toContain(
       "list_billing_financial_summary_secure: { module: 'financeiro', action: 'can_view' }",
     );
-    expect(source).toContain("const permissions = await loadRolePerms(role)");
+    expect(source).toContain(
+      "const permissions = await loadRolePerms(role, required.action);",
+    );
+    expect(source).toContain("const cacheable = action === 'can_view';");
     expect(source).toContain("if (!rule?.[required.action])");
     expect(source).toContain("const CENTRAL_PERMISSION_RPCS = new Set([");
     expect(source).toContain(
