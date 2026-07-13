@@ -96,10 +96,20 @@ jobs:
           path: coverage/
           retention-days: 30
 
+      - name: E2E credential gate
+        run: |
+          if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
+            echo "E2E skipped: configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in repository Actions secrets." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "E2E enabled: Supabase runtime secrets are available." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Install Playwright
+        if: ${{ env.VITE_SUPABASE_URL != '' && env.VITE_SUPABASE_ANON_KEY != '' }}
         run: npx playwright install --with-deps chromium firefox webkit
 
       - name: Run E2E tests
+        if: ${{ env.VITE_SUPABASE_URL != '' && env.VITE_SUPABASE_ANON_KEY != '' }}
         run: npm run test:e2e
         env:
           CI: true
@@ -130,7 +140,7 @@ jobs:
           retention-days: 30
 
       - name: Fail if critical a11y violations
-        if: always()
+        if: ${{ always() && env.VITE_SUPABASE_URL != '' && env.VITE_SUPABASE_ANON_KEY != '' }}
         run: |
           if [ -f test-results/results.json ]; then
             test -f scripts/check-a11y-violations.mjs
