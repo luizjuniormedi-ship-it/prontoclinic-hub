@@ -202,9 +202,9 @@ SET encrypted_password = crypt(
 )
 WHERE email != 'admin@prontomedic.local';
 
--- Admin mantÃ©m senha conhecida (trocar manualmente depois)
+-- Admin deve receber uma senha temporÃ¡ria por canal seguro e trocÃ¡-la antes do primeiro acesso.
 UPDATE auth.users
-SET encrypted_password = crypt('SENHA_ADMIN_FORTE_2026', gen_salt('bf', 10))
+SET encrypted_password = crypt('<SENHA_TEMPORARIA_FORNECIDA_FORA_DO_REPOSITORIO>', gen_salt('bf', 10))
 WHERE email = 'admin@prontomedic.local';
 ```
 
