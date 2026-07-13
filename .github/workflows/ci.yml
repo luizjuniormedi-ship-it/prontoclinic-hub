@@ -491,7 +491,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run E2E tests
-        run: npm run test:e2e -- --project=chromium e2e/auth.spec.ts e2e/operational-smoke.spec.ts e2e/financeiro.spec.ts e2e/a11y.spec.ts e2e/prontuario.spec.ts
+        run: npm run test:e2e -- --project=chromium e2e/auth.spec.ts e2e/operational-smoke.spec.ts e2e/financeiro.spec.ts e2e/a11y.spec.ts e2e/prontuario.spec.ts e2e/farmacia.spec.ts
         env:
           CI: true
           E2E_BASE_URL: http://localhost:4173
