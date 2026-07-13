@@ -69,3 +69,4 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - Commit desta rodada: `10e8d47`.
 - Correção funcional: Empresas & Unidades agora gravam empresa/unidade de verdade; a migration `20260713000000_companies_legal_name.sql` preserva a razão social e a tela resolve o nome da empresa vinculada à unidade.
 - Validação desta rodada: `git diff --check` aprovado. `npm run type-check` não iniciou o TypeScript por `EPERM: lstat 'C:\\Users\\Meu Computador'`; não registrar como aprovação de compilação.
+- Commit seguinte: `a822a7c`; os botões Editar de Empresas/Unidades passaram a persistir atualizações, com escopo de tenant na unidade. `git diff --check` permaneceu aprovado.

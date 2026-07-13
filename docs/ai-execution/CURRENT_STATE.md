@@ -5,7 +5,7 @@ Atualizado em 2026-07-13.
 ## Fato tecnico
 
 - Repositorio local: `C:\Users\Meu Computador\AppData\Local\Temp\prontoclinic-hub`.
-- Ultimo commit local conhecido: `10e8d47` (`fix(catalog): persist company and unit registrations`).
+- Ultimo commit local conhecido: `a822a7c` (`fix(catalog): persist company and unit edits`).
 - Release funcional conhecida na VPS: `37199ee`.
 - A VPS executou build, migracoes e reload do Nginx na fase 1; a mensagem final de falha do wrapper foi causada por CRLF residual no shell remoto, nao por falha da publicacao.
 - PostgreSQL e backend precisam de nova verificacao operacional apos a ultima publicacao.
@@ -30,6 +30,7 @@ Atualizado em 2026-07-13.
 - O módulo Empresas & Unidades deixou de simular sucesso: os formulários agora persistem no PostgreSQL, preservam razão social separada do nome fantasia, carregam dados cadastrais de unidades e exibem o vínculo empresa-unidade.
 - Foi adicionada a migration idempotente `20260713000000_companies_legal_name.sql`; ela não altera o DataSIGH e preenche a razão social histórica com o nome existente apenas quando a coluna está vazia.
 - A validação TypeScript desta rodada foi bloqueada antes do compilador pelo `EPERM` do Node no caminho Windows com espaço; `git diff --check` passou.
+- Os botões Editar de Empresas e Unidades agora atualizam o registro real; a atualização de unidade exige `id` e `company_id` no filtro.
 
 ## Hipotese
 
