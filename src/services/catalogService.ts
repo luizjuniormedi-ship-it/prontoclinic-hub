@@ -88,6 +88,23 @@ export const specialtiesService = {
       };
     });
   },
+
+  async create(input: { name: string; code?: string }): Promise<void> {
+    const { error } = await supabase.from("specialties").insert({
+      name: input.name,
+      code: input.code || null,
+      lg_ativo: true,
+    });
+    if (error) throw new Error(`Erro ao cadastrar especialidade: ${error.message}`);
+  },
+
+  async update(id: string, input: { name: string; code?: string }): Promise<void> {
+    const { error } = await supabase.from("specialties").update({
+      name: input.name,
+      code: input.code || null,
+    }).eq("id", id);
+    if (error) throw new Error(`Erro ao atualizar especialidade: ${error.message}`);
+  },
 };
 
 // ── Rooms ─────────────────────────────────────────────────────────────────────

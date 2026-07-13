@@ -42,6 +42,10 @@ export default function MasterDataPage() {
   const [editingPrice, setEditingPrice] = useState<DbPriceEntry | null>(null);
   const [priceForm, setPriceForm] = useState({ appointment_type_id: "", insurance_plan_id: "", price: "", description: "" });
   const [savingPrice, setSavingPrice] = useState(false);
+  const [specialtyDialogOpen, setSpecialtyDialogOpen] = useState(false);
+  const [editingSpecialty, setEditingSpecialty] = useState<Specialty | null>(null);
+  const [specialtyForm, setSpecialtyForm] = useState({ name: "", code: "" });
+  const [savingSpecialty, setSavingSpecialty] = useState(false);
 
   const loadPrices = useCallback(async () => {
     try {
@@ -91,6 +95,43 @@ export default function MasterDataPage() {
     setEditingPrice(null);
     setPriceForm({ appointment_type_id: "", insurance_plan_id: "", price: "", description: "" });
     setPriceDialogOpen(true);
+  };
+
+  const openNewSpecialty = () => {
+    setEditingSpecialty(null);
+    setSpecialtyForm({ name: "", code: "" });
+    setSpecialtyDialogOpen(true);
+  };
+
+  const openEditSpecialty = (specialty: Specialty) => {
+    setEditingSpecialty(specialty);
+    setSpecialtyForm({ name: specialty.name, code: specialty.code ?? "" });
+    setSpecialtyDialogOpen(true);
+  };
+
+  const handleSaveSpecialty = async () => {
+    if (!specialtyForm.name.trim()) {
+      toast({ title: "Informe o nome da especialidade", variant: "destructive" });
+      return;
+    }
+    setSavingSpecialty(true);
+    try {
+      if (editingSpecialty) {
+        await catalogService.specialties.update(editingSpecialty.id, specialtyForm);
+        toast({ title: "Especialidade atualizada" });
+      } else {
+        await catalogService.specialties.create(specialtyForm);
+        toast({ title: "Especialidade cadastrada" });
+      }
+      const refreshed = await catalogService.specialties.getAll(false);
+      setSpecialties(refreshed);
+      setSpecialtyDialogOpen(false);
+      setEditingSpecialty(null);
+    } catch (err) {
+      toast({ title: "Erro ao salvar especialidade", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
+    } finally {
+      setSavingSpecialty(false);
+    }
   };
 
   const openEditPrice = (p: DbPriceEntry) => {
@@ -263,6 +304,9 @@ export default function MasterDataPage() {
 
         {/* Specialties */}
         <TabsContent value="specialties">
+          <div className="flex justify-end mb-3">
+            <Button onClick={openNewSpecialty}><Plus className="mr-2 h-4 w-4" />Nova Especialidade</Button>
+          </div>
           <div className="rounded-lg border bg-card overflow-auto">
             <Table>
               <TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Código</TableHead><TableHead>Status</TableHead><TableHead></TableHead></TableRow></TableHeader>
@@ -272,7 +316,7 @@ export default function MasterDataPage() {
                     <TableCell className="font-medium">{s.name}</TableCell>
                     <TableCell className="text-xs font-mono">{s.code || "—"}</TableCell>
                     <TableCell><Badge variant="outline" className={`border-0 text-[10px] ${s.status === "active" ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"}`}>{s.status === "active" ? "Ativo" : "Inativo"}</Badge></TableCell>
-                    <TableCell><Button variant="ghost" size="sm" className="h-7 text-xs">Editar</Button></TableCell>
+                    <TableCell><Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => openEditSpecialty(s)}>Editar</Button></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -403,6 +447,24 @@ export default function MasterDataPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Specialty Dialog */}
+      <Dialog open={specialtyDialogOpen} onOpenChange={setSpecialtyDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingSpecialty ? "Editar Especialidade" : "Nova Especialidade"}</DialogTitle>
+            <DialogDescription>Cadastre a especialidade utilizada nos atendimentos.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Nome *</Label><Input value={specialtyForm.name} onChange={(e) => setSpecialtyForm((form) => ({ ...form, name: e.target.value }))} placeholder="Ex: Cardiologia" /></div>
+            <div className="space-y-2"><Label>Código</Label><Input value={specialtyForm.code} onChange={(e) => setSpecialtyForm((form) => ({ ...form, code: e.target.value }))} placeholder="Ex: CARD" /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSpecialtyDialogOpen(false)}>Cancelar</Button>
+            <Button disabled={savingSpecialty} onClick={handleSaveSpecialty}>{savingSpecialty ? "Salvando..." : editingSpecialty ? "Atualizar" : "Cadastrar"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Price Dialog */}
       <Dialog open={priceDialogOpen} onOpenChange={setPriceDialogOpen}>
