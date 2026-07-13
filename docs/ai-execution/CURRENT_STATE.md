@@ -5,7 +5,7 @@ Atualizado em 2026-07-13.
 ## Fato tecnico
 
 - Repositorio local: `C:\Users\Meu Computador\AppData\Local\Temp\prontoclinic-hub`.
-- Ultimo commit local conhecido: `c873dac` (`docs(ai): distinguish historical ci evidence`).
+- Ultimo commit local conhecido: `9bb1578` (`ci(security): add manual tenant isolation gate`).
 - Release funcional conhecida na VPS: `37199ee`.
 - A VPS executou build, migracoes e reload do Nginx na fase 1; a mensagem final de falha do wrapper foi causada por CRLF residual no shell remoto, nao por falha da publicacao.
 - PostgreSQL e backend precisam de nova verificacao operacional apos a ultima publicacao.
@@ -20,7 +20,7 @@ Atualizado em 2026-07-13.
 - O replay seguinte chegou às funções operacionais de agenda e encontrou `professional_schedules` sem tabela base; foi adicionada uma migration idempotente com as janelas usadas pelo cálculo de disponibilidade.
 - O replay seguinte chegou ao fluxo de recepção e encontrou as tabelas de autorização/elegibilidade ausentes; foi adicionada a fundação operacional antes da centralização em `insurance_*`.
 - O replay seguinte chegou ao histórico oficial e identificou a ausência de `quantity_used`; a coluna foi adicionada para suportar controle de quantidade e prevenção de glosa.
-- A validação local da rodada `c873dac` passou com 476 testes, cobertura completa dentro dos thresholds, type-check, build e lint sem erros.
+- A validação local da rodada anterior passou com 476 testes, cobertura completa dentro dos thresholds, type-check, build e lint sem erros; o novo commit adiciona apenas workflow/documentação.
 - O status remoto do commit atual não possui execução GitHub Actions associada; o único status externo reportado é Vercel em falha por limite de build. Isso não constitui falha do código nem substitui o CI do repositório.
 - Foi criado o workflow manual `.github/workflows/f1-runtime-gate.yml`; ele exige Secrets protegidos para dois usuários de empresas distintas e executa somente o runner de isolamento, sem service role e sem DataSIGH.
 
