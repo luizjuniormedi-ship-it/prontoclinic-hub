@@ -24,7 +24,7 @@ interface PatientRow {
   insurance_plan_id: string | null;
   allergies: string | null;
   clinical_alerts: string | null;
-  status: string | null;
+  status: boolean | null;
 }
 
 const PAGE_SIZE = 20;
@@ -57,7 +57,7 @@ export default function PatientsPage() {
       setError(null);
       let query = supabase
         .from("patients")
-        .select("id, full_name, cpf, birth_date, phone, email, sex, insurance_plan_id, allergies, clinical_alerts, status", { count: "exact" });
+        .select("id, full_name, cpf, birth_date, phone, email, sex, insurance_plan_id, allergies, clinical_alerts, status:lg_ativo", { count: "exact" });
 
       if (debouncedSearch.trim()) {
         const q = debouncedSearch.trim();
@@ -139,8 +139,8 @@ export default function PatientsPage() {
                     <TableCell className="text-xs">{p.phone ? maskPhone(p.phone) : "—"}</TableCell>
                     <TableCell className="text-xs">{p.insurance_plan_id ? (insuranceNames[String(p.insurance_plan_id)] || "Conv. #" + p.insurance_plan_id) : <span className="text-muted-foreground">Particular</span>}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={`text-[10px] border-0 ${p.status === "inactive" ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success"}`}>
-                        {p.status === "inactive" ? "Inativo" : "Ativo"}
+                      <Badge variant="outline" className={`text-[10px] border-0 ${p.status === false ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success"}`}>
+                        {p.status === false ? "Inativo" : "Ativo"}
                       </Badge>
                     </TableCell>
                   </TableRow>
@@ -167,3 +167,4 @@ export default function PatientsPage() {
     </div>
   );
 }
+

@@ -84,10 +84,6 @@ jobs:
             supabase/release-mvp/018_professional_schedules_canonical.sql \
             supabase/migrations/20260708093000_call_center_phase1.sql \
             supabase/migrations/20260709210000_scheduling_operations.sql \
-            supabase/migrations/20260709223000_scheduling_requirements.sql \
-            supabase/migrations/20260709232000_scheduling_confirmations.sql \
-            supabase/migrations/20260709235000_reception_checkin_core.sql \
-
           do
             echo "Applying core: $migration"
             psql -v ON_ERROR_STOP=1 -1 -f "$migration"
@@ -106,6 +102,9 @@ jobs:
           SQL
           for artifact in \
             supabase/release-mvp/000_p0_p1_consolidated.sql \
+            supabase/migrations/20260709223000_scheduling_requirements.sql \
+            supabase/migrations/20260709232000_scheduling_confirmations.sql \
+            supabase/migrations/20260709235000_reception_checkin_core.sql \
             supabase/migrations/20260710001000_reception_authorization_center.sql \
             supabase/migrations/20260712100000_authorization_audit_timestamps.sql \
             supabase/migrations/20260712110000_secure_appointment_metadata_update.sql \
@@ -182,6 +181,14 @@ jobs:
           psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260712233000_tenant_surface_hardening.sql
           echo "Running F1 runtime tenant surface gate"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_tenant_surface_gate.sql
+          echo "Applying reception RBAC defaults"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260712234000_reception_rbac_read_defaults.sql
+          echo "Running F1 runtime reception RBAC defaults gate"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_reception_rbac_defaults_gate.sql
+          echo "Applying scheduling/reception tenant hardening"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260712234000_scheduling_reception_tenant_hardening.sql
+          echo "Running F1 runtime scheduling/reception tenant gate"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_scheduling_reception_tenant_gate.sql
 
       - name: Upload F1 evidence
         if: always()
@@ -190,3 +197,4 @@ jobs:
           name: f1-runtime-evidence
           path: artifacts/f1
           if-no-files-found: warn
+
