@@ -17,6 +17,7 @@ Atualizado em 2026-07-13.
 - O replay seguinte encontrou `insurance_companies` usada antes de sua criação; as migrations fundacionais de pagamento, convênios, planos, vínculos profissionais e tabelas de preço foram reordenadas antes das alterações dependentes.
 - O replay seguinte avançou até as policies e encontrou roles Supabase ausentes no PostgreSQL limpo; o CI passou a criá-las de forma condicional antes das migrations.
 - O replay seguinte avançou até as policies e encontrou `auth.uid()` ausente; a compatibilidade agora cria essa função apenas em banco sem implementação Supabase.
+- O replay seguinte chegou às funções operacionais de agenda e encontrou `professional_schedules` sem tabela base; foi adicionada uma migration idempotente com as janelas usadas pelo cálculo de disponibilidade.
 
 ## Hipotese
 
