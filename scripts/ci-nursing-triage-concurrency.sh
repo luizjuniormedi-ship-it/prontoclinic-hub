@@ -139,9 +139,10 @@ setup_done=1
 "${PSQL[@]}" "${fixture_args[@]}" -f "$SETUP_SQL"
 
 PATIENT_ID_ROWS="$(
-  "${PSQL[@]}" -At -v "company_id=$COMPANY_ID" \
-    -v "patient_a_name=$PATIENT_A_NAME" -v "patient_b_name=$PATIENT_B_NAME" \
-    -c "SELECT id FROM public.patients WHERE company_id = :'company_id'::uuid AND full_name IN (:'patient_a_name', :'patient_b_name') ORDER BY full_name"
+  printf '%s\n' \
+    "SELECT id FROM public.patients WHERE company_id = :'company_id'::uuid AND full_name IN (:'patient_a_name', :'patient_b_name') ORDER BY full_name" |
+    "${PSQL[@]}" -At -v "company_id=$COMPANY_ID" \
+      -v "patient_a_name=$PATIENT_A_NAME" -v "patient_b_name=$PATIENT_B_NAME"
 )"
 mapfile -t PATIENT_IDS <<< "$PATIENT_ID_ROWS"
 if (( ${#PATIENT_IDS[@]} != 2 )); then
@@ -151,8 +152,9 @@ fi
 PATIENT_A_ID="${PATIENT_IDS[0]}"
 PATIENT_B_ID="${PATIENT_IDS[1]}"
 CLASSIFICATION_ID="$(
-  "${PSQL[@]}" -At -v "classification_name=$CLASSIFICATION_NAME" \
-    -c "SELECT id FROM public.mnct_classificacao_risco WHERE ds_classificacao = :'classification_name'"
+  printf '%s\n' \
+    "SELECT id FROM public.mnct_classificacao_risco WHERE ds_classificacao = :'classification_name'" |
+    "${PSQL[@]}" -At -v "classification_name=$CLASSIFICATION_NAME"
 )"
 if ! [[ "$CLASSIFICATION_ID" =~ ^[0-9]+$ ]]; then
   echo "Setup did not create the global classification" >&2
@@ -175,6 +177,8 @@ SELECT public.enqueue_nursing_triage_secure(
 COMMIT;
 SQL
 )
+SESSION_SQL_FILE="$TMP_DIR/session.sql"
+printf '%s\n' "$session_sql" > "$SESSION_SQL_FILE"
 
 launch_session() {
   local patient_id=$1 complaint=$2 idempotency_key=$3 start_at=$4 output_file=$5
@@ -184,7 +188,7 @@ launch_session() {
     -v "complaint=$complaint" \
     -v "idempotency_key=$idempotency_key" \
     -v "start_at=$start_at" \
-    -c "$session_sql" >"$output_file" 2>&1
+    -f "$SESSION_SQL_FILE" >"$output_file" 2>&1
 }
 
 classification_move_sql=$(cat <<'SQL'
@@ -210,16 +214,20 @@ VALUES (:'company_id'::uuid, :'patient_id'::bigint, :'classification_id'::intege
 COMMIT;
 SQL
 )
+CLASSIFICATION_MOVE_SQL_FILE="$TMP_DIR/classification-move.sql"
+CLASSIFICATION_REFERENCE_SQL_FILE="$TMP_DIR/classification-reference.sql"
+printf '%s\n' "$classification_move_sql" > "$CLASSIFICATION_MOVE_SQL_FILE"
+printf '%s\n' "$classification_reference_sql" > "$CLASSIFICATION_REFERENCE_SQL_FILE"
 
 launch_classification_session() {
-  local sql=$1 start_at=$2 output_file=$3
+  local sql_file=$1 start_at=$2 output_file=$3
   exec timeout --foreground "${TRIAGE_CONCURRENCY_TIMEOUT_SECONDS}s" "${PSQL[@]}" \
     -v "classification_id=$CLASSIFICATION_ID" \
     -v "company_id=$COMPANY_ID" \
     -v "company_b_id=$COMPANY_B_ID" \
     -v "patient_id=$PATIENT_A_ID" \
     -v "start_at=$start_at" \
-    -c "$sql" >"$output_file" 2>&1
+    -f "$sql_file" >"$output_file" 2>&1
 }
 
 LAST_STATUSES=()
@@ -300,10 +308,10 @@ if (( successes != 1 || denials != 1 )); then
 fi
 
 START_AT="$(next_start_at)"
-launch_classification_session "$classification_move_sql" "$START_AT" "$TMP_DIR/classification-move.log" &
+launch_classification_session "$CLASSIFICATION_MOVE_SQL_FILE" "$START_AT" "$TMP_DIR/classification-move.log" &
 PID_A=$!
 ACTIVE_PIDS+=("$PID_A")
-launch_classification_session "$classification_reference_sql" "$START_AT" "$TMP_DIR/classification-reference.log" &
+launch_classification_session "$CLASSIFICATION_REFERENCE_SQL_FILE" "$START_AT" "$TMP_DIR/classification-reference.log" &
 PID_B=$!
 ACTIVE_PIDS+=("$PID_B")
 wait_for_all "$PID_A" "$PID_B"
