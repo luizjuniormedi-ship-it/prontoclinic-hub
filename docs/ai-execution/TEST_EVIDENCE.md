@@ -78,3 +78,4 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - Commit funcional atual: `663be0f`; envio de recurso TISS sem endpoint não simula sucesso. `git diff --check` aprovado.
 - Commit funcional atual: `1fdedac`; respostas TISS sem protocolo real não são marcadas como concluídas. `git diff --check` aprovado.
 - Commit funcional atual: `086c120`; assinatura de prescrição sem pipeline real de PDF/Storage falha fechado e não persiste assinatura nem receita. `git diff --check` aprovado.
+- Commit de teste atual: `d23b8c9`; teste unitário cobre a falha fechada da assinatura e a ausência de efeitos persistidos. `git diff --check` aprovado; execução local do Vitest bloqueada por `EPERM: lstat 'C:\\Users\\Meu Computador'` antes de carregar o runner.
