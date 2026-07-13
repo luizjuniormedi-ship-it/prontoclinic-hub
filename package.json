@@ -44,6 +44,7 @@
     "test:watch": "vitest",
     "test:unit": "vitest run",
     "test:security": "node --test local-auth-security.test.mjs",
+    "test:tenant-isolation": "node scripts/tenant-isolation-integration.mjs",
     "test:unit:watch": "vitest",
     "test:unit:ui": "vitest --ui",
     "test:unit:coverage": "vitest run --coverage",
