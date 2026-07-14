@@ -19,3 +19,7 @@ A rodada de isolamento do tenant de agendamento foi concluida no GitHub.
 5. Reabrir o gate final somente com logs e resultados reproduziveis.
 
 Nao avançar para deploy/publicacao enquanto qualquer item acima estiver sem evidencia.
+
+## Checkpoint adicional
+
+A auditoria de owner/RLS passou no CI: `29376855228` (F1) e `29376855298` (CI). O teste impede BYPASSRLS em proprietarios nao-superusuarios e distingue o postgres superusuario do replay efemero. Ainda e obrigatoria a comprovacao equivalente na VPS antes da liberacao.
