@@ -158,3 +158,13 @@ Esta correção fecha o acesso direto global; ela não simula a integração ope
 - A mesma identidade chamou o RPC com sua própria empresa e recebeu resultado de validação sem criação de snapshot.
 
 O RPC é somente de validação; não concede CRUD direto nem libera mutações sem autorização específica.
+
+## Evidencia do isolamento do catalogo LIS
+
+- Commit: `c98169f`.
+- F1 ephemeral tenant gate: run `29298189099` (#34), `success`.
+- CI geral: run `29298189167` (#426), `success`.
+- `F1_LIS_CATALOG_PASS tenant_visible=1 cross_read=0` foi confirmado com dois registros e preços diferentes.
+- A policy de gerenciamento foi corrigida para usar `get_my_company_id()`; o teste não depende de grant direto em `user_profiles`.
+
+O catálogo LIS agora respeita tenant; valores de referência sem `company_id` continuam tratados como catálogo universal de referência clínica.

@@ -110,6 +110,13 @@ O acesso operacional a Convênios deve ser reaberto somente por RPC tenant-aware
 
 O acesso de escrita a contratos continua fechado até existir RPC específico para cada mutação, com autorização por perfil e auditoria.
 
+## Isolamento do catalogo LIS no head c98169f
+
+- `exames_lab_catalogo` deixou de usar leitura global: a policy exige `company_id = get_my_company_id()`.
+- A policy antiga de gerenciamento também foi alinhada ao helper tenant-aware, removendo consulta direta a `user_profiles` durante a avaliação de RLS.
+- O F1 ephemeral gate run `29298189099` (#34) passou após a correção do grant mínimo de `SELECT`; o CI geral run `29298189167` (#426) também passou.
+- A prova usa dois catálogos com preços distintos e confirma leitura do catálogo A somente pelo tenant A.
+
 ## Atualizacao de evidencia F1 em 2026-07-14
 
 - O workflow efemero `.github/workflows/f1-ephemeral-gate.yml` executou no commit `d286fbf` como GitHub Actions run `29295965946` (#4) e terminou com `success`.
