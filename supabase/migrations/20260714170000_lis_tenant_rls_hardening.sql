@@ -1,7 +1,17 @@
 -- Tenant isolation for LIS catalog, orders, results and critical alerts.
 -- Global catalog rows are explicit (company_id IS NULL); clinical rows are not.
 
-BEGIN;
+DO $f1$
+BEGIN
+  IF to_regclass('public.exames_lab_catalogo') IS NULL
+     OR to_regclass('public.exames_lab_valor_referencia') IS NULL
+     OR to_regclass('public.exames_lab_pedido') IS NULL
+     OR to_regclass('public.exames_lab_pedido_itens') IS NULL
+     OR to_regclass('public.exames_lab_resultado') IS NULL
+     OR to_regclass('public.exames_lab_alerta_critico') IS NULL THEN
+    RAISE NOTICE 'LIS schema is not installed; tenant RLS hardening is deferred to the LIS migration phase';
+  ELSE
+    EXECUTE $sql$
 
 DROP POLICY IF EXISTS "Authenticated can read lab catalog" ON public.exames_lab_catalogo;
 CREATE POLICY "Authenticated can read lab catalog" ON public.exames_lab_catalogo
@@ -119,5 +129,8 @@ CREATE POLICY "Lab can manage lab alerts" ON public.exames_lab_alerta_critico
     WHERE r.id = cd_resultado AND p.company_id = public.get_my_company_id()
   ));
 
-COMMIT;
+    $sql$;
+  END IF;
+END
+$f1$;
 
