@@ -131,7 +131,7 @@ jobs:
             supabase/migrations/20260714090000_telemedicine_rpc_hardening.sql \
             supabase/migrations/20260714100000_legacy_rpc_acl_hardening.sql \
             supabase/migrations/20260714120000_clinical_billing_safety_foundation.sql \
-            supabase/migrations/20260714130000_tenant_integrity_and_legacy_rpc_hardening.sql \\
+            supabase/migrations/20260714130000_tenant_integrity_and_legacy_rpc_hardening.sql \
             supabase/migrations/20260714150000_notification_templates_tenant_hardening.sql
           do
             echo "Applying baseline: $artifact"
