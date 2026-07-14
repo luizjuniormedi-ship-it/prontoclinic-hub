@@ -99,6 +99,27 @@ $$;
 
 DO $$
 DECLARE
+  v_visible INTEGER;
+  v_cross INTEGER;
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', 'f1000000-0000-4000-8000-000000000011', false);
+  SELECT count(*) INTO v_visible FROM public.exames_lab_catalogo WHERE id = 920001;
+  IF v_visible <> 1 THEN
+    RAISE EXCEPTION 'F1_LIS_FAIL: tenant A nao enxerga seu catalogo';
+  END IF;
+
+  PERFORM set_config('request.jwt.claim.sub', 'f1000000-0000-4000-8000-000000000012', false);
+  SELECT count(*) INTO v_cross FROM public.exames_lab_catalogo WHERE id = 920001;
+  IF v_cross <> 0 THEN
+    RAISE EXCEPTION 'F1_LIS_FAIL: tenant B enxerga catalogo A';
+  END IF;
+
+  RAISE NOTICE 'F1_LIS_CATALOG_PASS tenant_visible=% cross_read=%', v_visible, v_cross;
+END
+$$;
+
+DO $$
+DECLARE
   v_table TEXT;
   v_tables CONSTANT TEXT[] := ARRAY[
     'insurance_company_contacts', 'insurance_contracts',

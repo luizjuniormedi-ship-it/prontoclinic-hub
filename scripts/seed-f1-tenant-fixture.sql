@@ -115,6 +115,17 @@ ON CONFLICT (id) DO UPDATE SET
   cpf = EXCLUDED.cpf,
   lg_ativo = TRUE;
 
+INSERT INTO public.exames_lab_catalogo (id, company_id, ds_exame, ds_sigla, vl_particular, lg_ativo)
+VALUES
+  (920001, 'f1000000-0000-4000-8000-000000000001', 'Exame LIS Tenant A', 'F1A', 10.00, TRUE),
+  (920002, 'f1000000-0000-4000-8000-000000000002', 'Exame LIS Tenant B', 'F1B', 20.00, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  ds_exame = EXCLUDED.ds_exame,
+  ds_sigla = EXCLUDED.ds_sigla,
+  vl_particular = EXCLUDED.vl_particular,
+  lg_ativo = TRUE;
+
 SELECT 'F1_FIXTURE_READY' AS status,
        (SELECT count(*) FROM public.user_profiles WHERE id IN ('f1000000-0000-4000-8000-000000000011', 'f1000000-0000-4000-8000-000000000012')) AS users,
        (SELECT count(*) FROM public.patients WHERE id = 910001) AS controlled_patients;
