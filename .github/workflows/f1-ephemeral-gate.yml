@@ -1,0 +1,111 @@
+name: F1 ephemeral tenant gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, develop, 'codex/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tenant-isolation:
+    name: Tenant isolation on clean PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:54322/postgres
+      PGHOST: 127.0.0.1
+      PGPORT: 54322
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+      E2E_BASE_URL: http://127.0.0.1:8000
+      VITE_SUPABASE_ANON_KEY: f1-ephemeral-anon-key
+      F1_PASSWORD: F1-only-ephemeral-password-2026
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 54322:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          for role in anon authenticated service_role; do
+            if ! psql "$DATABASE_URL" -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$role'" | grep -q 1; then
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE $role NOLOGIN"
+            fi
+          done
+          for file in supabase/migrations/*.sql; do
+            echo "Applying $file"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f "$file"
+          done
+
+      - name: Seed isolated tenants
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v f1_password="$F1_PASSWORD" \
+            -f scripts/seed-f1-tenant-fixture.sql
+
+      - name: Start local auth proxy
+        shell: bash
+        run: |
+          set -euo pipefail
+          nohup env JWT_SECRET=f1-ephemeral-jwt-secret-012345678901234567890123 \
+            LOCAL_AUTH_PORT=8000 node local-auth-server.mjs > /tmp/prontomedic-auth.log 2>&1 &
+          echo $! > /tmp/prontomedic-auth.pid
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/auth/v1/settings >/dev/null; then
+              echo 'AUTH_PROXY_READY=1'
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/prontomedic-auth.log
+          exit 1
+
+      - name: Run tenant isolation proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          TENANT_A_EMAIL=f1-tenant-a@prontomedic.test \
+          TENANT_A_PASSWORD="$F1_PASSWORD" \
+          TENANT_B_EMAIL=f1-tenant-b@prontomedic.test \
+          TENANT_B_PASSWORD="$F1_PASSWORD" \
+            npm run test:tenant-isolation
+
+      - name: Upload auth proxy log on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: f1-ephemeral-auth-log
+          path: /tmp/prontomedic-auth.log
+          if-no-files-found: ignore
