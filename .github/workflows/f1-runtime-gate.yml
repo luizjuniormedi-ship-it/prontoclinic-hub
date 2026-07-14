@@ -87,6 +87,7 @@ jobs:
             supabase/migrations/20260101000015_farmacia.sql \
             supabase/migrations/20260101000017_telemedicina.sql \
             supabase/migrations/20251231007000_add_missing_columns.sql \
+            supabase/migrations/20251231011000_add_billing_cols.sql \
             supabase/migrations/20260101000019_bi.sql \
             supabase/migrations/20260101001200_security_hardening.sql \
             supabase/migrations/20260708090000_scheduling_phase1.sql \
