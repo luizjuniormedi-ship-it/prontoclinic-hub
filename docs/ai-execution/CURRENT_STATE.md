@@ -92,6 +92,15 @@ O resultado é prova executável em PostgreSQL 18 descartável. Ainda não autor
 
 O runtime homologado/VPS ainda precisa ser auditado com role nao-superusuaria e credenciais protegidas antes da aprovacao de producao.
 
+## Atualizacao de Convênios no head 76be026
+
+- A migration `20260714002000_insurance_role_fail_closed.sql` remove o CRUD global do role `app_prontomedic` nas tabelas de contratos, regras e snapshots.
+- A policy anterior `USING (true) WITH CHECK (true)` e o grant direto da função de validação foram removidos para esse role.
+- O gate F1 também verifica a ausência de `SELECT` e de policies globais residuais quando `app_prontomedic` existir.
+- F1 ephemeral gate run `29297480116` (#22) e CI geral run `29297479988` (#420) passaram.
+
+O acesso operacional a Convênios deve ser reaberto somente por RPC tenant-aware, com teste de isolamento e contexto de identidade comprovado.
+
 ## Atualizacao de evidencia F1 em 2026-07-14
 
 - O workflow efemero `.github/workflows/f1-ephemeral-gate.yml` executou no commit `d286fbf` como GitHub Actions run `29295965946` (#4) e terminou com `success`.

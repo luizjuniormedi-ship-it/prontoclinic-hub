@@ -138,3 +138,13 @@ Esta evidencia fecha o gate efêmero de RLS e isolamento tenant. Não substitui 
 - `is_admin()` e `is_staff()` agora usam o mesmo vinculo canonico do perfil, com perfil ativo obrigatorio.
 
 Esta correcao elimina a inconsistencia estatica entre helpers. Ela nao substitui a auditoria do role e do runtime real da VPS.
+
+## Evidencia de fechamento do role de Convênios
+
+- Commit: `76be026`.
+- F1 ephemeral tenant gate: run `29297480116` (#22), `success`.
+- CI geral: run `29297479988` (#420), `success`.
+- A migration remove `SELECT/INSERT/UPDATE/DELETE` de `app_prontomedic` nas 13 tabelas de Convênios e elimina as policies `app_prontomedic_all_*`.
+- O gate registra `F1_INSURANCE_ROLE_PASS direct_global_access=closed` quando o role existir.
+
+Esta correção fecha o acesso direto global; ela não simula a integração operacional. O módulo precisa de RPC tenant-aware antes de ser liberado para escrita.
