@@ -133,7 +133,7 @@ jobs:
             supabase/migrations/20260714120000_clinical_billing_safety_foundation.sql \
             supabase/migrations/20260714130000_tenant_integrity_and_legacy_rpc_hardening.sql \
             supabase/migrations/20260714150000_notification_templates_tenant_hardening.sql \
-            supabase/migrations/20260714170000_lis_tenant_rls_hardening.sql
+            supabase/migrations/20260714170000_lis_tenant_rls_hardening.sql \
             supabase/migrations/20260714200000_appointments_session_tenant_boundary.sql
           do
             echo "Applying baseline: $artifact"
