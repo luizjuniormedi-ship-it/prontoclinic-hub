@@ -19,3 +19,11 @@
 5. Auditoria de paridade RLS entre checkout local e remoto.
 
 O produto permanece **NAO APTO PARA PRODUCAO** ate esses gates externos serem comprovados.
+
+## Auditoria owner/BYPASSRLS
+
+- F1 Runtime Gate: `29376855228` - PASS.
+- CI: `29376855298` - PASS.
+- O replay verifica que proprietarios nao-superusuarios das tabelas protegidas nao possuem `BYPASSRLS`.
+- O superusuario `postgres` do ambiente efemero e diferenciado explicitamente; isso nao constitui prova de configuracao da VPS.
+- A validacao real do owner/BYPASSRLS na VPS continua pendente.
