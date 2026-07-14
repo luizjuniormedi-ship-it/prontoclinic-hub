@@ -80,6 +80,12 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v f1_password="$F1_PASSWORD" -v f1_ephemeral=1 \
             -f scripts/seed-f1-tenant-fixture.sql
 
+      - name: Verify audit access RPC contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify-audit-access.sql
+
       - name: Verify PostgreSQL RLS with non-bypass role
         shell: bash
         run: |

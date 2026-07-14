@@ -265,9 +265,9 @@ CREATE OR REPLACE FUNCTION public.log_data_access(
   p_acao TEXT,
   p_contexto JSONB DEFAULT '{}'::JSONB
 )
-RETURNS UUID AS $$
+RETURNS BIGINT AS $$
 DECLARE
-  v_log_id UUID;
+  v_log_id BIGINT;
   v_company_id UUID;
   v_user_id UUID;
   v_user_name TEXT;
@@ -298,16 +298,14 @@ BEGIN
   )
   RETURNING id INTO v_log_id;
 
-  -- A PK é composta (id, dt_evento) — retornamos id BIGSERIAL em formato text-uuid
-  -- para satisfazer a assinatura. Convertendo para uuid via hash determinístico.
-  v_log_id := gen_random_uuid();
   RETURN v_log_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 COMMENT ON FUNCTION public.log_data_access(TEXT, TEXT, TEXT, JSONB) IS
-  'Registra acesso do usuário a dados sensíveis via API. '
-  'Chamado pelo frontend (useAuditLog) ao abrir prontuário/paciente.';
+  'Registra acesso do usuário a dados sensíveis via API e retorna o BIGINT '
+  'real inserido em audit_logs. A validação de escopo e ações é aplicada '
+  'pela migration 20260101000008.';
 
 -- ---------------------------------------------------------------------
 -- 1.8. Função de purga por retenção (chamada por cron / scheduled job)
