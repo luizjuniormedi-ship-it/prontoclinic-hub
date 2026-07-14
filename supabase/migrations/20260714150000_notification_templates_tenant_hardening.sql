@@ -8,14 +8,14 @@ LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = public, auth
-AS $
+AS $$
   SELECT EXISTS (
     SELECT 1
       FROM public.user_profiles
      WHERE id = auth.uid()
        AND role_name IN ('admin', 'manager')
   );
-$;
+$$;
 
 REVOKE ALL ON FUNCTION public.can_manage_notification_templates() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.can_manage_notification_templates() TO authenticated;
