@@ -132,7 +132,8 @@ jobs:
             supabase/migrations/20260714100000_legacy_rpc_acl_hardening.sql \
             supabase/migrations/20260714120000_clinical_billing_safety_foundation.sql \
             supabase/migrations/20260714130000_tenant_integrity_and_legacy_rpc_hardening.sql \
-            supabase/migrations/20260714150000_notification_templates_tenant_hardening.sql
+            supabase/migrations/20260714150000_notification_templates_tenant_hardening.sql \
+            supabase/migrations/20260714170000_lis_tenant_rls_hardening.sql
           do
             echo "Applying baseline: $artifact"
             psql -v ON_ERROR_STOP=1 -1 -f "$artifact"
@@ -150,6 +151,22 @@ jobs:
           END
           $f1$;
           SQL
+          echo "Running disposable backup/restore proof"
+          dump_path="$(mktemp)"
+          restore_db="f1_restore_${GITHUB_RUN_ID}"
+          trap 'rm -f "$dump_path"' EXIT
+          psql -v ON_ERROR_STOP=1 -c "CREATE TABLE public.__f1_backup_restore_sentinel (id integer PRIMARY KEY, marker text NOT NULL);"
+          psql -v ON_ERROR_STOP=1 -c "INSERT INTO public.__f1_backup_restore_sentinel (id, marker) VALUES (1, 'f1-backup-restore-${GITHUB_RUN_ID}');"
+          pg_dump --format=custom --no-owner --no-acl --file="$dump_path"
+          sha256sum "$dump_path"
+          psql -v ON_ERROR_STOP=1 -d postgres -c "CREATE DATABASE \"$restore_db\""
+          pg_restore --exit-on-error --no-owner --no-acl --dbname="$restore_db" "$dump_path"
+          restored_marker="$(PGDATABASE="$restore_db" psql -v ON_ERROR_STOP=1 -tA -c "SELECT marker FROM public.__f1_backup_restore_sentinel WHERE id = 1")"
+          test "$restored_marker" = "f1-backup-restore-${GITHUB_RUN_ID}"
+          PGDATABASE="$restore_db" psql -v ON_ERROR_STOP=1 -c "DROP TABLE public.__f1_backup_restore_sentinel"
+          psql -v ON_ERROR_STOP=1 -d postgres -c "DROP DATABASE \"$restore_db\""
+          psql -v ON_ERROR_STOP=1 -c "DROP TABLE public.__f1_backup_restore_sentinel"
+          echo "BACKUP_RESTORE_PROOF=PASS"
           echo "Running empty-db contract"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/mvp_baseline_empty_db_gate.sql
           echo "Running F1 runtime security gate"
@@ -166,3 +183,4 @@ jobs:
           name: f1-runtime-evidence
           path: artifacts/f1
           if-no-files-found: warn
+
