@@ -549,8 +549,9 @@ export const tissService = {
       .single();
     if (error) throw error;
 
-    // Atualizar status da guia
-    await supabase.rpc("recalc_tiss_total_glosa", { p_id: tissXmlId }).then(() => null, () => null);
+    // Fail closed: sem recálculo confirmado, não marcar a guia como glosada.
+    const { error: recalcError } = await supabase.rpc("recalc_tiss_total_glosa", { p_id: tissXmlId });
+    if (recalcError) throw recalcError;
     await supabase
       .from("tiss_xml")
       .update({ status: "GLOSADO", updated_at: new Date().toISOString() })

@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "scope": "frontend-rpc",
+  "contracts": {
+    "request_anonymize_patient": {"signatures":["BIGINT, TEXT"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "bedside_check": {"signatures":["BIGINT, BIGINT"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "billing_check_pending": {"signatures":["UUID"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "calc_imc": {"signatures":["NUMERIC, NUMERIC"],"roles":["authenticated"],"tenant_requirement":"not_applicable"},
+    "calcular_kpis_diarios": {"signatures":["UUID, DATE"],"roles":["authenticated"],"tenant_requirement":"company_id_argument"},
+    "calcular_valor_estoque": {"signatures":["UUID"],"roles":["authenticated"],"tenant_requirement":"company_id_argument"},
+    "cancel_pre_cadastro": {"signatures":["UUID, TEXT"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "check_prescription_safety": {"signatures":["BIGINT, TEXT"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "complete_call_center_task_secure": {"signatures":["BIGINT"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "confirm_pre_cadastro": {"signatures":["VARCHAR"],"roles":["anon","authenticated"],"tenant_requirement":"token_bound"},
+    "criar_sala_telemedicina": {"signatures":["BIGINT"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "cancel_schedule_block_secure": {"signatures":["BIGINT"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "close_waitlist_entry_secure": {"signatures":["BIGINT, TEXT, TEXT"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "convert_waitlist_to_appointment_secure": {"signatures":["BIGINT, DATE, TIME, TIME"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "create_call_center_contact_secure": {"signatures":["BIGINT, BIGINT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ, BOOLEAN"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "create_call_center_task_secure": {"signatures":["BIGINT, BIGINT, BIGINT, UUID, TEXT, TEXT, TIMESTAMPTZ, TEXT"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "create_medical_record_secure": {"signatures":["BIGINT, BIGINT, BIGINT, DATE, TEXT, TEXT, TEXT, TEXT, JSONB, TEXT"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "create_appointment_with_requirements_secure": {"signatures":["BIGINT, BIGINT, DATE, TIME, TIME, UUID, INTEGER, INTEGER, BIGINT, BIGINT, TEXT, BOOLEAN, BOOLEAN, TEXT, INTEGER, TEXT, TEXT"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "create_schedule_block_secure": {"signatures":["TIMESTAMPTZ, TIMESTAMPTZ, TEXT, BIGINT, INTEGER, TEXT"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "create_waitlist_entry_secure": {"signatures":["BIGINT, TEXT, BIGINT, INTEGER, BIGINT, INTEGER, DATE, DATE, TEXT, TEXT, TEXT"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "create_pre_cadastro": {"signatures":["UUID, VARCHAR, VARCHAR, VARCHAR, DATE, CHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, CHAR, VARCHAR, CHAR, INET, TEXT"],"roles":["anon","authenticated"],"tenant_requirement":"company_id_argument"},
+    "current_company_id": {"signatures":[""],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "detectar_alertas_bi": {"signatures":["UUID"],"roles":["authenticated"],"tenant_requirement":"company_id_argument"},
+    "finalizar_sala_telemedicina": {"signatures":[],"roles":["authenticated"],"tenant_requirement":"actor_company","signature_status":"needs_catalog_signature"},
+    "find_price": {"signatures":["UUID, BIGINT, BIGINT, INTEGER"],"roles":["authenticated"],"tenant_requirement":"company_id_argument"},
+    "gerar_senha_triagem": {"signatures":["UUID"],"roles":["authenticated"],"tenant_requirement":"company_id_argument"},
+    "get_professional_available_slots": {"signatures":["BIGINT, DATE, INTEGER, INTEGER"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "get_reception_checkin_readiness": {"signatures":["BIGINT"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "get_scheduling_requirements": {"signatures":["BIGINT, BIGINT, BIGINT, INTEGER, TEXT"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "log_data_access": {"signatures":["TEXT, TEXT, TEXT, JSONB"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "promote_pre_cadastro": {"signatures":["UUID"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "publish_dicom_report": {"signatures":["BIGINT, BOOLEAN"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "queue_notification": {"signatures":["UUID, VARCHAR, VARCHAR, BIGINT, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, JSONB, BIGINT, BIGINT, TIMESTAMPTZ, BOOLEAN"],"roles":["authenticated"],"tenant_requirement":"company_id_argument"},
+    "recalc_tiss_total_glosa": {"signatures":["BIGINT"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "registrar_consentimento_gravacao": {"signatures":["UUID, BOOLEAN"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "registrar_movimentacao_estoque": {"signatures":["BIGINT, VARCHAR, INTEGER, TEXT, BIGINT, BIGINT, BIGINT, TEXT"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "record_confirmation_attempt_secure": {"signatures":["BIGINT, TEXT, TEXT, TEXT"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "refresh_confirmation_queue_secure": {"signatures":["INTEGER"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "reschedule_appointment_secure": {"signatures":["BIGINT, DATE, TIME, TIME, TEXT"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "tiss_get_stats": {"signatures":["UUID, INTEGER"],"roles":["authenticated"],"tenant_requirement":"company_id_argument"},
+    "update_appointment_secure": {"signatures":["BIGINT, JSONB"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "update_medical_record_secure": {"signatures":["BIGINT, JSONB"],"roles":["authenticated"],"tenant_requirement":"actor_company"},
+    "update_patient_secure": {"signatures":["BIGINT, JSONB"],"roles":["authenticated"],"tenant_requirement":"actor_company"}
+    ,"update_appointment_status_secure": {"signatures":["BIGINT, TEXT, TEXT"],"roles":["authenticated"],"tenant_requirement":"actor_company"}
+    ,"update_reception_authorization_secure": {"signatures":["UUID, TEXT, TEXT, TEXT, TEXT, DATE, INTEGER, TEXT"],"roles":["authenticated"],"tenant_requirement":"actor_company"}
+    ,"update_reception_eligibility_secure": {"signatures":["UUID, TEXT, TEXT, TEXT"],"roles":["authenticated"],"tenant_requirement":"actor_company"}
+    ,"perform_reception_checkin_secure": {"signatures":["BIGINT, TEXT, TEXT"],"roles":["authenticated"],"tenant_requirement":"actor_company"}
+    ,"finalizar_sala_telemedicina": {"signatures":["UUID, INTEGER, INTEGER, INTEGER, DECIMAL"],"roles":["authenticated"],"tenant_requirement":"actor_company"}
+}
+}

@@ -76,11 +76,11 @@ BEGIN
 
   -- exames_lab_resultado (verifica company_id via pedido)
   EXECUTE 'DROP POLICY IF EXISTS "Authenticated can read lab results" ON public.exames_lab_resultado';
-  EXECUTE 'CREATE POLICY "Authenticated can read lab results" ON public.exames_lab_resultado FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM public.exames_lab_pedido p WHERE p.id = cd_pedido AND p.company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid())))';
+  EXECUTE 'CREATE POLICY "Authenticated can read lab results" ON public.exames_lab_resultado FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM public.exames_lab_pedido_itens pi JOIN public.exames_lab_pedido p ON p.id = pi.cd_pedido WHERE pi.id = cd_item_pedido AND p.company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid())))';
 
   -- exames_lab_alerta_critico (PHI crítico — alerta de resultado fora de faixa)
   EXECUTE 'DROP POLICY IF EXISTS "Authenticated can read lab alerts" ON public.exames_lab_alerta_critico';
-  EXECUTE 'CREATE POLICY "Authenticated can read lab alerts" ON public.exames_lab_alerta_critico FOR SELECT TO authenticated USING (company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid()))';
+  EXECUTE 'CREATE POLICY "Authenticated can read lab alerts" ON public.exames_lab_alerta_critico FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM public.exames_lab_resultado r JOIN public.exames_lab_pedido_itens pi ON pi.id = r.cd_item_pedido JOIN public.exames_lab_pedido p ON p.id = pi.cd_pedido WHERE r.id = cd_resultado AND p.company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid())))';
 END $$;
 
 -- ============================================================================

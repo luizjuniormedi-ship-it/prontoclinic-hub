@@ -79,6 +79,14 @@ jobs:
             supabase/migrations/20251231003000_create_medical_records_stub.sql \
             supabase/migrations/20251231005000_create_billings_stub.sql \
             supabase/migrations/20260101000007_audit_logs.sql \
+            supabase/migrations/20260101000005_price_tables.sql \
+            supabase/migrations/20260101000008_notifications.sql \
+            supabase/migrations/20260101000010_tiss.sql \
+            supabase/migrations/20260710213000_tiss_operational_compatibility.sql \
+            supabase/migrations/20260101001200_security_hardening.sql \
+            supabase/migrations/20260101000015_farmacia.sql \
+            supabase/migrations/20260101000017_telemedicina.sql \
+            supabase/migrations/20260101000019_bi.sql \
             supabase/migrations/20260101001200_security_hardening.sql \
             supabase/migrations/20260708090000_scheduling_phase1.sql \
             supabase/release-mvp/018_professional_schedules_canonical.sql \
@@ -117,7 +125,11 @@ jobs:
             supabase/migrations/20260712190000_rbac_schema_baseline.sql \
             supabase/release-mvp/011_insurance_authoritative_ledgers.sql \
             supabase/release-mvp/016_service_only_password_resets.sql \
-            supabase/release-mvp/017_clinical_safe_functions.sql
+            supabase/release-mvp/017_clinical_safe_functions.sql \
+            supabase/migrations/20260714090000_telemedicine_rpc_hardening.sql \
+            supabase/migrations/20260714100000_legacy_rpc_acl_hardening.sql \
+            supabase/migrations/20260714120000_clinical_billing_safety_foundation.sql \
+            supabase/migrations/20260714130000_tenant_integrity_and_legacy_rpc_hardening.sql
           do
             echo "Applying baseline: $artifact"
             psql -v ON_ERROR_STOP=1 -1 -f "$artifact"

@@ -4,6 +4,10 @@
 
 BEGIN;
 
+-- Fixture loading must not create audit rows; security assertions below run
+-- after the trigger bypass is scoped to this disposable transaction.
+SET LOCAL session_replication_role = replica;
+
 CREATE OR REPLACE FUNCTION auth.uid()
 RETURNS uuid
 LANGUAGE sql
@@ -40,6 +44,28 @@ INSERT INTO public.appointments
 OVERRIDING SYSTEM VALUE VALUES
   (930001, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 910001, 920001, DATE '2026-07-20', TIME '09:00', TIME '09:30'),
   (930002, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 910002, 920002, DATE '2026-07-20', TIME '10:00', TIME '10:30');
+
+INSERT INTO public.billing_accounts
+  (id, company_id, patient_id, billing_type, account_type, competence_month)
+VALUES
+  ('a1000000-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 910001, 'particular', 'ambulatorial', DATE '2026-07-01'),
+  ('b1000000-0000-4000-8000-000000000001', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 910002, 'particular', 'ambulatorial', DATE '2026-07-01');
+
+INSERT INTO public.nursing_medication_administrations
+  (id, company_id, patient_id, medication, status)
+VALUES
+  (940001, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 910001, 'Medicamento A', 'em_preparo'),
+  (940002, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 910002, 'Medicamento B', 'em_preparo');
+
+INSERT INTO public.patient_allergies
+  (company_id, patient_id, allergen, severity, status)
+VALUES
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 910001, 'penicilina', 'grave', 'ativa');
+
+INSERT INTO public.patient_medications
+  (company_id, patient_id, medication, status)
+VALUES
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 910001, 'Medicamento A', 'em_uso');
 
 SET LOCAL ROLE authenticated;
 SET LOCAL app.test_user_id = '11111111-1111-4111-8111-111111111111';
@@ -86,6 +112,84 @@ BEGIN
   IF NOT denied THEN
     RAISE EXCEPTION 'F1 RLS: cross-tenant UPDATE was not denied';
   END IF;
+
+  denied := false;
+  BEGIN
+    INSERT INTO public.patient_allergies (company_id, patient_id, allergen)
+    VALUES ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 910002, 'cross-tenant');
+  EXCEPTION WHEN OTHERS THEN
+    denied := true;
+  END;
+  IF NOT denied THEN
+    RAISE EXCEPTION 'F1 integrity: clinical record accepted patient from another tenant';
+  END IF;
+
+  denied := false;
+  BEGIN
+    INSERT INTO public.billing_pending_issues (company_id, billing_account_id, issue_code, issue_label)
+    VALUES ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'b1000000-0000-4000-8000-000000000001', 'cross-tenant', 'Cross tenant');
+  EXCEPTION WHEN OTHERS THEN
+    denied := true;
+  END;
+  IF NOT denied THEN
+    RAISE EXCEPTION 'F1 integrity: billing issue accepted account from another tenant';
+  END IF;
+END
+$f1$;
+
+DO $f1$
+DECLARE
+  checks integer;
+  pending integer;
+  alerts integer;
+  denied boolean := false;
+BEGIN
+  SELECT count(*) INTO checks FROM public.bedside_check(940001, 910001) WHERE ok;
+  IF checks <> 3 THEN
+    RAISE EXCEPTION 'F1 clinical: bedside_check returned % successful checks, expected 3', checks;
+  END IF;
+
+  SELECT public.billing_check_pending('a1000000-0000-4000-8000-000000000001') INTO pending;
+  IF pending <> 0 THEN
+    RAISE EXCEPTION 'F1 billing: particular account returned % structural pending issues', pending;
+  END IF;
+
+  SELECT count(*) INTO alerts
+    FROM public.check_prescription_safety(910001, 'penicilina');
+  IF alerts <> 1 THEN
+    RAISE EXCEPTION 'F1 clinical: prescription safety returned % alerts, expected 1', alerts;
+  END IF;
+
+  SET LOCAL app.test_user_id = '22222222-2222-4222-8222-222222222222';
+  BEGIN
+    PERFORM public.bedside_check(940001, 910001);
+  EXCEPTION WHEN OTHERS THEN
+    denied := true;
+  END;
+  IF NOT denied THEN
+    RAISE EXCEPTION 'F1 clinical: cross-tenant bedside_check was accepted';
+  END IF;
+
+  denied := false;
+  BEGIN
+    PERFORM public.billing_check_pending('a1000000-0000-4000-8000-000000000001');
+  EXCEPTION WHEN OTHERS THEN
+    denied := true;
+  END;
+  IF NOT denied THEN
+    RAISE EXCEPTION 'F1 billing: cross-tenant billing_check_pending was accepted';
+  END IF;
+
+  denied := false;
+  BEGIN
+    PERFORM public.check_prescription_safety(910001, 'penicilina');
+  EXCEPTION WHEN OTHERS THEN
+    denied := true;
+  END;
+  IF NOT denied THEN
+    RAISE EXCEPTION 'F1 clinical: cross-tenant prescription safety was accepted';
+  END IF;
+  SET LOCAL app.test_user_id = '11111111-1111-4111-8111-111111111111';
 END
 $f1$;
 DO $f1$

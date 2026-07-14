@@ -80,6 +80,11 @@ BEGIN
  RETURN jsonb_build_object('checkin_id',v_checkin.id,'ticket_id',v_ticket.id,'ticket',v_ticket.prefix||lpad(v_ticket.number::TEXT,3,'0'),'released_by_exception',v_exception,'issues',v_ready->'issues');
 END $$;
 
+REVOKE ALL ON FUNCTION public.get_reception_checkin_readiness(BIGINT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.perform_reception_checkin_secure(BIGINT, TEXT, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_reception_checkin_readiness(BIGINT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.perform_reception_checkin_secure(BIGINT, TEXT, TEXT) TO authenticated;
+
 ALTER TABLE reception_checkins ENABLE ROW LEVEL SECURITY;ALTER TABLE reception_checkin_status_history ENABLE ROW LEVEL SECURITY;ALTER TABLE reception_queue_tickets ENABLE ROW LEVEL SECURITY;ALTER TABLE reception_patient_pending_issues ENABLE ROW LEVEL SECURITY;ALTER TABLE reception_exception_releases ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='app_prontomedic') THEN
  GRANT SELECT ON reception_checkins,reception_checkin_status_history,reception_queue_tickets,reception_patient_pending_issues,reception_exception_releases TO app_prontomedic;

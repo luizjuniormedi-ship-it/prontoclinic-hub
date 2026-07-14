@@ -11,11 +11,11 @@ CREATE OR REPLACE FUNCTION public.update_reception_authorization_secure(
  p_authorization_id UUID,p_status TEXT,p_protocol_number TEXT DEFAULT NULL,p_authorization_number TEXT DEFAULT NULL,
  p_password_number TEXT DEFAULT NULL,p_valid_until DATE DEFAULT NULL,p_quantity_authorized INTEGER DEFAULT NULL,p_reason TEXT DEFAULT NULL
 )
-RETURNS public.reception_authorizations LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
-DECLARE v_actor RECORD;v_old reception_authorizations;v_row reception_authorizations;
+RETURNS public.insurance_authorizations LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
+DECLARE v_actor RECORD;v_old insurance_authorizations;v_row insurance_authorizations;
 BEGIN
  SELECT * INTO v_actor FROM get_scheduling_actor();PERFORM assert_scheduling_permission();
- SELECT * INTO v_old FROM reception_authorizations WHERE id=p_authorization_id FOR UPDATE;IF NOT FOUND THEN RAISE EXCEPTION 'Autorizacao nao encontrada';END IF;
+ SELECT * INTO v_old FROM insurance_authorizations WHERE id=p_authorization_id FOR UPDATE;IF NOT FOUND THEN RAISE EXCEPTION 'Autorizacao nao encontrada';END IF;
  IF p_status NOT IN ('pendente','solicitada','em_analise','autorizada','parcialmente_autorizada','negada','vencida','cancelada','reenviada','liberada_excecao') THEN RAISE EXCEPTION 'Status de autorizacao invalido';END IF;
  IF p_status IN ('autorizada','parcialmente_autorizada') AND NULLIF(trim(COALESCE(p_authorization_number,'')),'') IS NULL THEN RAISE EXCEPTION 'Numero da autorizacao e obrigatorio';END IF;
  IF p_status='negada' AND NULLIF(trim(COALESCE(p_reason,'')),'') IS NULL THEN RAISE EXCEPTION 'Motivo da negativa e obrigatorio';END IF;
@@ -23,7 +23,7 @@ BEGIN
   IF COALESCE(v_actor.role_name,'') NOT IN ('admin','administrador','gestor','supervisor','supervisor_recepcao','diretoria') THEN RAISE EXCEPTION 'Perfil sem permissao para liberar excecao';END IF;
   IF NULLIF(trim(COALESCE(p_reason,'')),'') IS NULL THEN RAISE EXCEPTION 'Justificativa da excecao e obrigatoria';END IF;
  END IF;
- UPDATE reception_authorizations SET status=p_status,protocol_number=COALESCE(NULLIF(trim(COALESCE(p_protocol_number,'')),''),protocol_number),
+ UPDATE insurance_authorizations SET status=p_status,protocol_number=COALESCE(NULLIF(trim(COALESCE(p_protocol_number,'')),''),protocol_number),
  authorization_number=COALESCE(NULLIF(trim(COALESCE(p_authorization_number,'')),''),authorization_number),password_number=COALESCE(NULLIF(trim(COALESCE(p_password_number,'')),''),password_number),
  valid_until=COALESCE(p_valid_until,valid_until),quantity_authorized=COALESCE(p_quantity_authorized,quantity_authorized),
  authorized_at=CASE WHEN p_status IN ('autorizada','parcialmente_autorizada','liberada_excecao') THEN NOW() ELSE authorized_at END,
@@ -38,24 +38,29 @@ END $$;
 CREATE OR REPLACE FUNCTION public.update_reception_eligibility_secure(
  p_eligibility_id UUID,p_status TEXT,p_protocol_number TEXT DEFAULT NULL,p_result_detail TEXT DEFAULT NULL
 )
-RETURNS public.reception_eligibility_checks LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
-DECLARE v_actor RECORD;v_old reception_eligibility_checks;v_row reception_eligibility_checks;
+RETURNS public.insurance_eligibility_checks LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
+DECLARE v_actor RECORD;v_old insurance_eligibility_checks;v_row insurance_eligibility_checks;
 BEGIN
  SELECT * INTO v_actor FROM get_scheduling_actor();PERFORM assert_scheduling_permission();
- SELECT * INTO v_old FROM reception_eligibility_checks WHERE id=p_eligibility_id FOR UPDATE;IF NOT FOUND THEN RAISE EXCEPTION 'Elegibilidade nao encontrada';END IF;
+ SELECT * INTO v_old FROM insurance_eligibility_checks WHERE id=p_eligibility_id FOR UPDATE;IF NOT FOUND THEN RAISE EXCEPTION 'Elegibilidade nao encontrada';END IF;
  IF p_status NOT IN ('elegivel','nao_elegivel','pendente','em_analise','portal_indisponivel','nao_obrigatoria','liberado_excecao') THEN RAISE EXCEPTION 'Status de elegibilidade invalido';END IF;
  IF p_status IN ('nao_elegivel','portal_indisponivel') AND NULLIF(trim(COALESCE(p_result_detail,'')),'') IS NULL THEN RAISE EXCEPTION 'Detalhe do resultado e obrigatorio';END IF;
  IF p_status='liberado_excecao' THEN
   IF COALESCE(v_actor.role_name,'') NOT IN ('admin','administrador','gestor','supervisor','supervisor_recepcao','diretoria') THEN RAISE EXCEPTION 'Perfil sem permissao para liberar excecao';END IF;
   IF NULLIF(trim(COALESCE(p_result_detail,'')),'') IS NULL THEN RAISE EXCEPTION 'Justificativa da excecao e obrigatoria';END IF;
  END IF;
- UPDATE reception_eligibility_checks SET status=p_status,protocol_number=COALESCE(NULLIF(trim(COALESCE(p_protocol_number,'')),''),protocol_number),
+ UPDATE insurance_eligibility_checks SET status=p_status,protocol_number=COALESCE(NULLIF(trim(COALESCE(p_protocol_number,'')),''),protocol_number),
  result_detail=COALESCE(NULLIF(trim(COALESCE(p_result_detail,'')),''),result_detail),checked_at=CASE WHEN p_status NOT IN ('pendente','em_analise') THEN NOW() ELSE checked_at END,
  checked_by=v_actor.user_id WHERE id=p_eligibility_id RETURNING * INTO v_row;
  INSERT INTO reception_admin_history(company_id,entity_type,entity_id,appointment_id,from_status,to_status,reason,details,actor_user_id)
  VALUES(v_row.company_id,'eligibility',v_row.id::TEXT,v_row.appointment_id,v_old.status,v_row.status,p_result_detail,jsonb_build_object('protocol',v_row.protocol_number),v_actor.user_id);
  RETURN v_row;
 END $$;
+
+REVOKE ALL ON FUNCTION public.update_reception_authorization_secure(UUID, TEXT, TEXT, TEXT, TEXT, DATE, INTEGER, TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.update_reception_eligibility_secure(UUID, TEXT, TEXT, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.update_reception_authorization_secure(UUID, TEXT, TEXT, TEXT, TEXT, DATE, INTEGER, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.update_reception_eligibility_secure(UUID, TEXT, TEXT, TEXT) TO authenticated;
 
 ALTER TABLE reception_admin_history ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='app_prontomedic') THEN
