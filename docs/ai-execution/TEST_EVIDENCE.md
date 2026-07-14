@@ -179,3 +179,13 @@ O catálogo LIS agora respeita tenant; valores de referência sem `company_id` c
 - A VPS foi consultada em modo somente leitura: frontend/auth HTTP 200, PM2 online, PostgreSQL em loopback, RLS habilitado/forçado e `app_prontomedic` sem `rolsuper`/`rolbypassrls`.
 
 Essa evidencia fecha a correção dos scripts e a saúde básica da infraestrutura. Ainda exige segundo tenant homologado, login operacional, reconciliação read-only do DataSIGH e restore de backup para liberar produção.
+
+## Evidencia do gate de backup e restore PostgreSQL 18 no head ca7cc62
+
+- F1 ephemeral tenant gate: run `29299733394` (#48), `success`.
+- CI geral: run `29299733405` (#433), `success`.
+- O gate usa `postgres:18` para `pg_dump` e `pg_restore`, compatível com o serviço PostgreSQL 18.4 do CI.
+- O job `test` passou por validação dos scripts VPS, migrações, replay de auth, backup/restore efêmero, lint, build, testes unitários e segurança do auth proxy.
+- O E2E permaneceu explicitamente `skipped` porque os secrets de runtime não estão configurados.
+
+Esta evidencia comprova o backup/restore em banco efêmero. O restore real na VPS, o segundo tenant operacional, o login homologado e a reconciliação somente leitura do DataSIGH continuam gates externos e não foram falsamente marcados como concluídos.
