@@ -44,3 +44,16 @@ SELECT count(*) AS audit_match_count
 \endif
 
 \echo 'F1_AUDIT_RPC_PASS'
+
+SELECT count(*) AS audit_append_only_trigger_count
+  FROM pg_trigger
+ WHERE tgrelid = 'public.audit_logs'::regclass
+   AND tgname = 'trg_audit_logs_append_only'
+   AND NOT tgisinternal;
+
+\if :audit_append_only_trigger_count != 1
+  \echo 'AUDIT_RPC_FAIL: trigger append-only ausente'
+  \quit 1
+\endif
+
+\echo 'F1_AUDIT_APPEND_ONLY_CONTRACT_PASS'
