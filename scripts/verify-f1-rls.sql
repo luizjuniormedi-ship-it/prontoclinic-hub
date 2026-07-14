@@ -52,6 +52,9 @@ DECLARE
   v_name TEXT;
 BEGIN
   PERFORM set_config('request.jwt.claim.sub', 'f1000000-0000-4000-8000-000000000011', false);
+  IF public.current_company_id() IS DISTINCT FROM public.get_my_company_id() THEN
+    RAISE EXCEPTION 'F1_RLS_FAIL: helpers de tenant retornam empresas diferentes';
+  END IF;
   SELECT count(*) INTO v_visible FROM public.patients;
   IF v_visible <> 1 THEN
     RAISE EXCEPTION 'F1_RLS_FAIL: tenant A deveria enxergar 1 paciente, obteve %', v_visible;
