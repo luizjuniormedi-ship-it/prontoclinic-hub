@@ -29,23 +29,18 @@ $$;
 
 RESET ROLE;
 
-DO $$
-DECLARE
-  v_row BIGINT;
-BEGIN
-  SELECT id INTO v_row
-    FROM public.audit_logs
-   WHERE id = :'audit_log_id'::BIGINT
-     AND company_id = 'f1000000-0000-4000-8000-000000000001'::uuid
-     AND cd_usuario = 'f1000000-0000-4000-8000-000000000011'::uuid
-     AND tabela = 'patients'
-     AND registro_id = '910001'
-     AND acao = 'VIEW_RECORD';
+SELECT count(*) AS audit_match_count
+  FROM public.audit_logs
+ WHERE id = :'audit_log_id'::BIGINT
+   AND company_id = 'f1000000-0000-4000-8000-000000000001'::uuid
+   AND cd_usuario = 'f1000000-0000-4000-8000-000000000011'::uuid
+   AND tabela = 'patients'
+   AND registro_id = '910001'
+   AND acao = 'VIEW_RECORD';
 
-  IF v_row IS DISTINCT FROM :'audit_log_id'::BIGINT THEN
-    RAISE EXCEPTION 'AUDIT_RPC_FAIL: retorno nao corresponde ao registro inserido';
-  END IF;
+\if :audit_match_count != 1
+  \echo 'AUDIT_RPC_FAIL: retorno nao corresponde ao registro inserido'
+  \quit 1
+\endif
 
-  RAISE NOTICE 'F1_AUDIT_RPC_PASS log_id=%', v_row;
-END
-$$;
+\echo 'F1_AUDIT_RPC_PASS'
