@@ -151,6 +151,7 @@ jobs:
           SQL
           psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260710193000_insurance_contract_rules_foundation.sql
           psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260714180000_insurance_rpc_tenant_boundary.sql
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260714190000_insurance_secure_tenant_rpc.sql
           echo "Running clinical safe function contract"
           psql -v ON_ERROR_STOP=1 <<'SQL'
           DO $f1$
@@ -201,6 +202,8 @@ jobs:
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_operational_behavior_gate.sql
           echo "Running F1 Convenios tenant boundary gate"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_convenios_tenant_boundary_gate.sql
+          echo "Running F1 Convenios secure RPC gate"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_convenios_secure_rpc_gate.sql
 
       - name: Upload F1 evidence
         if: always()
