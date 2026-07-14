@@ -28,3 +28,7 @@ CREATE POLICY "notification_templates_admin_write"
 
 COMMENT ON POLICY "notification_templates_read" ON public.notification_templates IS
   'Global templates are explicit (company_id NULL); scoped templates require the user company.';
+
+-- RLS remains the authorization boundary; these table privileges enable the
+-- admin policy to evaluate writes instead of failing before policy evaluation.
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.notification_templates TO authenticated;
