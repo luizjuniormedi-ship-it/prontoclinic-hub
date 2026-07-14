@@ -84,6 +84,14 @@ O workflow exige Secrets protegidos, sem valores no repositorio: `PRONTOMEDIC_E2
 
 O resultado é prova executável em PostgreSQL 18 descartável. Ainda não autoriza produção: falta repetir RLS/owner/BYPASSRLS no runtime homologado, validar login operacional, reconciliar o DataSIGH em modo somente leitura, testar integrações reais e provar rollback/observabilidade.
 
+## Atualizacao de identidade dos helpers no head e404deb
+
+- A migration `20260714001000_identity_helper_alignment.sql` alinha `current_company_id()`, `is_admin()` e `is_staff()` ao identificador canonico `user_profiles.id = auth.uid()`.
+- O fallback por `user_profiles.user_id` foi removido dos helpers de autorizacao para evitar atribuicao de permissoes ao perfil errado.
+- F1 ephemeral gate run `29297162975` (#18) e CI geral run `29297162824` (#418) passaram apos a migration e a assercao de igualdade entre helpers.
+
+O runtime homologado/VPS ainda precisa ser auditado com role nao-superusuaria e credenciais protegidas antes da aprovacao de producao.
+
 ## Atualizacao de evidencia F1 em 2026-07-14
 
 - O workflow efemero `.github/workflows/f1-ephemeral-gate.yml` executou no commit `d286fbf` como GitHub Actions run `29295965946` (#4) e terminou com `success`.
