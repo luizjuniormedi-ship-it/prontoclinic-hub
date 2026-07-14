@@ -20,6 +20,20 @@ CREATE TABLE IF NOT EXISTS auth.users (
   recovery_token TEXT
 );
 
+-- O auth proxy local persiste refresh tokens para reproduzir o contrato do
+-- Supabase. No Supabase real esta tabela ja existe; no replay limpo ela precisa
+-- ser criada para que o primeiro login nao falhe depois da senha valida.
+CREATE TABLE IF NOT EXISTS auth.refresh_tokens (
+  token UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  revoked BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_refresh_tokens_user
+  ON auth.refresh_tokens(user_id, revoked);
+
 -- A tabela real do Supabase já existe; estes ADDs tornam apenas o replay
 -- limpo compatível com o seed E2E e com o auth server local.
 ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS instance_id UUID;
