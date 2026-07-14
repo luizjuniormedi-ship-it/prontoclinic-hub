@@ -92,11 +92,22 @@ jobs:
           }
           trap cleanup EXIT
 
-          pg_dump "$DATABASE_URL" --format=custom --no-owner --no-acl --file="$dump"
+          # O servico e PostgreSQL 18; use os binarios da mesma major para
+          # evitar que a imagem do runner escolha um pg_dump mais antigo.
+          docker run --rm --network host \
+            -e PGPASSWORD=postgres \
+            -v "$RUNNER_TEMP:/backup" postgres:18 \
+            pg_dump -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+              --format=custom --no-owner --no-acl --file=/backup/prontomedic-rollback-check.dump
           test -s "$dump"
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE $restore_db"
           restore_url="postgresql://postgres:postgres@localhost:54322/$restore_db"
-          pg_restore "$restore_url" --exit-on-error --no-owner --no-acl "$dump"
+          docker run --rm --network host \
+            -e PGPASSWORD=postgres \
+            -v "$RUNNER_TEMP:/backup" postgres:18 \
+            pg_restore -h 127.0.0.1 -p 54322 -U postgres \
+              --exit-on-error --no-owner --no-acl -d "$restore_db" \
+              /backup/prontomedic-rollback-check.dump
           patients=$(psql "$restore_url" -Atqc 'SELECT count(*) FROM public.patients')
           profiles=$(psql "$restore_url" -Atqc 'SELECT count(*) FROM public.user_profiles')
           printf 'ROLLBACK_RESTORE_PASS patients=%s profiles=%s\n' "$patients" "$profiles"
