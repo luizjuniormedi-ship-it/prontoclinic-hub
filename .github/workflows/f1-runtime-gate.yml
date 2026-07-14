@@ -57,13 +57,11 @@ jobs:
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon NOLOGIN; END IF;
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN CREATE ROLE service_role NOLOGIN; END IF;
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_prontomedic') THEN CREATE ROLE app_prontomedic NOLOGIN; END IF;
           END
           $f1$;
           ALTER ROLE anon NOBYPASSRLS;
           ALTER ROLE authenticated NOBYPASSRLS;
           ALTER ROLE service_role BYPASSRLS;
-          ALTER ROLE app_prontomedic NOLOGIN NOBYPASSRLS;
           CREATE SCHEMA IF NOT EXISTS auth;
           CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY);
           CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $f1$
@@ -130,18 +128,29 @@ jobs:
             supabase/release-mvp/011_insurance_authoritative_ledgers.sql \
             supabase/release-mvp/016_service_only_password_resets.sql \
             supabase/release-mvp/017_clinical_safe_functions.sql \
-            supabase/migrations/20260710193000_insurance_contract_rules_foundation.sql \
             supabase/migrations/20260714090000_telemedicine_rpc_hardening.sql \
             supabase/migrations/20260714100000_legacy_rpc_acl_hardening.sql \
             supabase/migrations/20260714120000_clinical_billing_safety_foundation.sql \
             supabase/migrations/20260714130000_tenant_integrity_and_legacy_rpc_hardening.sql \
             supabase/migrations/20260714150000_notification_templates_tenant_hardening.sql \
-            supabase/migrations/20260714170000_lis_tenant_rls_hardening.sql \
-            supabase/migrations/20260714180000_insurance_rpc_tenant_boundary.sql
+            supabase/migrations/20260714170000_lis_tenant_rls_hardening.sql
           do
             echo "Applying baseline: $artifact"
             psql -v ON_ERROR_STOP=1 -1 -f "$artifact"
           done
+          echo "Applying Convenios tenant-boundary replay fixtures"
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          DO $f1$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_prontomedic') THEN
+              CREATE ROLE app_prontomedic NOLOGIN;
+            END IF;
+          END
+          $f1$;
+          ALTER ROLE app_prontomedic NOLOGIN NOBYPASSRLS;
+          SQL
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260710193000_insurance_contract_rules_foundation.sql
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260714180000_insurance_rpc_tenant_boundary.sql
           echo "Running clinical safe function contract"
           psql -v ON_ERROR_STOP=1 <<'SQL'
           DO $f1$
