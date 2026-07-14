@@ -9,5 +9,15 @@ CREATE POLICY "Authenticated can read lab catalog"
   FOR SELECT TO authenticated
   USING (company_id = public.get_my_company_id());
 
+DROP POLICY IF EXISTS "Lab can manage exam catalog" ON public.exames_lab_catalogo;
+CREATE POLICY "Lab can manage exam catalog"
+  ON public.exames_lab_catalogo
+  FOR ALL TO authenticated
+  USING (
+    company_id = public.get_my_company_id()
+    AND public.is_lab_user(auth.uid())
+  )
+  WITH CHECK (company_id = public.get_my_company_id());
+
 COMMENT ON POLICY "Authenticated can read lab catalog" ON public.exames_lab_catalogo
   IS 'Catalogo LIS e tenantizado porque contem precos e configuracoes da clinica.';
