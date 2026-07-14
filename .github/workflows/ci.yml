@@ -79,6 +79,30 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:54322/postgres
           E2E_SEED_PASSWORD: ci-only-seed-password
 
+      - name: Validate backup and restore on ephemeral PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          dump="$RUNNER_TEMP/prontomedic-rollback-check.dump"
+          restore_db=prontoclinic_restore_check
+          cleanup() {
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
+              "DROP DATABASE IF EXISTS $restore_db WITH (FORCE)" >/dev/null 2>&1 || true
+            rm -f "$dump"
+          }
+          trap cleanup EXIT
+
+          pg_dump "$DATABASE_URL" --format=custom --no-owner --no-acl --file="$dump"
+          test -s "$dump"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE $restore_db"
+          restore_url="postgresql://postgres:postgres@localhost:54322/$restore_db"
+          pg_restore "$restore_url" --exit-on-error --no-owner --no-acl "$dump"
+          patients=$(psql "$restore_url" -Atqc 'SELECT count(*) FROM public.patients')
+          profiles=$(psql "$restore_url" -Atqc 'SELECT count(*) FROM public.user_profiles')
+          printf 'ROLLBACK_RESTORE_PASS patients=%s profiles=%s\n' "$patients" "$profiles"
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:54322/postgres
+
       - name: Lint
         run: npm run lint
 
