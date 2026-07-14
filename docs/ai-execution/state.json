@@ -1,17 +1,30 @@
 {
-  "updated_at": "2026-07-10",
+  "updated_at": "2026-07-14",
   "phase": "security-hardening",
   "status": "in_progress",
   "current_module": "authentication-rbac",
-  "current_task": "post-deploy health and tenant-isolation integration proof",
+  "current_task": "VPS/login homologation, DataSIGH read-only reconciliation, backup/restore/rollback evidence",
   "latest_local_commit": "5435d60",
   "latest_known_vps_release": "37199ee",
   "production_ready": false,
   "open_p0": [
-    "tenant_isolation_integration",
-    "ci_migration_replay",
     "vps_healthcheck_and_login",
     "datasigh_read_only_reconciliation",
-    "rollback_evidence"
+    "backup_restore_rollback_evidence"
+  ],
+  "latest_branch": "fix/f1-tenant-integrity-20260714",
+  "latest_commit": "03344df6d52ce8f1859b702497a2621e21b361d8",
+  "latest_validation": {
+    "status": "PASS_GITHUB",
+    "f1_runtime_run": 29368282977,
+    "ci_run": 29368282978,
+    "appointment_session_tenant_boundary": "PASS",
+    "fixture_scope": "service_role_only_for_internal_fixture_setup",
+    "vps_mutation": false,
+    "datasigh_mutation": false
+  },
+  "open_p1": [
+    "runtime_postgresql_owner_bypassrls_replay_on_vps",
+    "full_rls_global_parity_local_remote"
   ]
 }
