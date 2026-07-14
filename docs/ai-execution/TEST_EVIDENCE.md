@@ -200,3 +200,13 @@ Esta evidencia comprova o backup/restore em banco efêmero. O restore real na VP
 - CI geral: run `29300026284` (#435), `success`.
 
 Esta alteracao melhora o gate local, mas nao substitui a execucao E2E real nem a homologacao operacional com usuarios, tenants e secrets protegidos.
+
+## Evidencia da propagacao de falha do healthcheck VPS no head d02e105
+
+- `scripts/vps_healthcheck.sh` agora atualiza o estado de auth e frontend apos as tentativas de restart.
+- O script retorna `exit 0` somente quando os checks terminam saudaveis e `exit 1` quando qualquer dependencia permanece indisponivel.
+- A sintaxe foi coberta pelo passo `Validate VPS shell scripts` do CI.
+- F1 ephemeral tenant gate: run `29300332802` (#56), `success`.
+- CI geral: run `29300332885` (#437), `success`.
+
+Esta correcao permite que cron/systemd/monitoramento detectem indisponibilidade persistente. Nao substitui observabilidade completa com request id, metricas, latencia e alertas ativos.
