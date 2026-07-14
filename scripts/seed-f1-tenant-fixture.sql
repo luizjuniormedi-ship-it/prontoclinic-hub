@@ -7,6 +7,12 @@
   \quit 1
 \endif
 
+\if :{?f1_ephemeral}
+\else
+  \echo 'Protecao: esta fixture exige -v f1_ephemeral=1 e so pode rodar em banco descartavel'
+  \quit 1
+\endif
+
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- O dump de producao possui estas tabelas. A criacao condicional permite que a

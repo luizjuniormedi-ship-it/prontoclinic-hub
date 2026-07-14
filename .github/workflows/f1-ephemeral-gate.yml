@@ -24,7 +24,6 @@ jobs:
       PGDATABASE: postgres
       E2E_BASE_URL: http://127.0.0.1:8000
       VITE_SUPABASE_ANON_KEY: f1-ephemeral-anon-key
-      F1_PASSWORD: F1-only-ephemeral-password-2026
 
     services:
       postgres:
@@ -54,6 +53,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate ephemeral credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "F1_PASSWORD=F1-$(openssl rand -hex 24)" >> "$GITHUB_ENV"
+
       - name: Apply migrations
         shell: bash
         run: |
@@ -72,14 +77,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v f1_password="$F1_PASSWORD" \
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v f1_password="$F1_PASSWORD" -v f1_ephemeral=1 \
             -f scripts/seed-f1-tenant-fixture.sql
 
       - name: Start local auth proxy
         shell: bash
         run: |
           set -euo pipefail
-          nohup env JWT_SECRET=f1-ephemeral-jwt-secret-012345678901234567890123 \
+          JWT_SECRET="$(openssl rand -hex 32)"
+          nohup env JWT_SECRET="$JWT_SECRET" \
             LOCAL_AUTH_PORT=8000 node local-auth-server.mjs > /tmp/prontomedic-auth.log 2>&1 &
           echo $! > /tmp/prontomedic-auth.pid
           for attempt in {1..30}; do
