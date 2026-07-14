@@ -118,3 +118,13 @@ Essa evidencia prova o comportamento reproduzivel do proxy em banco limpo. O gat
 - Secrets requeridos: `PRONTOMEDIC_E2E_BASE_URL`, `PRONTOMEDIC_ANON_KEY`, `PRONTOMEDIC_TENANT_A_EMAIL`, `PRONTOMEDIC_TENANT_A_PASSWORD`, `PRONTOMEDIC_TENANT_B_EMAIL` e `PRONTOMEDIC_TENANT_B_PASSWORD`.
 - Pre-condicao: tenants A e B devem ser empresas distintas.
 - Cobertura: login dos dois perfis, leitura de perfil, leitura e contagem de paciente, tentativa de insercao cross-tenant, PATCH cross-tenant e verificacao de imutabilidade do registro original.
+
+## Evidencia RLS do head 3384af4
+
+- F1 ephemeral tenant gate: run `29296848599` (#14), job `86972163361`, `success`.
+- CI geral: run `29296848658` (#416), `success`; migrations, type-check, lint, build, testes unitarios, seguranca do proxy e cobertura concluídos.
+- A etapa `Verify PostgreSQL RLS with non-bypass role` passou em PostgreSQL 18 limpo. O log registrou `F1_RLS_PASS tenant_visible=1 cross_read=0 cross_update=0`.
+- O ator de prova foi criado como `NOSUPERUSER NOBYPASSRLS`, recebeu grants mínimos, não era proprietário de `public.patients`, e foi removido com cleanup explícito.
+- A etapa de isolamento HTTP registrou `TENANT_ISOLATION=PASS checks=10 failures=0`.
+
+Esta evidencia fecha o gate efêmero de RLS e isolamento tenant. Não substitui a execução contra o runtime homologado/VPS, nem a validação read-only contra o DataSIGH.

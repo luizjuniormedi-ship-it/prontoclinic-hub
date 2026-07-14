@@ -73,6 +73,17 @@ Executar o workflow manual `F1 runtime gate` com Secrets homologados; depois reg
 
 O workflow exige Secrets protegidos, sem valores no repositorio: `PRONTOMEDIC_E2E_BASE_URL`, `PRONTOMEDIC_ANON_KEY`, `PRONTOMEDIC_TENANT_A_EMAIL`, `PRONTOMEDIC_TENANT_A_PASSWORD`, `PRONTOMEDIC_TENANT_B_EMAIL` e `PRONTOMEDIC_TENANT_B_PASSWORD`. Os usuarios A e B devem existir em empresas diferentes; o teste verifica leitura, contagem, insercao e PATCH cross-tenant sem persistencia indevida.
 
+## Atualizacao do gate RLS no head 3384af4
+
+- A migration `20260714000000_patients_rls_hardening.sql` habilita e força RLS em `public.patients`, concede apenas DML a `authenticated` e aplica policies tenant por `public.get_my_company_id()`.
+- O F1 ephemeral gate run `29296848599` (#14) passou com um ator `NOSUPERUSER NOBYPASSRLS`, não proprietário da tabela; a prova confirmou `tenant_visible=1`, `cross_read=0` e `cross_update=0`.
+- A mesma execução terminou com `TENANT_ISOLATION=PASS checks=10 failures=0`.
+- A falha anterior ocorreu somente na limpeza do ator temporário; o commit `3384af4` passou a revogar grants e remover o role antes de encerrar o gate.
+
+### Limite atual
+
+O resultado é prova executável em PostgreSQL 18 descartável. Ainda não autoriza produção: falta repetir RLS/owner/BYPASSRLS no runtime homologado, validar login operacional, reconciliar o DataSIGH em modo somente leitura, testar integrações reais e provar rollback/observabilidade.
+
 ## Atualizacao de evidencia F1 em 2026-07-14
 
 - O workflow efemero `.github/workflows/f1-ephemeral-gate.yml` executou no commit `d286fbf` como GitHub Actions run `29295965946` (#4) e terminou com `success`.
