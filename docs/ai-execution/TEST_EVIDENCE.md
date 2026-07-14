@@ -210,3 +210,13 @@ Esta alteracao melhora o gate local, mas nao substitui a execucao E2E real nem a
 - CI geral: run `29300332885` (#437), `success`.
 
 Esta correcao permite que cron/systemd/monitoramento detectem indisponibilidade persistente. Nao substitui observabilidade completa com request id, metricas, latencia e alertas ativos.
+
+## Evidencia de observabilidade HTTP no head d1183d7
+
+- O auth server agora gera um `X-Request-Id` por requisicao e o expoe ao cliente via CORS.
+- Cada requisicao registra log JSON com evento, request_id, metodo, rota sem query string, status HTTP e duracao em milissegundos.
+- Nenhum token, senha ou query string e incluido no evento de observabilidade.
+- F1 ephemeral tenant gate: run `29300648693` (#60), `success`.
+- CI geral: run `29300648691` (#439), `success`.
+
+Esta melhoria cobre correlacao e latencia no backend local. Alertas ativos, agregacao de logs e metricas de infraestrutura ainda dependem da configuracao operacional da VPS.
