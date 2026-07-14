@@ -148,3 +148,13 @@ Esta correcao elimina a inconsistencia estatica entre helpers. Ela nao substitui
 - O gate registra `F1_INSURANCE_ROLE_PASS direct_global_access=closed` quando o role existir.
 
 Esta correção fecha o acesso direto global; ela não simula a integração operacional. O módulo precisa de RPC tenant-aware antes de ser liberado para escrita.
+
+## Evidencia do RPC tenant-aware de Convênios
+
+- Commit: `05d25ee`.
+- F1 ephemeral tenant gate: run `29297744350` (#26), `success`.
+- CI geral: run `29297744335` (#422), `success`.
+- O teste chamou o RPC com `company_id` do tenant B sob identidade do tenant A e recebeu `42501`.
+- A mesma identidade chamou o RPC com sua própria empresa e recebeu resultado de validação sem criação de snapshot.
+
+O RPC é somente de validação; não concede CRUD direto nem libera mutações sem autorização específica.

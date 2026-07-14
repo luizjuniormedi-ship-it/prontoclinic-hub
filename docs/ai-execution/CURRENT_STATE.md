@@ -101,6 +101,15 @@ O runtime homologado/VPS ainda precisa ser auditado com role nao-superusuaria e 
 
 O acesso operacional a Convênios deve ser reaberto somente por RPC tenant-aware, com teste de isolamento e contexto de identidade comprovado.
 
+## RPC tenant-aware de Convênios no head 05d25ee
+
+- `validate_insurance_operation_secure(...)` foi criado como única superfície pública para a validação de regras de Convênios.
+- O RPC rejeita identidade ausente ou `company_id` diferente do tenant retornado por `get_my_company_id()` antes de consultar regras.
+- O F1 ephemeral gate run `29297744350` (#26) e o CI geral run `29297744335` (#422) passaram.
+- A prova confirmou tenant cruzado bloqueado e tenant correto autorizado para validação sem snapshot.
+
+O acesso de escrita a contratos continua fechado até existir RPC específico para cada mutação, com autorização por perfil e auditoria.
+
 ## Atualizacao de evidencia F1 em 2026-07-14
 
 - O workflow efemero `.github/workflows/f1-ephemeral-gate.yml` executou no commit `d286fbf` como GitHub Actions run `29295965946` (#4) e terminou com `success`.
