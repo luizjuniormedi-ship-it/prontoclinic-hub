@@ -4,7 +4,7 @@
  * Testes unitários do módulo de Telemedicina.
  *
  * Cobre:
- *   - criarSala retorna UUID e cria sala no Daily (best-effort)
+ *   - criarSala só libera a sala após confirmação do Daily
  *   - entrarSala valida token e gera meeting token
  *   - finalizar chama RPC com métricas
  *   - enviarMensagem insere no banco
@@ -92,10 +92,17 @@ describe("telemedicinaService.criarSala", () => {
     const chain: any = {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: salaFake, error: null }),
+      single: vi
+        .fn()
+        .mockResolvedValueOnce({ data: salaFake, error: null })
+        .mockResolvedValueOnce({
+          data: { ...salaFake, ds_url_daily: "https://test.daily.co/pm-1" },
+          error: null,
+        }),
       update: vi.fn().mockReturnThis(),
     };
-    (supabase.from as any).mockReturnValueOnce(chain);
+    // A criação confirmada atualiza a mesma sala após a resposta do Daily.
+    (supabase.from as any).mockReturnValue(chain);
 
     // Mock fetch para Daily.co (criar room)
     fetchMock.mockResolvedValueOnce({
@@ -107,12 +114,30 @@ describe("telemedicinaService.criarSala", () => {
 
     const result = await telemedicinaService.criarSala(1);
     expect(result).toBeDefined();
+    expect(result.ds_url_daily).toBe("https://test.daily.co/pm-1");
     expect(supabase.rpc).toHaveBeenCalledWith("criar_sala_telemedicina", { p_appointment_id: 1 });
   });
 
   it("lança erro se RPC falhar", async () => {
     (supabase.rpc as any).mockResolvedValueOnce({ data: null, error: { message: "Appointment not found" } });
     await expect(telemedicinaService.criarSala(999)).rejects.toThrow("Appointment not found");
+  });
+
+  it("marca a sala como falha quando o Daily não responde", async () => {
+    (supabase.rpc as any).mockResolvedValueOnce({ data: "sala-uuid-1", error: null });
+    const chain: any = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: salaFake, error: null }),
+      update: vi.fn().mockReturnThis(),
+    };
+    (supabase.from as any).mockReturnValue(chain);
+    fetchMock.mockRejectedValueOnce(new Error("Daily indisponível"));
+
+    await expect(telemedicinaService.criarSala(1)).rejects.toThrow(
+      "Não foi possível criar a sala de telemedicina no provedor",
+    );
+    expect(chain.update).toHaveBeenCalledWith({ tp_status: "FALHOU" });
   });
 });
 
@@ -178,6 +203,39 @@ describe("telemedicinaService.finalizar", () => {
         p_packet_loss: 0.5,
       }),
     );
+  });
+});
+
+describe("telemedicinaService.assinarPrescricao", () => {
+  it("falha fechado sem marcar ou criar receita sem PDF/Storage real", async () => {
+    const chain: any = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      update: vi.fn().mockReturnThis(),
+      insert: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: { id: 7, cd_paciente: 10, cd_medico: 20 },
+        error: null,
+      }),
+    };
+    (supabase.from as any).mockReturnValue(chain);
+
+    await expect(
+      telemedicinaService.assinarPrescricao(7, "hash", "certificado"),
+    ).rejects.toThrow("armazenamento real do PDF ainda não está configurado");
+
+    expect(chain.update).not.toHaveBeenCalled();
+    expect(chain.insert).not.toHaveBeenCalled();
+  });
+});
+
+describe("telemedicinaService.habilitarGravacao", () => {
+  it("falha fechado sem registrar consentimento como gravação ativa", async () => {
+    await expect(
+      telemedicinaService.habilitarGravacao("sala-uuid-1", true),
+    ).rejects.toThrow("integração real de gravação ainda não está configurada");
+
+    expect(supabase.rpc).not.toHaveBeenCalled();
   });
 });
 

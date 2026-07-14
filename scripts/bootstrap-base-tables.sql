@@ -26,10 +26,10 @@ GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE TABLE IF NOT EXISTS auth.users (id UUID PRIMARY KEY, email VARCHAR(200), raw_user_meta_data JSONB, raw_app_meta_data JSONB, created_at TIMESTAMPTZ DEFAULT NOW());
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID AS $$
-  SELECT coalesce(nullif(current_setting('request.jwt.claim.sub', true), '')::uuid, (SELECT id FROM auth.users LIMIT 1));
+  SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid;
 $$ LANGUAGE SQL STABLE;
 CREATE OR REPLACE FUNCTION auth.role() RETURNS TEXT AS $$
-  SELECT coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), 'service_role');
+  SELECT coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), 'anon');
 $$ LANGUAGE SQL STABLE;
 CREATE OR REPLACE FUNCTION auth.jwt() RETURNS JSONB AS $$
   SELECT coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb, '{}'::jsonb);
@@ -164,10 +164,16 @@ CREATE TABLE IF NOT EXISTS public.billings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, anon, authenticated, service_role;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO postgres, anon, authenticated, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, service_role;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO postgres, service_role;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO postgres, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO authenticated;
 
 -- Patch idempotente: dropar funções que mudam tipo de retorno
 DROP FUNCTION IF EXISTS public.confirm_pre_cadastro(character varying) CASCADE;

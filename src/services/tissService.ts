@@ -428,6 +428,11 @@ export const tissService = {
       const m = respXml.match(/<ns\d:protocolo[^>]*>([^<]+)<\/ns\d:protocolo>|<protocolo[^>]*>([^<]+)<\/protocolo>/);
       protocolo = m?.[1] || m?.[2];
 
+      if (sent && !protocolo) {
+        sent = false;
+        motivoRejeicao = "Resposta HTTP 200 sem protocolo TISS da operadora";
+      }
+
       if (!sent) {
         motivoRejeicao = `HTTP ${res.status}: ${respXml.substring(0, 500)}`;
       }
@@ -468,7 +473,8 @@ export const tissService = {
   }> {
     // Parser simples por regex (em produção, usar DOMParser)
     const protocoloMatch = returnXML.match(/<ns\d:protocolo[^>]*>([^<]+)<\/ns\d:protocolo>|<protocolo[^>]*>([^<]+)<\/protocolo>/);
-    const protocolo = protocoloMatch?.[1] || protocoloMatch?.[2] || `PROC_${Date.now()}`;
+    const protocolo = protocoloMatch?.[1] || protocoloMatch?.[2];
+    if (!protocolo) throw new Error("Retorno TISS sem protocolo da operadora");
 
     const valorProcMatch = returnXML.match(/<valorProcessado[^>]*>([0-9.]+)<\/valorProcessado>/);
     const valorLibMatch = returnXML.match(/<valorLiberado[^>]*>([0-9.]+)<\/valorLiberado>/);
@@ -606,9 +612,9 @@ export const tissService = {
         const m = txt.match(/<protocolo[^>]*>([^<]+)<\/protocolo>/);
         protocolo = m?.[1];
       } else {
-        // Em homologacao, simular sucesso
-        sent = true;
-        protocolo = `REC_HOM_${Date.now()}`;
+        // Sem endpoint configurado, nunca fabricar protocolo nem marcar como enviado.
+        // O recurso permanece pendente para envio controlado pela operadora.
+        sent = false;
       }
     } catch {
       sent = false;

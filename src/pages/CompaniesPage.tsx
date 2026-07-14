@@ -13,6 +13,7 @@ import { LoadingState, EmptyState } from "@/components/StateViews";
 import { catalogService } from "@/services/catalogService";
 import { Company, Unit, UnitType } from "@/types";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 
 const unitTypeLabels: Record<UnitType, string> = { matriz: "Matriz", filial: "Filial", ambulatorio: "Ambulatório", laboratorio: "Laboratório" };
 
@@ -23,12 +24,78 @@ export default function CompaniesPage() {
   const [search, setSearch] = useState("");
   const [companyDialogOpen, setCompanyDialogOpen] = useState(false);
   const [unitDialogOpen, setUnitDialogOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editingCompany, setEditingCompany] = useState<Company | null>(null);
+  const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
+  const [companyForm, setCompanyForm] = useState({ legalName: "", tradeName: "", cnpj: "", phone: "", email: "" });
+  const [unitForm, setUnitForm] = useState({ companyId: "", name: "", code: "", type: "filial" as UnitType, address: "", city: "", state: "", phone: "", email: "" });
   const { toast } = useToast();
+  const { companyId } = useAuth();
+
+  const reload = async () => {
+    const [nextCompanies, nextUnits] = await Promise.all([catalogService.companies.getAll(), catalogService.units.getAll()]);
+    setCompanies(nextCompanies);
+    const companyNames = new Map(nextCompanies.map((company) => [company.id, company.tradeName]));
+    setUnits(nextUnits.map((unit) => ({ ...unit, companyName: companyNames.get(unit.companyId) ?? "—" })));
+  };
+
+  const handleCreateCompany = async () => {
+    if (!companyForm.legalName.trim() || !companyForm.tradeName.trim() || !companyForm.cnpj.trim()) {
+      toast({ title: "Preencha razão social, nome fantasia e CNPJ", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      if (editingCompany) {
+        await catalogService.companies.update(editingCompany.id, companyForm);
+        toast({ title: "Empresa atualizada" });
+      } else {
+        await catalogService.companies.create(companyForm);
+        toast({ title: "Empresa cadastrada" });
+      }
+      setCompanyDialogOpen(false);
+      setEditingCompany(null);
+      setCompanyForm({ legalName: "", tradeName: "", cnpj: "", phone: "", email: "" });
+      await reload();
+    } catch (err) {
+      toast({ title: "Erro ao cadastrar empresa", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCreateUnit = async () => {
+    const selectedCompanyId = unitForm.companyId || companyId || companies[0]?.id;
+    if (!selectedCompanyId || !unitForm.name.trim() || !unitForm.code.trim()) {
+      toast({ title: "Preencha empresa, nome e código da unidade", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      const input = { ...unitForm, companyId: selectedCompanyId };
+      if (editingUnit) {
+        await catalogService.units.update(editingUnit.id, input);
+        toast({ title: "Unidade atualizada" });
+      } else {
+        await catalogService.units.create(input);
+        toast({ title: "Unidade cadastrada" });
+      }
+      setUnitDialogOpen(false);
+      setEditingUnit(null);
+      setUnitForm({ companyId: selectedCompanyId, name: "", code: "", type: "filial", address: "", city: "", state: "", phone: "", email: "" });
+      await reload();
+    } catch (err) {
+      toast({ title: "Erro ao cadastrar unidade", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   useEffect(() => {
     Promise.all([catalogService.companies.getAll(), catalogService.units.getAll()])
       .then(([c, u]) => {
-        setCompanies(c); setUnits(u); setLoading(false);
+        const companyNames = new Map(c.map((company) => [company.id, company.tradeName]));
+        setCompanies(c); setUnits(u.map((unit) => ({ ...unit, companyName: companyNames.get(unit.companyId) ?? "—" }))); setLoading(false);
       })
       .catch((err) => {
         console.error("Erro ao carregar empresas/unidades:", err);
@@ -53,8 +120,8 @@ export default function CompaniesPage() {
     <div className="space-y-6 animate-fade-in">
       <PageHeader title="Empresas & Unidades" description="Gestão multiempresa e multiunidade" actions={
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setUnitDialogOpen(true)}><MapPin className="mr-2 h-4 w-4" />Nova Unidade</Button>
-          <Button onClick={() => setCompanyDialogOpen(true)}><Plus className="mr-2 h-4 w-4" />Nova Empresa</Button>
+          <Button variant="outline" onClick={() => { setUnitForm((form) => ({ ...form, companyId: companyId || companies[0]?.id || "" })); setUnitDialogOpen(true); }}><MapPin className="mr-2 h-4 w-4" />Nova Unidade</Button>
+          <Button onClick={() => { setEditingCompany(null); setCompanyForm({ legalName: "", tradeName: "", cnpj: "", phone: "", email: "" }); setCompanyDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" />Nova Empresa</Button>
         </div>
       } />
 
@@ -84,7 +151,7 @@ export default function CompaniesPage() {
                       <TableCell className="text-xs">{c.cnpj}</TableCell>
                       <TableCell className="text-xs">{c.phone}</TableCell>
                       <TableCell><Badge variant="outline" className={`border-0 ${c.status === "active" ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"}`}>{c.status === "active" ? "Ativo" : "Inativo"}</Badge></TableCell>
-                      <TableCell><Button variant="ghost" size="sm" className="h-7 text-xs">Editar</Button></TableCell>
+                      <TableCell><Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setEditingCompany(c); setCompanyForm({ legalName: c.legalName, tradeName: c.tradeName, cnpj: c.cnpj, phone: c.phone, email: c.email }); setCompanyDialogOpen(true); }}>Editar</Button></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -109,7 +176,7 @@ export default function CompaniesPage() {
                       <TableCell className="text-xs">{u.city}/{u.state}</TableCell>
                       <TableCell><Badge variant="outline" className="border-0 bg-primary/10 text-primary text-[10px]">{unitTypeLabels[u.type]}</Badge></TableCell>
                       <TableCell><Badge variant="outline" className={`border-0 ${u.status === "active" ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"}`}>{u.status === "active" ? "Ativo" : "Inativo"}</Badge></TableCell>
-                      <TableCell><Button variant="ghost" size="sm" className="h-7 text-xs">Editar</Button></TableCell>
+                      <TableCell><Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setEditingUnit(u); setUnitForm({ companyId: u.companyId, name: u.name, code: u.code, type: u.type, address: u.address, city: u.city, state: u.state, phone: u.phone, email: u.email }); setUnitDialogOpen(true); }}>Editar</Button></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -122,19 +189,19 @@ export default function CompaniesPage() {
       {/* Company dialog */}
       <Dialog open={companyDialogOpen} onOpenChange={setCompanyDialogOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Nova Empresa</DialogTitle><DialogDescription>Cadastre uma empresa do grupo.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>{editingCompany ? "Editar Empresa" : "Nova Empresa"}</DialogTitle><DialogDescription>Cadastre uma empresa do grupo.</DialogDescription></DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2"><Label>Razão Social *</Label><Input placeholder="Razão social" /></div>
-            <div className="space-y-2"><Label>Nome Fantasia *</Label><Input placeholder="Nome fantasia" /></div>
+            <div className="space-y-2"><Label>Razão Social *</Label><Input value={companyForm.legalName} onChange={(e) => setCompanyForm((form) => ({ ...form, legalName: e.target.value }))} placeholder="Razão social" /></div>
+            <div className="space-y-2"><Label>Nome Fantasia *</Label><Input value={companyForm.tradeName} onChange={(e) => setCompanyForm((form) => ({ ...form, tradeName: e.target.value }))} placeholder="Nome fantasia" /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2"><Label>CNPJ *</Label><Input placeholder="00.000.000/0000-00" /></div>
-              <div className="space-y-2"><Label>Telefone</Label><Input placeholder="(00) 0000-0000" /></div>
+              <div className="space-y-2"><Label>CNPJ *</Label><Input value={companyForm.cnpj} onChange={(e) => setCompanyForm((form) => ({ ...form, cnpj: e.target.value }))} placeholder="00.000.000/0000-00" /></div>
+              <div className="space-y-2"><Label>Telefone</Label><Input value={companyForm.phone} onChange={(e) => setCompanyForm((form) => ({ ...form, phone: e.target.value }))} placeholder="(00) 0000-0000" /></div>
             </div>
-            <div className="space-y-2"><Label>E-mail</Label><Input placeholder="email@empresa.com" /></div>
+            <div className="space-y-2"><Label>E-mail</Label><Input type="email" value={companyForm.email} onChange={(e) => setCompanyForm((form) => ({ ...form, email: e.target.value }))} placeholder="email@empresa.com" /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCompanyDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={() => { toast({ title: "Empresa cadastrada!" }); setCompanyDialogOpen(false); }}>Cadastrar</Button>
+            <Button disabled={saving} onClick={handleCreateCompany}>{saving ? "Salvando..." : editingCompany ? "Atualizar" : "Cadastrar"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -142,19 +209,19 @@ export default function CompaniesPage() {
       {/* Unit dialog */}
       <Dialog open={unitDialogOpen} onOpenChange={setUnitDialogOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Nova Unidade</DialogTitle><DialogDescription>Cadastre uma filial ou unidade.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>{editingUnit ? "Editar Unidade" : "Nova Unidade"}</DialogTitle><DialogDescription>Cadastre uma filial ou unidade.</DialogDescription></DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2"><Label>Empresa *</Label>
-              <Select><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+              <Select value={unitForm.companyId} onValueChange={(value) => setUnitForm((form) => ({ ...form, companyId: value }))}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>{companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.tradeName}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2"><Label>Nome da Unidade *</Label><Input placeholder="Ex: Unidade Centro" /></div>
-              <div className="space-y-2"><Label>Código *</Label><Input placeholder="UC01" /></div>
+              <div className="space-y-2"><Label>Nome da Unidade *</Label><Input value={unitForm.name} onChange={(e) => setUnitForm((form) => ({ ...form, name: e.target.value }))} placeholder="Ex: Unidade Centro" /></div>
+              <div className="space-y-2"><Label>Código *</Label><Input value={unitForm.code} onChange={(e) => setUnitForm((form) => ({ ...form, code: e.target.value }))} placeholder="UC01" /></div>
             </div>
             <div className="space-y-2"><Label>Tipo *</Label>
-              <Select><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+              <Select value={unitForm.type} onValueChange={(value) => setUnitForm((form) => ({ ...form, type: value as UnitType }))}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="matriz">Matriz</SelectItem>
                   <SelectItem value="filial">Filial</SelectItem>
@@ -163,19 +230,19 @@ export default function CompaniesPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2"><Label>Endereço</Label><Input placeholder="Endereço completo" /></div>
+            <div className="space-y-2"><Label>Endereço</Label><Input value={unitForm.address} onChange={(e) => setUnitForm((form) => ({ ...form, address: e.target.value }))} placeholder="Endereço completo" /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2"><Label>Cidade</Label><Input placeholder="Cidade" /></div>
-              <div className="space-y-2"><Label>Estado</Label><Input placeholder="UF" /></div>
+              <div className="space-y-2"><Label>Cidade</Label><Input value={unitForm.city} onChange={(e) => setUnitForm((form) => ({ ...form, city: e.target.value }))} placeholder="Cidade" /></div>
+              <div className="space-y-2"><Label>Estado</Label><Input value={unitForm.state} onChange={(e) => setUnitForm((form) => ({ ...form, state: e.target.value }))} placeholder="UF" /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2"><Label>Telefone</Label><Input placeholder="(00) 0000-0000" /></div>
-              <div className="space-y-2"><Label>E-mail</Label><Input placeholder="email@unidade.com" /></div>
+              <div className="space-y-2"><Label>Telefone</Label><Input value={unitForm.phone} onChange={(e) => setUnitForm((form) => ({ ...form, phone: e.target.value }))} placeholder="(00) 0000-0000" /></div>
+              <div className="space-y-2"><Label>E-mail</Label><Input type="email" value={unitForm.email} onChange={(e) => setUnitForm((form) => ({ ...form, email: e.target.value }))} placeholder="email@unidade.com" /></div>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setUnitDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={() => { toast({ title: "Unidade cadastrada!" }); setUnitDialogOpen(false); }}>Cadastrar</Button>
+            <Button disabled={saving} onClick={handleCreateUnit}>{saving ? "Salvando..." : editingUnit ? "Atualizar" : "Cadastrar"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

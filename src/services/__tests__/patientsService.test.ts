@@ -160,4 +160,42 @@ describe("patientsService — getAll (mapeamento)", () => {
     const exists = await patientsService.checkCpfExists("123.456.789-09");
     expect(exists).toBe(true);
   });
+
+  it("create normaliza CPF e telefone", async () => {
+    const insertSpy = vi.fn().mockReturnThis();
+    const chain: any = {
+      insert: insertSpy,
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: "p1", full_name: "Ana" }, error: null }),
+    };
+    (supabase.from as any).mockReturnValue(chain);
+    await patientsService.create({ name: "Ana", cpf: "123.456.789-09", phone: "(21) 99999-0000" } as any);
+    expect(insertSpy.mock.calls[0][0]).toMatchObject({ cpf: "12345678909", phone: "21999990000" });
+  });
+
+  it("create converte duplicidade em erro de domínio", async () => {
+    const chain: any = {
+      insert: vi.fn().mockReturnThis(), select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: null, error: { code: "23505", message: "duplicate" } }),
+    };
+    (supabase.from as any).mockReturnValue(chain);
+    await expect(patientsService.create({ name: "Ana", cpf: "12345678909" } as any)).rejects.toThrow(/Já existe/);
+  });
+
+  it("update e delete propagam operações", async () => {
+    const updateChain: any = { update: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), select: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: { id: "p1", full_name: "Ana" }, error: null }) };
+    (supabase.from as any).mockReturnValueOnce(updateChain);
+    await patientsService.update("p1", { name: "Ana" });
+    expect(updateChain.eq).toHaveBeenCalledWith("id", "p1");
+    const deleteChain: any = { delete: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ error: null }) };
+    (supabase.from as any).mockReturnValueOnce(deleteChain);
+    await patientsService.delete("p1");
+    expect(deleteChain.eq).toHaveBeenCalledWith("id", "p1");
+  });
+
+  it("search vazio delega para getAll", async () => {
+    const chain: any = { select: vi.fn().mockReturnThis(), order: vi.fn().mockResolvedValue({ data: [], error: null }) };
+    (supabase.from as any).mockReturnValue(chain);
+    await expect(patientsService.search("   ")).resolves.toEqual([]);
+  });
 });

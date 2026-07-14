@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   test:
@@ -41,19 +42,77 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate VPS shell scripts
+        run: bash -n scripts/vps_backup.sh scripts/vps_healthcheck.sh
+
       - name: Apply database migrations
         run: |
-          DATABASE_URL=postgresql://postgres:postgres@localhost:54322/postgres
           export PGPASSWORD=postgres
+
+          # Supabase supplies these roles; a clean PostgreSQL service does not.
+          # Create only missing compatibility roles before policy migrations.
+          for role in anon authenticated service_role; do
+            if ! psql "$DATABASE_URL" -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$role'" | grep -q 1; then
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE $role NOLOGIN"
+            fi
+          done
+
           for f in supabase/migrations/*.sql; do
             echo "Applying $f..."
-            psql -v ON_ERROR_STOP=1 -1 -h localhost -U postgres -d postgres -f "$f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f "$f"
           done
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:54322/postgres
 
       - name: Type check
         run: npm run type-check
+
+      - name: Validate auth replay compatibility
+        run: |
+          export PGPASSWORD=postgres
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -v e2e_password="$E2E_SEED_PASSWORD" \
+            -f scripts/seed-e2e-users.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
+            "SELECT column_name FROM information_schema.columns WHERE table_schema = 'auth' AND table_name = 'users' AND column_name IN ('encrypted_password','email_confirmed_at','raw_app_meta_data','raw_user_meta_data') ORDER BY column_name;"
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:54322/postgres
+          E2E_SEED_PASSWORD: ci-only-seed-password
+
+      - name: Validate backup and restore on ephemeral PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          dump="$RUNNER_TEMP/prontomedic-rollback-check.dump"
+          restore_db=prontoclinic_restore_check
+          cleanup() {
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
+              "DROP DATABASE IF EXISTS $restore_db WITH (FORCE)" >/dev/null 2>&1 || true
+            rm -f "$dump"
+          }
+          trap cleanup EXIT
+
+          # O servico e PostgreSQL 18; use os binarios da mesma major para
+          # evitar que a imagem do runner escolha um pg_dump mais antigo.
+          docker run --rm --network host \
+            -e PGPASSWORD=postgres \
+            -v "$RUNNER_TEMP:/backup" postgres:18 \
+            pg_dump -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+              --format=custom --no-owner --no-acl --file=/backup/prontomedic-rollback-check.dump
+          test -s "$dump"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE $restore_db"
+          restore_url="postgresql://postgres:postgres@localhost:54322/$restore_db"
+          docker run --rm --network host \
+            -e PGPASSWORD=postgres \
+            -v "$RUNNER_TEMP:/backup" postgres:18 \
+            pg_restore -h 127.0.0.1 -p 54322 -U postgres \
+              --exit-on-error --no-owner --no-acl -d "$restore_db" \
+              /backup/prontomedic-rollback-check.dump
+          patients=$(psql "$restore_url" -Atqc 'SELECT count(*) FROM public.patients')
+          profiles=$(psql "$restore_url" -Atqc 'SELECT count(*) FROM public.user_profiles')
+          printf 'ROLLBACK_RESTORE_PASS patients=%s profiles=%s\n' "$patients" "$profiles"
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:54322/postgres
 
       - name: Lint
         run: npm run lint
@@ -64,6 +123,9 @@ jobs:
       - name: Run unit tests with coverage
         run: npm run test:unit:coverage
 
+      - name: Run auth proxy security tests
+        run: npm run test:security
+
       - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v4
@@ -72,10 +134,20 @@ jobs:
           path: coverage/
           retention-days: 30
 
+      - name: E2E credential gate
+        run: |
+          if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
+            echo "E2E skipped: configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in repository Actions secrets." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "E2E enabled: Supabase runtime secrets are available." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Install Playwright
+        if: ${{ env.VITE_SUPABASE_URL != '' && env.VITE_SUPABASE_ANON_KEY != '' }}
         run: npx playwright install --with-deps chromium firefox webkit
 
       - name: Run E2E tests
+        if: ${{ env.VITE_SUPABASE_URL != '' && env.VITE_SUPABASE_ANON_KEY != '' }}
         run: npm run test:e2e
         env:
           CI: true
@@ -106,7 +178,7 @@ jobs:
           retention-days: 30
 
       - name: Fail if critical a11y violations
-        if: always()
+        if: ${{ always() && env.VITE_SUPABASE_URL != '' && env.VITE_SUPABASE_ANON_KEY != '' }}
         run: |
           if [ -f test-results/results.json ]; then
             test -f scripts/check-a11y-violations.mjs

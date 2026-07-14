@@ -1,0 +1,51 @@
+name: F1 runtime gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tenant-isolation:
+    name: Tenant isolation integration proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      E2E_BASE_URL: ${{ secrets.PRONTOMEDIC_E2E_BASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.PRONTOMEDIC_ANON_KEY }}
+      TENANT_A_EMAIL: ${{ secrets.PRONTOMEDIC_TENANT_A_EMAIL }}
+      TENANT_A_PASSWORD: ${{ secrets.PRONTOMEDIC_TENANT_A_PASSWORD }}
+      TENANT_B_EMAIL: ${{ secrets.PRONTOMEDIC_TENANT_B_EMAIL }}
+      TENANT_B_PASSWORD: ${{ secrets.PRONTOMEDIC_TENANT_B_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate protected inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in E2E_BASE_URL VITE_SUPABASE_ANON_KEY TENANT_A_EMAIL TENANT_A_PASSWORD TENANT_B_EMAIL TENANT_B_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required GitHub secret for $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 2
+          fi
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tenant isolation proof
+        run: npm run test:tenant-isolation

@@ -261,8 +261,14 @@ class TelemedicinaService {
       .single();
     if (selErr || !sala) throw new Error(selErr?.message ?? "Sala não encontrada");
 
-    // 3. Criar a sala no Daily.co (best-effort — se falhar, ainda retornamos
-    //    a sala local para que o médico possa tentar novamente)
+    const markRoomAsFailed = async () => {
+      await supabase
+        .from("telemedicina_salas")
+        .update({ tp_status: "FALHOU" })
+        .eq("id", sala.id);
+    };
+
+    // 3. A consulta só pode ser liberada quando a sala remota existir.
     let meetingUrl: string | null = null;
     if (env.VITE_DAILY_API_KEY && env.VITE_DAILY_DOMAIN && sala.ds_sala_daily) {
       try {
@@ -289,12 +295,16 @@ class TelemedicinaService {
         if (updErr) throw new Error(updErr.message);
         return upd as TelemedSala;
       } catch (err) {
-        // Mantém a sala local mesmo se Daily falhar — UI mostra retry
         console.warn("[telemedicina] Daily.co room create falhou:", err);
-        return sala as TelemedSala;
+        await markRoomAsFailed();
+        throw new Error("Não foi possível criar a sala de telemedicina no provedor");
       }
     }
-    return sala as TelemedSala;
+
+    await markRoomAsFailed();
+    throw new Error(
+      "Telemedicina indisponível: integração Daily.co não está configurada",
+    );
   }
 
   // 2.2. Entrar na sala com token de acesso
@@ -463,41 +473,17 @@ class TelemedicinaService {
       .single();
     if (selErr || !presc) throw new Error(selErr?.message ?? "Prescrição não encontrada");
 
-    // 2. Marcar como assinada
-    const { error: updErr } = await supabase
-      .from("telemedicina_prescricoes")
-      .update({ lg_assinada: true })
-      .eq("id", prescricaoId);
-    if (updErr) throw new Error(updErr.message);
-
-    // 3. Gerar URL do PDF (em produção: Supabase Storage signed URL)
-    // Aqui usamos uma URL determinística que o componente Prescriber
-    // converte em PDF client-side. Em produção, isto seria um upload
-    // real para o bucket S3/SUPABASE.
-    const fakeStorage = `receitas/${presc.cd_paciente}/${prescricaoId}.pdf`;
-    const urlPdf = `${env.VITE_SUPABASE_URL}/storage/v1/object/sign/${fakeStorage}?t=${Date.now()}`;
-
-    // 4. Criar registro em telemedicina_receitas
-    const dtValidade = new Date();
-    dtValidade.setDate(dtValidade.getDate() + validadeEmDias);
-
-    const { data: rec, error: insErr } = await supabase
-      .from("telemedicina_receitas")
-      .insert({
-        cd_prescricao_id: prescricaoId,
-        cd_paciente: presc.cd_paciente,
-        cd_medico: presc.cd_medico,
-        ds_receita_url: urlPdf,
-        cd_hash_assinatura: hashAssinatura,
-        cd_certificado_digital: certificado,
-        tp_receita: tipoReceita,
-        dt_validade: dtValidade.toISOString(),
-      })
-      .select("id")
-      .single();
-    if (insErr || !rec) throw new Error(insErr?.message ?? "Falha ao criar receita");
-
-    return { receitaId: rec.id as string, urlPdf };
+    // A assinatura só pode ser confirmada depois de gerar e armazenar o PDF
+    // assinado. Este serviço ainda não possui pipeline real de PDF/Storage;
+    // falhar fechado evita marcar a prescrição como assinada com uma URL
+    // inexistente ou registrar uma receita que não pode ser baixada.
+    void hashAssinatura;
+    void certificado;
+    void tipoReceita;
+    void validadeEmDias;
+    throw new Error(
+      "Assinatura digital indisponível: armazenamento real do PDF ainda não está configurado",
+    );
   }
 
   // 2.7. Gravação (com consentimento LGPD)
@@ -510,9 +496,14 @@ class TelemedicinaService {
       await this.registrarConsentimento(salaId, false);
       return { habilitada: false };
     }
-    await this.registrarConsentimento(salaId, true);
-    // Em produção: chama Daily.co /recordings/start
-    return { habilitada: true };
+
+    // O consentimento não pode ser apresentado como gravação ativa. A chamada
+    // Daily.co /recordings/start e o callback que persistirá a URL ainda não
+    // estão implementados; falhar antes do RPC evita registrar consentimento
+    // como se a gravação tivesse iniciado.
+    throw new Error(
+      "Gravação indisponível: integração real de gravação ainda não está configurada",
+    );
   }
 
   async registrarConsentimento(salaId: string, consentimento: boolean): Promise<void> {

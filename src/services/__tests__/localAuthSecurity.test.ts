@@ -10,10 +10,11 @@ describe("local auth server security invariants", () => {
     expect(source).toContain("if (!required) return { ok: false");
   });
 
-  it("aplica company_id derivado do perfil em leitura, insercao e alteracao", () => {
+  it("aplica company_id derivado do perfil e impede troca de tenant", () => {
     expect(source).toContain("requiredCompanyScope(profile, table)");
     expect(source).toContain('conditions.push(`"company_id" = $${paramIdx}`)');
-    expect(source).toContain("body.company_id = companyId");
+    expect(source).toContain("scopeInsertBody(body, companyId)");
+    expect(source).toContain("scopePatchBody(body, companyId)");
     expect(source).toContain("AND company_id = $${keys.length + 2}");
   });
 

@@ -1,15 +1,50 @@
 # Estado Atual de Execucao
 
-Atualizado em 2026-07-10.
+Atualizado em 2026-07-13.
 
 ## Fato tecnico
 
 - Repositorio local: `C:\Users\Meu Computador\AppData\Local\Temp\prontoclinic-hub`.
-- Ultimo commit local conhecido: `5435d60`.
+- Ultimo commit local conhecido: `b83cab2` (`ci: gate e2e on runtime secrets`).
 - Release funcional conhecida na VPS: `37199ee`.
 - A VPS executou build, migracoes e reload do Nginx na fase 1; a mensagem final de falha do wrapper foi causada por CRLF residual no shell remoto, nao por falha da publicacao.
 - PostgreSQL e backend precisam de nova verificacao operacional apos a ultima publicacao.
+- A verificacao somente leitura de 2026-07-13 confirmou PostgreSQL, backend PM2, Nginx e frontend ativos; login e isolamento entre tenants ainda nao foram provados.
 - O healthcheck local confirmou PostgreSQL, mas nao confirmou auth: o processo Node encerrou com `EPERM` do sandbox antes de escutar a porta 8000.
+- O CI falhou no replay de migrações por usar `localhost:5432` apesar do serviço publicar PostgreSQL em `localhost:54322`; o workflow foi corrigido para usar `DATABASE_URL` integralmente.
+- O replay seguinte confirmou que a porta foi corrigida e revelou a ordem incorreta da migration base; `base_tables` foi renomeada para preceder as migrations `202512...` dependentes.
+- O mesmo replay revelou a dependência externa de `auth.users`; foi adicionada uma migration idempotente de compatibilidade para replay limpo sem substituir a tabela quando ela já existir.
+- O replay seguinte encontrou `insurance_companies` usada antes de sua criação; as migrations fundacionais de pagamento, convênios, planos, vínculos profissionais e tabelas de preço foram reordenadas antes das alterações dependentes.
+- O replay seguinte avançou até as policies e encontrou roles Supabase ausentes no PostgreSQL limpo; o CI passou a criá-las de forma condicional antes das migrations.
+- O replay seguinte avançou até as policies e encontrou `auth.uid()` ausente; a compatibilidade agora cria essa função apenas em banco sem implementação Supabase.
+- O replay seguinte chegou às funções operacionais de agenda e encontrou `professional_schedules` sem tabela base; foi adicionada uma migration idempotente com as janelas usadas pelo cálculo de disponibilidade.
+- O replay seguinte chegou ao fluxo de recepção e encontrou as tabelas de autorização/elegibilidade ausentes; foi adicionada a fundação operacional antes da centralização em `insurance_*`.
+- O replay seguinte chegou ao histórico oficial e identificou a ausência de `quantity_used`; a coluna foi adicionada para suportar controle de quantidade e prevenção de glosa.
+- A validação local da rodada anterior passou com 476 testes, cobertura completa dentro dos thresholds, type-check, build e lint sem erros; o novo commit adiciona apenas workflow/documentação.
+- O status remoto do commit atual não possui execução GitHub Actions associada; o único status externo reportado é Vercel em falha por limite de build. Isso não constitui falha do código nem substitui o CI do repositório.
+- Foi criado o workflow manual `.github/workflows/f1-runtime-gate.yml`; ele exige Secrets protegidos para dois usuários de empresas distintas e executa somente o runner de isolamento, sem service role e sem DataSIGH.
+- A auditoria estática encontrou e corrigiu no bootstrap o fallback inseguro para o primeiro usuário e para `service_role`; a regra agora falha fechado (`auth.uid()` nulo e role padrão `anon`).
+- A compatibilidade de `auth.users` agora declara/adiciona de forma idempotente os campos usados pelo seed E2E e pelo auth server local (`encrypted_password`, `email_confirmed_at`, metadados e tokens).
+- O CI agora executa o seed E2E no PostgreSQL efêmero após o replay e verifica as colunas críticas de autenticação antes dos testes de aplicação.
+- A auditoria do backend confirmou que os vetores SQLi históricos estão protegidos; também foi corrigido o vazamento atual de mensagens SQL, que agora é registrado no servidor e substituído por erro genérico na resposta.
+- O módulo Empresas & Unidades deixou de simular sucesso: os formulários agora persistem no PostgreSQL, preservam razão social separada do nome fantasia, carregam dados cadastrais de unidades e exibem o vínculo empresa-unidade.
+- Foi adicionada a migration idempotente `20260713000000_companies_legal_name.sql`; ela não altera o DataSIGH e preenche a razão social histórica com o nome existente apenas quando a coluna está vazia.
+- A validação TypeScript desta rodada foi bloqueada antes do compilador pelo `EPERM` do Node no caminho Windows com espaço; `git diff --check` passou.
+- Os botões Editar de Empresas e Unidades agora atualizam o registro real; a atualização de unidade exige `id` e `company_id` no filtro.
+- Cadastros Mestres agora permitem criar e editar Especialidades com persistência real, substituindo o botão sem ação.
+- Configurações deixou de exibir ação RBAC sem destino; o botão agora encaminha ao gerenciador real de perfis.
+- Perfis de usuário deixou de exibir a contagem fixa de oito permissões; a tela agora consulta `role_permissions` e conta pelo `role_id` real.
+- O fluxo 2FA do login deixou de aceitar código não verificado ou redirecionar com sucesso parcial; quando o servidor exige 2FA sem OTP configurado, a sessão é encerrada e o acesso é bloqueado.
+- O TISS deixou de fabricar protocolo e marcar recurso de glosa como enviado quando não há endpoint real; o recurso permanece pendente.
+- O envio e o processamento TISS agora exigem protocolo retornado pela operadora; HTTP 200 ou XML sem protocolo não é tratado como sucesso.
+- A assinatura de prescrição em Telemedicina deixou de marcar a prescrição como assinada ou criar receita com URL falsa; enquanto o pipeline real de PDF/Storage não existir, a operação falha fechado sem efeitos persistidos.
+- O contrato de falha fechada da assinatura agora possui teste unitário que verifica ausência de atualização da prescrição e de inserção de receita.
+- A habilitação de gravação agora falha fechado antes de registrar consentimento quando a integração real de gravação não está configurada; o teste cobre que nenhum RPC é executado nesse caminho.
+- A criação de sala agora exige confirmação do Daily.co; falha ou ausência de configuração marca a sala como `FALHOU` e interrompe o acesso em vez de devolver uma sala local sem URL remota.
+- O chatbot clínico deixou de devolver texto de contingência como se fosse resposta de IA; quando a Edge Function falha, registra a tentativa sem conteúdo e retorna erro explícito.
+- O CI associado ao head anterior concluiu migrations, type-check, lint e build, mas falhou em um teste de Telemedicina por mock incompleto da segunda atualização Supabase; o teste foi corrigido para cobrir a cadeia de atualização e aguarda novo CI.
+- O CI seguinte repetiu migrations, type-check, lint e build e isolou a asserção do mock que não retornava a URL do `UPDATE`; o mock agora simula a linha atualizada e aguarda nova execução.
+- O CI passou nos testes unitários e de segurança, mas o E2E falhou por Secrets de runtime ausentes; o workflow agora registra o gate explicitamente e só executa Playwright/a11y quando as Secrets obrigatórias existem.
 
 ## Hipotese
 
@@ -25,4 +60,77 @@ O sistema nao esta apto para producao enquanto os testes P0 abaixo nao forem exe
 
 ## Proxima tarefa executavel
 
-Executar healthcheck pos-deploy, validar autenticacao/RBAC e criar evidencia negativa de isolamento por `company_id`.
+Executar o workflow manual `F1 runtime gate` com Secrets homologados; depois registrar a evidência negativa de isolamento por `company_id`, validar autenticação/RBAC, rodar os testes de segurança no CI e fechar os gates de rollback.
+
+## Atualizacao do head 66edb4b
+
+- CI `29288812014` concluido com sucesso em migrations, type-check, lint, build, testes unitarios, seguranca do proxy e cobertura.
+- E2E e a11y continuam condicionados a Secrets de runtime ausentes; o workflow registra o bloqueio sem transformar ausencia de teste em aprovacao.
+- Scanner de segredos local aprovado apos remover senha literal do runbook.
+- Producao continua bloqueada ate haver evidencia executavel de login, isolamento tenant, RLS/owner/BYPASSRLS e rollback.
+
+### Inputs obrigatorios do F1 runtime gate
+
+O workflow exige Secrets protegidos, sem valores no repositorio: `PRONTOMEDIC_E2E_BASE_URL`, `PRONTOMEDIC_ANON_KEY`, `PRONTOMEDIC_TENANT_A_EMAIL`, `PRONTOMEDIC_TENANT_A_PASSWORD`, `PRONTOMEDIC_TENANT_B_EMAIL` e `PRONTOMEDIC_TENANT_B_PASSWORD`. Os usuarios A e B devem existir em empresas diferentes; o teste verifica leitura, contagem, insercao e PATCH cross-tenant sem persistencia indevida.
+
+## Atualizacao do gate RLS no head 3384af4
+
+- A migration `20260714000000_patients_rls_hardening.sql` habilita e força RLS em `public.patients`, concede apenas DML a `authenticated` e aplica policies tenant por `public.get_my_company_id()`.
+- O F1 ephemeral gate run `29296848599` (#14) passou com um ator `NOSUPERUSER NOBYPASSRLS`, não proprietário da tabela; a prova confirmou `tenant_visible=1`, `cross_read=0` e `cross_update=0`.
+- A mesma execução terminou com `TENANT_ISOLATION=PASS checks=10 failures=0`.
+- A falha anterior ocorreu somente na limpeza do ator temporário; o commit `3384af4` passou a revogar grants e remover o role antes de encerrar o gate.
+
+### Limite atual
+
+O resultado é prova executável em PostgreSQL 18 descartável. Ainda não autoriza produção: falta repetir RLS/owner/BYPASSRLS no runtime homologado, validar login operacional, reconciliar o DataSIGH em modo somente leitura, testar integrações reais e provar rollback/observabilidade.
+
+## Atualizacao de identidade dos helpers no head e404deb
+
+- A migration `20260714001000_identity_helper_alignment.sql` alinha `current_company_id()`, `is_admin()` e `is_staff()` ao identificador canonico `user_profiles.id = auth.uid()`.
+- O fallback por `user_profiles.user_id` foi removido dos helpers de autorizacao para evitar atribuicao de permissoes ao perfil errado.
+- F1 ephemeral gate run `29297162975` (#18) e CI geral run `29297162824` (#418) passaram apos a migration e a assercao de igualdade entre helpers.
+
+O runtime homologado/VPS ainda precisa ser auditado com role nao-superusuaria e credenciais protegidas antes da aprovacao de producao.
+
+## Atualizacao de Convênios no head 76be026
+
+- A migration `20260714002000_insurance_role_fail_closed.sql` remove o CRUD global do role `app_prontomedic` nas tabelas de contratos, regras e snapshots.
+- A policy anterior `USING (true) WITH CHECK (true)` e o grant direto da função de validação foram removidos para esse role.
+- O gate F1 também verifica a ausência de `SELECT` e de policies globais residuais quando `app_prontomedic` existir.
+- F1 ephemeral gate run `29297480116` (#22) e CI geral run `29297479988` (#420) passaram.
+
+O acesso operacional a Convênios deve ser reaberto somente por RPC tenant-aware, com teste de isolamento e contexto de identidade comprovado.
+
+## RPC tenant-aware de Convênios no head 05d25ee
+
+- `validate_insurance_operation_secure(...)` foi criado como única superfície pública para a validação de regras de Convênios.
+- O RPC rejeita identidade ausente ou `company_id` diferente do tenant retornado por `get_my_company_id()` antes de consultar regras.
+- O F1 ephemeral gate run `29297744350` (#26) e o CI geral run `29297744335` (#422) passaram.
+- A prova confirmou tenant cruzado bloqueado e tenant correto autorizado para validação sem snapshot.
+
+O acesso de escrita a contratos continua fechado até existir RPC específico para cada mutação, com autorização por perfil e auditoria.
+
+## Isolamento do catalogo LIS no head c98169f
+
+- `exames_lab_catalogo` deixou de usar leitura global: a policy exige `company_id = get_my_company_id()`.
+- A policy antiga de gerenciamento também foi alinhada ao helper tenant-aware, removendo consulta direta a `user_profiles` durante a avaliação de RLS.
+- O F1 ephemeral gate run `29298189099` (#34) passou após a correção do grant mínimo de `SELECT`; o CI geral run `29298189167` (#426) também passou.
+- A prova usa dois catálogos com preços distintos e confirma leitura do catálogo A somente pelo tenant A.
+
+## Atualizacao de evidencia F1 em 2026-07-14
+
+- O workflow efemero `.github/workflows/f1-ephemeral-gate.yml` executou no commit `d286fbf` como GitHub Actions run `29295965946` (#4) e terminou com `success`.
+- A prova usou PostgreSQL 18 limpo, aplicou todas as migrations, criou apenas dados sinteticos de CI e iniciou `local-auth-server.mjs` com segredo temporario do runner.
+- Os dois usuarios sinteticos pertencem a empresas distintas; o teste confirmou login, leitura de perfil, leitura/contagem de paciente, bloqueio de insercao cross-tenant, ausencia de alteracao por PATCH cross-tenant e bloqueio de `company_id` explicito de outra empresa.
+- A migration de compatibilidade agora cria `auth.refresh_tokens` de forma idempotente, corrigindo a falha real encontrada no primeiro ciclo do gate.
+- O CI geral do mesmo commit terminou com sucesso no run `29295965906` (#411), incluindo migrations, type-check, lint, build, testes unitarios, seguranca e cobertura.
+
+### Limite da evidencia
+
+Esta prova fecha o comportamento do auth proxy e do escopo de tenant em replay limpo. Ela nao prova ainda RLS/owner/BYPASSRLS na instancia migrada da VPS, login com usuarios reais, reconciliacao read-only do DataSIGH, integrações externas ou rollback reproduzivel. O produto continua bloqueado para producao ate esses gates operacionais.
+
+## Revisao de seguranca posterior ao F1
+
+- O commit `b74f4da` tornou `auth.uid()` compativel com `request.jwt.claim.sub` quando houver claim transacional, mantendo retorno nulo quando nao houver identidade; a migration nao substitui a implementacao Supabase existente.
+- A fixture F1 agora exige explicitamente `-v f1_ephemeral=1`; senha e JWT sao gerados em runtime pelo workflow e nao ficam fixos no repositorio.
+- O F1 final do commit `b74f4da` passou no run `29296309572` (#8) e o CI geral passou no run `29296309584` (#413).

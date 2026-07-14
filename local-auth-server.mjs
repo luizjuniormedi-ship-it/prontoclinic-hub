@@ -10,11 +10,23 @@
  */
 import { createServer } from 'http';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'crypto';
+import { readFileSync } from 'fs';
 import pg from 'pg';
+import { scopeInsertBody, scopePatchBody } from './local-auth-security.mjs';
 const { Pool } = pg;
 
 const PORT = Number(process.env.LOCAL_AUTH_PORT || 8000);
-const JWT_SECRET = process.env.JWT_SECRET;
+function readSecret(envName, fileEnvName) {
+  const filePath = process.env[fileEnvName];
+  if (filePath) {
+    const value = readFileSync(filePath, 'utf8').trim();
+    if (!value) throw new Error(`${fileEnvName} aponta para um arquivo vazio`);
+    return value;
+  }
+  return process.env[envName];
+}
+
+const JWT_SECRET = readSecret('JWT_SECRET', 'JWT_SECRET_FILE');
 if (!JWT_SECRET || JWT_SECRET.length < 32) {
   throw new Error('JWT_SECRET obrigatorio e deve ter pelo menos 32 caracteres');
 }
@@ -29,7 +41,7 @@ const pool = new Pool({
   host: process.env.PGHOST || '127.0.0.1',
   port: Number(process.env.PGPORT || 5432),
   user: process.env.PGUSER || 'app_prontomedic',
-  password: process.env.PGPASSWORD,
+  password: readSecret('PGPASSWORD', 'PGPASSWORD_FILE'),
   database: process.env.PGDATABASE || 'prontoclinic',
 });
 
@@ -261,7 +273,7 @@ function cors(req, res) {
   }
   res.setHeader('Access-Control-Allow-Headers', 'authorization, apikey, content-type, prefer, range, x-client-info');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Expose-Headers', 'content-range');
+  res.setHeader('Access-Control-Expose-Headers', 'content-range, x-request-id');
   return true;
 }
 
@@ -288,6 +300,11 @@ function parseBody(req, maxBytes = 1024 * 1024) {
       try { resolve(JSON.parse(body)); } catch { resolve({}); }
     });
   });
+}
+
+function databaseFailure(res, error, code) {
+  console.error(`[DB_ERROR:${code}]`, error);
+  return json(res, { error: 'internal_error', code }, 500);
 }
 
 const loginAttempts = new Map();
@@ -325,6 +342,20 @@ function recordLoginFailure(key, now = Date.now()) {
 }
 
 const server = createServer(async (req, res) => {
+  const requestId = randomUUID();
+  const startedAt = process.hrtime.bigint();
+  res.setHeader('X-Request-Id', requestId);
+  res.on('finish', () => {
+    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+    console.log(JSON.stringify({
+      event: 'http_request',
+      request_id: requestId,
+      method: req.method,
+      path: new URL(req.url, `http://localhost:${PORT}`).pathname,
+      status: res.statusCode,
+      duration_ms: Number(durationMs.toFixed(3)),
+    }));
+  });
   const corsAllowed = cors(req, res);
   if (!corsAllowed) return json(res, { error: 'forbidden_origin' }, 403);
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
@@ -549,7 +580,7 @@ const server = createServer(async (req, res) => {
         return json(res, val);
       } catch (e) {
         await client.query('ROLLBACK');
-        return json(res, { error: e.message, code: 'PGRST202' }, 400);
+        return databaseFailure(res, e, 'PGRST202');
       } finally {
         client.release();
       }
@@ -756,17 +787,16 @@ const server = createServer(async (req, res) => {
           }
           return json(res, result.rows);
         } catch (e) {
-          return json(res, { error: e.message, code: 'PGRST000' }, 400);
+          return databaseFailure(res, e, 'PGRST000');
         }
       }
 
       if (req.method === 'POST') {
-        const body = await parseBody(req);
-        if (companyId) {
-          if (body.company_id && body.company_id !== companyId) {
-            return json(res, { error: 'forbidden', message: 'company_id nao pertence ao perfil autenticado' }, 403);
-          }
-          body.company_id = companyId;
+        let body = await parseBody(req);
+        try {
+          body = scopeInsertBody(body, companyId);
+        } catch (error) {
+          return json(res, { error: 'forbidden', message: error.message }, error.statusCode || 403);
         }
         const keys = Object.keys(body);
         if (keys.length === 0) return json(res, { error: 'bad_request', message: 'body vazio' }, 400);
@@ -789,12 +819,17 @@ const server = createServer(async (req, res) => {
           }
           return json(res, {}, 201);
         } catch (e) {
-          return json(res, { error: e.message }, 400);
+          return databaseFailure(res, e, 'REST_INSERT');
         }
       }
 
       if (req.method === 'PATCH') {
-        const body = await parseBody(req);
+        let body = await parseBody(req);
+        try {
+          body = scopePatchBody(body, companyId);
+        } catch (error) {
+          return json(res, { error: 'forbidden', message: error.message }, error.statusCode || 403);
+        }
         const keys = Object.keys(body);
         if (keys.length === 0) return json(res, { error: 'bad_request', message: 'body vazio' }, 400);
         for (const key of keys) {
@@ -815,7 +850,7 @@ const server = createServer(async (req, res) => {
           );
           return json(res, result.rows[0] || {});
         } catch (e) {
-          return json(res, { error: e.message }, 400);
+          return databaseFailure(res, e, 'REST_UPDATE');
         }
       }
     }
@@ -825,7 +860,7 @@ const server = createServer(async (req, res) => {
 
   } catch (err) {
     console.error('[ERROR]', err);
-    json(res, { error: err.message }, err.statusCode || 500);
+    json(res, { error: err.statusCode ? 'request_error' : 'internal_error' }, err.statusCode || 500);
   }
 });
 
