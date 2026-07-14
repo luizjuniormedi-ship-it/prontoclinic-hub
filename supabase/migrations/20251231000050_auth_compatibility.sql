@@ -51,12 +51,16 @@ ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS email_change TEXT;
 ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS email_change_token_new TEXT;
 ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS recovery_token TEXT;
 
--- Supabase provides auth.uid(); keep an inert compatibility function for
+-- Supabase provides auth.uid(); keep a claim-aware compatibility function for
 -- clean PostgreSQL replays without replacing an existing implementation.
 DO $$
 BEGIN
   IF to_regprocedure('auth.uid()') IS NULL THEN
-    EXECUTE 'CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS ''SELECT NULL::uuid''';
+    EXECUTE $fn$
+      CREATE FUNCTION auth.uid() RETURNS uuid
+      LANGUAGE sql STABLE
+      AS 'SELECT NULLIF(current_setting(''request.jwt.claim.sub'', true), '''')::uuid'
+    $fn$;
   END IF;
 END
 $$;
