@@ -3,6 +3,9 @@
 
 BEGIN;
 
+-- Fixture setup runs as an internal job; restore an authenticated claim before exercising user flows.
+SELECT set_config('request.jwt.claim.role', 'service_role', TRUE);
+
 CREATE OR REPLACE FUNCTION auth.uid()
 RETURNS uuid
 LANGUAGE sql
@@ -109,6 +112,7 @@ VALUES
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
    930003, 930007, 'pendente');
 
+SELECT set_config('request.jwt.claim.role', 'authenticated', TRUE);
 SET LOCAL ROLE authenticated;
 SET LOCAL app.test_user_id = '33333333-3333-4333-8333-333333333333';
 
