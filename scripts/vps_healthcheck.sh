@@ -76,14 +76,24 @@ if [ $AUTH_OK -eq 0 ]; then
     echo "[$(timestamp)] CRITICO: pm2 nao encontrado para reiniciar auth" >> "$LOG_FILE"
   fi
   sleep 5
-  check_auth_server && echo "[$(timestamp)] Auth server recuperado" >> "$LOG_FILE" || echo "[$(timestamp)] CRÃTICO: Auth server nÃ£o recuperou" >> "$LOG_FILE"
+  if check_auth_server; then
+    AUTH_OK=1
+    echo "[$(timestamp)] Auth server recuperado" >> "$LOG_FILE"
+  else
+    echo "[$(timestamp)] CRÃTICO: Auth server nÃ£o recuperou" >> "$LOG_FILE"
+  fi
 fi
 
 if [ $FRONTEND_OK -eq 0 ]; then
   echo "[$(timestamp)] Tentando restart do nginx..." >> "$LOG_FILE"
   systemctl restart nginx
   sleep 3
-  check_frontend && echo "[$(timestamp)] Frontend recuperado" >> "$LOG_FILE" || echo "[$(timestamp)] CRÃTICO: Frontend nÃ£o recuperou" >> "$LOG_FILE"
+  if check_frontend; then
+    FRONTEND_OK=1
+    echo "[$(timestamp)] Frontend recuperado" >> "$LOG_FILE"
+  else
+    echo "[$(timestamp)] CRÃTICO: Frontend nÃ£o recuperou" >> "$LOG_FILE"
+  fi
 fi
 
 if [ $DB_OK -eq 0 ]; then
@@ -92,4 +102,9 @@ if [ $DB_OK -eq 0 ]; then
   # echo "ProntoMedic: Banco de dados down em $(hostname)" | mail -s "ALERTA CRÃTICO" "$ALERT_EMAIL"
 fi
 
-exit 0
+# O codigo de saida precisa refletir o estado final para cron/systemd/monitoramento.
+# Antes, uma falha persistente era registrada mas terminava com sucesso.
+if [ $AUTH_OK -eq 1 ] && [ $FRONTEND_OK -eq 1 ] && [ $DB_OK -eq 1 ]; then
+  exit 0
+fi
+exit 1
