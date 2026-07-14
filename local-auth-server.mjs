@@ -262,7 +262,7 @@ function cors(req, res) {
   }
   res.setHeader('Access-Control-Allow-Headers', 'authorization, apikey, content-type, prefer, range, x-client-info');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Expose-Headers', 'content-range');
+  res.setHeader('Access-Control-Expose-Headers', 'content-range, x-request-id');
   return true;
 }
 
@@ -331,6 +331,20 @@ function recordLoginFailure(key, now = Date.now()) {
 }
 
 const server = createServer(async (req, res) => {
+  const requestId = randomUUID();
+  const startedAt = process.hrtime.bigint();
+  res.setHeader('X-Request-Id', requestId);
+  res.on('finish', () => {
+    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+    console.log(JSON.stringify({
+      event: 'http_request',
+      request_id: requestId,
+      method: req.method,
+      path: new URL(req.url, `http://localhost:${PORT}`).pathname,
+      status: res.statusCode,
+      duration_ms: Number(durationMs.toFixed(3)),
+    }));
+  });
   const corsAllowed = cors(req, res);
   if (!corsAllowed) return json(res, { error: 'forbidden_origin' }, 403);
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
