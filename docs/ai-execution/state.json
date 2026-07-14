@@ -13,16 +13,17 @@
     "backup_restore_rollback_evidence"
   ],
   "latest_branch": "fix/f1-tenant-integrity-20260714",
-  "latest_commit": "47104fbd4e54223f950b2eca44110b0cf7568ce4",
+  "latest_commit": "72b7d74d9e2a0d218cf17e4f82fc2d7281a6595e",
   "latest_validation": {
     "status": "PASS_GITHUB",
-    "f1_runtime_run": 29368580087,
-    "ci_run": 29368580010,
+    "f1_runtime_run": 29376855228,
+    "ci_run": 29376855298,
     "appointment_session_tenant_boundary": "PASS",
     "fixture_scope": "service_role_only_for_internal_fixture_setup",
     "vps_mutation": false,
     "datasigh_mutation": false,
-    "code_commit": "03344df6d52ce8f1859b702497a2621e21b361d8"
+    "code_commit": "72b7d74d9e2a0d218cf17e4f82fc2d7281a6595e",
+    "owner_bypassrls_assertion": "PASS; non-superuser owners cannot bypass RLS; postgres superuser is explicitly distinguished in ephemeral replay"
   },
   "open_p1": [
     "runtime_postgresql_owner_bypassrls_replay_on_vps",
