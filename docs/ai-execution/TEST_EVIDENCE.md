@@ -220,3 +220,13 @@ Esta correcao permite que cron/systemd/monitoramento detectem indisponibilidade 
 - CI geral: run `29300648691` (#439), `success`.
 
 Esta melhoria cobre correlacao e latencia no backend local. Alertas ativos, agregacao de logs e metricas de infraestrutura ainda dependem da configuracao operacional da VPS.
+
+## Evidencia do contrato seguro da RPC de auditoria no head 8948abc
+
+- F1 ephemeral tenant gate: run `29301250787` (#68), `success`.
+- CI geral: run `29301250773` (#443), `success`.
+- A migration `20260101000008_harden_audit_access_rpc.sql` corrige o retorno da RPC para o `BIGINT` real de `audit_logs`, limita as ações aceitas e valida o registro dentro da empresa do usuário autenticado.
+- O teste efêmero confirma que um usuário não acessa registro de outro tenant, não registra ação de escrita via RPC e recebe o identificador do log realmente inserido.
+- O mesmo gate confirmou migrations, RLS com role sem bypass, proxy de autenticação, restore PostgreSQL 18, lint, build, testes unitários e segurança do auth proxy.
+
+Esta evidencia fecha o contrato executável da RPC e o gate efêmero de isolamento. Ainda não comprova homologacao com dois usuarios reais na VPS, imutabilidade contra owner/service_role, restore real, reconciliacao somente leitura do DataSIGH ou alertas ativos.
