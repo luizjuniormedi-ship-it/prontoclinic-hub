@@ -14,6 +14,7 @@ DECLARE
   ];
   rel RECORD;
   role_record RECORD;
+  owner_record RECORD;
 BEGIN
   FOREACH required_table IN ARRAY protected_tables LOOP
     IF to_regclass('public.' || required_table) IS NULL THEN
@@ -36,11 +37,20 @@ BEGIN
     END IF;
   END LOOP;
 
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_roles
+    WHERE rolname = 'app_owner' AND rolbypassrls IS FALSE
+  ) THEN
+    RAISE EXCEPTION 'F1 runtime: app_owner must exist without BYPASSRLS';
+  END IF;
+
   FOR rel IN
     SELECT c.relname, c.relowner::regrole::text AS owner_name,
+           owner_role.rolbypassrls AS owner_bypassrls,
            c.relrowsecurity, c.relforcerowsecurity
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_roles owner_role ON owner_role.oid = c.relowner
     WHERE n.nspname = 'public' AND c.relname = ANY(protected_tables)
   LOOP
     IF rel.relrowsecurity IS NOT TRUE THEN
@@ -48,6 +58,9 @@ BEGIN
     END IF;
     IF rel.owner_name IN ('anon', 'authenticated') THEN
       RAISE EXCEPTION 'F1 runtime: browser role owns public.%', rel.relname;
+    END IF;
+    IF rel.owner_bypassrls IS TRUE THEN
+      RAISE EXCEPTION 'F1 runtime: owner % bypasses RLS on public.%', rel.owner_name, rel.relname;
     END IF;
   END LOOP;
 
