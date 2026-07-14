@@ -95,4 +95,7 @@ END
 $$;
 
 RESET ROLE;
+REVOKE ALL ON public.patients FROM f1_rls_actor;
+REVOKE ALL ON SCHEMA public FROM f1_rls_actor;
+REVOKE authenticated FROM f1_rls_actor;
 DROP ROLE f1_rls_actor;
