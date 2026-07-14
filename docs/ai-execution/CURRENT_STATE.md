@@ -84,3 +84,9 @@ O workflow exige Secrets protegidos, sem valores no repositorio: `PRONTOMEDIC_E2
 ### Limite da evidencia
 
 Esta prova fecha o comportamento do auth proxy e do escopo de tenant em replay limpo. Ela nao prova ainda RLS/owner/BYPASSRLS na instancia migrada da VPS, login com usuarios reais, reconciliacao read-only do DataSIGH, integrações externas ou rollback reproduzivel. O produto continua bloqueado para producao ate esses gates operacionais.
+
+## Revisao de seguranca posterior ao F1
+
+- O commit `b74f4da` tornou `auth.uid()` compativel com `request.jwt.claim.sub` quando houver claim transacional, mantendo retorno nulo quando nao houver identidade; a migration nao substitui a implementacao Supabase existente.
+- A fixture F1 agora exige explicitamente `-v f1_ephemeral=1`; senha e JWT sao gerados em runtime pelo workflow e nao ficam fixos no repositorio.
+- O F1 final do commit `b74f4da` passou no run `29296309572` (#8) e o CI geral passou no run `29296309584` (#413).

@@ -105,6 +105,14 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 
 Essa evidencia prova o comportamento reproduzivel do proxy em banco limpo. O gate de produção permanece aberto para RLS/owner/BYPASSRLS em runtime real, login real, reconciliacao read-only do DataSIGH, integrações externas e rollback.
 
+## Revisao final do gate efemero
+
+- Commit final: `b74f4da`.
+- F1 ephemeral tenant gate: run `29296309572` (#8), `success`.
+- CI geral: run `29296309584` (#413), `success`.
+- A fixture exige flag explicita de banco descartavel, e as credenciais sinteticas sao geradas em runtime do runner.
+- `auth.uid()` da compatibilidade de replay agora le o claim transacional quando presente, sem substituir `auth.uid()` de uma instalacao Supabase existente.
+
 ### Contrato operacional do gate F1
 
 - Secrets requeridos: `PRONTOMEDIC_E2E_BASE_URL`, `PRONTOMEDIC_ANON_KEY`, `PRONTOMEDIC_TENANT_A_EMAIL`, `PRONTOMEDIC_TENANT_A_PASSWORD`, `PRONTOMEDIC_TENANT_B_EMAIL` e `PRONTOMEDIC_TENANT_B_PASSWORD`.
