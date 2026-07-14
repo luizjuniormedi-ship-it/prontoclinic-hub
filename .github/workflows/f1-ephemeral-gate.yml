@@ -117,8 +117,20 @@ jobs:
 
       - name: Upload auth proxy log on failure
         if: ${{ failure() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f /tmp/prontomedic-auth.log ]; then
+            sed -E \
+              -e 's/(Authorization: Bearer )[A-Za-z0-9._-]+/\1[REDACTED]/g' \
+              -e 's/(JWT_SECRET=|F1_PASSWORD=)[^[:space:]]+/\1[REDACTED]/g' \
+              -e 's/(password|token|secret)[=:][^[:space:]]+/\1=[REDACTED]/gi' \
+              /tmp/prontomedic-auth.log > /tmp/prontomedic-auth-sanitized.log
+          fi
+      - name: Upload sanitized auth proxy log on failure
+        if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
           name: f1-ephemeral-auth-log
-          path: /tmp/prontomedic-auth.log
+          path: /tmp/prontomedic-auth-sanitized.log
           if-no-files-found: ignore

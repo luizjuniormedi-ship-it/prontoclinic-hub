@@ -13,7 +13,46 @@
   \quit 1
 \endif
 
+\if :f1_ephemeral
+\else
+  \echo 'Protecao: f1_ephemeral deve ser exatamente 1; fixture recusada'
+  \quit 1
+\endif
+
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- Os IDs abaixo sao reservados exclusivamente para o gate. Se qualquer um ja
+-- existir, abortar em vez de usar ON CONFLICT para sobrescrever dados alheios.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM public.companies
+    WHERE id IN (
+      'f1000000-0000-4000-8000-000000000001'::uuid,
+      'f1000000-0000-4000-8000-000000000002'::uuid
+    )
+  )
+  OR EXISTS (
+    SELECT 1 FROM public.units WHERE id IN (9101, 9102)
+  )
+  OR EXISTS (
+    SELECT 1 FROM public.user_profiles
+    WHERE id IN (
+      'f1000000-0000-4000-8000-000000000011'::uuid,
+      'f1000000-0000-4000-8000-000000000012'::uuid
+    )
+  )
+  OR EXISTS (
+    SELECT 1 FROM public.patients WHERE id = 910001
+  )
+  OR EXISTS (
+    SELECT 1 FROM public.exames_lab_catalogo
+    WHERE id IN (920001, 920002)
+  ) THEN
+    RAISE EXCEPTION 'F1_FIXTURE_REFUSED: reserved IDs already exist; use a clean ephemeral database';
+  END IF;
+END
+$$;
 
 -- O dump de producao possui estas tabelas. A criacao condicional permite que a
 -- prova tambem rode em um PostgreSQL limpo, sem depender de dados migrados.
