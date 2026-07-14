@@ -189,3 +189,14 @@ Essa evidencia fecha a correção dos scripts e a saúde básica da infraestrutu
 - O E2E permaneceu explicitamente `skipped` porque os secrets de runtime não estão configurados.
 
 Esta evidencia comprova o backup/restore em banco efêmero. O restore real na VPS, o segundo tenant operacional, o login homologado e a reconciliação somente leitura do DataSIGH continuam gates externos e não foram falsamente marcados como concluídos.
+
+## Evidencia do healthcheck local endurecido no head 5768273
+
+- `scripts/health-local.ps1` deixou de tratar uma porta TCP aberta como prova de banco operacional.
+- O healthcheck agora exige `psql` e executa `SELECT 1` com os parametros PostgreSQL do ambiente.
+- O smoke de login exige credenciais efemeras por ambiente quando `PRONTOMEDIC_REQUIRE_AUTH_SMOKE=1`; sem isso, permanece explicitamente `WARN` e nao declara login validado.
+- A sintaxe do PowerShell foi validada localmente sem inserir credenciais no repositorio.
+- F1 ephemeral tenant gate: run `29300026276` (#52), `success`.
+- CI geral: run `29300026284` (#435), `success`.
+
+Esta alteracao melhora o gate local, mas nao substitui a execucao E2E real nem a homologacao operacional com usuarios, tenants e secrets protegidos.
