@@ -118,6 +118,7 @@ DECLARE
   readiness jsonb;
   checkin jsonb;
 BEGIN
+  PERFORM set_config('request.jwt.claim.role', 'service_role', TRUE);
   SELECT count(*) INTO available_count
     FROM public.get_professional_available_slots(930002, DATE '2026-07-20', 30, 930001);
   IF available_count <> 1 THEN
