@@ -97,6 +97,38 @@ BEGIN
 END
 $$;
 
+DO $$
+DECLARE
+  v_table TEXT;
+  v_tables CONSTANT TEXT[] := ARRAY[
+    'insurance_company_contacts', 'insurance_contracts',
+    'insurance_contract_documents', 'insurance_coverage_rules',
+    'insurance_authorization_rules', 'insurance_copay_rules',
+    'insurance_return_rules', 'insurance_tiss_guide_rules',
+    'insurance_denial_rules', 'insurance_deadline_rules',
+    'insurance_rule_snapshots', 'insurance_contract_audit_logs',
+    'insurance_access_logs'
+  ];
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_prontomedic') THEN
+    FOREACH v_table IN ARRAY v_tables LOOP
+      IF has_table_privilege('app_prontomedic', format('public.%I', v_table), 'SELECT') THEN
+        RAISE EXCEPTION 'F1_ROLE_FAIL: app_prontomedic ainda possui SELECT em %', v_table;
+      END IF;
+      IF EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = v_table
+          AND policyname = 'app_prontomedic_all_' || v_table
+      ) THEN
+        RAISE EXCEPTION 'F1_ROLE_FAIL: policy global residual em %', v_table;
+      END IF;
+    END LOOP;
+  END IF;
+  RAISE NOTICE 'F1_INSURANCE_ROLE_PASS direct_global_access=closed';
+END
+$$;
+
 RESET ROLE;
 REVOKE ALL ON public.patients FROM f1_rls_actor;
 REVOKE ALL ON SCHEMA public FROM f1_rls_actor;
