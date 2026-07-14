@@ -10,7 +10,7 @@
 
 ## P1 - Necessario antes da homologacao ampla
 
-- [ ] Implementar trilha de auditoria imutavel para operacoes sensiveis.
+- [x] Implementar trilha de auditoria append-only para operacoes sensiveis; controle administrativo de owner/superuser permanece fora do banco.
 - [ ] Formalizar escopo por unidade, alem do escopo por empresa.
 - [ ] Criar testes de integracao com PostgreSQL real para auth, RBAC e isolamento.
 - [ ] Adicionar observabilidade minima: request id, erros estruturados, latencia e alertas.

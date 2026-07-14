@@ -230,3 +230,12 @@ Esta melhoria cobre correlacao e latencia no backend local. Alertas ativos, agre
 - O mesmo gate confirmou migrations, RLS com role sem bypass, proxy de autenticação, restore PostgreSQL 18, lint, build, testes unitários e segurança do auth proxy.
 
 Esta evidencia fecha o contrato executável da RPC e o gate efêmero de isolamento. Ainda não comprova homologacao com dois usuarios reais na VPS, imutabilidade contra owner/service_role, restore real, reconciliacao somente leitura do DataSIGH ou alertas ativos.
+
+## Evidencia da trilha append-only no head 8c08ff4
+
+- F1 ephemeral tenant gate: run `29301566667` (#72), `success`.
+- CI geral: run `29301567219` (#445), `success`.
+- A migration `20260714005000_audit_logs_append_only.sql` instala trigger que rejeita UPDATE/DELETE na trilha e permite exclusao somente durante a purga de retencao autorizada.
+- O gate confirma a presenca do trigger no catalogo PostgreSQL 18, alem de repetir RLS, RPC tenant-aware, restore, lint, build e testes de seguranca.
+
+O controle cobre usuarios e operacoes normais da aplicacao. O dono/superuser do banco continua sendo um limite administrativo inevitavel e requer controle de acesso, backup e monitoramento da infraestrutura.
