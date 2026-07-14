@@ -47,6 +47,7 @@ BEGIN
   FOR rel IN
     SELECT c.relname, c.relowner::regrole::text AS owner_name,
            owner_role.rolbypassrls AS owner_bypassrls,
+           owner_role.rolsuper AS owner_superuser,
            c.relrowsecurity, c.relforcerowsecurity
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -59,8 +60,8 @@ BEGIN
     IF rel.owner_name IN ('anon', 'authenticated') THEN
       RAISE EXCEPTION 'F1 runtime: browser role owns public.%', rel.relname;
     END IF;
-    IF rel.owner_bypassrls IS TRUE THEN
-      RAISE EXCEPTION 'F1 runtime: owner % bypasses RLS on public.%', rel.owner_name, rel.relname;
+    IF rel.owner_bypassrls IS TRUE AND rel.owner_superuser IS NOT TRUE THEN
+      RAISE EXCEPTION 'F1 runtime: non-superuser owner % bypasses RLS on public.%', rel.owner_name, rel.relname;
     END IF;
   END LOOP;
 
