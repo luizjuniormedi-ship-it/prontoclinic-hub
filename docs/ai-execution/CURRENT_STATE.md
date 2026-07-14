@@ -72,3 +72,15 @@ Executar o workflow manual `F1 runtime gate` com Secrets homologados; depois reg
 ### Inputs obrigatorios do F1 runtime gate
 
 O workflow exige Secrets protegidos, sem valores no repositorio: `PRONTOMEDIC_E2E_BASE_URL`, `PRONTOMEDIC_ANON_KEY`, `PRONTOMEDIC_TENANT_A_EMAIL`, `PRONTOMEDIC_TENANT_A_PASSWORD`, `PRONTOMEDIC_TENANT_B_EMAIL` e `PRONTOMEDIC_TENANT_B_PASSWORD`. Os usuarios A e B devem existir em empresas diferentes; o teste verifica leitura, contagem, insercao e PATCH cross-tenant sem persistencia indevida.
+
+## Atualizacao de evidencia F1 em 2026-07-14
+
+- O workflow efemero `.github/workflows/f1-ephemeral-gate.yml` executou no commit `d286fbf` como GitHub Actions run `29295965946` (#4) e terminou com `success`.
+- A prova usou PostgreSQL 18 limpo, aplicou todas as migrations, criou apenas dados sinteticos de CI e iniciou `local-auth-server.mjs` com segredo temporario do runner.
+- Os dois usuarios sinteticos pertencem a empresas distintas; o teste confirmou login, leitura de perfil, leitura/contagem de paciente, bloqueio de insercao cross-tenant, ausencia de alteracao por PATCH cross-tenant e bloqueio de `company_id` explicito de outra empresa.
+- A migration de compatibilidade agora cria `auth.refresh_tokens` de forma idempotente, corrigindo a falha real encontrada no primeiro ciclo do gate.
+- O CI geral do mesmo commit terminou com sucesso no run `29295965906` (#411), incluindo migrations, type-check, lint, build, testes unitarios, seguranca e cobertura.
+
+### Limite da evidencia
+
+Esta prova fecha o comportamento do auth proxy e do escopo de tenant em replay limpo. Ela nao prova ainda RLS/owner/BYPASSRLS na instancia migrada da VPS, login com usuarios reais, reconciliacao read-only do DataSIGH, integrações externas ou rollback reproduzivel. O produto continua bloqueado para producao ate esses gates operacionais.

@@ -94,6 +94,17 @@ Essa evidencia confirma disponibilidade da infraestrutura, mas nao substitui log
 - Senha literal removida de `PRONTOMEDIC_VPS_CRONOGRAMA.md`; senhas devem ser fornecidas fora do repositorio.
 - O resultado nao substitui o gate F1 com dois tenants reais.
 
+## Evidencia F1 efemera executavel
+
+- Commit: `d286fbf`.
+- Workflow: `F1 ephemeral tenant gate`, run `29295965946` (#4), conclusao `success`.
+- Job: `Tenant isolation on clean PostgreSQL`, job `86969419244`, todas as etapas concluídas com sucesso.
+- Ambiente: PostgreSQL 18 limpo, migrations do repositorio, fixture sintetica de dois tenants e auth proxy local; nenhum acesso ao DataSIGH ou à VPS.
+- Resultado: login dos dois usuarios, perfis em empresas distintas, paciente controlado visivel apenas no tenant A, contagem cross-tenant zerada, insert cross-tenant rejeitado, PATCH cross-tenant sem mutacao e `company_id` cross-tenant rejeitado.
+- CI geral do mesmo commit: run `29295965906` (#411), concluido com sucesso.
+
+Essa evidencia prova o comportamento reproduzivel do proxy em banco limpo. O gate de produção permanece aberto para RLS/owner/BYPASSRLS em runtime real, login real, reconciliacao read-only do DataSIGH, integrações externas e rollback.
+
 ### Contrato operacional do gate F1
 
 - Secrets requeridos: `PRONTOMEDIC_E2E_BASE_URL`, `PRONTOMEDIC_ANON_KEY`, `PRONTOMEDIC_TENANT_A_EMAIL`, `PRONTOMEDIC_TENANT_A_PASSWORD`, `PRONTOMEDIC_TENANT_B_EMAIL` e `PRONTOMEDIC_TENANT_B_PASSWORD`.
