@@ -10,6 +10,10 @@ BEGIN
   VALUES (v_tenant_a, 'F1 Agenda Tenant A', TRUE), (v_tenant_b, 'F1 Agenda Tenant B', TRUE)
   ON CONFLICT (id) DO NOTHING;
 
+  INSERT INTO auth.users (id)
+  VALUES (v_user)
+  ON CONFLICT (id) DO NOTHING;
+
   INSERT INTO public.user_profiles (id, full_name, email, role_name, company_id, lg_ativo)
   VALUES (v_user, 'F1 Agenda User', 'f1-agenda@example.test', 'reception', v_tenant_a, TRUE)
   ON CONFLICT (id) DO UPDATE
