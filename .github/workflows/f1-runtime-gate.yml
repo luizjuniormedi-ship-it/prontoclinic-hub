@@ -134,6 +134,7 @@ jobs:
             supabase/migrations/20260714130000_tenant_integrity_and_legacy_rpc_hardening.sql \
             supabase/migrations/20260714150000_notification_templates_tenant_hardening.sql \
             supabase/migrations/20260714170000_lis_tenant_rls_hardening.sql
+            supabase/migrations/20260714200000_appointments_session_tenant_boundary.sql
           do
             echo "Applying baseline: $artifact"
             psql -v ON_ERROR_STOP=1 -1 -f "$artifact"
@@ -204,6 +205,8 @@ jobs:
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_convenios_tenant_boundary_gate.sql
           echo "Running F1 Convenios secure RPC gate"
           psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_convenios_secure_rpc_gate.sql
+          echo "Running F1 appointments session tenant gate"
+          psql -v ON_ERROR_STOP=1 -1 -f supabase/tests/f1_runtime_appointments_session_tenant_gate.sql
 
       - name: Upload F1 evidence
         if: always()
