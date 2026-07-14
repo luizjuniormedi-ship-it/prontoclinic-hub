@@ -129,6 +129,39 @@ BEGIN
 END
 $$;
 
+DO $$
+DECLARE
+  v_result JSONB;
+  v_rejected BOOLEAN := FALSE;
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', 'f1000000-0000-4000-8000-000000000011', false);
+
+  BEGIN
+    PERFORM public.validate_insurance_operation_secure(
+      'f1000000-0000-4000-8000-000000000002', 'f1-cross-tenant', 999999,
+      NULL, NULL, NULL, NULL, NULL, NULL, CURRENT_DATE, FALSE
+    );
+  EXCEPTION WHEN SQLSTATE '42501' THEN
+    v_rejected := TRUE;
+  END;
+
+  IF NOT v_rejected THEN
+    RAISE EXCEPTION 'F1_RPC_FAIL: RPC de Convenios aceitou company_id de outro tenant';
+  END IF;
+
+  SELECT public.validate_insurance_operation_secure(
+    'f1000000-0000-4000-8000-000000000001', 'f1-same-tenant', 999999,
+    NULL, NULL, NULL, NULL, NULL, NULL, CURRENT_DATE, FALSE
+  ) INTO v_result;
+
+  IF v_result IS NULL OR v_result->>'operation' <> 'f1-same-tenant' THEN
+    RAISE EXCEPTION 'F1_RPC_FAIL: RPC de Convenios nao respondeu no tenant correto';
+  END IF;
+
+  RAISE NOTICE 'F1_INSURANCE_RPC_PASS cross_tenant=blocked same_tenant=allowed';
+END
+$$;
+
 RESET ROLE;
 REVOKE ALL ON public.patients FROM f1_rls_actor;
 REVOKE ALL ON SCHEMA public FROM f1_rls_actor;
