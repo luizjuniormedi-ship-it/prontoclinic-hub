@@ -10,12 +10,23 @@
  */
 import { createServer } from 'http';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'crypto';
+import { readFileSync } from 'fs';
 import pg from 'pg';
 import { scopeInsertBody, scopePatchBody } from './local-auth-security.mjs';
 const { Pool } = pg;
 
 const PORT = Number(process.env.LOCAL_AUTH_PORT || 8000);
-const JWT_SECRET = process.env.JWT_SECRET;
+function readSecret(envName, fileEnvName) {
+  const filePath = process.env[fileEnvName];
+  if (filePath) {
+    const value = readFileSync(filePath, 'utf8').trim();
+    if (!value) throw new Error(`${fileEnvName} aponta para um arquivo vazio`);
+    return value;
+  }
+  return process.env[envName];
+}
+
+const JWT_SECRET = readSecret('JWT_SECRET', 'JWT_SECRET_FILE');
 if (!JWT_SECRET || JWT_SECRET.length < 32) {
   throw new Error('JWT_SECRET obrigatorio e deve ter pelo menos 32 caracteres');
 }
@@ -30,7 +41,7 @@ const pool = new Pool({
   host: process.env.PGHOST || '127.0.0.1',
   port: Number(process.env.PGPORT || 5432),
   user: process.env.PGUSER || 'app_prontomedic',
-  password: process.env.PGPASSWORD,
+  password: readSecret('PGPASSWORD', 'PGPASSWORD_FILE'),
   database: process.env.PGDATABASE || 'prontoclinic',
 });
 
