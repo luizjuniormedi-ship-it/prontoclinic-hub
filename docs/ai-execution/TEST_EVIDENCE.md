@@ -168,3 +168,14 @@ O RPC é somente de validação; não concede CRUD direto nem libera mutações 
 - A policy de gerenciamento foi corrigida para usar `get_my_company_id()`; o teste não depende de grant direto em `user_profiles`.
 
 O catálogo LIS agora respeita tenant; valores de referência sem `company_id` continuam tratados como catálogo universal de referência clínica.
+
+## Evidencia operacional e de scripts no head 5c55370
+
+- F1 ephemeral tenant gate: run `29299237276` (#42), `success`.
+- CI geral: run `29299237225` (#430), `success`.
+- `scripts/vps_backup.sh` agora executa `pg_dump`, exige `PGPASSWORD` fora do Git, usa `umask 077` e mantém retenção explícita.
+- `scripts/vps_healthcheck.sh` agora consulta PostgreSQL via `psql`, aplica timeout em HTTP e reinicia `prontomedic-auth` via PM2 quando necessário.
+- O CI executa `bash -n` nos scripts operacionais para impedir regressão sintática.
+- A VPS foi consultada em modo somente leitura: frontend/auth HTTP 200, PM2 online, PostgreSQL em loopback, RLS habilitado/forçado e `app_prontomedic` sem `rolsuper`/`rolbypassrls`.
+
+Essa evidencia fecha a correção dos scripts e a saúde básica da infraestrutura. Ainda exige segundo tenant homologado, login operacional, reconciliação read-only do DataSIGH e restore de backup para liberar produção.

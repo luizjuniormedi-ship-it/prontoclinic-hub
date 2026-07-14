@@ -1,16 +1,15 @@
 {
-  "updated_at": "2026-07-13",
+  "updated_at": "2026-07-14",
   "phase": "security-hardening",
   "status": "in_progress",
   "current_module": "authentication-rbac",
-  "current_task": "CI revalidation and tenant-isolation integration proof",
-  "latest_local_commit": "b83cab2",
+  "current_task": "runtime tenant credentials, DataSIGH read-only reconciliation and rollback evidence",
+  "latest_local_commit": "5c55370",
   "latest_known_vps_release": "37199ee",
   "production_ready": false,
   "open_p0": [
-    "tenant_isolation_integration",
-    "ci_migration_replay",
-    "vps_healthcheck_and_login",
+    "tenant_isolation_runtime",
+    "vps_operational_login",
     "datasigh_read_only_reconciliation",
     "rollback_evidence"
   ]

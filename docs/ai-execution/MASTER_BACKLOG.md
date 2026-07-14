@@ -3,10 +3,10 @@
 ## P0 - Bloqueia producao
 
 - [ ] Provar isolamento entre duas empresas no backend, incluindo GET, COUNT, POST e PATCH.
-- [ ] Reexecutar CI com migracoes PostgreSQL em modo fail-closed e corrigir qualquer falha real de baseline.
-- [ ] Confirmar healthcheck da VPS: PostgreSQL, backend PM2, Nginx, frontend e login.
+- [x] Reexecutar CI com migracoes PostgreSQL em modo fail-closed e corrigir qualquer falha real de baseline.
+- [x] Confirmar healthcheck basico da VPS: PostgreSQL, backend PM2, Nginx e frontend; login operacional ainda depende de credenciais.
 - [ ] Executar reconciliacao TISS em modo `dry-run` com credencial DataSIGH somente leitura.
-- [ ] Validar que o deploy usa exatamente o commit aprovado e que o rollback foi testado.
+- [ ] Validar que o deploy usa exatamente o commit aprovado e que o rollback foi testado com restore real.
 
 ## P1 - Necessario antes da homologacao ampla
 
