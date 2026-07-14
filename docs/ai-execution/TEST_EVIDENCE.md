@@ -239,3 +239,13 @@ Esta evidencia fecha o contrato executável da RPC e o gate efêmero de isolamen
 - O gate confirma a presenca do trigger no catalogo PostgreSQL 18, alem de repetir RLS, RPC tenant-aware, restore, lint, build e testes de seguranca.
 
 O controle cobre usuarios e operacoes normais da aplicacao. O dono/superuser do banco continua sendo um limite administrativo inevitavel e requer controle de acesso, backup e monitoramento da infraestrutura.
+
+## Evidencia de hardening dos segredos do auth no head d9db88b
+
+- O backend aceita `JWT_SECRET_FILE` e `PGPASSWORD_FILE`, lendo os valores somente de arquivos protegidos.
+- O manifesto PM2 `scripts/prontomedic-auth.ecosystem.config.cjs` passa apenas caminhos de arquivos, nunca valores de segredo.
+- `scripts/activate-vps-auth-secret-files.sh` exige arquivos `600`, valida o tamanho mínimo do JWT, reinicia o processo e falha se os nomes `JWT_SECRET` ou `PGPASSWORD` permanecerem no ambiente.
+- F1 ephemeral tenant gate: run `29301924929` (#76), `success`.
+- CI geral: run `29301924919` (#447), `success`.
+
+O código está validado. O cutover na VPS ainda é um gate operacional separado: o administrador precisa criar os dois arquivos de segredo fora do GitHub e executar o script no servidor. Não se deve extrair segredos de `/proc` nem registrá-los em terminal/log.

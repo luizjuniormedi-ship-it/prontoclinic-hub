@@ -10,6 +10,7 @@
   "open_p0": [
     "tenant_isolation_runtime",
     "vps_operational_login",
+    "vps_secret_file_cutover",
     "datasigh_read_only_reconciliation",
     "rollback_evidence"
   ]
