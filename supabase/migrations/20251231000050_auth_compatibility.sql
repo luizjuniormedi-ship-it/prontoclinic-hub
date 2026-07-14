@@ -51,6 +51,56 @@ ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS email_change TEXT;
 ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS email_change_token_new TEXT;
 ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS recovery_token TEXT;
 
+-- Nao aceite uma tabela auth.users preexistente apenas pelo nome. Se o replay
+-- encontrar tipos incompatíveis, falhe antes do seed/login para evitar um
+-- estado parcialmente funcional e difícil de diagnosticar.
+DO $$
+DECLARE
+  v_missing TEXT[];
+  v_bad_types TEXT[];
+BEGIN
+  SELECT ARRAY_AGG(required.column_name ORDER BY required.column_name)
+    INTO v_missing
+  FROM (VALUES
+    ('id'), ('email'), ('encrypted_password'), ('email_confirmed_at'),
+    ('raw_app_meta_data'), ('raw_user_meta_data'), ('created_at'),
+    ('updated_at'), ('confirmation_token'), ('email_change'),
+    ('email_change_token_new'), ('recovery_token')
+  ) AS required(column_name)
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns c
+    WHERE c.table_schema = 'auth'
+      AND c.table_name = 'users'
+      AND c.column_name = required.column_name
+  );
+
+  IF v_missing IS NOT NULL THEN
+    RAISE EXCEPTION 'AUTH_COMPATIBILITY_FAIL: auth.users colunas ausentes: %', v_missing;
+  END IF;
+
+  SELECT ARRAY_AGG(actual.column_name || '=' || actual.data_type ORDER BY actual.column_name)
+    INTO v_bad_types
+  FROM information_schema.columns actual
+  WHERE actual.table_schema = 'auth'
+    AND actual.table_name = 'users'
+    AND (
+      (actual.column_name = 'id' AND actual.udt_name <> 'uuid')
+      OR (actual.column_name IN ('email', 'encrypted_password', 'confirmation_token',
+          'email_change', 'email_change_token_new', 'recovery_token')
+          AND actual.data_type <> 'text')
+      OR (actual.column_name IN ('email_confirmed_at', 'created_at', 'updated_at')
+          AND actual.data_type <> 'timestamp with time zone')
+      OR (actual.column_name IN ('raw_app_meta_data', 'raw_user_meta_data')
+          AND actual.data_type <> 'jsonb')
+    );
+
+  IF v_bad_types IS NOT NULL THEN
+    RAISE EXCEPTION 'AUTH_COMPATIBILITY_FAIL: auth.users tipos incompatíveis: %', v_bad_types;
+  END IF;
+END
+$$;
+
 -- Supabase provides auth.uid(); keep a claim-aware compatibility function for
 -- clean PostgreSQL replays without replacing an existing implementation.
 DO $$
