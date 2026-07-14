@@ -196,6 +196,35 @@ DO $f1$
 DECLARE
   denied boolean := false;
 BEGIN
+  INSERT INTO public.notification_templates
+    (company_id, code, channel, subject, body, is_active)
+  VALUES
+    (NULL, 'F1_GLOBAL_TEMPLATE', 'EMAIL', 'Global', 'Global {{nome}}', true),
+    ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'F1_TENANT_A_TEMPLATE', 'EMAIL', 'Tenant A', 'A {{nome}}', true);
+
+  IF (SELECT count(*) FROM public.notification_templates
+      WHERE code IN ('F1_GLOBAL_TEMPLATE', 'F1_TENANT_A_TEMPLATE')) <> 2 THEN
+    RAISE EXCEPTION 'F1 notifications: tenant A cannot see global and own templates';
+  END IF;
+
+  BEGIN
+    INSERT INTO public.notification_templates
+      (company_id, code, channel, subject, body, is_active)
+    VALUES
+      ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'F1_TENANT_B_TEMPLATE', 'EMAIL', 'Tenant B', 'B {{nome}}', true);
+  EXCEPTION WHEN insufficient_privilege THEN
+    denied := true;
+  END;
+  IF NOT denied THEN
+    RAISE EXCEPTION 'F1 notifications: cross-tenant template INSERT was not denied';
+  END IF;
+END
+$f1$;
+
+DO $f1$
+DECLARE
+  denied boolean := false;
+BEGIN
   BEGIN
     PERFORM public.create_call_center_contact_secure(
       910002, 930002, 'telefone', 'inbound', 'Cross tenant attempt',
