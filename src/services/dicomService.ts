@@ -1035,13 +1035,13 @@ export const worklistQueueServiceRaw = {
     return (data || []) as unknown as DicomWorklistItemAlias[];
   },
 
-  async markExported(id: string): Promise<void> {
+  async queueExport(id: string): Promise<void> {
     const { error } = await supabase
       .from("dicom_worklist_queue")
       .update({
-        status: "exported" as WorklistQueueStatus,
-        exported_to_worklist: true,
-        last_export_at: new Date().toISOString(),
+        export_state: "pending",
+        next_export_at: new Date().toISOString(),
+        last_export_error: null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", id);
@@ -1053,6 +1053,8 @@ export const worklistQueueServiceRaw = {
       .from("dicom_worklist_queue")
       .update({
         status: "cancelled" as WorklistQueueStatus,
+        delete_state: "pending",
+        next_delete_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq("id", id);

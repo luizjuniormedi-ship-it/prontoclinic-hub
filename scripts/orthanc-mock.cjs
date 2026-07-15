@@ -15,6 +15,9 @@
  *   GET  /tools/ping                -> health check
  *   GET  /instances/{id}/file       -> DICOM file (binário mock)
  *   POST /modalities/{name}/query   -> DICOM C-FIND
+ *   POST /worklists/create          -> Orthanc Worklists plugin create
+ *   GET  /worklists                 -> created worklist IDs
+ *   DELETE /worklists/{id}          -> remove a created worklist
  *
  * Uso:
  *   node scripts/orthanc-mock.js [port]
@@ -189,6 +192,9 @@ const worklist = [
     ],
   },
 ];
+
+// Worklists created through the official Worklists plugin REST contract.
+const createdWorklists = new Map();
 
 // Stats
 const stats = {
@@ -422,6 +428,45 @@ const server = http.createServer((req, res) => {
   if (path === '/modalities/mock-local/query' && req.method === 'POST') {
     // C-FIND query mock
     return sendJSON(res, 200, mockDB.studies);
+  }
+
+  // === Official Orthanc Worklists plugin REST contract ===
+  if (path === '/worklists' && req.method === 'GET') {
+    return sendJSON(res, 200, Array.from(createdWorklists.keys()));
+  }
+
+  if (path === '/worklists/create' && req.method === 'POST') {
+    let body = '';
+    req.setEncoding('utf8');
+    req.on('data', chunk => {
+      body += chunk;
+      if (body.length > 1024 * 1024) req.destroy();
+    });
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const id = crypto.randomUUID();
+        createdWorklists.set(id, payload);
+        sendJSON(res, 200, { ID: id, Path: `/worklists/${id}` });
+      } catch {
+        sendError(res, 400, 'Invalid worklist JSON');
+      }
+    });
+    return;
+  }
+
+  const worklistMatch = path.match(/^\/worklists\/([^\/]+)$/);
+  if (worklistMatch && req.method === 'GET') {
+    const item = createdWorklists.get(worklistMatch[1]);
+    if (!item) return sendError(res, 404, 'Worklist not found');
+    return sendJSON(res, 200, item);
+  }
+
+  if (worklistMatch && req.method === 'DELETE') {
+    if (!createdWorklists.delete(worklistMatch[1])) {
+      return sendError(res, 404, 'Worklist not found');
+    }
+    return sendText(res, 200, 'Worklist deleted\n');
   }
 
   // === Lookup (search) ===

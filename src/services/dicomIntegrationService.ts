@@ -155,17 +155,18 @@ export const dicomIntegrationService = {
   },
 
   /**
-   * Batch export all pending worklist items formatted for Orthanc.
-   * Returns the formatted entries and marks them as exported.
+   * Queue all pending worklist items for the server-side Orthanc bridge.
+   * Formatting is returned for diagnostics only; export confirmation belongs
+   * exclusively to the bridge after Orthanc accepts each entry.
    */
   async exportPendingWorklist(): Promise<{ exported: OrthancWorklistEntry[]; count: number }> {
     const items = await worklistQueueService.list({ status: 'pending' });
 
     const entries = items.map((item) => this.formatWorklistForOrthanc(item));
 
-    // Mark all as exported
+    // Wake the bridge without claiming that Orthanc already accepted the item.
     for (const item of items) {
-      await worklistQueueService.markExported(item.id);
+      await worklistQueueService.queueExport(item.id);
     }
 
     return { exported: entries, count: entries.length };
