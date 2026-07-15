@@ -105,5 +105,17 @@
     "temporary_roles_removed": true,
     "datasigh_mutation": false,
     "next_action": "approve and implement canonical appointment_id migration in local/ephemeral gate; rerun replay and multi-tenant tests before any VPS DDL"
+  },
+  "billing_reconciliation_vps_20260714": {
+    "status": "BLOCKED_MANUAL_RECONCILIATION_REQUIRED",
+    "billings_total": 15899,
+    "mapped_by_appointments_billing_id": 15074,
+    "unmapped_billings": 825,
+    "duplicate_billing_id_groups_in_appointments": 351,
+    "mapped_tenant_mismatches": 0,
+    "billings_null_company_id": 0,
+    "mutation": false,
+    "datasigh_mutation": false,
+    "next_action": "produce reviewed mapping for 825 unmapped and resolve 351 duplicate billing_id groups before NOT NULL/composite FK"
   }
 }
