@@ -216,8 +216,11 @@ CREATE TABLE IF NOT EXISTS public.salas_cirurgicas (
   company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
   cd_codigo VARCHAR(20) NOT NULL,
   ds_nome VARCHAR(100) NOT NULL,
+  ds_localizacao VARCHAR(100),
   tp_sala VARCHAR(30),
   lg_ativo BOOLEAN NOT NULL DEFAULT TRUE,
+  lg_ativa BOOLEAN NOT NULL DEFAULT TRUE,
+  cd_origem_sigh INTEGER,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
