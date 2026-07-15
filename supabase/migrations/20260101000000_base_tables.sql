@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS public.user_profiles (
 CREATE TABLE IF NOT EXISTS public.patients (
   id BIGSERIAL PRIMARY KEY,
   company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+  user_id UUID,
   full_name VARCHAR(200) NOT NULL,
   cpf VARCHAR(14),
   birth_date DATE,
