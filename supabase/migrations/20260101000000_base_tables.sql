@@ -165,6 +165,22 @@ CREATE TABLE IF NOT EXISTS public.medical_records (
 CREATE INDEX IF NOT EXISTS idx_medical_records_patient ON public.medical_records(patient_id);
 CREATE INDEX IF NOT EXISTS idx_medical_records_company ON public.medical_records(company_id);
 
+-- Faturamento (necessário para triggers de auditoria)
+CREATE TABLE IF NOT EXISTS public.billings (
+  id BIGSERIAL PRIMARY KEY,
+  company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+  patient_id BIGINT REFERENCES public.patients(id) ON DELETE CASCADE,
+  appointment_id BIGINT REFERENCES public.appointments(id),
+  amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  status VARCHAR(30) NOT NULL DEFAULT 'pending',
+  dt_vencimento DATE,
+  dt_pagamento DATE,
+  dt_criacao TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_billings_company ON public.billings(company_id);
+CREATE INDEX IF NOT EXISTS idx_billings_patient ON public.billings(patient_id);
+
 -- Services Catalog (catálogo de serviços)
 CREATE TABLE IF NOT EXISTS public.services_catalog (
   id BIGSERIAL PRIMARY KEY,
