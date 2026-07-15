@@ -150,16 +150,4 @@ CREATE TABLE IF NOT EXISTS public.tiss_xml (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Lgpd tables (precisa para FKs em outras migrations)
-CREATE TABLE IF NOT EXISTS public.paciente_consentimentos (
-  id BIGSERIAL PRIMARY KEY,
-  company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
-  patient_id BIGINT REFERENCES public.patients(id),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS public.paciente_anonimizacao_log (
-  id BIGSERIAL PRIMARY KEY,
-  company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+-- LGPD tables are owned by 20260101000006_lgpd.sql.
