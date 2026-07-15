@@ -148,6 +148,12 @@ CREATE INDEX IF NOT EXISTS idx_receitas_prescricao
 -- 1.6. RLS — Row Level Security
 -- Acesso: médico/paciente da sala + admin da company.
 -- ============================================================================
+-- O replay de release pode iniciar a partir do baseline mínimo, no qual os
+-- vínculos de identidade ainda não foram materializados. Garanta as colunas
+-- antes de compilar as policies que dependem delas.
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS user_id UUID;
+ALTER TABLE public.professionals ADD COLUMN IF NOT EXISTS user_id UUID;
+
 ALTER TABLE public.telemedicina_salas         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.telemedicina_participantes  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.telemedicina_mensagens      ENABLE ROW LEVEL SECURITY;

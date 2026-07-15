@@ -2,6 +2,13 @@
 -- Nao remove nem renomeia colunas legadas; preserva tp_status e storage_path.
 
 ALTER TABLE public.tiss_xml
+  ADD COLUMN IF NOT EXISTS nr_protocolo VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS nr_versao_tiss VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS vl_total NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS tp_status VARCHAR(30),
+  ADD COLUMN IF NOT EXISTS storage_path TEXT,
+  ADD COLUMN IF NOT EXISTS ds_observacao TEXT,
+  ADD COLUMN IF NOT EXISTS lg_ativo BOOLEAN,
   ADD COLUMN IF NOT EXISTS cd_fatura BIGINT,
   ADD COLUMN IF NOT EXISTS ds_descricao VARCHAR(255),
   ADD COLUMN IF NOT EXISTS ds_filename VARCHAR(255),
@@ -11,6 +18,9 @@ ALTER TABLE public.tiss_xml
   ADD COLUMN IF NOT EXISTS dt_recurso DATE,
   ADD COLUMN IF NOT EXISTS ds_recurso_xml TEXT,
   ADD COLUMN IF NOT EXISTS vl_informado NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS vl_processado NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS vl_liberado NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS vl_glosa NUMERIC(12,2),
   ADD COLUMN IF NOT EXISTS bl_xml_enviado TEXT,
   ADD COLUMN IF NOT EXISTS bl_xml_retorno TEXT,
   ADD COLUMN IF NOT EXISTS bl_xml_recurso TEXT,

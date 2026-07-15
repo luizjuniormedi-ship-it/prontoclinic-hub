@@ -64,16 +64,52 @@ CREATE TABLE IF NOT EXISTS public.tiss_xml (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_tiss_xml_company ON public.tiss_xml(company_id);
-CREATE INDEX idx_tiss_xml_convenio ON public.tiss_xml(cd_convenio);
-CREATE INDEX idx_tiss_xml_status ON public.tiss_xml(company_id, status);
-CREATE INDEX idx_tiss_xml_dt_fatura ON public.tiss_xml(company_id, dt_fatura DESC);
-CREATE INDEX idx_tiss_xml_protocolo ON public.tiss_xml(ds_protocolo);
-CREATE INDEX idx_tiss_xml_lote ON public.tiss_xml(company_id, cd_lote);
-CREATE INDEX idx_tiss_xml_tipo_guia ON public.tiss_xml(company_id, ds_tipo_guia);
-CREATE INDEX idx_tiss_xml_dt_envio ON public.tiss_xml(company_id, dt_envio DESC);
-CREATE INDEX idx_tiss_xml_dt_pagamento ON public.tiss_xml(company_id, dt_pagamento);
-CREATE INDEX idx_tiss_xml_valores ON public.tiss_xml(company_id, vl_informado, vl_liberado, vl_glosa);
+-- The base migration creates a minimal tiss_xml stub for early foreign keys.
+-- Complete that stub before indexes/functions so a clean replay is deterministic.
+ALTER TABLE public.tiss_xml
+  ADD COLUMN IF NOT EXISTS cd_fatura BIGINT,
+  ADD COLUMN IF NOT EXISTS cd_convenio INTEGER,
+  ADD COLUMN IF NOT EXISTS ds_descricao VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS ds_filename VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS dt_fatura DATE,
+  ADD COLUMN IF NOT EXISTS ds_tipo_guia VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS cd_lote INTEGER,
+  ADD COLUMN IF NOT EXISTS ds_protocolo VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS dt_recurso DATE,
+  ADD COLUMN IF NOT EXISTS ds_recurso_xml VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS ds_protocolo_recurso VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS vl_informado DECIMAL(10,2),
+  ADD COLUMN IF NOT EXISTS vl_processado DECIMAL(10,2),
+  ADD COLUMN IF NOT EXISTS vl_liberado DECIMAL(10,2),
+  ADD COLUMN IF NOT EXISTS vl_glosa DECIMAL(10,2),
+  ADD COLUMN IF NOT EXISTS bl_xml_enviado TEXT,
+  ADD COLUMN IF NOT EXISTS bl_xml_retorno TEXT,
+  ADD COLUMN IF NOT EXISTS bl_xml_recurso TEXT,
+  ADD COLUMN IF NOT EXISTS ds_hash_envio VARCHAR(64),
+  ADD COLUMN IF NOT EXISTS ds_hash_retorno VARCHAR(64),
+  ADD COLUMN IF NOT EXISTS ds_versao_tiss VARCHAR(10),
+  ADD COLUMN IF NOT EXISTS tp_ambiente VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS status VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS ds_motivo_rejeicao TEXT,
+  ADD COLUMN IF NOT EXISTS lg_deletado BOOLEAN,
+  ADD COLUMN IF NOT EXISTS dt_envio TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS dt_retorno TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS dt_pagamento DATE,
+  ADD COLUMN IF NOT EXISTS cd_user_envio UUID,
+  ADD COLUMN IF NOT EXISTS cd_user_recebimento UUID,
+  ADD COLUMN IF NOT EXISTS cd_origem_sigh INTEGER,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+CREATE INDEX IF NOT EXISTS idx_tiss_xml_company ON public.tiss_xml(company_id);
+CREATE INDEX IF NOT EXISTS idx_tiss_xml_convenio ON public.tiss_xml(cd_convenio);
+CREATE INDEX IF NOT EXISTS idx_tiss_xml_status ON public.tiss_xml(company_id, status);
+CREATE INDEX IF NOT EXISTS idx_tiss_xml_dt_fatura ON public.tiss_xml(company_id, dt_fatura DESC);
+CREATE INDEX IF NOT EXISTS idx_tiss_xml_protocolo ON public.tiss_xml(ds_protocolo);
+CREATE INDEX IF NOT EXISTS idx_tiss_xml_lote ON public.tiss_xml(company_id, cd_lote);
+CREATE INDEX IF NOT EXISTS idx_tiss_xml_tipo_guia ON public.tiss_xml(company_id, ds_tipo_guia);
+CREATE INDEX IF NOT EXISTS idx_tiss_xml_dt_envio ON public.tiss_xml(company_id, dt_envio DESC);
+CREATE INDEX IF NOT EXISTS idx_tiss_xml_dt_pagamento ON public.tiss_xml(company_id, dt_pagamento);
+CREATE INDEX IF NOT EXISTS idx_tiss_xml_valores ON public.tiss_xml(company_id, vl_informado, vl_liberado, vl_glosa);
 
 COMMENT ON TABLE public.tiss_xml IS 'XMLs TISS de faturamento eletronico (SIGH.xml — 544 registros)';
 COMMENT ON COLUMN public.tiss_xml.cd_fatura IS 'FK para fatura/nota (criar ou referenciar bills)';
@@ -85,6 +121,7 @@ COMMENT ON COLUMN public.tiss_xml.vl_liberado IS 'Valor liberado para pagamento'
 COMMENT ON COLUMN public.tiss_xml.vl_glosa IS 'Valor glosado (vl_informado - vl_liberado)';
 COMMENT ON COLUMN public.tiss_xml.cd_origem_sigh IS 'SIGH.xml.cd_xml';
 
+DROP TRIGGER IF EXISTS trg_tiss_xml_updated_at ON public.tiss_xml;
 CREATE TRIGGER trg_tiss_xml_updated_at
   BEFORE UPDATE ON public.tiss_xml
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();

@@ -1,17 +1,121 @@
 {
-  "updated_at": "2026-07-10",
+  "updated_at": "2026-07-14",
   "phase": "security-hardening",
   "status": "in_progress",
   "current_module": "authentication-rbac",
-  "current_task": "post-deploy health and tenant-isolation integration proof",
+  "current_task": "VPS runtime schema/RLS replay and login homologation; DataSIGH read-only reconciliation; backup/restore/rollback evidence",
   "latest_local_commit": "5435d60",
   "latest_known_vps_release": "37199ee",
   "production_ready": false,
   "open_p0": [
-    "tenant_isolation_integration",
-    "ci_migration_replay",
-    "vps_healthcheck_and_login",
     "datasigh_read_only_reconciliation",
-    "rollback_evidence"
-  ]
+    "backup_restore_rollback_evidence",
+    "vps_runtime_schema_replay_and_rls",
+    "billing_appointment_id_canonical_migration"
+  ],
+  "latest_branch": "fix/f1-tenant-integrity-20260714",
+  "latest_commit": "72b7d74d9e2a0d218cf17e4f82fc2d7281a6595e",
+  "latest_validation": {
+    "status": "PASS_GITHUB",
+    "f1_runtime_run": 29376855228,
+    "ci_run": 29376855298,
+    "appointment_session_tenant_boundary": "PASS",
+    "fixture_scope": "service_role_only_for_internal_fixture_setup",
+    "vps_mutation": false,
+    "datasigh_mutation": false,
+    "code_commit": "72b7d74d9e2a0d218cf17e4f82fc2d7281a6595e",
+    "owner_bypassrls_assertion": "PASS; non-superuser owners cannot bypass RLS; postgres superuser is explicitly distinguished in ephemeral replay"
+  },
+  "open_p1": [
+    "runtime_postgresql_owner_bypassrls_replay_on_vps",
+    "full_rls_global_parity_local_remote"
+  ],
+  "vps_readonly_probe": {
+    "status": "PARTIAL_RUNTIME_FIXED",
+    "captured_at": "2026-07-14",
+    "ssh": "PASS",
+    "nginx_root_http": 200,
+    "auth_settings_http": 200,
+    "login_http": 200,
+    "pm2": "prontomedic-auth online after restart; restart executed to reload runtime pool",
+    "postgres": "127.0.0.1:5432 accepting",
+    "database": "prontoclinic",
+    "runtime_role": "app_prontomedic",
+    "runtime_role_flags": "LOGIN,NOSUPERUSER,NOBYPASSRLS",
+    "runtime_connection": "PASS; app_prontomedic connected to prontoclinic",
+    "runtime_select_grants": "PASS; auth.users,user_profiles,roles,role_permissions",
+    "roles_found": [
+      "postgres",
+      "app_prontomedic"
+    ],
+    "roles_missing": [
+      "anon",
+      "authenticated",
+      "service_role",
+      "app_owner"
+    ],
+    "rls_false_tables": [
+      "billings",
+      "companies",
+      "insurance_authorizations",
+      "insurance_eligibility_checks",
+      "professionals",
+      "user_profiles"
+    ],
+    "rls_true_tables": [
+      "appointments",
+      "audit_logs",
+      "medical_records",
+      "patients"
+    ],
+    "owner_summary": "all inspected tables owned by postgres superuser with BYPASSRLS",
+    "mutation_executed": true,
+    "mutation_scope": "ProntoMedic PostgreSQL only: created/configured runtime role and grants; no schema replay or RLS changes",
+    "datasigh_mutation": false,
+    "backup_restore": "PASS; custom dump checksum and disposable restore verified"
+  },
+  "backup_restore_vps_20260714": {
+    "status": "PASS_BACKUP_AND_DISPOSABLE_RESTORE",
+    "backup_path": "/var/backups/prontomedic/prontoclinic-20260714-212732.dump",
+    "backup_size_bytes": 117437778,
+    "backup_sha256": "95d990339478b77b8b93d0fa3feadc04ac79caf1781024a311ad10b0796f5e88",
+    "backup_mode": "600",
+    "restore_database": "prontoclinic_restore_check_20260714",
+    "restore_catalog_entries": 3018,
+    "restored_counts": {
+      "auth_users": 99,
+      "user_profiles": 99
+    },
+    "temporary_database_removed": true,
+    "source_database_changed": false,
+    "datasigh_mutation": false
+  },
+  "vps_rls_replay_20260714": {
+    "status": "BLOCKED_SCHEMA_DRIFT",
+    "target": "disposable clone of VPS database only",
+    "replay_attempted": "000_p0_p1_consolidated.sql",
+    "prerequisite_helper": "20260101001200_security_hardening.sql applied in clone",
+    "failure": "P0/P1 preflight: existing billings lacks tenant/appointment columns",
+    "verified_operational_schema": {
+      "billings_company_id": true,
+      "billings_appointment_id": false
+    },
+    "production_database_changed": false,
+    "disposable_clone_removed": true,
+    "temporary_roles_removed": true,
+    "datasigh_mutation": false,
+    "next_action": "approve and implement canonical appointment_id migration in local/ephemeral gate; rerun replay and multi-tenant tests before any VPS DDL"
+  },
+  "billing_reconciliation_vps_20260714": {
+    "status": "BLOCKED_MANUAL_RECONCILIATION_REQUIRED",
+    "billings_total": 15899,
+    "mapped_by_appointments_billing_id": 15074,
+    "unmapped_billings": 825,
+    "duplicate_billing_id_groups_in_appointments": 351,
+    "mapped_tenant_mismatches": 0,
+    "billings_null_company_id": 0,
+    "mutation": false,
+    "datasigh_mutation": false,
+    "next_action": "produce reviewed mapping for 825 unmapped and resolve 351 duplicate billing_id groups before NOT NULL/composite FK"
+  }
 }

@@ -77,6 +77,19 @@ export interface ProfessionalInsurance {
   lg_ativo: boolean;
 }
 
+export interface InsuranceOperationValidationInput {
+  operation: string;
+  insuranceCompanyId: number;
+  insurancePlanId?: number | null;
+  serviceId?: number | null;
+  unitId?: number | null;
+  professionalId?: number | null;
+  patientId?: number | null;
+  appointmentId?: number | null;
+  referenceDate?: string;
+  createSnapshot?: boolean;
+}
+
 export const paymentSourceService = {
   async getAll(): Promise<PaymentSource[]> {
     const { data, error } = await supabase
@@ -111,6 +124,23 @@ export const paymentSourceService = {
 };
 
 export const insuranceCompanyService = {
+  async validateOperation(input: InsuranceOperationValidationInput): Promise<Record<string, unknown>> {
+    const { data, error } = await supabase.rpc("validate_insurance_operation_secure", {
+      p_operation: input.operation,
+      p_insurance_company_id: input.insuranceCompanyId,
+      p_insurance_plan_id: input.insurancePlanId ?? null,
+      p_service_id: input.serviceId ?? null,
+      p_unit_id: input.unitId ?? null,
+      p_professional_id: input.professionalId ?? null,
+      p_patient_id: input.patientId ?? null,
+      p_appointment_id: input.appointmentId ?? null,
+      p_reference_date: input.referenceDate ?? new Date().toISOString().slice(0, 10),
+      p_create_snapshot: input.createSnapshot ?? true,
+    });
+    if (error) throw new Error(`Erro ao validar convenio: ${error.message}`);
+    return (data || {}) as Record<string, unknown>;
+  },
+
   async getAll(): Promise<InsuranceCompany[]> {
     const { data, error } = await supabase
       .from("insurance_companies")

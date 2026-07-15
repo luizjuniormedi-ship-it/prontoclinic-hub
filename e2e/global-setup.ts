@@ -6,12 +6,14 @@ import { chromium, FullConfig } from '@playwright/test';
  * Pré-requisitos:
  *   - Supabase de staging acessível (VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY)
  *   - Empresa padrão + usuários de teste já criados (admin, doctor, reception, patient)
- *     com senha "TestPassword123!" — script SQL idempotente em supabase/seed/e2e_seed.sql
+ *     com senha "TestPassword123!" — seed efêmero em scripts/ci-seed-e2e.sql
  *   - Banco resetado antes de cada CI run (ver supabase/seed/reset.sql)
  */
 export default async function globalSetup(config: FullConfig) {
   const supabaseUrl = process.env.VITE_SUPABASE_URL;
   const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY;
+  const allowUserProvisioning = process.env.E2E_ALLOW_USER_PROVISIONING === 'true';
+  const serviceRoleKey = process.env.E2E_SERVICE_ROLE_KEY;
   const isLocalAuth = /^https?:\/\/(127\.0\.0\.1|localhost):8000\b/.test(supabaseUrl || '');
 
   if (!supabaseUrl || !supabaseKey) {
@@ -38,7 +40,20 @@ export default async function globalSetup(config: FullConfig) {
     return;
   }
 
-  console.log('[global-setup] Supabase OK — verificando usuários de teste...');
+  if (!allowUserProvisioning) {
+    console.log(
+      '[global-setup] Supabase OK — provisionamento remoto desabilitado; usando usuários existentes.'
+    );
+    return;
+  }
+
+  if (!serviceRoleKey) {
+    throw new Error(
+      '[global-setup] E2E_SERVICE_ROLE_KEY é obrigatório quando E2E_ALLOW_USER_PROVISIONING=true'
+    );
+  }
+
+  console.log('[global-setup] Supabase OK — provisionamento remoto explicitamente habilitado...');
 
   // 2. Criar/atualizar usuários de teste (idempotente via signUp + error handling).
   //    Em staging, desabilitar confirmação de e-mail para que login funcione direto.
@@ -56,12 +71,11 @@ export default async function globalSetup(config: FullConfig) {
   for (const u of users) {
     try {
       const res = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
-        // Endpoint de admin requer service role — em staging usa-se chave de serviço.
-        // Como fallback, usa signUp público; falha de "already registered" é OK.
+        // Endpoint de admin requer service role. Nunca reutilizar a chave pública.
         method: 'POST',
         headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -83,3 +97,4 @@ export default async function globalSetup(config: FullConfig) {
   await browser.close();
   console.log('[global-setup] Pronto.');
 }
+

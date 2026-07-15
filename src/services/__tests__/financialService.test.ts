@@ -40,31 +40,27 @@ describe("billingsService — getAll", () => {
       {
         id: "b-1",
         company_id: "company-uuid",
-        unit_id: "unit-uuid",
-        patient_id: "patient-uuid",
-        professional_id: null,
-        appointment_id: null,
-        billing_type: "consulta",
-        amount: 300,
-        discount: 50,
-        total: 250,
-        status: "em_aberto",
-        notes: null,
+        patient_id: 101,
+        appointment_id: 201,
+        amount: 250,
+        status: "pending",
+        guide_number: "G-001",
+        tiss_status: "consulta",
+        dt_vencimento: null,
+        dt_pagamento: null,
         created_at: "2026-01-01T00:00:00Z",
       },
       {
         id: "b-2",
         company_id: "company-uuid",
-        unit_id: "unit-uuid",
-        patient_id: "patient-uuid-2",
-        professional_id: "prof-uuid",
-        appointment_id: null,
-        billing_type: "exame",
+        patient_id: 102,
+        appointment_id: 202,
         amount: 500,
-        discount: 0,
-        total: 500,
-        status: "pago",
-        notes: "Exame de sangue",
+        status: "paid",
+        guide_number: null,
+        tiss_status: "exame",
+        dt_vencimento: null,
+        dt_pagamento: "2026-01-02",
         created_at: "2026-01-02T00:00:00Z",
       },
     ];
@@ -82,7 +78,7 @@ describe("billingsService — getAll", () => {
     expect(result).toHaveLength(2);
     expect(result[0].id).toBe("b-1");
     expect(result[0].net_amount).toBe(250);
-    expect(result[1].status).toBe("pago");
+    expect(result[1].status).toBe("paid");
   });
 
   it("retorna array vazio quando não há dados", async () => {

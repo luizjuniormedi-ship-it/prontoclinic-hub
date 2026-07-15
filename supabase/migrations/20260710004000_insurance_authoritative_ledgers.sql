@@ -2,17 +2,17 @@
 -- Reception tables remain operational workflow projections.
 
 CREATE TABLE IF NOT EXISTS public.insurance_authorization_history (
- id BIGSERIAL PRIMARY KEY,source_authorization_id UUID NOT NULL REFERENCES public.reception_authorizations(id) ON DELETE RESTRICT,
+ id BIGSERIAL PRIMARY KEY,source_authorization_id UUID NOT NULL REFERENCES public.insurance_authorizations(id) ON DELETE RESTRICT,
  version INTEGER NOT NULL,company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,patient_id BIGINT REFERENCES public.patients(id),
- appointment_id BIGINT REFERENCES public.appointments(id),insurance_id INTEGER REFERENCES public.insurance_companies(id),insurance_plan_id VARCHAR,
+ appointment_id BIGINT REFERENCES public.appointments(id),insurance_id INTEGER REFERENCES public.insurance_companies(id),insurance_plan_id INTEGER,
  procedure_id BIGINT,previous_status VARCHAR(40),status VARCHAR(40) NOT NULL,protocol_number VARCHAR,authorization_number VARCHAR,
  password_number VARCHAR,valid_until DATE,quantity_requested INTEGER,quantity_authorized INTEGER,quantity_used INTEGER,
  denial_reason TEXT,notes TEXT,changed_by UUID,changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(source_authorization_id,version)
 );
 CREATE TABLE IF NOT EXISTS public.insurance_eligibility_history (
- id BIGSERIAL PRIMARY KEY,source_eligibility_id UUID NOT NULL REFERENCES public.reception_eligibility_checks(id) ON DELETE RESTRICT,
+ id BIGSERIAL PRIMARY KEY,source_eligibility_id UUID NOT NULL REFERENCES public.insurance_eligibility_checks(id) ON DELETE RESTRICT,
  version INTEGER NOT NULL,company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,patient_id BIGINT REFERENCES public.patients(id),
- appointment_id BIGINT REFERENCES public.appointments(id),insurance_id INTEGER REFERENCES public.insurance_companies(id),insurance_plan_id VARCHAR,
+ appointment_id BIGINT REFERENCES public.appointments(id),insurance_id INTEGER REFERENCES public.insurance_companies(id),insurance_plan_id INTEGER,
  card_number VARCHAR,previous_status VARCHAR(40),status VARCHAR(40) NOT NULL,protocol_number VARCHAR,result_detail TEXT,source VARCHAR,
  checked_at TIMESTAMPTZ,changed_by UUID,changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(source_eligibility_id,version)
 );
@@ -46,11 +46,11 @@ BEGIN
  RETURN NEW;
 END $$;
 
-DROP TRIGGER IF EXISTS trg_capture_insurance_authorization_history ON public.reception_authorizations;
-CREATE TRIGGER trg_capture_insurance_authorization_history AFTER INSERT OR UPDATE ON public.reception_authorizations
+DROP TRIGGER IF EXISTS trg_capture_insurance_authorization_history ON public.insurance_authorizations;
+CREATE TRIGGER trg_capture_insurance_authorization_history AFTER INSERT OR UPDATE ON public.insurance_authorizations
 FOR EACH ROW EXECUTE FUNCTION public.capture_insurance_authorization_history();
-DROP TRIGGER IF EXISTS trg_capture_insurance_eligibility_history ON public.reception_eligibility_checks;
-CREATE TRIGGER trg_capture_insurance_eligibility_history AFTER INSERT OR UPDATE ON public.reception_eligibility_checks
+DROP TRIGGER IF EXISTS trg_capture_insurance_eligibility_history ON public.insurance_eligibility_checks;
+CREATE TRIGGER trg_capture_insurance_eligibility_history AFTER INSERT OR UPDATE ON public.insurance_eligibility_checks
 FOR EACH ROW EXECUTE FUNCTION public.capture_insurance_eligibility_history();
 
 CREATE OR REPLACE FUNCTION public.prevent_insurance_history_mutation()
@@ -67,11 +67,11 @@ INSERT INTO insurance_authorization_history(source_authorization_id,version,comp
  status,protocol_number,authorization_number,password_number,valid_until,quantity_requested,quantity_authorized,quantity_used,denial_reason,notes,changed_by,changed_at)
 SELECT r.id,1,r.company_id,r.patient_id,r.appointment_id,r.insurance_id,r.insurance_plan_id,r.procedure_id,r.status,r.protocol_number,r.authorization_number,
  r.password_number,r.valid_until,r.quantity_requested,r.quantity_authorized,r.quantity_used,r.denial_reason,r.notes,COALESCE(r.updated_by,r.created_by),COALESCE(r.updated_at,r.created_at,NOW())
-FROM reception_authorizations r ON CONFLICT(source_authorization_id,version) DO NOTHING;
+FROM insurance_authorizations r ON CONFLICT(source_authorization_id,version) DO NOTHING;
 INSERT INTO insurance_eligibility_history(source_eligibility_id,version,company_id,patient_id,appointment_id,insurance_id,insurance_plan_id,card_number,
  status,protocol_number,result_detail,source,checked_at,changed_by,changed_at)
 SELECT e.id,1,e.company_id,e.patient_id,e.appointment_id,e.insurance_id,e.insurance_plan_id,e.card_number,e.status,e.protocol_number,e.result_detail,e.source,
- e.checked_at,e.checked_by,COALESCE(e.checked_at,e.created_at,NOW()) FROM reception_eligibility_checks e ON CONFLICT(source_eligibility_id,version) DO NOTHING;
+ e.checked_at,e.checked_by,COALESCE(e.checked_at,e.created_at,NOW()) FROM insurance_eligibility_checks e ON CONFLICT(source_eligibility_id,version) DO NOTHING;
 
 ALTER TABLE insurance_authorization_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE insurance_eligibility_history ENABLE ROW LEVEL SECURITY;

@@ -90,6 +90,29 @@ describe("insuranceService — search (LIKE injection safe)", () => {
   });
 });
 
+  it("usa somente a RPC tenant-aware e nao envia company_id", async () => {
+    (supabase.rpc as any).mockResolvedValue({ data: { valid: true }, error: null });
+
+    const result = await insuranceCompanyService.validateOperation({
+      operation: "SCHEDULE",
+      insuranceCompanyId: 10,
+      patientId: 20,
+      createSnapshot: false,
+    });
+
+    expect(result).toEqual({ valid: true });
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "validate_insurance_operation_secure",
+      expect.objectContaining({
+        p_operation: "SCHEDULE",
+        p_insurance_company_id: 10,
+        p_patient_id: 20,
+        p_create_snapshot: false,
+      }),
+    );
+    expect((supabase.rpc as any).mock.calls[0][1]).not.toHaveProperty("p_company_id");
+  });
+
 describe("insuranceService — softDelete", () => {
   beforeEach(() => {
     vi.clearAllMocks();

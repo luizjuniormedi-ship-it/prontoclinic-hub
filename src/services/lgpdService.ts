@@ -347,7 +347,7 @@ export const lgpdService = {
     return { solicitacao, anonimizacao };
   },
 
-  /** Executa a anonimizacao (chama a RPC `anonymize_patient`). */
+  /** Executa a solicitacao segura de anonimizacao (admin/DPO + tenant). */
   async executeEsquecimento(
     patientId: number,
     motivo: MotivoAnonimizacao
@@ -356,7 +356,7 @@ export const lgpdService = {
     if (!Number.isInteger(patientId) || patientId <= 0) {
       throw new Error("patientId invalido");
     }
-    const { data, error } = await supabase.rpc("anonymize_patient", {
+    const { data, error } = await supabase.rpc("request_anonymize_patient", {
       p_paciente_id: patientId,
       p_motivo: motivo,
     });

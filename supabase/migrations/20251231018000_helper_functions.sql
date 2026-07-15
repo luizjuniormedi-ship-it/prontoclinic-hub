@@ -12,7 +12,7 @@ BEGIN
   END IF;
   RETURN EXISTS (
     SELECT 1 FROM public.user_profiles up
-    WHERE up.user_id = p_user_id AND up.role_name IN ('admin', 'ADMIN', 'ADMINISTRADOR')
+    WHERE up.id = p_user_id AND up.role_name IN ('admin', 'ADMIN', 'ADMINISTRADOR')
   );
 END;
 $$;
@@ -29,7 +29,7 @@ DECLARE
 BEGIN
   SELECT up.company_id INTO v_cid
   FROM public.user_profiles up
-  WHERE up.user_id = auth.uid()
+  WHERE up.id = auth.uid()
   LIMIT 1;
   RETURN v_cid;
 END;
@@ -48,7 +48,10 @@ BEGIN
   END IF;
   RETURN EXISTS (
     SELECT 1 FROM public.user_profiles up
-    WHERE up.user_id = p_user_id AND up.role_name IN ('admin', 'médico', 'enfermeiro', 'recepcao', 'ADMIN', 'MEDICO', 'ENFERMEIRO', 'RECEPCAO')
+    WHERE up.id = p_user_id AND up.role_name IN ('admin', 'médico', 'enfermeiro', 'recepcao', 'ADMIN', 'MEDICO', 'ENFERMEIRO', 'RECEPCAO')
   );
 END;
 $$;
+
+REVOKE ALL ON FUNCTION public.current_company_id() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.current_company_id() TO authenticated;
