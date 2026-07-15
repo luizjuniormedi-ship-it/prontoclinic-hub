@@ -50,3 +50,15 @@ O produto permanece **NAO APTO PARA PRODUCAO** ate esses gates externos serem co
 - Pendencias que permanecem: roles `anon/authenticated/service_role/app_owner`, RLS global, owner/BYPASSRLS real, backup/restore/rollback e reconciliacao somente leitura DataSIGH.
 
 **Conclusao atual:** login/health da VPS foi desbloqueado, mas o produto continua **NAO APTO PARA PRODUCAO** enquanto os gates de isolamento, backup e reconciliacao nao tiverem evidencia executavel.
+
+
+## Backup e restore descartavel na VPS - 2026-07-14
+
+- Backup customizado do banco `prontoclinic` criado em `/var/backups/prontomedic/prontoclinic-20260714-212732.dump`.
+- Tamanho: 117437778 bytes; SHA-256: `95d990339478b77b8b93d0fa3feadc04ac79caf1781024a311ad10b0796f5e88`; modo 600.
+- Restore executado em `prontoclinic_restore_check_20260714` com 3.018 entradas de catalogo.
+- Contagens restauradas: `auth.users=99`, `user_profiles=99`.
+- Banco temporario removido ao final; banco operacional nao recebeu DDL/DML nesta prova.
+- DataSIGH: nenhuma conexao, leitura, escrita ou transmissao neste passo.
+
+**Conclusao:** backup e restore descartavel comprovados. Permanecem bloqueados o replay de schema/RLS na base operacional, paridade RLS e reconciliacao somente leitura do DataSIGH.
