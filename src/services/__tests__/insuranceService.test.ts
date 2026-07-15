@@ -264,4 +264,25 @@ describe("insurancePlanService — getByInsurance", () => {
     expect(eqSpy).toHaveBeenCalledWith("lg_ativo", true);
     expect(result).toHaveLength(2);
   });
+
+  it("cria e atualiza plano", async () => {
+    const createChain: any = { insert: vi.fn().mockReturnThis(), select: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: { id: 1 }, error: null }) };
+    (supabase.from as any).mockReturnValueOnce(createChain);
+    await insurancePlanService.create({ name: "Plano" } as any);
+    const updateChain: any = { update: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), select: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: { id: 1 }, error: null }) };
+    (supabase.from as any).mockReturnValueOnce(updateChain);
+    await insurancePlanService.update(1, { name: "Plano 2" } as any);
+    expect(updateChain.eq).toHaveBeenCalledWith("id", 1);
+  });
+
+  it("lista convenios e trata erro", async () => {
+    const chain: any = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis() };
+    chain.then = (resolve: any) => resolve({ data: [{ id: 1 }], error: null });
+    (supabase.from as any).mockReturnValueOnce(chain);
+    await expect(insuranceCompanyService.getAll()).resolves.toHaveLength(1);
+    const errorChain: any = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis() };
+    errorChain.then = (resolve: any) => resolve({ data: null, error: { message: "DB down" } });
+    (supabase.from as any).mockReturnValueOnce(errorChain);
+    await expect(insuranceCompanyService.getAll()).rejects.toThrow(/DB down/);
+  });
 });

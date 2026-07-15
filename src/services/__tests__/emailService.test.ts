@@ -174,5 +174,104 @@ describe("emailService", () => {
       expect(result.provider).toBe("console");
       expect(mockFetch).not.toHaveBeenCalled();
     });
+
+    it("bloqueia envio em producao sem API key", async () => {
+      vi.resetModules();
+      vi.doMock("@/lib/env", () => ({
+        env: {
+          VITE_RESEND_API_KEY: undefined,
+          VITE_APP_ENV: "production",
+          VITE_EMAIL_FROM: "noreply@test.com",
+          VITE_EMAIL_REPLY_TO: "suporte@test.com",
+          VITE_APP_NAME: "TestApp",
+        },
+      }));
+      const { emailService: svc } = await import("@/services/emailService");
+
+      await expect(svc.sendEmail({
+        to: "user@example.com",
+        subject: "Test",
+        html: "<p>Hi</p>",
+      })).rejects.toThrow("Servico de e-mail nao configurado");
+    });
+
+    it("preserva texto explícito quando o HTML contém tags", async () => {
+      vi.resetModules();
+      vi.doMock("@/lib/env", () => ({
+        env: {
+          VITE_RESEND_API_KEY: undefined,
+          VITE_APP_ENV: "development",
+          VITE_EMAIL_FROM: "noreply@test.com",
+          VITE_EMAIL_REPLY_TO: "suporte@test.com",
+          VITE_APP_NAME: "TestApp",
+        },
+      }));
+      const { emailService: svc } = await import("@/services/emailService");
+      const result = await svc.sendEmail({
+        to: "user@example.com",
+        subject: "Test",
+        html: "<p>Hi</p>",
+        text: "Texto explícito",
+      });
+      expect(result.provider).toBe("console");
+    });
+
+    it("aceita remetente, reply-to e tags explícitos", async () => {
+      vi.resetModules();
+      vi.doMock("@/lib/env", () => ({
+        env: {
+          VITE_RESEND_API_KEY: "re_test_key",
+          VITE_APP_ENV: "development",
+          VITE_EMAIL_FROM: "default@test.com",
+          VITE_EMAIL_REPLY_TO: "default-reply@test.com",
+          VITE_APP_NAME: "TestApp",
+        },
+      }));
+      const { emailService: svc } = await import("@/services/emailService");
+      const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: "msg_explicit" }) });
+      global.fetch = mockFetch as unknown as typeof fetch;
+
+      await svc.sendEmail({
+        to: "user@example.com",
+        subject: "Test",
+        html: "<p>Hi</p>",
+        text: "Plain text",
+        from: "custom@test.com",
+        replyTo: "reply@test.com",
+        tags: [{ name: "category", value: "test" }],
+      });
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.from).toBe("custom@test.com");
+      expect(body.reply_to).toBe("reply@test.com");
+      expect(body.text).toBe("Plain text");
+      expect(body.tags).toEqual([{ name: "category", value: "test" }]);
+    });
+
+    it("usa defaults quando configuração opcional está ausente e resposta não traz id", async () => {
+      vi.resetModules();
+      vi.doMock("@/lib/env", () => ({ env: {
+        VITE_RESEND_API_KEY: "re_test_key",
+        VITE_APP_ENV: "development",
+        VITE_EMAIL_FROM: undefined,
+        VITE_EMAIL_REPLY_TO: undefined,
+        VITE_APP_NAME: undefined,
+      } }));
+      const { emailService: svc } = await import("@/services/emailService");
+      const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+      global.fetch = mockFetch as unknown as typeof fetch;
+      const result = await svc.sendEmail({ to: "user@example.com", subject: "Test", html: "<p>Hi</p>" });
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(result.id).toBe("unknown");
+      expect(body.from).toMatch(/nao-responda@prontoclinic/);
+      expect(body.reply_to).toMatch(/suporte@prontoclinic/);
+    });
+
+    it("converte AbortError em timeout de domínio", async () => {
+      const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
+      global.fetch = vi.fn().mockRejectedValue(abort) as unknown as typeof fetch;
+      await expect(emailService.sendEmail({ to: "user@example.com", subject: "Test", html: "<p>Hi</p>" }))
+        .rejects.toThrow(/Timeout ao enviar e-mail/);
+    });
   });
 });
