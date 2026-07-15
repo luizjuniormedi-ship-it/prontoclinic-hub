@@ -7,7 +7,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
+    setupFiles: [path.resolve(process.cwd(), 'src/test/setup.ts')],
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**'],
     coverage: {
@@ -25,9 +25,6 @@ export default defineConfig({
         'src/lib/supabase.ts',
         'src/lib/env.ts'
       ],
-      // Thresholds por arquivo — aplicados apenas aos services testados.
-      // Conforme novos testes forem adicionados, expanda esta lista.
-      // Meta de evolução: 75% lines / 65% branches / 75% funcs / 75% stmts.
       thresholds: {
         'src/services/statusTransitions.ts': {
           lines: 75, branches: 65, functions: 75, statements: 75,
