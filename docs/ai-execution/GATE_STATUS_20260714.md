@@ -62,3 +62,13 @@ O produto permanece **NAO APTO PARA PRODUCAO** ate esses gates externos serem co
 - DataSIGH: nenhuma conexao, leitura, escrita ou transmissao neste passo.
 
 **Conclusao:** backup e restore descartavel comprovados. Permanecem bloqueados o replay de schema/RLS na base operacional, paridade RLS e reconciliacao somente leitura do DataSIGH.
+
+
+## Replay RLS no clone da VPS - bloqueio de schema - 2026-07-14
+
+- O replay foi executado somente em clone descartavel derivado do backup; a base operacional nao recebeu DDL/DML.
+- O helper oficial `public.get_my_company_id()` foi aplicado no clone antes do gate.
+- O preflight P0 interrompeu corretamente: `billings.appointment_id` esta ausente no schema operacional; `billings.company_id` existe.
+- Clone, roles temporarios e artefatos SQL foram removidos ao final.
+
+**Conclusao:** nao aplicar RLS/constraints diretamente na VPS. Falta aprovar e implementar a migration canonica de `billings.appointment_id`, com preflight de nulos, mapeamento de agendamento e teste multiempresa em PostgreSQL descartavel. DataSIGH permanece intocado.
