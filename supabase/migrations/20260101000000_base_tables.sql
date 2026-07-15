@@ -33,6 +33,12 @@ CREATE TABLE IF NOT EXISTS public.user_profiles (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Helper de autorização usado pelas policies posteriores
+CREATE OR REPLACE FUNCTION public.is_admin(p_uid UUID)
+RETURNS BOOLEAN
+LANGUAGE SQL STABLE
+AS 'SELECT EXISTS (SELECT 1 FROM public.user_profiles WHERE id = p_uid AND role_name = ''admin'')';
+
 -- Pacientes
 CREATE TABLE IF NOT EXISTS public.patients (
   id BIGSERIAL PRIMARY KEY,
