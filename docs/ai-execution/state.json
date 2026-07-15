@@ -8,7 +8,6 @@
   "latest_known_vps_release": "37199ee",
   "production_ready": false,
   "open_p0": [
-    "vps_healthcheck_and_login",
     "datasigh_read_only_reconciliation",
     "backup_restore_rollback_evidence",
     "vps_runtime_schema_replay_and_rls"
@@ -31,16 +30,22 @@
     "full_rls_global_parity_local_remote"
   ],
   "vps_readonly_probe": {
-    "status": "BLOCKED_RUNTIME",
+    "status": "PARTIAL_RUNTIME_FIXED",
     "captured_at": "2026-07-14",
     "ssh": "PASS",
     "nginx_root_http": 200,
     "auth_settings_http": 200,
-    "pm2": "prontomedic-auth online; uptime 24h; restarts 0",
+    "login_http": 200,
+    "pm2": "prontomedic-auth online after restart; restart executed to reload runtime pool",
     "postgres": "127.0.0.1:5432 accepting",
     "database": "prontoclinic",
+    "runtime_role": "app_prontomedic",
+    "runtime_role_flags": "LOGIN,NOSUPERUSER,NOBYPASSRLS",
+    "runtime_connection": "PASS; app_prontomedic connected to prontoclinic",
+    "runtime_select_grants": "PASS; auth.users,user_profiles,roles,role_permissions",
     "roles_found": [
-      "postgres"
+      "postgres",
+      "app_prontomedic"
     ],
     "roles_missing": [
       "anon",
@@ -63,7 +68,8 @@
       "patients"
     ],
     "owner_summary": "all inspected tables owned by postgres superuser with BYPASSRLS",
-    "mutation_executed": false,
+    "mutation_executed": true,
+    "mutation_scope": "ProntoMedic PostgreSQL only: created/configured runtime role and grants; no schema replay or RLS changes",
     "datasigh_mutation": false
   }
 }
