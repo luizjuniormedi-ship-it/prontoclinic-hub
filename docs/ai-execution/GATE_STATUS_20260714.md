@@ -38,3 +38,15 @@ O produto permanece **NAO APTO PARA PRODUCAO** ate esses gates externos serem co
 - Nenhuma mutacao foi executada na VPS ou no DataSIGH.
 
 **Conclusao:** a VPS esta respondendo, mas o runtime do banco nao corresponde ao baseline validado no GitHub. O gate de producao permanece bloqueado ate replay controlado das migrations e nova auditoria RLS/roles.
+
+## Atualizacao VPS - 2026-07-14
+
+- Role de runtime `app_prontomedic`: criado/configurado como LOGIN, NOSUPERUSER e NOBYPASSRLS.
+- Grants minimos: CONNECT no banco `prontoclinic`, USAGE em `public`/ `auth`, SELECT em `auth.users`, `public.user_profiles`, `public.roles` e `public.role_permissions`.
+- Conexao efetiva como `app_prontomedic`: PASS.
+- Health `/auth/v1/settings`: HTTP 200; frontend: HTTP 200; login smoke: HTTP 200; PM2 reiniciado e online.
+- Escopo da mutacao: somente role/grants do PostgreSQL ProntoMedic; nenhum replay de schema/RLS.
+- DataSIGH: nenhuma leitura nova neste passo, nenhuma escrita, alteracao ou transmissao.
+- Pendencias que permanecem: roles `anon/authenticated/service_role/app_owner`, RLS global, owner/BYPASSRLS real, backup/restore/rollback e reconciliacao somente leitura DataSIGH.
+
+**Conclusao atual:** login/health da VPS foi desbloqueado, mas o produto continua **NAO APTO PARA PRODUCAO** enquanto os gates de isolamento, backup e reconciliacao nao tiverem evidencia executavel.
