@@ -10,7 +10,8 @@
   "open_p0": [
     "datasigh_read_only_reconciliation",
     "backup_restore_rollback_evidence",
-    "vps_runtime_schema_replay_and_rls"
+    "vps_runtime_schema_replay_and_rls",
+    "billing_appointment_id_canonical_migration"
   ],
   "latest_branch": "fix/f1-tenant-integrity-20260714",
   "latest_commit": "72b7d74d9e2a0d218cf17e4f82fc2d7281a6595e",
@@ -88,5 +89,21 @@
     "temporary_database_removed": true,
     "source_database_changed": false,
     "datasigh_mutation": false
+  },
+  "vps_rls_replay_20260714": {
+    "status": "BLOCKED_SCHEMA_DRIFT",
+    "target": "disposable clone of VPS database only",
+    "replay_attempted": "000_p0_p1_consolidated.sql",
+    "prerequisite_helper": "20260101001200_security_hardening.sql applied in clone",
+    "failure": "P0/P1 preflight: existing billings lacks tenant/appointment columns",
+    "verified_operational_schema": {
+      "billings_company_id": true,
+      "billings_appointment_id": false
+    },
+    "production_database_changed": false,
+    "disposable_clone_removed": true,
+    "temporary_roles_removed": true,
+    "datasigh_mutation": false,
+    "next_action": "approve and implement canonical appointment_id migration in local/ephemeral gate; rerun replay and multi-tenant tests before any VPS DDL"
   }
 }
