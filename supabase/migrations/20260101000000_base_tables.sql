@@ -145,6 +145,26 @@ COMMENT ON TABLE public.patients IS 'Tabela base de pacientes. Migration 00000.'
 COMMENT ON TABLE public.professionals IS 'Tabela base de profissionais. Migration 00000.';
 COMMENT ON TABLE public.units IS 'Tabela base de unidades. Migration 00000.';
 COMMENT ON TABLE public.appointments IS 'Tabela base de agendamentos. Migration 00000.';
+-- Prontuários (necessário para triggers de auditoria)
+CREATE TABLE IF NOT EXISTS public.medical_records (
+  id BIGSERIAL PRIMARY KEY,
+  company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+  patient_id BIGINT REFERENCES public.patients(id) ON DELETE CASCADE,
+  professional_id BIGINT REFERENCES public.professionals(id),
+  appointment_id BIGINT REFERENCES public.appointments(id),
+  chief_complaint TEXT,
+  history_present_illness TEXT,
+  physical_examination TEXT,
+  diagnosis TEXT,
+  treatment_plan TEXT,
+  prescriptions TEXT,
+  lg_ativo BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_medical_records_patient ON public.medical_records(patient_id);
+CREATE INDEX IF NOT EXISTS idx_medical_records_company ON public.medical_records(company_id);
+
 -- Services Catalog (catálogo de serviços)
 CREATE TABLE IF NOT EXISTS public.services_catalog (
   id BIGSERIAL PRIMARY KEY,
