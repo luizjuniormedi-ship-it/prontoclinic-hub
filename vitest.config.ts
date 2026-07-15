@@ -25,6 +25,9 @@ export default defineConfig({
         'src/lib/supabase.ts',
         'src/lib/env.ts'
       ],
+      // Thresholds por arquivo — aplicados apenas aos services testados.
+      // Conforme novos testes forem adicionados, expanda esta lista.
+      // Meta de evolução: 75% lines / 65% branches / 75% funcs / 75% stmts.
       thresholds: {
         'src/services/statusTransitions.ts': {
           lines: 75, branches: 65, functions: 75, statements: 75,
