@@ -63,7 +63,7 @@ SET search_path = public, pg_temp
 AS $$
   SELECT up.id, up.company_id, lower(coalesce(up.role_name, ''))
   FROM public.user_profiles up
-  WHERE up.id = auth.uid() OR up.user_id = auth.uid()
+  WHERE up.id = auth.uid()
   LIMIT 1
 $$;
 
