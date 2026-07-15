@@ -86,9 +86,24 @@ CREATE TABLE IF NOT EXISTS public.units (
   company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
   cd_codigo VARCHAR(20) NOT NULL,
   ds_nome VARCHAR(100) NOT NULL,
+  ds_razao_social VARCHAR(200),
+  nr_cnpj VARCHAR(14),
+  tp_unidade VARCHAR(30) DEFAULT 'MATRIZ',
+  ds_endereco VARCHAR(200),
+  nr_endereco VARCHAR(20),
+  ds_complemento VARCHAR(100),
+  ds_bairro VARCHAR(100),
+  ds_cidade VARCHAR(100),
+  ds_uf VARCHAR(2),
+  nr_cep VARCHAR(8),
+  nr_telefone VARCHAR(20),
+  ds_email VARCHAR(200),
+  cd_ibge_municipio VARCHAR(7),
   lg_principal BOOLEAN DEFAULT FALSE,
   lg_ativo BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  cd_origem_sigh INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Appointments (necessário para FK em outras tabelas)
