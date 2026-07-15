@@ -27,3 +27,14 @@ O produto permanece **NAO APTO PARA PRODUCAO** ate esses gates externos serem co
 - O replay verifica que proprietarios nao-superusuarios das tabelas protegidas nao possuem `BYPASSRLS`.
 - O superusuario `postgres` do ambiente efemero e diferenciado explicitamente; isso nao constitui prova de configuracao da VPS.
 - A validacao real do owner/BYPASSRLS na VPS continua pendente.
+
+## Bloqueio runtime VPS identificado por leitura
+
+- SSH: PASS; Nginx root: HTTP 200; `/auth/v1/settings`: HTTP 200; PM2 `prontomedic-auth`: online.
+- PostgreSQL local: aceitando conexoes; banco auditado: `prontoclinic`.
+- Roles esperados ausentes: `anon`, `authenticated`, `service_role`, `app_owner`.
+- RLS desativado nas tabelas auditadas: `billings`, `companies`, `insurance_authorizations`, `insurance_eligibility_checks`, `professionals`, `user_profiles`.
+- Tabelas auditadas pertencem ao superusuario `postgres` com `BYPASSRLS`.
+- Nenhuma mutacao foi executada na VPS ou no DataSIGH.
+
+**Conclusao:** a VPS esta respondendo, mas o runtime do banco nao corresponde ao baseline validado no GitHub. O gate de producao permanece bloqueado ate replay controlado das migrations e nova auditoria RLS/roles.
