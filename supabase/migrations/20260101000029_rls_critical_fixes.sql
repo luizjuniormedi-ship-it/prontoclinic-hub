@@ -91,7 +91,7 @@ DO $$
 BEGIN
   EXECUTE 'DROP POLICY IF EXISTS "pre_cadastro_anon_insert" ON public.pre_cadastro';
   -- Anônimos só podem criar (INSERT), nunca ler/editar
-  EXECUTE 'CREATE POLICY "pre_cadastro_anon_insert" ON public.pre_cadastro FOR INSERT TO anon, authenticated WITH CHECK (length(nm_paciente) >= 3 AND length(nr_cpf) IN (11, 14) AND length(ds_email) >= 5 AND ds_email LIKE ''%@%'')';
+  EXECUTE 'CREATE POLICY "pre_cadastro_anon_insert" ON public.pre_cadastro FOR INSERT TO anon, authenticated WITH CHECK (length(full_name) >= 3 AND length(email) >= 5 AND email LIKE ''%@%'')';
   -- Leitura/edit restrito a admin
   EXECUTE 'DROP POLICY IF EXISTS "Admins can manage pre_cadastro" ON public.pre_cadastro';
   EXECUTE 'CREATE POLICY "Admins can manage pre_cadastro" ON public.pre_cadastro FOR ALL TO authenticated USING (public.is_admin(auth.uid())) WITH CHECK (public.is_admin(auth.uid()))';
