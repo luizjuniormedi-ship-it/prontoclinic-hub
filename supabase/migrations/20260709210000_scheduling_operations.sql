@@ -1,5 +1,31 @@
 -- Scheduling operations: waitlist, blocks and calculated availability.
 
+-- Canonical weekly professional schedule consumed by slot calculation.
+CREATE TABLE IF NOT EXISTS public.professional_schedules (
+  id BIGSERIAL PRIMARY KEY,
+  company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+  professional_id BIGINT NOT NULL REFERENCES public.professionals(id) ON DELETE CASCADE,
+  day_of_week VARCHAR(20) NOT NULL,
+  lg_habilitado BOOLEAN NOT NULL DEFAULT TRUE,
+  slot1_start INTEGER,
+  slot1_end INTEGER,
+  slot1_duration INTEGER DEFAULT 30,
+  slot1_unit_id INTEGER REFERENCES public.units(id) ON DELETE SET NULL,
+  slot2_start INTEGER,
+  slot2_end INTEGER,
+  slot2_duration INTEGER DEFAULT 30,
+  slot2_unit_id INTEGER REFERENCES public.units(id) ON DELETE SET NULL,
+  slot3_start INTEGER,
+  slot3_end INTEGER,
+  slot3_duration INTEGER DEFAULT 30,
+  slot3_unit_id INTEGER REFERENCES public.units(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_professional_schedules_lookup
+  ON public.professional_schedules(professional_id, day_of_week, lg_habilitado);
+
 CREATE TABLE IF NOT EXISTS public.scheduling_waitlist (
   id BIGSERIAL PRIMARY KEY,
   company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,

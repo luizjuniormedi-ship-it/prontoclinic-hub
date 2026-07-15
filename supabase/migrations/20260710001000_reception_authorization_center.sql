@@ -1,3 +1,52 @@
+-- Canonical reception authorization/eligibility workflow tables.
+CREATE TABLE IF NOT EXISTS public.reception_authorizations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+  patient_id BIGINT REFERENCES public.patients(id) ON DELETE SET NULL,
+  appointment_id BIGINT REFERENCES public.appointments(id) ON DELETE SET NULL,
+  insurance_id INTEGER REFERENCES public.insurance_companies(id) ON DELETE SET NULL,
+  insurance_plan_id VARCHAR,
+  procedure_id BIGINT,
+  status VARCHAR(40) NOT NULL DEFAULT 'pendente',
+  protocol_number VARCHAR,
+  authorization_number VARCHAR,
+  password_number VARCHAR,
+  valid_until DATE,
+  quantity_requested INTEGER,
+  quantity_authorized INTEGER,
+  quantity_used INTEGER DEFAULT 0,
+  denial_reason TEXT,
+  notes TEXT,
+  created_by UUID,
+  updated_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_reception_authorizations_company
+  ON public.reception_authorizations(company_id, status, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.reception_eligibility_checks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+  patient_id BIGINT REFERENCES public.patients(id) ON DELETE SET NULL,
+  appointment_id BIGINT REFERENCES public.appointments(id) ON DELETE SET NULL,
+  insurance_id INTEGER REFERENCES public.insurance_companies(id) ON DELETE SET NULL,
+  insurance_plan_id VARCHAR,
+  card_number VARCHAR,
+  status VARCHAR(40) NOT NULL DEFAULT 'pendente',
+  protocol_number VARCHAR,
+  result_detail TEXT,
+  source VARCHAR,
+  checked_at TIMESTAMPTZ,
+  checked_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_reception_eligibility_company
+  ON public.reception_eligibility_checks(company_id, status, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS public.reception_admin_history (
  id BIGSERIAL PRIMARY KEY,company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
  entity_type VARCHAR(40) NOT NULL,entity_id TEXT NOT NULL,appointment_id BIGINT REFERENCES public.appointments(id),

@@ -43,11 +43,32 @@ jobs:
 
       - name: Apply database migrations
         run: |
-          DATABASE_URL=postgresql://postgres:postgres@localhost:54322/postgres
+          set -Eeuo pipefail
           export PGPASSWORD=postgres
-          for f in supabase/migrations/*.sql; do
+          export DATABASE_URL=postgresql://postgres:postgres@localhost:54322/postgres
+
+          until pg_isready -h localhost -p 54322 -U postgres -d postgres; do
+            sleep 1
+          done
+
+          # The migrations target Supabase roles and auth helpers. Create
+          # only the disposable compatibility objects needed by this bare
+          # PostgreSQL service; no application data is seeded.
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -c "CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN BYPASSRLS; CREATE ROLE supabase_auth_admin NOLOGIN BYPASSRLS; CREATE ROLE supabase_admin NOLOGIN BYPASSRLS;"
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -c "CREATE SCHEMA IF NOT EXISTS auth; CREATE TABLE IF NOT EXISTS auth.users (id UUID PRIMARY KEY, email TEXT, raw_user_meta_data JSONB, raw_app_meta_data JSONB, created_at TIMESTAMPTZ DEFAULT NOW());"
+          psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -c "CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID LANGUAGE SQL STABLE AS 'SELECT NULLIF(current_setting(''request.jwt.claim.sub'', true), '''')::UUID'; CREATE OR REPLACE FUNCTION auth.role() RETURNS TEXT LANGUAGE SQL STABLE AS 'SELECT COALESCE(NULLIF(current_setting(''request.jwt.claim.role'', true), ''''), ''service_role'')'; CREATE OR REPLACE FUNCTION auth.jwt() RETURNS JSONB LANGUAGE SQL STABLE AS 'SELECT COALESCE(NULLIF(current_setting(''request.jwt.claims'', true), '''')::JSONB, ''{}''::JSONB)';"
+
+          # 20251231* are legacy patch scripts that assume the application
+          # schema already exists. Fresh CI replays the canonical baseline
+          # followed by subsequent migrations only.
+          mapfile -t migrations < <(
+            find supabase/migrations -maxdepth 1 -type f -name '*.sql'               ! -name '202512*.sql'               -print | sort
+          )
+          test "${#migrations[@]}" -gt 0
+
+          for f in "${migrations[@]}"; do
             echo "Applying $f..."
-            psql -v ON_ERROR_STOP=1 -1 -h localhost -U postgres -d postgres -f "$f"
+            psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f "$f"
           done
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:54322/postgres

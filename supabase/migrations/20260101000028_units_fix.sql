@@ -101,9 +101,11 @@ SELECT
   TRUE
 FROM public.companies c
 WHERE NOT EXISTS (
-  SELECT 1 FROM public.units u WHERE u.company_id = c.id AND u.lg_principal = TRUE
-)
-ON CONFLICT (company_id, cd_codigo) DO NOTHING;
+  SELECT 1
+  FROM public.units u
+  WHERE u.company_id = c.id
+    AND (u.lg_principal = TRUE OR u.cd_codigo = 'U001')
+);
 
 -- ============================================================================
 -- 1.5. Compat: garantir que almoxarifados e leitos existentes tenham
