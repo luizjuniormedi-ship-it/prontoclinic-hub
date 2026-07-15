@@ -195,11 +195,6 @@ CREATE TABLE IF NOT EXISTS public.services_catalog (
 );
 CREATE INDEX IF NOT EXISTS idx_services_catalog_company ON public.services_catalog(company_id);
 
--- TISS (precisa para FKs)
-CREATE TABLE IF NOT EXISTS public.tiss_xml (
-  id BIGSERIAL PRIMARY KEY,
-  company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+-- TISS schema is owned by 20260101000010_tiss.sql.
 
 -- LGPD tables are owned by 20260101000006_lgpd.sql.
