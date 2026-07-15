@@ -70,6 +70,23 @@
     "owner_summary": "all inspected tables owned by postgres superuser with BYPASSRLS",
     "mutation_executed": true,
     "mutation_scope": "ProntoMedic PostgreSQL only: created/configured runtime role and grants; no schema replay or RLS changes",
+    "datasigh_mutation": false,
+    "backup_restore": "PASS; custom dump checksum and disposable restore verified"
+  },
+  "backup_restore_vps_20260714": {
+    "status": "PASS_BACKUP_AND_DISPOSABLE_RESTORE",
+    "backup_path": "/var/backups/prontomedic/prontoclinic-20260714-212732.dump",
+    "backup_size_bytes": 117437778,
+    "backup_sha256": "95d990339478b77b8b93d0fa3feadc04ac79caf1781024a311ad10b0796f5e88",
+    "backup_mode": "600",
+    "restore_database": "prontoclinic_restore_check_20260714",
+    "restore_catalog_entries": 3018,
+    "restored_counts": {
+      "auth_users": 99,
+      "user_profiles": 99
+    },
+    "temporary_database_removed": true,
+    "source_database_changed": false,
     "datasigh_mutation": false
   }
 }
