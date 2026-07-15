@@ -72,3 +72,14 @@ O produto permanece **NAO APTO PARA PRODUCAO** ate esses gates externos serem co
 - Clone, roles temporarios e artefatos SQL foram removidos ao final.
 
 **Conclusao:** nao aplicar RLS/constraints diretamente na VPS. Falta aprovar e implementar a migration canonica de `billings.appointment_id`, com preflight de nulos, mapeamento de agendamento e teste multiempresa em PostgreSQL descartavel. DataSIGH permanece intocado.
+
+
+## Billing e bloqueio da FK composta - evidencia VPS - 2026-07-14
+
+- `billings`: 15.899 registros; `company_id` preenchido em 100% dos registros.
+- Relação observável `appointments.billing_id = billings.id`: 15.074 billings mapeados e 825 sem mapeamento.
+- Existem 351 grupos de `billing_id` duplicado em appointments.
+- Entre os mapeados, divergência de tenant: 0.
+- Nenhum backfill, DDL, DML ou alteração de faturamento foi executado.
+
+**Conclusao:** não aplicar `appointment_id NOT NULL` nem FK composta automaticamente. É obrigatório revisar os 825 registros sem vínculo e os 351 grupos duplicados com regra financeira aprovada. DataSIGH permanece intocado.
