@@ -110,6 +110,9 @@ async function getUserProfile(userId) {
 const REFERENCE_TABLES = new Set([
   'bairros', 'cbos', 'cids', 'cid', 'municipios', 'profissoes',
   'countries', 'states', 'racas', 'etnias', 'nacionalidades',
+  // Catalogo operacional: leitura para agenda/recepcao; escrita permanece
+  // restrita a admin e o escopo company_id continua aplicado.
+  'professionals',
 ]);
 
 function tableToModule(table) {
@@ -901,3 +904,4 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜`);
   console.log(``);
 });
+
