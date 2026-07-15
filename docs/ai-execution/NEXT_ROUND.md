@@ -23,3 +23,7 @@ Nao avançar para deploy/publicacao enquanto qualquer item acima estiver sem evi
 ## Checkpoint adicional
 
 A auditoria de owner/RLS passou no CI: `29376855228` (F1) e `29376855298` (CI). O teste impede BYPASSRLS em proprietarios nao-superusuarios e distingue o postgres superusuario do replay efemero. Ainda e obrigatoria a comprovacao equivalente na VPS antes da liberacao.
+
+## Bloqueio externo confirmado
+
+A leitura da VPS confirmou que frontend/backend respondem, mas o banco `prontoclinic` nao tem os roles de runtime esperados e possui tabelas protegidas sem RLS. A proxima acao correta e um replay controlado das migrations no banco da VPS, precedido por backup verificavel e autorizado. Nao executar automaticamente e nao tocar no DataSIGH.
