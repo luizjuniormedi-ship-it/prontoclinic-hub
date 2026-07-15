@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS public.appointments (
   appointment_date DATE NOT NULL,
   start_time TIME NOT NULL,
   end_time TIME,
+  scheduled_at TIMESTAMPTZ,
   status VARCHAR(20) DEFAULT 'agendado',
   notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
