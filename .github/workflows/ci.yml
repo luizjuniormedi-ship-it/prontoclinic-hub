@@ -47,7 +47,7 @@ jobs:
           export PGPASSWORD=postgres
           for f in supabase/migrations/*.sql; do
             echo "Applying $f..."
-            psql -v ON_ERROR_STOP=1 -1 -h localhost -U postgres -d postgres -f "$f"
+            psql -v ON_ERROR_STOP=1 -1 -h localhost -p 54322 -U postgres -d postgres -f "$f"
           done
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:54322/postgres
