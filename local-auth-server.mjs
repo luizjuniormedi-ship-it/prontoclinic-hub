@@ -33,6 +33,18 @@ const pool = new Pool({
   database: process.env.PGDATABASE || 'prontoclinic',
 });
 
+pool.on('error', (error) => {
+  console.error('[PG_POOL_ERROR]', error);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('[UNCAUGHT_EXCEPTION]', error);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[UNHANDLED_REJECTION]', reason);
+});
+
 // Simple JWT (HS256)
 function base64url(str) {
   return Buffer.from(str).toString('base64url');
@@ -98,6 +110,9 @@ async function getUserProfile(userId) {
 const REFERENCE_TABLES = new Set([
   'bairros', 'cbos', 'cids', 'cid', 'municipios', 'profissoes',
   'countries', 'states', 'racas', 'etnias', 'nacionalidades',
+  // Catalogo operacional: leitura para agenda/recepcao; escrita permanece
+  // restrita a admin e o escopo company_id continua aplicado.
+  'professionals',
 ]);
 
 function tableToModule(table) {
@@ -172,14 +187,26 @@ async function requiredCompanyScope(profile, table) {
 const permCache = new Map();
 async function loadRolePerms(role) {
   if (permCache.has(role)) return permCache.get(role);
-  const r = await pool.query(
-    `SELECT rp.module, rp.can_view, rp.can_create, rp.can_edit, rp.can_delete
-       FROM role_permissions rp JOIN roles ro ON ro.id = rp.role_id
-      WHERE ro.name = $1`, [role]);
-  const m = {};
-  for (const row of r.rows) m[row.module] = row;
-  permCache.set(role, m);
-  return m;
+  try {
+    const r = await pool.query(
+      `SELECT rp.module, rp.can_view, rp.can_create, rp.can_edit, rp.can_delete
+         FROM role_permissions rp JOIN roles ro ON ro.id = rp.role_id
+        WHERE ro.name = $1`, [role]);
+    const m = {};
+    for (const row of r.rows) m[row.module] = row;
+    permCache.set(role, m);
+    return m;
+  } catch (error) {
+    // Missing permission catalog is fail-closed: deny non-admin access without
+    // turning a missing deployment prerequisite into an HTTP 500.
+    if (error?.code === '42P01') {
+      console.error(`[RBAC_CATALOG_MISSING] role_permissions/roles for role ${role}`);
+      const denied = {};
+      permCache.set(role, denied);
+      return denied;
+    }
+    throw error;
+  }
 }
 
 /** Retorna {ok:true} ou {ok:false, reason}. Somente admin tem bypass total. */
@@ -215,6 +242,18 @@ const RPC_PERMISSIONS = {
   cancel_schedule_block_secure: { module: 'agenda', action: 'can_edit' },
   get_professional_available_slots: { module: 'agenda', action: 'can_view' },
   get_scheduling_requirements: { module: 'agenda', action: 'can_view' },
+  update_appointment_secure: { module: 'agenda', action: 'can_edit' },
+  create_call_center_contact_secure: { module: 'call_center', action: 'can_create' },
+  create_call_center_task_secure: { module: 'call_center', action: 'can_create' },
+  complete_call_center_task_secure: { module: 'call_center', action: 'can_edit' },
+  create_medical_record_secure: { module: 'prontuario', action: 'can_create' },
+  update_medical_record_secure: { module: 'prontuario', action: 'can_edit' },
+  update_patient_secure: { module: 'pacientes', action: 'can_edit' },
+  criar_sala_telemedicina: { module: 'telemedicina', action: 'can_create' },
+  registrar_consentimento_gravacao: { module: 'telemedicina', action: 'can_edit' },
+  finalizar_sala_telemedicina: { module: 'telemedicina', action: 'can_edit' },
+  current_company_id: { module: 'admin', action: 'can_view' },
+  calc_imc: { module: 'prontuario', action: 'can_view' },
   create_appointment_with_requirements_secure: { module: 'agenda', action: 'can_create' },
   refresh_confirmation_queue_secure: { module: 'agenda', action: 'can_edit' },
   record_confirmation_attempt_secure: { module: 'agenda', action: 'can_edit' },
@@ -223,6 +262,25 @@ const RPC_PERMISSIONS = {
   perform_reception_checkin_secure: { module: 'recepcao', action: 'can_create' },
   update_reception_authorization_secure: { module: 'recepcao', action: 'can_edit' },
   update_reception_eligibility_secure: { module: 'recepcao', action: 'can_edit' },
+  request_anonymize_patient: { module: 'auditoria', action: 'can_edit' },
+  calcular_kpis_diarios: { module: 'bi', action: 'can_edit' },
+  detectar_alertas_bi: { module: 'bi', action: 'can_edit' },
+  find_price: { module: 'faturamento', action: 'can_view' },
+  queue_notification: { module: 'recepcao', action: 'can_create' },
+  tiss_get_stats: { module: 'faturamento', action: 'can_view' },
+  calcular_valor_estoque: { module: 'farmacia', action: 'can_view' },
+  cancel_pre_cadastro: { module: 'recepcao', action: 'can_edit' },
+  confirm_pre_cadastro: { module: 'recepcao', action: 'can_create' },
+  create_pre_cadastro: { module: 'recepcao', action: 'can_create' },
+  gerar_senha_triagem: { module: 'enfermagem', action: 'can_create' },
+  log_data_access: { module: 'auditoria', action: 'can_create' },
+  promote_pre_cadastro: { module: 'recepcao', action: 'can_edit' },
+  publish_dicom_report: { module: 'dicom', action: 'can_edit' },
+  registrar_movimentacao_estoque: { module: 'farmacia', action: 'can_edit' },
+  recalc_tiss_total_glosa: { module: 'faturamento', action: 'can_edit' },
+  bedside_check: { module: 'enfermagem', action: 'can_view' },
+  billing_check_pending: { module: 'faturamento', action: 'can_edit' },
+  check_prescription_safety: { module: 'prontuario', action: 'can_view' },
 };
 
 async function authorizeRpc(profile, functionName) {
@@ -259,7 +317,7 @@ function cors(req, res) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
   }
-  res.setHeader('Access-Control-Allow-Headers', 'authorization, apikey, content-type, prefer, range, x-client-info');
+  res.setHeader('Access-Control-Allow-Headers', 'authorization, apikey, content-type, prefer, range, x-client-info, x-application-name, x-supabase-api-version, accept-profile, x-retry-count');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Expose-Headers', 'content-range');
   return true;
@@ -500,6 +558,13 @@ const server = createServer(async (req, res) => {
     }
 
     // (refresh token handler moved to top of chain)
+
+    // â”€â”€â”€ AUTH: Password recovery (local adapter)
+    // Always returns a generic success response; no user existence is disclosed.
+    if (path === '/auth/v1/recover' && req.method === 'POST') {
+      await parseBody(req);
+      return json(res, {});
+    }
 
     // â”€â”€â”€ AUTH: Settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (path === '/auth/v1/settings') {
@@ -839,3 +904,4 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜`);
   console.log(``);
 });
+
