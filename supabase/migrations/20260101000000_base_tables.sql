@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS public.appointments (
   company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
   patient_id BIGINT REFERENCES public.patients(id),
   professional_id BIGINT REFERENCES public.professionals(id),
-  insurance_company_id BIGINT REFERENCES public.insurance_companies(id),
+  insurance_company_id BIGINT,
   specialty_id INTEGER,
   appointment_type_id BIGINT,
   appointment_date DATE NOT NULL,
