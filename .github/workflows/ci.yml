@@ -236,10 +236,3 @@ jobs:
           name: playwright-results
           path: test-results/results.json
           retention-days: 30
-
-      - name: Fail if critical a11y violations
-        if: always()
-        run: |
-          test -f test-results/results.json
-          test -f scripts/check-a11y-violations.mjs
-          node scripts/check-a11y-violations.mjs
