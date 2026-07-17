@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, Link, Navigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Heart, Loader2, Eye, EyeOff, AlertCircle, UserPlus, ArrowRight, ShieldCheck } from "lucide-react";
@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { useToast } from "@/hooks/use-toast";
 
 type LoginError = { title: string; description?: string } | null;
 
@@ -37,9 +36,23 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<LoginError>(null);
-  const { login, isAuthenticated } = useAuth();
+  const { login, verifyMfa, logout, isAuthenticated, session, mfaStep, mustChangePassword } = useAuth();
   const navigate = useNavigate();
-  const { toast } = useToast();
+
+  useEffect(() => {
+    if (!session) return;
+    if (mfaStep === "challenge") {
+      setRequires2FA(true);
+      return;
+    }
+    if (mfaStep === "enroll") {
+      navigate("/mfa-enrollment", { replace: true });
+      return;
+    }
+    if (mfaStep === "verified" && mustChangePassword) {
+      navigate("/reset-password", { replace: true, state: { forced: true } });
+    }
+  }, [session, mfaStep, mustChangePassword, navigate]);
 
   if (isAuthenticated) {
     return <Navigate to="/" replace />;
@@ -57,12 +70,16 @@ export default function LoginPage() {
     setLoading(false);
 
     if (result.success) {
-      // Detecta flag de 2FA devolvida no result (compat: hoje o supabase não retorna,
-      // mas mantemos a porta aberta para o backend setar lg_2fatores=true)
-      const needs2FA = (result as { requires2FA?: boolean }).requires2FA;
-      if (needs2FA) {
+      if (result.next === "mfa-challenge") {
         setRequires2FA(true);
-        toast({ title: "Código 2FA enviado para seu e-mail." });
+        return;
+      }
+      if (result.next === "mfa-enroll") {
+        navigate("/mfa-enrollment");
+        return;
+      }
+      if (result.next === "password-change") {
+        navigate("/reset-password", { state: { forced: true } });
         return;
       }
       navigate("/");
@@ -78,15 +95,21 @@ export default function LoginPage() {
       return;
     }
     setLoading(true);
-    // Simulação: backend final chamaria supabase.auth.verifyOtp ou similar.
-    // Por enquanto, tratamos como sucesso parcial e pedimos para re-entrar.
+    const result = await verifyMfa(twoFactorCode);
     setLoading(false);
-    toast({ title: "Verificação adicional em desenvolvimento." });
-    navigate("/");
+    if (!result.success) {
+      setError(translateLoginError(result.error));
+      return;
+    }
+    if (result.next === "password-change") {
+      navigate("/reset-password", { state: { forced: true } });
+    } else {
+      navigate("/");
+    }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5 p-4">
+    <main id="main-content" tabIndex={-1} className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5 p-4">
       <Card className="w-full max-w-md shadow-lg animate-fade-in">
         <CardHeader className="text-center pb-2">
           <div className="mx-auto rounded-xl bg-primary p-3 w-fit mb-4">
@@ -178,8 +201,8 @@ export default function LoginPage() {
           ) : (
             <form onSubmit={handle2FASubmit} className="space-y-4" aria-label="Verificação em duas etapas">
               <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
-                Sua conta exige verificação em duas etapas. Informe o código de 6 dígitos enviado para
-                seu e-mail.
+                Sua conta exige verificação em duas etapas. Informe o código de 6 dígitos do seu
+                aplicativo autenticador.
               </div>
               <div className="space-y-2">
                 <Label htmlFor="twoFactorCode">Código 2FA</Label>
@@ -203,6 +226,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => {
+                  void logout();
                   setRequires2FA(false);
                   setTwoFactorCode("");
                   setError(null);
@@ -215,6 +239,6 @@ export default function LoginPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </main>
   );
 }

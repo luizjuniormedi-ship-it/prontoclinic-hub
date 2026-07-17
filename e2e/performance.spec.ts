@@ -1,10 +1,11 @@
 import { test, expect } from '@playwright/test';
+import { E2E_PASSWORD } from './env';
 
 test.describe('Performance', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/login');
     await page.getByLabel('E-mail').fill('admin@prontomedic.test');
-    await page.getByRole('textbox', { name: 'Senha' }).fill('TestPassword123!');
+    await page.getByRole('textbox', { name: 'Senha' }).fill(E2E_PASSWORD);
     await page.getByRole('button', { name: /entrar/i }).click();
     await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
   });

@@ -12,6 +12,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import LoginPage from "@/pages/LoginPage";
 import ForgotPasswordPage from "@/pages/ForgotPasswordPage";
 import ResetPasswordPage from "@/pages/ResetPasswordPage";
+import MfaEnrollmentPage from "@/pages/MfaEnrollmentPage";
 import PreCadastroPage from "@/pages/PreCadastroPage";
 import ConfirmarEmailPage from "@/pages/ConfirmarEmailPage";
 import NpsSurveyPage from "@/pages/NpsSurveyPage";
@@ -171,6 +172,7 @@ const App = () => (
             <Route path="/login" element={<LoginPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/mfa-enrollment" element={<MfaEnrollmentPage />} />
             <Route path="/pre-cadastro" element={<PreCadastroPage />} />
             <Route path="/validar-laudo/:codigo" element={<LazyRoute><ValidarLaudoPage /></LazyRoute>} />
             <Route path="/validar-laudo" element={<LazyRoute><ValidarLaudoPage /></LazyRoute>} />

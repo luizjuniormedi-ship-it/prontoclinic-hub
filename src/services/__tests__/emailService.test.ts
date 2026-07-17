@@ -87,6 +87,45 @@ describe("emailService", () => {
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.to).toEqual(["a@example.com", "b@example.com"]);
     });
+
+    it("respeita campos opcionais explícitos e normaliza resposta sem id", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({}),
+      });
+      global.fetch = mockFetch as unknown as typeof fetch;
+
+      const result = await emailService.sendEmail({
+        to: "user@example.com",
+        subject: "Campos opcionais",
+        html: "<p>HTML ignorado no texto</p>",
+        text: "Texto explícito",
+        from: "custom@example.com",
+        replyTo: "reply@example.com",
+      });
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body).toMatchObject({
+        from: "custom@example.com",
+        reply_to: "reply@example.com",
+        text: "Texto explícito",
+      });
+      expect(result).toEqual({ id: "unknown", provider: "resend" });
+    });
+
+    it("converte AbortError em mensagem de timeout", async () => {
+      const abortError = new Error("aborted");
+      abortError.name = "AbortError";
+      global.fetch = vi.fn().mockRejectedValue(abortError) as unknown as typeof fetch;
+
+      await expect(
+        emailService.sendEmail({
+          to: "user@example.com",
+          subject: "Timeout",
+          html: "<p>Oi</p>",
+        }),
+      ).rejects.toThrow("Timeout ao enviar e-mail (10s)");
+    });
   });
 
   describe("sendPreCadastroConfirmation", () => {
@@ -149,6 +188,31 @@ describe("emailService", () => {
   });
 
   describe("fallback dev mode", () => {
+    it("falha de forma segura em produção quando não há API key", async () => {
+      vi.resetModules();
+      vi.doMock("@/lib/env", () => ({
+        env: {
+          VITE_RESEND_API_KEY: undefined,
+          VITE_APP_ENV: "production",
+        },
+      }));
+      const { emailService: svc } = await import("@/services/emailService");
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      await expect(
+        svc.sendEmail({
+          to: "user@example.com",
+          subject: "Produção",
+          html: "<p>Não enviar</p>",
+        }),
+      ).rejects.toThrow("Servico de e-mail nao configurado");
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("VITE_RESEND_API_KEY ausente"),
+        expect.objectContaining({ to: "user@example.com" }),
+      );
+      errorSpy.mockRestore();
+    });
+
     it("retorna provider console quando não há API key", async () => {
       vi.resetModules();
       vi.doMock("@/lib/env", () => ({
@@ -173,6 +237,36 @@ describe("emailService", () => {
 
       expect(result.provider).toBe("console");
       expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it("usa remetente, reply-to e user-agent padrão quando não configurados", async () => {
+      vi.resetModules();
+      vi.doMock("@/lib/env", () => ({
+        env: {
+          VITE_RESEND_API_KEY: "re_defaults",
+          VITE_APP_ENV: "development",
+        },
+      }));
+      const { emailService: svc } = await import("@/services/emailService");
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ id: "msg_defaults" }),
+      });
+      global.fetch = mockFetch as unknown as typeof fetch;
+
+      await svc.sendEmail({
+        to: "user@example.com",
+        subject: "Padrões",
+        html: "<p>Oi</p>",
+      });
+
+      const [, init] = mockFetch.mock.calls[0];
+      const body = JSON.parse(init.body);
+      expect(body.from).toBe(
+        "ProntoClinic Hub <nao-responda@prontoclinic.com.br>",
+      );
+      expect(body.reply_to).toBe("suporte@prontoclinic.com.br");
+      expect(init.headers["User-Agent"]).toBe("ProntoMedic/1.0");
     });
   });
 });

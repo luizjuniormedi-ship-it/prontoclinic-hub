@@ -1,7 +1,7 @@
 /**
  * rolePermissionsService — matriz de permissões perfil × módulo × ação.
  *
- * Lê e escreve na tabela public.role_permissions, criada durante a migração SIGH.
+ * Lê a tabela public.role_permissions e escreve apenas pela RPC administrativa AAL2.
  * Cada linha representa o que um perfil (role) pode fazer em um módulo.
  */
 
@@ -41,45 +41,17 @@ export const rolePermissionsService = {
     return Array.from(set).sort();
   },
 
-  async updateAction(id: number, action: PermissionAction, value: boolean): Promise<void> {
-    const { error } = await supabase
-      .from("role_permissions")
-      .update({ [action]: value })
-      .eq("id", id);
-    if (error) throw new Error(`Erro ao atualizar: ${error.message}`);
-  },
-
   async upsert(row: Omit<RolePermission, "id"> & { id?: number }): Promise<RolePermission> {
-    if (row.id) {
-      const { data, error } = await supabase
-        .from("role_permissions")
-        .update({
-          can_view: row.can_view,
-          can_create: row.can_create,
-          can_edit: row.can_edit,
-          can_delete: row.can_delete,
-          can_export: row.can_export,
-        })
-        .eq("id", row.id)
-        .select()
-        .single();
-      if (error) throw new Error(`Erro: ${error.message}`);
-      return data as RolePermission;
-    }
-    const { data, error } = await supabase
-      .from("role_permissions")
-      .insert({
-        role_id: row.role_id,
-        module: row.module,
-        can_view: row.can_view,
-        can_create: row.can_create,
-        can_edit: row.can_edit,
-        can_delete: row.can_delete,
-        can_export: row.can_export,
-      })
-      .select()
-      .single();
-    if (error) throw new Error(`Erro: ${error.message}`);
+    const { data, error } = await supabase.rpc("upsert_role_permission", {
+      p_role_id: row.role_id,
+      p_module: row.module,
+      p_can_view: row.can_view,
+      p_can_create: row.can_create,
+      p_can_edit: row.can_edit,
+      p_can_delete: row.can_delete,
+      p_can_export: row.can_export,
+    });
+    if (error || !data) throw new Error("Não foi possível atualizar a permissão.");
     return data as RolePermission;
   },
 };

@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS public.insurance_plans (
   insurance_company_id INTEGER NOT NULL REFERENCES public.insurance_companies(id) ON DELETE CASCADE,
   name VARCHAR(100) NOT NULL,
   codigo VARCHAR(20),
+  cd_convenio INTEGER,
+  ds_plano VARCHAR(200),
+  tp_cobertura VARCHAR(50),
   lg_ativo BOOLEAN NOT NULL DEFAULT TRUE,
   lg_coparticipacao BOOLEAN DEFAULT FALSE,
   percentual_coparticipacao DECIMAL(5,2) DEFAULT 0,
@@ -25,25 +28,28 @@ CREATE TABLE IF NOT EXISTS public.insurance_plans (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_insurance_plans_company ON public.insurance_plans(company_id);
-CREATE INDEX idx_insurance_plans_insurance ON public.insurance_plans(insurance_company_id);
-CREATE INDEX idx_insurance_plans_active ON public.insurance_plans(company_id, lg_ativo);
+CREATE INDEX IF NOT EXISTS idx_insurance_plans_company ON public.insurance_plans(company_id);
+CREATE INDEX IF NOT EXISTS idx_insurance_plans_insurance ON public.insurance_plans(insurance_company_id);
+CREATE INDEX IF NOT EXISTS idx_insurance_plans_active ON public.insurance_plans(company_id, lg_ativo);
 
 COMMENT ON TABLE public.insurance_plans IS 'Planos dentro de cada Convenio (SIGH.convenio_planos)';
 COMMENT ON COLUMN public.insurance_plans.codigo IS 'Codigo do plano na operadora (ex: 0003604)';
 COMMENT ON COLUMN public.insurance_plans.cd_origem_sigh IS 'ID original do SIGH (convenio_planos.CD_PLANO)';
 
+DROP TRIGGER IF EXISTS trg_insurance_plans_updated_at ON public.insurance_plans;
 CREATE TRIGGER trg_insurance_plans_updated_at
   BEFORE UPDATE ON public.insurance_plans
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 ALTER TABLE public.insurance_plans ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read insurance_plans from their company" ON public.insurance_plans;
 CREATE POLICY "Users can read insurance_plans from their company"
   ON public.insurance_plans FOR SELECT
   TO authenticated
   USING (company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid()));
 
+DROP POLICY IF EXISTS "Admins and reception can manage insurance_plans" ON public.insurance_plans;
 CREATE POLICY "Admins and reception can manage insurance_plans"
   ON public.insurance_plans FOR ALL
   TO authenticated

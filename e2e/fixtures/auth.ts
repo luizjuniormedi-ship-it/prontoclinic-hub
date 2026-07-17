@@ -1,4 +1,5 @@
 import { test as base, expect, Page } from '@playwright/test';
+import { E2E_PASSWORD } from '../env';
 
 export type UserRole = 'admin' | 'doctor' | 'reception' | 'patient';
 
@@ -17,10 +18,10 @@ export const test = base.extend<{
   loginAs: async ({ page }, useFn) => {
     await useFn(async (role) => {
       const creds = {
-        admin: { email: 'admin@prontomedic.test', password: 'TestPassword123!' },
-        doctor: { email: 'doctor@prontomedic.test', password: 'TestPassword123!' },
-        reception: { email: 'recepcao@prontomedic.test', password: 'TestPassword123!' },
-        patient: { email: 'paciente@prontomedic.test', password: 'TestPassword123!' }
+        admin: { email: 'admin@prontomedic.test', password: E2E_PASSWORD },
+        doctor: { email: 'doctor@prontomedic.test', password: E2E_PASSWORD },
+        reception: { email: 'recepcao@prontomedic.test', password: E2E_PASSWORD },
+        patient: { email: 'paciente@prontomedic.test', password: E2E_PASSWORD }
       }[role];
 
       await page.goto('/login');

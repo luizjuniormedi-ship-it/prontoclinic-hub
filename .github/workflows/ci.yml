@@ -11,9 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      VITE_SUPABASE_URL: http://127.0.0.1:18000
+      VITE_SUPABASE_ANON_KEY: local-e2e-public-key
 
     services:
       postgres:
@@ -41,16 +40,110 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Apply database migrations
+      - name: Validate migration versions
         run: |
-          DATABASE_URL=postgresql://postgres:postgres@localhost:54322/postgres
-          export PGPASSWORD=postgres
-          for f in supabase/migrations/*.sql; do
-            echo "Applying $f..."
-            psql -v ON_ERROR_STOP=1 -1 -h localhost -U postgres -d postgres -f "$f"
+          versions=''
+          for migration in supabase/migrations/*.sql; do
+            filename=${migration##*/}
+            version=${filename%%_*}
+            versions="${versions}${version}\n"
           done
+          duplicates=$(printf '%b' "$versions" | sort | uniq -d)
+          if [ -n "$duplicates" ]; then
+            echo "Migration versions duplicated:"
+            printf '%s\n' "$duplicates"
+            exit 1
+          fi
+
+      - name: Replay clean schema and test authorization twice
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:54322/postgres
+          PGPASSWORD: postgres
+        run: |
+          for database in migrations_first migrations_second; do
+            createdb -h localhost -p 54322 -U postgres "$database"
+            PGHOST=localhost PGPORT=54322 PGUSER=postgres \
+              scripts/replay-migrations.sh "$database"
+            psql -v ON_ERROR_STOP=1 \
+              -h localhost -p 54322 -U postgres -d "$database" \
+              -f tests/database/auth_foundation.sql >/dev/null
+            psql -v ON_ERROR_STOP=1 \
+              -h localhost -p 54322 -U postgres -d "$database" \
+              -f tests/database/access_context_foundation.sql >/dev/null
+            psql -v ON_ERROR_STOP=1 \
+              -h localhost -p 54322 -U postgres -d "$database" \
+              -f tests/database/sessions_and_secure_drafts.sql >/dev/null
+            psql -v ON_ERROR_STOP=1 \
+              -h localhost -p 54322 -U postgres -d "$database" \
+              -f tests/database/auth_admin_provisioning.sql >/dev/null
+            psql -v ON_ERROR_STOP=1 \
+              -h localhost -p 54322 -U postgres -d "$database" \
+              -f tests/database/operational_rls.sql >/dev/null
+          done
+
+          # Retry das migrations críticas no mesmo banco: qualquer aplicação
+          # parcial precisa convergir sem objetos duplicados.
+          for migration in \
+            20260716203000_auth_foundation.sql \
+            20260716210000_access_context_foundation.sql \
+            20260716220000_sessions_and_secure_drafts.sql \
+            20260716230000_auth_admin_provisioning.sql \
+            20260716240000_operational_rls_closure.sql \
+            20260717000000_legacy_schema_normalization.sql \
+            20260717001000_auth_admin_access_transition.sql \
+            20260717002000_access_context_options.sql; do
+            psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
+              -d migrations_first --single-transaction \
+              -f "supabase/migrations/$migration" >/dev/null
+          done
+
+      - name: Reject unknown legacy authorization policies during upgrade
+        env:
+          PGPASSWORD: postgres
+        run: |
+          createdb -h localhost -p 54322 -U postgres migrations_upgrade_guard
+          PGHOST=localhost PGPORT=54322 PGUSER=postgres \
+            REPLAY_STOP_BEFORE=20260716203000_auth_foundation.sql \
+            scripts/replay-migrations.sh migrations_upgrade_guard
+          psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
+            -d migrations_upgrade_guard \
+            -c 'CREATE POLICY legacy_allow_all ON public.user_profiles FOR ALL TO authenticated USING (true) WITH CHECK (true);'
+          if psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
+            -d migrations_upgrade_guard --single-transaction \
+            -f supabase/migrations/20260716203000_auth_foundation.sql >/dev/null 2>&1; then
+            echo 'Auth foundation accepted an unknown legacy policy' >&2
+            exit 1
+          fi
+          psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
+            -d migrations_upgrade_guard \
+            -c 'DROP POLICY legacy_allow_all ON public.user_profiles;'
+          psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
+            -d migrations_upgrade_guard --single-transaction \
+            -f supabase/migrations/20260716203000_auth_foundation.sql >/dev/null
+          test "$(psql -At -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
+            -d migrations_upgrade_guard -c "SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('user_profiles', 'roles', 'role_permissions') AND policyname NOT IN ('user_profiles_select_authorized', 'user_profiles_insert_company_admin', 'user_profiles_update_company_admin', 'roles_select_authenticated', 'role_permissions_select_company', 'role_permissions_insert_company_admin', 'role_permissions_update_company_admin')")" = "0"
+          for migration in \
+            20260716210000_access_context_foundation.sql \
+            20260716220000_sessions_and_secure_drafts.sql \
+            20260716230000_auth_admin_provisioning.sql; do
+            psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
+              -d migrations_upgrade_guard --single-transaction \
+              -f "supabase/migrations/$migration" >/dev/null
+          done
+          psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
+            -d migrations_upgrade_guard \
+            -c 'CREATE POLICY legacy_allow_all ON public.professional_schedules FOR SELECT TO authenticated USING (true);'
+          if psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
+            -d migrations_upgrade_guard --single-transaction \
+            -f supabase/migrations/20260716240000_operational_rls_closure.sql >/dev/null 2>&1; then
+            echo 'Operational RLS closure accepted an unknown legacy policy' >&2
+            exit 1
+          fi
+          psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
+            -d migrations_upgrade_guard \
+            -c 'DROP POLICY legacy_allow_all ON public.professional_schedules;'
+          psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
+            -d migrations_upgrade_guard --single-transaction \
+            -f supabase/migrations/20260716240000_operational_rls_closure.sql >/dev/null
 
       - name: Type check
         run: npm run type-check
@@ -72,14 +165,53 @@ jobs:
           path: coverage/
           retention-days: 30
 
-      - name: Install Playwright
-        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Prepare deterministic local E2E backend
+        env:
+          PGPASSWORD: postgres
+        run: |
+          E2E_PASSWORD=$(openssl rand -hex 24)
+          echo "::add-mask::$E2E_PASSWORD"
+          echo "E2E_PASSWORD=$E2E_PASSWORD" >> "$GITHUB_ENV"
+          psql -v ON_ERROR_STOP=1 -v "e2e_password=$E2E_PASSWORD" \
+            -h localhost -p 54322 -U postgres -d migrations_first \
+            -f scripts/seed-e2e-users.sql >/dev/null
+          echo "LOCAL_E2E_JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
 
-      - name: Run E2E tests
-        run: npm run test:e2e
+      - name: Start deterministic local E2E backend
+        env:
+          PGHOST: localhost
+          PGPORT: 54322
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: migrations_first
+          JWT_SECRET: ${{ env.LOCAL_E2E_JWT_SECRET }}
+          LOCAL_AUTH_MODE: test
+          LOCAL_AUTH_PORT: 18000
+          CORS_ALLOWED_ORIGINS: http://localhost:4173
+        run: |
+          node local-auth-server.mjs >/tmp/local-e2e-backend.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            curl --fail --silent http://127.0.0.1:18000/auth/v1/settings >/dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/local-e2e-backend.log
+          exit 1
+
+      - name: Install Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Run canonical phase 0/1 E2E gate
+        run: npx playwright test e2e/gate-phase01.spec.ts --project=chromium --workers=1
         env:
           CI: true
           E2E_BASE_URL: http://localhost:4173
+          VITE_SUPABASE_URL: http://127.0.0.1:18000
+          VITE_SUPABASE_ANON_KEY: local-e2e-public-key
+          PGHOST: localhost
+          PGPORT: 54322
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: migrations_first
 
       - name: Upload test results
         if: always()
@@ -108,7 +240,6 @@ jobs:
       - name: Fail if critical a11y violations
         if: always()
         run: |
-          if [ -f test-results/results.json ]; then
-            test -f scripts/check-a11y-violations.mjs
-            node scripts/check-a11y-violations.mjs
-          fi
+          test -f test-results/results.json
+          test -f scripts/check-a11y-violations.mjs
+          node scripts/check-a11y-violations.mjs

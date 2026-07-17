@@ -1,2 +1,3 @@
--- Drop view with duplicate cd_lote column so migration can recreate cleanly
-DROP VIEW IF EXISTS public.v_estoque_atual CASCADE;
+-- Tombstone de compatibilidade histórica.
+-- O DDL definitivo foi incorporado às migrations canônicas 202601*.
+-- Versão preservada: 20251231008000

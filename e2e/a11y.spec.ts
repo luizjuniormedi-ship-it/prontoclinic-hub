@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { E2E_PASSWORD } from './env';
 
 const protectedRoutes = [
   { name: 'dashboard', path: '/' },
@@ -14,7 +15,7 @@ test.describe('Acessibilidade (WCAG 2.1 AA)', () => {
     // Login como admin antes de testar rotas protegidas
     await page.goto('/login');
     await page.getByLabel('E-mail').fill('admin@prontomedic.test');
-    await page.getByRole('textbox', { name: 'Senha' }).fill('TestPassword123!');
+    await page.getByRole('textbox', { name: 'Senha' }).fill(E2E_PASSWORD);
     await page.getByRole('button', { name: /entrar/i }).click();
     await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
   });

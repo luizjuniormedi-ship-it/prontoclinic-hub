@@ -40,13 +40,16 @@ CREATE TABLE IF NOT EXISTS public.pre_cadastro (
 
   -- Dados pessoais
   full_name VARCHAR(200) NOT NULL,
+  nm_paciente VARCHAR(200),
   cpf VARCHAR(11),                        -- preenchido apos confirmacao (se informado)
+  nr_cpf VARCHAR(14),
   cpf_hash CHAR(64),                      -- SHA-256 do CPF para busca deduplicada
   birth_date DATE,
   gender CHAR(1) CHECK (gender IN ('M', 'F', 'O')),
 
   -- Contato
   email VARCHAR(255) NOT NULL,
+  ds_email VARCHAR(200),
   email_hash CHAR(64),                    -- SHA-256 do email (lower + trim)
   phone VARCHAR(20),
   whatsapp VARCHAR(20),
@@ -77,6 +80,7 @@ CREATE TABLE IF NOT EXISTS public.pre_cadastro (
 
   -- Migracao para paciente definitivo (public.patients)
   cd_paciente_final BIGINT REFERENCES public.patients(id),
+  cd_paciente_origem BIGINT,
   dt_migracao TIMESTAMPTZ,
 
   -- Estado

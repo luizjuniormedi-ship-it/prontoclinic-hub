@@ -1,4 +1,3 @@
--- Adds user_id column to user_profiles (id is PK, but user_id needed for FKs)
-ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS user_id UUID;
-ALTER TABLE public.professionals ADD COLUMN IF NOT EXISTS user_id UUID;
+-- Tombstone de compatibilidade histórica.
+-- O DDL definitivo foi incorporado às migrations canônicas 202601*.
+-- Versão preservada: 20251231010000

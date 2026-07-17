@@ -195,7 +195,7 @@ export function AppSidebar() {
   const handleLogout = () => { logout(); navigate("/login"); };
 
   return (
-    <Sidebar collapsible="icon" className="border-r border-sidebar-border">
+    <Sidebar collapsible="icon" className="border-r border-sidebar-border" role="navigation" aria-label="Navegação principal">
       <div className="p-4 flex items-center gap-2 border-b border-sidebar-border">
         <div className="rounded-lg bg-primary p-1.5">
           <Heart className="h-5 w-5 text-primary-foreground" />

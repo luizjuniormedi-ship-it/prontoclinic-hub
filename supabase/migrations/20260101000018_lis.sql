@@ -33,6 +33,7 @@ CREATE INDEX IF NOT EXISTS idx_exames_lab_catalogo_company ON public.exames_lab_
 CREATE INDEX IF NOT EXISTS idx_exames_lab_catalogo_categoria ON public.exames_lab_catalogo(ds_categoria);
 CREATE INDEX IF NOT EXISTS idx_exames_lab_catalogo_ativo ON public.exames_lab_catalogo(company_id, lg_ativo) WHERE lg_ativo = TRUE;
 
+DROP TRIGGER IF EXISTS trg_exames_lab_catalogo_updated_at ON public.exames_lab_catalogo;
 CREATE TRIGGER trg_exames_lab_catalogo_updated_at
   BEFORE UPDATE ON public.exames_lab_catalogo
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
@@ -42,6 +43,7 @@ COMMENT ON TABLE public.exames_lab_catalogo IS 'Catálogo de exames laboratoriai
 -- 1.2. Valores de referência (por faixa etária e sexo)
 CREATE TABLE IF NOT EXISTS public.exames_lab_valor_referencia (
   id BIGSERIAL PRIMARY KEY,
+  company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
   cd_exame BIGINT NOT NULL REFERENCES public.exames_lab_catalogo(id) ON DELETE CASCADE,
   ds_parametro VARCHAR(100) NOT NULL,              -- 'Hemácias', 'Leucócitos'
   vl_minimo DECIMAL(15,6),
@@ -61,6 +63,7 @@ CREATE INDEX IF NOT EXISTS idx_valor_ref_param ON public.exames_lab_valor_refere
 CREATE TABLE IF NOT EXISTS public.exames_lab_pedido (
   id BIGSERIAL PRIMARY KEY,
   company_id UUID NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
+  cd_exame BIGINT REFERENCES public.exames_lab_catalogo(id),
   cd_paciente BIGINT NOT NULL REFERENCES public.patients(id),
   cd_medico BIGINT NOT NULL REFERENCES public.professionals(id),
   cd_appointment BIGINT REFERENCES public.appointments(id),
@@ -88,6 +91,7 @@ COMMENT ON TABLE public.exames_lab_pedido IS 'Pedidos de exame (header) com work
 -- 1.4. Itens do pedido (1 pedido = N exames)
 CREATE TABLE IF NOT EXISTS public.exames_lab_pedido_itens (
   id BIGSERIAL PRIMARY KEY,
+  company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
   cd_pedido BIGINT NOT NULL REFERENCES public.exames_lab_pedido(id) ON DELETE CASCADE,
   cd_exame BIGINT NOT NULL REFERENCES public.exames_lab_catalogo(id),
   tp_status VARCHAR(20) DEFAULT 'PENDENTE' CHECK (tp_status IN ('PENDENTE', 'COLETADO', 'EM_ANALISE', 'LIBERADO', 'CANCELADO')),
@@ -105,6 +109,9 @@ CREATE INDEX IF NOT EXISTS idx_pedido_itens_status ON public.exames_lab_pedido_i
 -- 1.5. Resultados de exames
 CREATE TABLE IF NOT EXISTS public.exames_lab_resultado (
   id BIGSERIAL PRIMARY KEY,
+  company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+  cd_pedido BIGINT REFERENCES public.exames_lab_pedido(id),
+  cd_exame BIGINT REFERENCES public.exames_lab_catalogo(id),
   cd_item_pedido BIGINT NOT NULL REFERENCES public.exames_lab_pedido_itens(id) ON DELETE CASCADE,
   cd_valor_referencia BIGINT REFERENCES public.exames_lab_valor_referencia(id),
   ds_parametro VARCHAR(100) NOT NULL,
@@ -132,6 +139,7 @@ CREATE INDEX IF NOT EXISTS idx_resultado_param ON public.exames_lab_resultado(ds
 -- 1.6. Valores críticos (alertas)
 CREATE TABLE IF NOT EXISTS public.exames_lab_alerta_critico (
   id BIGSERIAL PRIMARY KEY,
+  company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
   cd_resultado BIGINT NOT NULL REFERENCES public.exames_lab_resultado(id) ON DELETE CASCADE,
   cd_paciente BIGINT NOT NULL,
   cd_medico BIGINT NOT NULL,

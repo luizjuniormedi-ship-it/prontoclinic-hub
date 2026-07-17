@@ -237,3 +237,100 @@ describe("dicomIntegrationService — syncOrderStatus", () => {
     expect(updateChain.update).not.toHaveBeenCalled();
   });
 });
+
+describe("dicomIntegrationService — integração com worklist e PACS", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("exporta todos os itens pendentes e os marca como exportados", async () => {
+    const segundoItem = {
+      ...mockWorklistItem,
+      id: "wl2",
+      accession_number: "ACC002",
+      patient_identifier: undefined,
+      patient_name: "Madonna",
+    };
+    (worklistQueueService.list as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([
+      mockWorklistItem,
+      segundoItem,
+    ]);
+    (worklistQueueService.markExported as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+
+    const result = await dicomIntegrationService.exportPendingWorklist();
+
+    expect(worklistQueueService.list).toHaveBeenCalledWith({ status: "pending" });
+    expect(worklistQueueService.markExported).toHaveBeenNthCalledWith(1, "wl1");
+    expect(worklistQueueService.markExported).toHaveBeenNthCalledWith(2, "wl2");
+    expect(result.count).toBe(2);
+    expect(result.exported[1]["0010,0020"]).toBe("p1");
+  });
+
+  it("ignora notificação sem accession number", async () => {
+    await expect(
+      dicomIntegrationService.handleStudyReceived({
+        ID: "orthanc-1",
+        Path: "/studies/orthanc-1",
+        PatientID: "p1",
+        StudyInstanceUID: "1.2.3",
+      }),
+    ).resolves.toBeNull();
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it("cria estudo, atualiza item e worklist e abre laudo rascunho", async () => {
+    const wlItem = {
+      id: "wl1",
+      patient_id: "p1",
+      imaging_order_item_id: "i1",
+      modality_type: "CT",
+    };
+    const study = { id: "study1", study_instance_uid: "1.2.840.1" };
+
+    const worklistLookup: any = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: [wlItem], error: null }),
+    };
+    const studyInsert: any = {
+      insert: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: study, error: null }),
+    };
+    const worklistUpdate: any = {
+      update: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockResolvedValue({ error: null }),
+    };
+    const reportInsert = vi.fn().mockResolvedValue({ error: null });
+    (supabase.from as unknown as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce(worklistLookup)
+      .mockReturnValueOnce(studyInsert)
+      .mockReturnValueOnce(worklistUpdate)
+      .mockReturnValueOnce({ insert: reportInsert });
+    (imagingOrderItemsService.updateStatus as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+
+    const result = await dicomIntegrationService.handleStudyReceived({
+      ID: "orthanc-1",
+      Path: "/studies/orthanc-1",
+      PatientID: "p1",
+      StudyInstanceUID: "1.2.840.1",
+      AccessionNumber: "ACC001",
+      StudyDate: "20260717",
+      StudyTime: "101500",
+      StationName: "CT_SALA1",
+    });
+
+    expect(result).toEqual(study);
+    expect(studyInsert.insert).toHaveBeenCalledWith(expect.objectContaining({
+      accession_number: "ACC001",
+      study_date: "2026-07-17",
+      modality_type: "CT",
+    }));
+    expect(imagingOrderItemsService.updateStatus).toHaveBeenCalledWith("i1", "recebido_pacs");
+    expect(worklistUpdate.update).toHaveBeenCalledWith(expect.objectContaining({ status: "acquired" }));
+    expect(reportInsert).toHaveBeenCalledWith(expect.objectContaining({
+      pacs_study_id: "study1",
+      status: "draft",
+    }));
+  });
+});

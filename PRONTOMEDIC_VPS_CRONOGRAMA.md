@@ -154,36 +154,17 @@ server {
 }
 ```
 
-### 2.5 â€” Systemd service (auth server sempre no ar)
-```ini
-# /etc/systemd/system/prontomedic-api.service
-[Unit]
-Description=ProntoMedic Auth Server
-After=network.target postgresql.service
+### 2.5 â€” AutenticaÃ§Ã£o de produÃ§Ã£o
 
-[Service]
-Type=simple
-User=www-data
-WorkingDirectory=/opt/prontomedic
-ExecStart=/usr/bin/node /opt/prontomedic/local-auth-server.mjs
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl enable prontomedic-api
-sudo systemctl start prontomedic-api
-```
+> **ObrigatÃ³rio:** use GoTrue/Supabase Auth com MFA real. O
+> `local-auth-server.mjs` Ã© um harness restrito a desenvolvimento e testes;
+> ele falha fechado sem `LOCAL_AUTH_MODE=development|test` e nunca deve ser
+> instalado como serviÃ§o da VPS.
 
 ### Checkpoint Fase 2
 ```bash
-# Todos 200:
-curl -k https://localhost/api/auth/v1/settings
+# Frontend e serviÃ§o GoTrue/Supabase Auth respondendo:
 curl -k https://localhost/
-sudo systemctl is-active prontomedic-api   # active
 ```
 
 ---
@@ -202,9 +183,9 @@ SET encrypted_password = crypt(
 )
 WHERE email != 'admin@prontomedic.local';
 
--- Admin mantÃ©m senha conhecida (trocar manualmente depois)
+-- Informe a senha por variável segura do psql (nunca grave credenciais no repositório)
 UPDATE auth.users
-SET encrypted_password = crypt('SENHA_ADMIN_FORTE_2026', gen_salt('bf', 10))
+SET encrypted_password = crypt(:'admin_password', gen_salt('bf', 10))
 WHERE email = 'admin@prontomedic.local';
 ```
 
@@ -319,7 +300,7 @@ setup    Deploy      Senhas      Funcional   Cliente
 | Arquivo | ConteÃºdo |
 |---------|----------|
 | `prontomedic_vps.dump` | Banco completo (pg_dump) |
-| `local-auth-server.mjs` | Backend auth + REST + RBAC |
+| GoTrue/Supabase Auth | Backend de autenticaÃ§Ã£o com MFA real |
 | `dist/` | Frontend buildado |
 | `.env.production` | ConfiguraÃ§Ã£o da VPS |
 | `nginx-prontomedic.conf` | Config do Nginx |

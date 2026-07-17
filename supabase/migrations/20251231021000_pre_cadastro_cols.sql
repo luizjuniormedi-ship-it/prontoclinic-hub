@@ -1,4 +1,3 @@
-ALTER TABLE public.pre_cadastro ADD COLUMN IF NOT EXISTS nm_paciente VARCHAR(200);
-ALTER TABLE public.pre_cadastro ADD COLUMN IF NOT EXISTS nr_cpf VARCHAR(14);
-ALTER TABLE public.pre_cadastro ADD COLUMN IF NOT EXISTS ds_email VARCHAR(200);
-ALTER TABLE public.pre_cadastro ADD COLUMN IF NOT EXISTS cd_paciente_origem BIGINT;
+-- Tombstone de compatibilidade histórica.
+-- O DDL definitivo foi incorporado às migrations canônicas 202601*.
+-- Versão preservada: 20251231021000

@@ -16,18 +16,22 @@ CREATE TABLE IF NOT EXISTS public.professional_insurances (
   dt_fim_vinculo DATE,
   lg_ativo BOOLEAN NOT NULL DEFAULT TRUE,
   cd_origem_sigh_combo VARCHAR(20),
+  cd_origem_sigh BIGINT,
+  cd_medico BIGINT,
+  cd_convenio INTEGER,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(professional_id, insurance_company_id)
 );
 
-CREATE INDEX idx_professional_insurances_company ON public.professional_insurances(company_id);
-CREATE INDEX idx_professional_insurances_professional ON public.professional_insurances(professional_id);
-CREATE INDEX idx_professional_insurances_insurance ON public.professional_insurances(insurance_company_id);
-CREATE INDEX idx_professional_insurances_active ON public.professional_insurances(company_id, lg_ativo);
+CREATE INDEX IF NOT EXISTS idx_professional_insurances_company ON public.professional_insurances(company_id);
+CREATE INDEX IF NOT EXISTS idx_professional_insurances_professional ON public.professional_insurances(professional_id);
+CREATE INDEX IF NOT EXISTS idx_professional_insurances_insurance ON public.professional_insurances(insurance_company_id);
+CREATE INDEX IF NOT EXISTS idx_professional_insurances_active ON public.professional_insurances(company_id, lg_ativo);
 
 COMMENT ON TABLE public.professional_insurances IS 'Credenciamento de profissionais em convenios (SIGH.convxmedi)';
 
+DROP TRIGGER IF EXISTS trg_professional_insurances_updated_at ON public.professional_insurances;
 CREATE TRIGGER trg_professional_insurances_updated_at
   BEFORE UPDATE ON public.professional_insurances
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
@@ -48,14 +52,15 @@ CREATE TABLE IF NOT EXISTS public.insurance_quotas (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_insurance_quotas_company ON public.insurance_quotas(company_id);
-CREATE INDEX idx_insurance_quotas_insurance ON public.insurance_quotas(insurance_company_id);
-CREATE INDEX idx_insurance_quotas_service ON public.insurance_quotas(service_id);
-CREATE INDEX idx_insurance_quotas_professional ON public.insurance_quotas(professional_id);
+CREATE INDEX IF NOT EXISTS idx_insurance_quotas_company ON public.insurance_quotas(company_id);
+CREATE INDEX IF NOT EXISTS idx_insurance_quotas_insurance ON public.insurance_quotas(insurance_company_id);
+CREATE INDEX IF NOT EXISTS idx_insurance_quotas_service ON public.insurance_quotas(service_id);
+CREATE INDEX IF NOT EXISTS idx_insurance_quotas_professional ON public.insurance_quotas(professional_id);
 
 COMMENT ON TABLE public.insurance_quotas IS 'Cotas de vagas por convenio/servico/medico/periodo (SIGH.agenda_ctrl)';
 COMMENT ON COLUMN public.insurance_quotas.periodo IS 'D=Diario, M=Mensal';
 
+DROP TRIGGER IF EXISTS trg_insurance_quotas_updated_at ON public.insurance_quotas;
 CREATE TRIGGER trg_insurance_quotas_updated_at
   BEFORE UPDATE ON public.insurance_quotas
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
@@ -63,11 +68,13 @@ CREATE TRIGGER trg_insurance_quotas_updated_at
 ALTER TABLE public.professional_insurances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.insurance_quotas ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read professional_insurances from their company" ON public.professional_insurances;
 CREATE POLICY "Users can read professional_insurances from their company"
   ON public.professional_insurances FOR SELECT
   TO authenticated
   USING (company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid()));
 
+DROP POLICY IF EXISTS "Admins can manage professional_insurances" ON public.professional_insurances;
 CREATE POLICY "Admins can manage professional_insurances"
   ON public.professional_insurances FOR ALL
   TO authenticated
@@ -80,11 +87,13 @@ CREATE POLICY "Admins can manage professional_insurances"
   )
   WITH CHECK (company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid()));
 
+DROP POLICY IF EXISTS "Users can read insurance_quotas from their company" ON public.insurance_quotas;
 CREATE POLICY "Users can read insurance_quotas from their company"
   ON public.insurance_quotas FOR SELECT
   TO authenticated
   USING (company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid()));
 
+DROP POLICY IF EXISTS "Admins can manage insurance_quotas" ON public.insurance_quotas;
 CREATE POLICY "Admins can manage insurance_quotas"
   ON public.insurance_quotas FOR ALL
   TO authenticated

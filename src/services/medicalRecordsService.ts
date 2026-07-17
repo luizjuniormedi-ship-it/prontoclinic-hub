@@ -30,7 +30,25 @@ export interface MedicalRecordInput {
   notes?: string;
 }
 
+export interface FinalizeAttendanceInput {
+  appointment_id: string;
+  anamnesis?: string;
+  evolution?: string;
+  vital_signs?: Record<string, any>;
+}
+
 export const medicalRecordsService = {
+  async finalizeAttendance(input: FinalizeAttendanceInput): Promise<DbMedicalRecord> {
+    const { data, error } = await supabase.rpc('finalize_attendance_secure', {
+      p_appointment_id: Number(input.appointment_id),
+      p_anamnesis: input.anamnesis || null,
+      p_evolution: input.evolution || null,
+      p_vital_signs: input.vital_signs || null,
+    });
+    if (error) throw new Error(`Erro ao finalizar atendimento: ${error.message}`);
+    return data as DbMedicalRecord;
+  },
+
   async getByPatient(patientId: string): Promise<DbMedicalRecord[]> {
     const { data, error } = await supabase
       .from('medical_records')

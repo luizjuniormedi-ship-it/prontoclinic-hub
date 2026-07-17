@@ -31,6 +31,12 @@ export const userProfileSchema = z.object({
 });
 
 export type UserProfileInput = z.infer<typeof userProfileSchema>;
+const editableUserProfileSchema = userProfileSchema.pick({
+  full_name: true,
+  phone: true,
+  cpf: true,
+}).partial();
+export type EditableUserProfileInput = z.infer<typeof editableUserProfileSchema>;
 
 export interface UserProfileWithEmail {
   id: string;
@@ -43,20 +49,18 @@ export interface UserProfileWithEmail {
   phone: string | null;
   cpf: string | null;
   lg_ativo: boolean;
+  membership_status: "active" | "suspended";
+  role_names: string[];
+  unit_ids: number[];
   created_at: string;
   updated_at: string;
 }
 
 export const userProfilesService = {
   async getAll(filters?: { search?: string; lg_ativo?: boolean }): Promise<UserProfileWithEmail[]> {
-    let q = supabase
-      .from("user_profiles")
-      .select("id, full_name, email, role_id, role_name, company_id, primary_unit_id, lg_ativo, created_at, updated_at")
-      .order("full_name");
-    if (filters?.lg_ativo !== undefined) q = q.eq("lg_ativo", filters.lg_ativo);
-    const { data, error } = await q;
+    const { data, error } = await supabase.rpc("list_company_users_admin");
     if (error) throw new Error(`Erro ao listar usuários: ${error.message}`);
-    return (data ?? []).map((row: { id: string; full_name: string; email: string | null; role_id: number | null; role_name: string | null; company_id: string | null; primary_unit_id: number | null; lg_ativo: boolean | null; created_at: string; updated_at: string }) => ({
+    const users = (data ?? []).map((row: { id: string; full_name: string; email: string | null; role_id: number | null; role_name: string | null; company_id: string; primary_unit_id: number | null; phone: string | null; cpf: string | null; lg_ativo: boolean; membership_status: "active" | "suspended"; role_names: string[] | null; unit_ids: number[] | null; created_at: string; updated_at: string }) => ({
       id: row.id,
       email: row.email ?? "",
       full_name: row.full_name,
@@ -64,12 +68,22 @@ export const userProfilesService = {
       role_name: row.role_name,
       company_id: row.company_id,
       primary_unit_id: row.primary_unit_id,
-      phone: null,
-      cpf: null,
-      lg_ativo: row.lg_ativo ?? true,
+      phone: row.phone,
+      cpf: row.cpf,
+      lg_ativo: row.lg_ativo,
+      membership_status: row.membership_status,
+      role_names: row.role_names ?? [],
+      unit_ids: row.unit_ids ?? [],
       created_at: row.created_at,
       updated_at: row.updated_at,
     }));
+    const normalizedSearch = filters?.search?.trim().toLowerCase();
+    return users.filter((user) =>
+      (filters?.lg_ativo === undefined || user.lg_ativo === filters.lg_ativo)
+      && (!normalizedSearch
+        || user.full_name.toLowerCase().includes(normalizedSearch)
+        || user.email.toLowerCase().includes(normalizedSearch))
+    );
   },
 
   async getById(id: string): Promise<UserProfileWithEmail | null> {
@@ -91,13 +105,16 @@ export const userProfilesService = {
       phone: (data as Record<string, unknown>).phone as string | null ?? null,
       cpf: (data as Record<string, unknown>).cpf as string | null ?? null,
       lg_ativo: (data as Record<string, unknown>).lg_ativo as boolean ?? true,
+      membership_status: ((data as Record<string, unknown>).lg_ativo as boolean ?? true) ? "active" : "suspended",
+      role_names: [(data as Record<string, unknown>).role_name as string].filter(Boolean),
+      unit_ids: [(data as Record<string, unknown>).primary_unit_id as number].filter(Boolean),
       created_at: (data as Record<string, unknown>).created_at as string,
       updated_at: (data as Record<string, unknown>).updated_at as string,
     };
   },
 
-  async update(id: string, input: Partial<UserProfileInput>): Promise<UserProfileWithEmail> {
-    const parsed = userProfileSchema.partial().parse(input);
+  async update(id: string, input: EditableUserProfileInput): Promise<UserProfileWithEmail> {
+    const parsed = editableUserProfileSchema.parse(input);
     const { data, error } = await supabase
       .from("user_profiles")
       .update(parsed)
@@ -108,15 +125,12 @@ export const userProfilesService = {
     return data as UserProfileWithEmail;
   },
 
-  async toggleAtivo(id: string, lg_ativo: boolean): Promise<UserProfileWithEmail> {
-    return userProfilesService.update(id, { lg_ativo });
-  },
 
   /**
    * Lista perfis de permissão disponíveis, direto da tabela `roles`
    * (fonte real usada em user_profiles.role_name e role_permissions).
    */
-  async getProfiles(): Promise<Array<{ id: string; name: string; description: string }>> {
+  async getProfiles(): Promise<Array<{ id: string; databaseId: number; name: string; description: string }>> {
     const { data, error } = await supabase
       .from("roles")
       .select("id, name, description")
@@ -133,6 +147,7 @@ export const userProfilesService = {
     };
     return (data ?? []).map((r: { id: number; name: string; description: string | null }) => ({
       id: r.name,
+      databaseId: r.id,
       name: LABELS[r.name] ?? r.name,
       description: r.description ?? "",
     }));

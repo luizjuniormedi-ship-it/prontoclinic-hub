@@ -1,4 +1,7 @@
 import { chromium, FullConfig } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
+import { E2E_PASSWORD } from './env';
 
 /**
  * Global setup — runs once before all tests.
@@ -6,13 +9,13 @@ import { chromium, FullConfig } from '@playwright/test';
  * Pré-requisitos:
  *   - Supabase de staging acessível (VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY)
  *   - Empresa padrão + usuários de teste já criados (admin, doctor, reception, patient)
- *     com senha "TestPassword123!" — script SQL idempotente em supabase/seed/e2e_seed.sql
+ *     com senha fornecida por E2E_PASSWORD — script SQL idempotente em scripts/seed-e2e-users.sql
  *   - Banco resetado antes de cada CI run (ver supabase/seed/reset.sql)
  */
 export default async function globalSetup(config: FullConfig) {
   const supabaseUrl = process.env.VITE_SUPABASE_URL;
   const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY;
-  const isLocalAuth = /^https?:\/\/(127\.0\.0\.1|localhost):8000\b/.test(supabaseUrl || '');
+  const isLocalAuth = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\b/.test(supabaseUrl || '');
 
   if (!supabaseUrl || !supabaseKey) {
     throw new Error(
@@ -34,7 +37,19 @@ export default async function globalSetup(config: FullConfig) {
   }
 
   if (isLocalAuth) {
-    console.log('[global-setup] Local auth OK — usando usuários já migrados/seedados no PostgreSQL.');
+    execFileSync(
+      'psql',
+      [
+        '-v',
+        'ON_ERROR_STOP=1',
+        '-v',
+        `e2e_password=${E2E_PASSWORD}`,
+        '-f',
+        resolve(process.cwd(), 'scripts/seed-e2e-users.sql'),
+      ],
+      { env: process.env, stdio: 'ignore' },
+    );
+    console.log('[global-setup] Local auth OK — fixtures E2E restauradas no PostgreSQL.');
     return;
   }
 
@@ -66,7 +81,7 @@ export default async function globalSetup(config: FullConfig) {
         },
         body: JSON.stringify({
           email: u.email,
-          password: 'TestPassword123!',
+          password: E2E_PASSWORD,
           email_confirm: true,
           user_metadata: { role: u.role, e2e_seed: true }
         })

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
 import { PatientForm, PatientFormData } from "@/components/patients/PatientForm";
+import { normalizeInsurancePlanId } from "@/components/patients/patientFormUtils";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { LoadingState, ErrorState } from "@/components/StateViews";
@@ -31,7 +32,7 @@ export default function PatientEditPage() {
         responsible_name: data.responsible_name || "",
         emergency_contact_name: data.emergency_contact_name || "",
         emergency_contact_phone: data.emergency_contact_phone || "",
-        insurance_plan_id: data.insurance_plan_id || "",
+        insurance_plan_id: normalizeInsurancePlanId(data.insurance_plan_id),
         insurance_card_number: data.insurance_card_number || "",
         allergies: data.allergies || "",
         clinical_alerts: data.clinical_alerts || "",

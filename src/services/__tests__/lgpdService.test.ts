@@ -384,3 +384,117 @@ describe("lgpdService — constantes", () => {
     expect(TEXTO_TERMO_CONSENTIMENTO).toMatch(/13\.709\/2018/);
   });
 });
+
+describe("lgpdService — consultas e anonimização em massa", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.restoreAllMocks();
+  });
+
+  it("lista consentimentos ordenados e preserva os registros retornados", async () => {
+    const consentimentos = [
+      { id: 1, cd_paciente: 7, cd_canal: CANAL.EMAIL, lg_optin: true },
+    ];
+    const chain: any = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+    };
+    chain.then = (resolve: any) => resolve({ data: consentimentos, error: null });
+    (supabase.from as any).mockReturnValue(chain);
+
+    await expect(lgpdService.getConsentimentos(7)).resolves.toEqual(consentimentos);
+    expect(chain.eq).toHaveBeenCalledWith("cd_paciente", 7);
+    expect(chain.order).toHaveBeenNthCalledWith(1, "cd_canal", { ascending: true });
+    expect(chain.order).toHaveBeenNthCalledWith(2, "dt_optin", { ascending: false });
+  });
+
+  it("aplica filtro de status ao listar solicitações", async () => {
+    const solicitacoes = [{ id: 8, status: "PENDENTE" }];
+    const chain: any = {
+      select: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+    };
+    chain.then = (resolve: any) => resolve({ data: solicitacoes, error: null });
+    (supabase.from as any).mockReturnValue(chain);
+
+    await expect(lgpdService.getSolicitacoes("PENDENTE")).resolves.toEqual(solicitacoes);
+    expect(chain.eq).toHaveBeenCalledWith("status", "PENDENTE");
+  });
+
+  it("contabiliza sucessos e falhas da anonimização em massa", async () => {
+    vi.spyOn(lgpdService, "getPacientesAnonimizaveis").mockResolvedValue([
+      { id: 10 },
+      { id: 20 },
+      { id: 30 },
+    ] as any);
+    vi.spyOn(lgpdService, "executeEsquecimento")
+      .mockResolvedValueOnce({ anonimizado: true })
+      .mockRejectedValueOnce(new Error("bloqueio legal"))
+      .mockRejectedValueOnce("falha desconhecida");
+
+    await expect(
+      lgpdService.executarAnonimizacaoMassa("INATIVO_5_ANOS", 3),
+    ).resolves.toEqual({
+      sucesso: 1,
+      falha: 2,
+      erros: [
+        { id: 20, erro: "bloqueio legal" },
+        { id: 30, erro: "falha desconhecida" },
+      ],
+    });
+    expect(lgpdService.getPacientesAnonimizaveis).toHaveBeenCalledWith(3);
+  });
+
+  it("rejeita consulta de consentimentos com patientId inválido", async () => {
+    await expect(lgpdService.getConsentimentos(0)).rejects.toThrow("patientId invalido");
+    await expect(lgpdService.getConsentimentos(1.5)).rejects.toThrow("patientId invalido");
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it("propaga erro de banco ao listar consentimentos", async () => {
+    const chain: any = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+    };
+    chain.then = (resolve: any) => resolve({ data: null, error: { message: "indisponível" } });
+    (supabase.from as any).mockReturnValue(chain);
+
+    await expect(lgpdService.getConsentimentos(7)).rejects.toThrow(
+      "Erro ao listar consentimentos: indisponível",
+    );
+  });
+
+  it("lista solicitações sem filtro e normaliza resposta nula", async () => {
+    const chain: any = {
+      select: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+    };
+    chain.then = (resolve: any) => resolve({ data: null, error: null });
+    (supabase.from as any).mockReturnValue(chain);
+
+    await expect(lgpdService.getSolicitacoes()).resolves.toEqual([]);
+    expect(chain.eq).not.toHaveBeenCalled();
+  });
+
+  it("distingue conflito de unicidade de outros erros ao registrar consentimento", async () => {
+    const resultChain = (error: { code: string; message: string }) => ({
+      insert: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: null, error }),
+    });
+    (supabase.from as any)
+      .mockReturnValueOnce(resultChain({ code: "23505", message: "duplicate" }))
+      .mockReturnValueOnce(resultChain({ code: "XX000", message: "offline" }));
+
+    await expect(
+      lgpdService.updateConsentimento(7, CANAL.EMAIL, true),
+    ).rejects.toThrow("Ja existe um consentimento");
+    await expect(
+      lgpdService.updateConsentimento(7, CANAL.EMAIL, true),
+    ).rejects.toThrow("Erro ao registrar consentimento: offline");
+  });
+});

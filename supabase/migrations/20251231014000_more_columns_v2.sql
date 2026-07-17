@@ -1,10 +1,3 @@
-ALTER TABLE public.units ADD COLUMN IF NOT EXISTS nr_cnpj VARCHAR(20);
-ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS nr_cnpj VARCHAR(20);
-ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS cd_cnpj VARCHAR(20);
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS nr_cpf VARCHAR(14);
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS cd_cpf VARCHAR(14);
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS ds_email VARCHAR(200);
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS nr_telefone VARCHAR(20);
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS dt_nascimento DATE;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS cd_sexo VARCHAR(1);
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS ds_endereco TEXT;
+-- Tombstone de compatibilidade histórica.
+-- O DDL definitivo foi incorporado às migrations canônicas 202601*.
+-- Versão preservada: 20251231014000

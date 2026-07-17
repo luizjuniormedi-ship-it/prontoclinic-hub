@@ -20,6 +20,49 @@
 --              - Pedidos, itens, resultados e alertas são PHI multi-tenant
 -- =============================================================================
 
+-- Helpers legados necessários pelas policies abaixo. A identidade canônica é
+-- user_profiles.id = auth.uid(); user_id não participa da autorização.
+CREATE OR REPLACE FUNCTION public.current_company_id()
+RETURNS UUID
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$ SELECT public.get_my_company_id(); $$;
+
+CREATE OR REPLACE FUNCTION public.is_admin(p_user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  SELECT COALESCE(EXISTS (
+    SELECT 1 FROM public.user_profiles up
+    WHERE up.id = p_user_id
+      AND upper(COALESCE(up.role_name, '')) IN ('ADMIN', 'ADMINISTRADOR')
+      AND up.lg_ativo = TRUE
+  ), FALSE);
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_staff(p_user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  SELECT COALESCE(EXISTS (
+    SELECT 1 FROM public.user_profiles up
+    WHERE up.id = p_user_id
+      AND upper(COALESCE(up.role_name, '')) IN (
+        'ADMIN', 'ADMINISTRADOR', 'MEDICO', 'ENFERMEIRO', 'RECEPCAO'
+      )
+      AND up.lg_ativo = TRUE
+  ), FALSE);
+$$;
+
+REVOKE ALL ON FUNCTION public.current_company_id() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.current_company_id() TO authenticated;
+REVOKE ALL ON FUNCTION public.is_admin(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_admin(UUID) TO authenticated;
+REVOKE ALL ON FUNCTION public.is_staff(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_staff(UUID) TO authenticated;
+
 -- ============================================================================
 -- 1. ENFERMAGEM (migration 016) — classificacao de risco + fluxograma
 -- ============================================================================

@@ -8,6 +8,7 @@ import { useNavigate } from "react-router-dom";
 import { NotificationBell } from "./NotificationBell";
 import { UserMenu } from "./UserMenu";
 import { CompanySwitcher } from "./CompanySwitcher";
+import { AccessContextSwitcher } from "./AccessContextSwitcher";
 
 const STORAGE_KEY = "prontomedic-theme";
 type Theme = "light" | "dark";
@@ -73,6 +74,7 @@ export function AppHeader() {
       </div>
 
       <div className="flex items-center gap-2">
+        <AccessContextSwitcher />
         <CompanySwitcher theme={theme} onToggleTheme={toggleTheme} />
         <NotificationBell count={3} />
         <UserMenu fullName={user?.full_name} roleName={user?.role_name} onLogout={handleLogout} />

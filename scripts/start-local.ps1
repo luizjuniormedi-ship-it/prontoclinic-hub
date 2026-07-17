@@ -17,6 +17,8 @@ function Test-Port($Port) {
   }
 }
 
+$env:LOCAL_AUTH_MODE = "development"
+
 if (-not (Test-Port 8000)) {
   $auth = Start-Process -FilePath "node" -ArgumentList "local-auth-server.mjs" -WorkingDirectory $Root -WindowStyle Hidden -PassThru
   Set-Content -LiteralPath (Join-Path $RuntimeDir "auth.pid") -Value $auth.Id

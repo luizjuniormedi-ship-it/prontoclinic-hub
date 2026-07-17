@@ -1,3 +1,3 @@
--- Drop problematic indexes that will be recreated by their respective migrations
-DROP INDEX IF EXISTS public.idx_triagem_fila_senha_dia;
-DROP INDEX IF EXISTS public.idx_lgpd_solic_venc;
+-- Tombstone de compatibilidade histórica.
+-- O DDL definitivo foi incorporado às migrations canônicas 202601*.
+-- Versão preservada: 20251231009000

@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
+import { requestPasswordReset } from "@/services/authPasswordService";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -29,21 +30,14 @@ export default function ForgotPasswordPage() {
       return;
     }
     setLoading(true);
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
-      if (error) {
-        // Por seguranca nao revelar se o e-mail existe
-        console.warn("[forgot-password]", error);
-      }
-      setSent(true);
-      toast({ title: "Se o e-mail existir, enviaremos um link de recuperação." });
-    } catch (err) {
-      setErrorMsg("Não foi possível enviar o link. Tente novamente.");
-    } finally {
-      setLoading(false);
-    }
+    await requestPasswordReset(
+      supabase.auth,
+      email,
+      `${window.location.origin}/reset-password`,
+    );
+    setSent(true);
+    toast({ title: "Se o e-mail existir, enviaremos um link de recuperação." });
+    setLoading(false);
   };
 
   return (

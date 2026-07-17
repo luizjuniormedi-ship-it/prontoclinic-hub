@@ -1,5 +1,5 @@
 import {
-  SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu,
+  SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { SidebarMenuButton } from "@/components/ui/sidebar";
@@ -72,6 +72,7 @@ export function CollapsibleSection({
       <GroupLabel label={group.label} collapsed={collapsed} />
       <SidebarGroupContent>
         <SidebarMenu>
+          <SidebarMenuItem>
           <Collapsible defaultOpen className="group/collapsible">
             <CollapsibleTrigger asChild>
               <SidebarMenuButton className="flex items-center justify-between w-full text-sidebar-foreground/80">
@@ -92,6 +93,7 @@ export function CollapsibleSection({
               ))}
             </CollapsibleContent>
           </Collapsible>
+          </SidebarMenuItem>
         </SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>

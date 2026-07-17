@@ -1,3 +1,3 @@
--- Drop stub LGPD tables from 00000_base_tables.sql so that 00006_lgpd.sql can recreate with full schema
-DROP TABLE IF EXISTS public.paciente_consentimentos CASCADE;
-DROP TABLE IF EXISTS public.paciente_anonimizacao_log CASCADE;
+-- Tombstone de compatibilidade histórica.
+-- O DDL definitivo foi incorporado às migrations canônicas 202601*.
+-- Versão preservada: 20251231001000

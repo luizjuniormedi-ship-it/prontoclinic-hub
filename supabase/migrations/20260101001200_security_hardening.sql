@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration: 20260101000012_security_hardening
+-- Migration: 20260101001200_security_hardening
 -- Agente 17 — P0 Security Hardening
 -- =============================================================================
 -- Aplica melhorias de segurança em camadas:
