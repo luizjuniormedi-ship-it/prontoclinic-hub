@@ -25,6 +25,16 @@ ON CONFLICT (id) DO UPDATE SET
   ds_nome = EXCLUDED.ds_nome,
   lg_ativo = TRUE;
 
+-- O trigger de user_profiles valida o papel antes do INSERT/UPDATE. Em um
+-- replay limpo, os papéis E2E precisam existir antes dos perfis.
+INSERT INTO public.roles (name, description, lg_ativo)
+VALUES
+  ('admin', 'Administrador E2E', true),
+  ('medico', 'Medico E2E', true),
+  ('recepcao', 'Recepcao E2E', true),
+  ('paciente', 'Paciente E2E', true)
+ON CONFLICT (name) DO UPDATE SET lg_ativo = true;
+
 WITH base_company AS (
   SELECT id
   FROM public.companies
@@ -105,14 +115,6 @@ SET user_id = id,
     must_change_password = false,
     lg_ativo = true
 WHERE id::text LIKE 'eeeeeeee-0000-4000-8000-%';
-
-INSERT INTO public.roles (name, description, lg_ativo)
-VALUES
-  ('admin', 'Administrador E2E', true),
-  ('medico', 'Medico E2E', true),
-  ('recepcao', 'Recepcao E2E', true),
-  ('paciente', 'Paciente E2E', true)
-ON CONFLICT (name) DO UPDATE SET lg_ativo = true;
 
 UPDATE public.user_profiles p
 SET role_id = r.id,
