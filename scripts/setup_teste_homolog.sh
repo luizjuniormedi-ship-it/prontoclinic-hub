@@ -188,7 +188,7 @@ step_set_env_vercel() {
       "VITE_SUPABASE_URL=$HOMOLOG_SUPABASE_URL" \
       "VITE_SUPABASE_ANON_KEY=$HOMOLOG_SUPABASE_ANON_KEY" \
       "VITE_APP_NAME=ProntoClinic Hub (HOMOLOG)" \
-      "VITE_APP_ENV=homolog" \
+      "VITE_APP_ENV=staging" \
       "VITE_TISS_AMBIENTE=HOMOLOGACAO" \
       "VITE_TISS_VERSION=3.05.00" \
       "VITE_DICOM_BUCKET=dicom-homolog" \

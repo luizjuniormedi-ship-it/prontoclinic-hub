@@ -61,27 +61,30 @@ CREATE TABLE IF NOT EXISTS public.insurance_companies (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_insurance_companies_company ON public.insurance_companies(company_id);
-CREATE INDEX idx_insurance_companies_ans ON public.insurance_companies(registro_ans);
-CREATE INDEX idx_insurance_companies_payment_source ON public.insurance_companies(payment_source_id);
-CREATE INDEX idx_insurance_companies_active ON public.insurance_companies(company_id, lg_ativo);
-CREATE INDEX idx_insurance_companies_name ON public.insurance_companies USING gin(name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_insurance_companies_company ON public.insurance_companies(company_id);
+CREATE INDEX IF NOT EXISTS idx_insurance_companies_ans ON public.insurance_companies(registro_ans);
+CREATE INDEX IF NOT EXISTS idx_insurance_companies_payment_source ON public.insurance_companies(payment_source_id);
+CREATE INDEX IF NOT EXISTS idx_insurance_companies_active ON public.insurance_companies(company_id, lg_ativo);
+CREATE INDEX IF NOT EXISTS idx_insurance_companies_name ON public.insurance_companies USING gin(name gin_trgm_ops);
 
 COMMENT ON TABLE public.insurance_companies IS 'Convenios (SIGH.convenios): UNIMED, AMIL, BRADESCO, SULAMERICA, PARTICULAR, SUS, etc';
 COMMENT ON COLUMN public.insurance_companies.registro_ans IS 'Registro ANS (Agencia Nacional de Saude Suplementar)';
 COMMENT ON COLUMN public.insurance_companies.cd_origem_sigh IS 'ID original do SIGH (convenios.CD_CONVENIO)';
 
+DROP TRIGGER IF EXISTS trg_insurance_companies_updated_at ON public.insurance_companies;
 CREATE TRIGGER trg_insurance_companies_updated_at
   BEFORE UPDATE ON public.insurance_companies
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 ALTER TABLE public.insurance_companies ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read insurance_companies from their company" ON public.insurance_companies;
 CREATE POLICY "Users can read insurance_companies from their company"
   ON public.insurance_companies FOR SELECT
   TO authenticated
   USING (company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid()));
 
+DROP POLICY IF EXISTS "Admins and reception can manage insurance_companies" ON public.insurance_companies;
 CREATE POLICY "Admins and reception can manage insurance_companies"
   ON public.insurance_companies FOR ALL
   TO authenticated
@@ -110,6 +113,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_validate_insurance_company ON public.insurance_companies;
 CREATE TRIGGER trg_validate_insurance_company
   BEFORE INSERT OR UPDATE ON public.insurance_companies
   FOR EACH ROW EXECUTE FUNCTION public.validate_insurance_company();

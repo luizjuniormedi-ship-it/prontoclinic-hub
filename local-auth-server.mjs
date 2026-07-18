@@ -1,5 +1,6 @@
 /**
- * Local Auth Server â€” substitui GoTrue/Supabase Cloud
+ * Local Auth Server â€” harness exclusivo para desenvolvimento e testes.
+ * Nao substitui GoTrue/Supabase Auth em producao e nao implementa MFA real.
  * Simula os endpoints que o supabase-js usa:
  *   POST /auth/v1/token?grant_type=password
  *   GET  /auth/v1/user
@@ -13,6 +14,11 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import pg from 'pg';
 const { Pool } = pg;
 
+const LOCAL_AUTH_MODE = process.env.LOCAL_AUTH_MODE;
+if (!['development', 'test'].includes(LOCAL_AUTH_MODE)) {
+  throw new Error('local-auth-server.mjs e exclusivo para desenvolvimento/testes; use GoTrue/Supabase Auth em producao');
+}
+
 const PORT = Number(process.env.LOCAL_AUTH_PORT || 8000);
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET || JWT_SECRET.length < 32) {
@@ -25,13 +31,37 @@ types.setTypeParser(1082, (val) => val); // date -> string as-is
 types.setTypeParser(1114, (val) => val); // timestamp without tz -> string
 types.setTypeParser(1184, (val) => val); // timestamptz -> string
 
+const PGHOST = process.env.PGHOST || '127.0.0.1';
+const PGPORT = Number(process.env.PGPORT || 5432);
+const PGUSER = process.env.PGUSER || 'app_prontomedic';
+const PGDATABASE = process.env.PGDATABASE || 'prontoclinic';
 const pool = new Pool({
-  host: process.env.PGHOST || '127.0.0.1',
-  port: Number(process.env.PGPORT || 5432),
-  user: process.env.PGUSER || 'app_prontomedic',
+  host: PGHOST,
+  port: PGPORT,
+  user: PGUSER,
   password: process.env.PGPASSWORD,
-  database: process.env.PGDATABASE || 'prontoclinic',
+  database: PGDATABASE,
 });
+
+async function queryAsAuthenticated(payload, text, values = []) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claims', $2, true)`,
+      [payload.sub, JSON.stringify(payload)],
+    );
+    await client.query('SET LOCAL ROLE authenticated');
+    const result = await client.query(text, values);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
 // Simple JWT (HS256)
 function base64url(str) {
@@ -109,7 +139,7 @@ function tableToModule(table) {
     // cai no default (leitura livre p/ qualquer perfil autenticado, escrita sÃ³ admin).
     [/^encounters?$|^encounter_|^medical_records|^clinical_|^prescricoes|^prontuar|^diagnos|^patient_allergies|^patient_problem|^patient_medication|^alergias/, 'prontuario'],
     [/^patients$|^paciente|^patient_phones|^telxpac/, 'pacientes'],
-    [/^appointments$|^agenda|^professional_schedules|^escala/, 'agenda'],
+    [/^appointments$|^agenda|^professional_schedules|^escala|^professionals$|^specialties$|^appointment_types$|^services_catalog$/, 'agenda'],
     // EvoluÃ§Ã£o/procedimentos/incidentes de enfermagem = conteÃºdo clÃ­nico sensÃ­vel â†’ mÃ³dulo prontuario (recepÃ§Ã£o bloqueada por LGPD)
     [/^nursing_notes|^nursing_procedures|^nursing_incidents|^nursing_medication|^nursing_evolution/, 'prontuario'],
     // Fila de triagem e classificaÃ§Ã£o de risco = mÃ³dulo enfermagem (recepÃ§Ã£o pode ver p/ chamar paciente)
@@ -143,30 +173,6 @@ const IDENT = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 const isIdentifier = (value) => IDENT.test(value);
 const quoteIdent = (value) => `"${value}"`;
 
-const companyScopedTableCache = new Map();
-async function tableHasCompanyId(table) {
-  if (companyScopedTableCache.has(table)) return companyScopedTableCache.get(table);
-  const result = await pool.query(
-    `SELECT EXISTS (
-       SELECT 1 FROM information_schema.columns
-       WHERE table_schema = 'public' AND table_name = $1 AND column_name = 'company_id'
-     ) AS scoped`,
-    [table],
-  );
-  const scoped = result.rows[0]?.scoped === true;
-  companyScopedTableCache.set(table, scoped);
-  return scoped;
-}
-
-async function requiredCompanyScope(profile, table) {
-  if (!(await tableHasCompanyId(table))) return null;
-  if (!profile?.company_id) {
-    const error = new Error(`perfil sem company_id para acessar tabela '${table}'`);
-    error.statusCode = 403;
-    throw error;
-  }
-  return profile.company_id;
-}
 
 // cache de permissÃµes por role (evita query a cada request)
 const permCache = new Map();
@@ -205,6 +211,13 @@ async function authorize(profile, table, method) {
 }
 
 const RPC_PERMISSIONS = {
+  list_authorized_access_contexts: { scope: 'self' },
+  activate_application_context: { scope: 'self' },
+  heartbeat_application_session: { scope: 'self' },
+  is_application_session_allowed: { scope: 'self' },
+  revoke_application_session: { scope: 'self' },
+  revoke_all_application_sessions: { module: 'admin', action: 'can_edit' },
+  list_company_users_admin: { module: 'admin', action: 'can_view' },
   create_appointment_secure: { module: 'agenda', action: 'can_create' },
   update_appointment_status_secure: { module: 'agenda', action: 'can_edit' },
   reschedule_appointment_secure: { module: 'agenda', action: 'can_edit' },
@@ -221,6 +234,7 @@ const RPC_PERMISSIONS = {
   mark_overdue_appointments_no_show_secure: { module: 'agenda', action: 'can_edit' },
   get_reception_checkin_readiness: { module: 'recepcao', action: 'can_view' },
   perform_reception_checkin_secure: { module: 'recepcao', action: 'can_create' },
+  finalize_attendance_secure: { module: 'prontuario', action: 'can_create' },
   update_reception_authorization_secure: { module: 'recepcao', action: 'can_edit' },
   update_reception_eligibility_secure: { module: 'recepcao', action: 'can_edit' },
 };
@@ -229,6 +243,7 @@ async function authorizeRpc(profile, functionName) {
   const required = RPC_PERMISSIONS[functionName];
   if (!required) return { ok: false, reason: `RPC '${functionName}' nao autorizada` };
   if (!profile || !profile.lg_ativo) return { ok: false, reason: 'usuario invalido/inativo' };
+  if (required.scope === 'self') return { ok: true };
 
   const role = (profile.role_name || '').toLowerCase();
   if (role === 'admin') {
@@ -259,7 +274,10 @@ function cors(req, res) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
   }
-  res.setHeader('Access-Control-Allow-Headers', 'authorization, apikey, content-type, prefer, range, x-client-info');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'authorization, apikey, content-type, prefer, range, accept-profile, content-profile, x-application-name, x-client-info, x-supabase-api-version',
+  );
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Expose-Headers', 'content-range');
   return true;
@@ -345,10 +363,10 @@ const server = createServer(async (req, res) => {
     const hDecision = await authorize(hProfile, table, 'GET');
     if (!hDecision.ok) { res.writeHead(403); res.end(); return; }
     try {
-      const hCompanyId = await requiredCompanyScope(hProfile, table);
-      const countResult = hCompanyId
-        ? await pool.query(`SELECT count(*) FROM public."${table}" WHERE company_id = $1`, [hCompanyId])
-        : await pool.query(`SELECT count(*) FROM public."${table}"`);
+      const countResult = await queryAsAuthenticated(
+        hPayload,
+        `SELECT count(*) FROM public."${table}"`,
+      );
       const total = countResult.rows[0].count;
       res.writeHead(200, { 'content-range': `0-0/${total}` });
     } catch {
@@ -373,7 +391,7 @@ const server = createServer(async (req, res) => {
           `UPDATE auth.refresh_tokens
               SET revoked = true, updated_at = now()
             WHERE token = $1 AND revoked = false
-          RETURNING user_id`,
+          RETURNING user_id, session_id`,
           [tokenValue],
         );
         if (rt.rows.length === 0) {
@@ -393,11 +411,12 @@ const server = createServer(async (req, res) => {
         }
         const u = userRes.rows[0];
         const now = Math.floor(Date.now() / 1000);
-        const accessToken = signJwt({ sub: u.id, email: u.email, role: 'authenticated', aud: 'authenticated', iat: now, exp: now + 3600, app_metadata: u.raw_app_meta_data, user_metadata: u.raw_user_meta_data });
+        const sessionId = rt.rows[0].session_id || randomUUID();
+        const accessToken = signJwt({ sub: u.id, email: u.email, role: 'authenticated', aud: 'authenticated', aal: 'aal2', session_id: sessionId, iat: now, exp: now + 3600, app_metadata: u.raw_app_meta_data, user_metadata: u.raw_user_meta_data });
         const newRefreshToken = randomUUID();
         await client.query(
-          'INSERT INTO auth.refresh_tokens (token, user_id, parent) VALUES ($1, $2, $3)',
-          [newRefreshToken, u.id, tokenValue],
+          'INSERT INTO auth.refresh_tokens (token, user_id, parent, session_id) VALUES ($1, $2, $3, $4)',
+          [newRefreshToken, u.id, tokenValue, sessionId],
         );
         await client.query('COMMIT');
         return json(res, {
@@ -429,11 +448,14 @@ const server = createServer(async (req, res) => {
       }
       loginAttempts.delete(attemptKey);
       const now = Math.floor(Date.now() / 1000);
+      const sessionId = randomUUID();
       const accessToken = signJwt({
         sub: user.id,
         email: user.email,
         role: 'authenticated',
         aud: 'authenticated',
+        aal: 'aal2',
+        session_id: sessionId,
         iat: now,
         exp: now + 3600,
         app_metadata: user.raw_app_meta_data,
@@ -442,8 +464,8 @@ const server = createServer(async (req, res) => {
       const refreshToken = randomUUID();
       // Save refresh token
       await pool.query(
-        `INSERT INTO auth.refresh_tokens (token, user_id) VALUES ($1, $2)`,
-        [refreshToken, user.id]
+        `INSERT INTO auth.refresh_tokens (token, user_id, session_id) VALUES ($1, $2, $3)`,
+        [refreshToken, user.id, sessionId]
       );
       return json(res, {
         access_token: accessToken,
@@ -539,6 +561,7 @@ const server = createServer(async (req, res) => {
           `SELECT set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claims', $2, true)`,
           [payload.sub, JSON.stringify(payload)],
         );
+        await client.query('SET LOCAL ROLE authenticated');
         const result = await client.query(`SELECT public."${fnName}"(${namedArgs}) AS result`, vals);
         await client.query('COMMIT');
         const val = result.rows.length === 0
@@ -549,7 +572,7 @@ const server = createServer(async (req, res) => {
         return json(res, val);
       } catch (e) {
         await client.query('ROLLBACK');
-        return json(res, { error: e.message, code: 'PGRST202' }, 400);
+        return json(res, { error: e.message, message: e.message, code: 'PGRST202' }, 400);
       } finally {
         client.release();
       }
@@ -575,8 +598,6 @@ const server = createServer(async (req, res) => {
         url.searchParams.get('id') === `eq.${payload.sub}`;
       const decision = isSelfProfileRead ? { ok: true } : await authorize(profile, table, req.method);
       if (!decision.ok) return json(res, { error: 'forbidden', message: decision.reason }, 403);
-      const companyId = await requiredCompanyScope(profile, table);
-
       if (req.method === 'GET') {
         // Parse select columns (strip embedded relations like "payment_source:payment_sources(name,type)")
         const selectParam = url.searchParams.get('select');
@@ -602,11 +623,6 @@ const server = createServer(async (req, res) => {
         const values = [];
         let paramIdx = 1;
 
-        if (companyId) {
-          conditions.push(`"company_id" = $${paramIdx}`);
-          values.push(companyId);
-          paramIdx++;
-        }
 
         // Parse PostgREST filters (eq, neq, gt, gte, lt, lte, like, ilike, is, or, in)
         const IDENT_COL = IDENT;
@@ -734,14 +750,14 @@ const server = createServer(async (req, res) => {
         }
 
         try {
-          const result = await pool.query(query, values);
+          const result = await queryAsAuthenticated(payload, query, values);
 
           // Count total if Prefer: count=exact
           const prefer = req.headers.prefer || '';
           let totalCount = result.rows.length;
           if (prefer.includes('count=exact')) {
             const countQuery = `SELECT COUNT(*) FROM public."${table}"` + (conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '');
-            const countResult = await pool.query(countQuery, values);
+            const countResult = await queryAsAuthenticated(payload, countQuery, values);
             totalCount = parseInt(countResult.rows[0].count);
           }
 
@@ -756,18 +772,12 @@ const server = createServer(async (req, res) => {
           }
           return json(res, result.rows);
         } catch (e) {
-          return json(res, { error: e.message, code: 'PGRST000' }, 400);
+          return json(res, { error: e.message, message: e.message, code: 'PGRST000' }, 400);
         }
       }
 
       if (req.method === 'POST') {
         const body = await parseBody(req);
-        if (companyId) {
-          if (body.company_id && body.company_id !== companyId) {
-            return json(res, { error: 'forbidden', message: 'company_id nao pertence ao perfil autenticado' }, 403);
-          }
-          body.company_id = companyId;
-        }
         const keys = Object.keys(body);
         if (keys.length === 0) return json(res, { error: 'bad_request', message: 'body vazio' }, 400);
         for (const key of keys) {
@@ -779,7 +789,7 @@ const server = createServer(async (req, res) => {
         const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
         const columns = keys.map(quoteIdent).join(', ');
         try {
-          const result = await pool.query(
+          const result = await queryAsAuthenticated(payload,
             `INSERT INTO public."${table}" (${columns}) VALUES (${placeholders}) RETURNING *`,
             vals
           );
@@ -789,7 +799,7 @@ const server = createServer(async (req, res) => {
           }
           return json(res, {}, 201);
         } catch (e) {
-          return json(res, { error: e.message }, 400);
+          return json(res, { error: e.message, message: e.message }, 400);
         }
       }
 
@@ -809,13 +819,13 @@ const server = createServer(async (req, res) => {
         const id = idParam?.replace('eq.', '');
         if (!id) return json(res, { error: 'id required for PATCH' }, 400);
         try {
-          const result = await pool.query(
-            `UPDATE public."${table}" SET ${setClause} WHERE id = $${keys.length + 1}${companyId ? ` AND company_id = $${keys.length + 2}` : ''} RETURNING *`,
-            companyId ? [...vals, id, companyId] : [...vals, id]
+          const result = await queryAsAuthenticated(payload,
+            `UPDATE public."${table}" SET ${setClause} WHERE id = $${keys.length + 1} RETURNING *`,
+            [...vals, id]
           );
           return json(res, result.rows[0] || {});
         } catch (e) {
-          return json(res, { error: e.message }, 400);
+          return json(res, { error: e.message, message: e.message }, 400);
         }
       }
     }
@@ -834,7 +844,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”`);
   console.log(`  â”‚  ProntoClinic Local Auth Server               â”‚`);
   console.log(`  â”‚  http://localhost:${PORT}                       â”‚`);
-  console.log(`  â”‚  Postgres: 127.0.0.1:5432/prontoclinic       â”‚`);
+  console.log(`  â”‚  Postgres: ${PGHOST}:${PGPORT}/${PGDATABASE}`);
   console.log(`  â”‚  Admin: use usuario seedado no banco local     â”‚`);
   console.log(`  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜`);
   console.log(``);

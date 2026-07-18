@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Heart, Loader2, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,31 +7,19 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/hooks/useAuth";
+import { updatePasswordAndLogout } from "@/services/authPasswordService";
+import { authSessionService } from "@/services/authSessionService";
 
 export default function ResetPasswordPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [isRecovery, setIsRecovery] = useState(false);
   const navigate = useNavigate();
+  const { mustChangePassword, passwordRecoveryAuthorized } = useAuth();
   const { toast } = useToast();
-
-  useEffect(() => {
-    // Check for recovery token in URL hash
-    const hash = window.location.hash;
-    if (hash.includes("type=recovery")) {
-      setIsRecovery(true);
-    }
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY") {
-        setIsRecovery(true);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+  const authorized = mustChangePassword || passwordRecoveryAuthorized;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,8 +33,7 @@ export default function ResetPasswordPage() {
     }
     setLoading(true);
     try {
-      const { error } = await supabase.auth.updateUser({ password });
-      if (error) throw error;
+      await updatePasswordAndLogout(supabase.auth, password, () => authSessionService.logoutGlobal());
       setSuccess(true);
       toast({ title: "Senha redefinida com sucesso!" });
       setTimeout(() => navigate("/login"), 2000);
@@ -57,7 +44,7 @@ export default function ResetPasswordPage() {
     }
   };
 
-  if (!isRecovery && !success) {
+  if (!authorized && !success) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5 p-4">
         <Card className="w-full max-w-md shadow-lg">

@@ -1,3 +1,3 @@
--- Drop stub tiss_xml so migration can recreate with full schema
-DROP TABLE IF EXISTS public.tiss_xml CASCADE;
-DROP TABLE IF EXISTS public.tiss_protocols CASCADE;
+-- Tombstone de compatibilidade histórica.
+-- O DDL definitivo foi incorporado às migrations canônicas 202601*.
+-- Versão preservada: 20251231006000

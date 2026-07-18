@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 export interface DbBilling {
   id: string;
   company_id: string | null;
-  unit_id: string | null;
+  unit_id: number | null;
   patient_id: string | null;
   professional_id: string | null;
   appointment_id: string | null;
@@ -20,7 +20,7 @@ export interface DbBilling {
 
 export interface BillingInput {
   company_id?: string;
-  unit_id?: string;
+  unit_id?: number;
   patient_id: string;
   professional_id?: string;
   appointment_id?: string;
@@ -110,7 +110,7 @@ export const billingsService = {
 export interface DbFinancialTransaction {
   id: string;
   company_id: string | null;
-  unit_id: string | null;
+  unit_id: number | null;
   patient_id: string | null;
   billing_id: string | null;
   professional_id: string | null;
@@ -128,7 +128,7 @@ export interface DbFinancialTransaction {
 
 export interface FinancialTransactionInput {
   company_id?: string;
-  unit_id?: string;
+  unit_id?: number;
   patient_id: string;
   billing_id?: string;
   professional_id?: string;

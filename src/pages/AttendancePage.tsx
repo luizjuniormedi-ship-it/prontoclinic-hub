@@ -12,7 +12,6 @@ import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, ErrorState } from "@/components/StateViews";
 import { supabase } from "@/lib/supabase";
 import { medicalRecordsService } from "@/services/medicalRecordsService";
-import { appointmentsService } from "@/services/appointmentsService";
 import { billingsService } from "@/services/financialService";
 import { priceTableService } from "@/services/priceTableService";
 import { useAuth } from "@/hooks/useAuth";
@@ -100,19 +99,12 @@ export default function AttendancePage() {
         returnNotes && `**Retorno:** ${returnNotes}`,
       ].filter(Boolean).join("\n\n");
 
-      await medicalRecordsService.create({
-        patient_id: patient.id,
-        professional_id: appointment.professional_id,
-        appointment_id: appointment.id,
-        company_id: appointment.company_id || user?.company_id || undefined,
-        unit_id: appointment.unit_id || user?.primary_unit_id || undefined,
+      await medicalRecordsService.finalizeAttendance({
+        appointment_id: String(appointment.id),
         anamnesis: anamnesis || undefined,
         evolution: evolution || undefined,
         vital_signs: Object.keys(vs).length > 0 ? vs : undefined,
       });
-
-      // Update appointment status to completed (with validation)
-      await appointmentsService.updateStatus(appointment.id, "completed");
 
       // Auto-create billing with price lookup
       try {
@@ -125,10 +117,12 @@ export default function AttendancePage() {
 
         await billingsService.create({
           patient_id: patient.id,
-          professional_id: appointment.professional_id || undefined,
-          appointment_id: appointment.id,
+          professional_id: appointment.professional_id ? String(appointment.professional_id) : undefined,
+          appointment_id: String(appointment.id),
           company_id: appointment.company_id || user?.company_id || undefined,
-          unit_id: appointment.unit_id || user?.primary_unit_id || undefined,
+          unit_id: appointment.unit_id || user?.primary_unit_id
+            ? Number(appointment.unit_id || user?.primary_unit_id)
+            : undefined,
           billing_type: billingType,
           gross_amount: price,
           net_amount: price,

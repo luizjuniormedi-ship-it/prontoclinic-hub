@@ -35,9 +35,9 @@ CREATE TABLE IF NOT EXISTS public.payment_sources (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_payment_sources_company ON public.payment_sources(company_id);
-CREATE INDEX idx_payment_sources_type ON public.payment_sources(company_id, type);
-CREATE INDEX idx_payment_sources_active ON public.payment_sources(company_id, lg_ativo);
+CREATE INDEX IF NOT EXISTS idx_payment_sources_company ON public.payment_sources(company_id);
+CREATE INDEX IF NOT EXISTS idx_payment_sources_type ON public.payment_sources(company_id, type);
+CREATE INDEX IF NOT EXISTS idx_payment_sources_active ON public.payment_sources(company_id, lg_ativo);
 
 COMMENT ON TABLE public.payment_sources IS 'Fonte Pagadora (SIGH.fonte_pagadora): SUS, PARTICULAR, CORTESIA, Convenios';
 COMMENT ON COLUMN public.payment_sources.cd_origem_sigh IS 'ID original do SIGH (fonte_pagadora.CD_FONTE_PAGADORA) para migracao';
@@ -50,17 +50,20 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_payment_sources_updated_at ON public.payment_sources;
 CREATE TRIGGER trg_payment_sources_updated_at
   BEFORE UPDATE ON public.payment_sources
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 ALTER TABLE public.payment_sources ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read payment_sources from their company" ON public.payment_sources;
 CREATE POLICY "Users can read payment_sources from their company"
   ON public.payment_sources FOR SELECT
   TO authenticated
   USING (company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid()));
 
+DROP POLICY IF EXISTS "Admins can manage payment_sources in their company" ON public.payment_sources;
 CREATE POLICY "Admins can manage payment_sources in their company"
   ON public.payment_sources FOR ALL
   TO authenticated

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { maskCPF, maskPhone } from "@/utils/masks";
 import { Loader2 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 // Matches the real Supabase patients table columns exactly
 export interface PatientFormData {
@@ -71,8 +72,22 @@ function validateField(field: keyof PatientFormData, value: string): string | nu
 
 export function PatientForm({ initialData, onSubmit, onCancel, saving, validationError }: Props) {
   const [form, setForm] = useState<PatientFormData>({ ...emptyForm, ...initialData });
+  const [insurancePlans, setInsurancePlans] = useState<Array<{ id: string; name: string }>>([]);
   const [errors, setErrors] = useState<Partial<Record<keyof PatientFormData, string>>>({});
   const [touched, setTouched] = useState<Partial<Record<keyof PatientFormData, boolean>>>({});
+
+  useEffect(() => {
+    let active = true;
+    void supabase
+      .from("insurance_plans")
+      .select("id, name")
+      .eq("lg_ativo", true)
+      .order("name")
+      .then(({ data }) => {
+        if (active) setInsurancePlans((data || []).map((plan) => ({ id: String(plan.id), name: plan.name })));
+      });
+    return () => { active = false; };
+  }, []);
 
   const set = (field: keyof PatientFormData, value: string) => {
     setForm((f) => ({ ...f, [field]: value }));
@@ -312,14 +327,18 @@ export function PatientForm({ initialData, onSubmit, onCancel, saving, validatio
       <Card>
         <CardHeader className="pb-3"><CardTitle className="text-base">Convênio</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field id="insurance_plan_id" label="Convênio" fieldKey="insurance_plan_id">
-            <Input
-              id="insurance_plan_id"
-              placeholder="Nome do convênio"
-              value={form.insurance_plan_id}
-              onChange={(e) => set("insurance_plan_id", e.target.value)}
-              maxLength={100}
-            />
+          <Field id="insurance_plan_id" label="Plano de convênio" fieldKey="insurance_plan_id">
+            <Select value={form.insurance_plan_id || "none"} onValueChange={(value) => set("insurance_plan_id", value === "none" ? "" : value)}>
+              <SelectTrigger id="insurance_plan_id" aria-label="Plano de convênio">
+                <SelectValue placeholder="Selecione o plano" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Particular / sem convênio</SelectItem>
+                {insurancePlans.map((plan) => (
+                  <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
           <Field id="insurance_card_number" label="Nº Carteirinha" fieldKey="insurance_card_number">
             <Input

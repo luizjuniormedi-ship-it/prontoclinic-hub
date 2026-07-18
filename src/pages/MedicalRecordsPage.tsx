@@ -94,6 +94,7 @@ export default function MedicalRecordsPage() {
           </div>
         )}
 
+        <h2 className="sr-only">Registros clínicos</h2>
         {recordsLoading ? <LoadingState /> : records.length === 0 ? (
           <EmptyState icon={FileText} title="Nenhum registro" description="Este paciente ainda não possui prontuário." />
         ) : (

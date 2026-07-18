@@ -29,16 +29,17 @@ CREATE TABLE IF NOT EXISTS public.price_tables (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_price_tables_company ON public.price_tables(company_id);
-CREATE INDEX idx_price_tables_service ON public.price_tables(service_id);
-CREATE INDEX idx_price_tables_plan ON public.price_tables(insurance_plan_id);
-CREATE INDEX idx_price_tables_active ON public.price_tables(company_id, active);
-CREATE INDEX idx_price_tables_validity ON public.price_tables(company_id, dt_inicio, dt_fim);
+CREATE INDEX IF NOT EXISTS idx_price_tables_company ON public.price_tables(company_id);
+CREATE INDEX IF NOT EXISTS idx_price_tables_service ON public.price_tables(service_id);
+CREATE INDEX IF NOT EXISTS idx_price_tables_plan ON public.price_tables(insurance_plan_id);
+CREATE INDEX IF NOT EXISTS idx_price_tables_active ON public.price_tables(company_id, active);
+CREATE INDEX IF NOT EXISTS idx_price_tables_validity ON public.price_tables(company_id, dt_inicio, dt_fim);
 
 COMMENT ON TABLE public.price_tables IS 'Tabela de Precos por convenio/servico (SIGH.99pgm_medicor + servicos.VL_PARTICULAR)';
 COMMENT ON COLUMN public.price_tables.insurance_plan_id IS 'NULL = preco particular, preenchido = preco do convenio';
 COMMENT ON COLUMN public.price_tables.cd_origem_sigh IS 'ID original do SIGH (99pgm_medicor.SOMA)';
 
+DROP TRIGGER IF EXISTS trg_price_tables_updated_at ON public.price_tables;
 CREATE TRIGGER trg_price_tables_updated_at
   BEFORE UPDATE ON public.price_tables
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
@@ -121,11 +122,13 @@ COMMENT ON FUNCTION public.find_price IS 'Busca preco com prioridade: convenio e
 
 ALTER TABLE public.price_tables ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read price_tables from their company" ON public.price_tables;
 CREATE POLICY "Users can read price_tables from their company"
   ON public.price_tables FOR SELECT
   TO authenticated
   USING (company_id = (SELECT company_id FROM public.user_profiles WHERE id = auth.uid()));
 
+DROP POLICY IF EXISTS "Admins and financial can manage price_tables" ON public.price_tables;
 CREATE POLICY "Admins and financial can manage price_tables"
   ON public.price_tables FOR ALL
   TO authenticated

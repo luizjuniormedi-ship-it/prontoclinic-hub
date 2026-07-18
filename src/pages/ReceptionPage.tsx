@@ -101,7 +101,11 @@ export default function ReceptionPage() {
       await appointmentsService.getByDate(today).then(setDbAppointments);
       const labels: Record<string, string> = { waiting: "Check-in realizado!", in_progress: "Atendimento iniciado!", completed: "Finalizado!" };
       toast({ title: labels[newStatus] || "Atualizado" });
-    } catch (err) { toast({ title: "Erro", description: (err as Error).message, variant: "destructive" }); }
+      return true;
+    } catch (err) {
+      toast({ title: "Erro", description: (err as Error).message, variant: "destructive" });
+      return false;
+    }
   };
 
   const openCheckin = async (appointment: Appointment) => {
@@ -229,7 +233,9 @@ export default function ReceptionPage() {
               a.status === "scheduled" || a.status === "confirmed" ? (
                 <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => void openCheckin(a)}><Check className="mr-1 h-3 w-3" />Check-in</Button>
               ) : a.status === "waiting" ? (
-                <Button size="sm" className="h-7 text-xs" onClick={() => { handleStatusChange(a.id, "in_progress"); navigate(`/attendance/${a.id}`); }}><Play className="mr-1 h-3 w-3" />Iniciar</Button>
+                <Button size="sm" className="h-7 text-xs" onClick={async () => {
+                  if (await handleStatusChange(a.id, "in_progress")) navigate(`/attendance/${a.id}`);
+                }}><Play className="mr-1 h-3 w-3" />Iniciar</Button>
               ) : null
             ))
           )}

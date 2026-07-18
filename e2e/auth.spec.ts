@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { E2E_PASSWORD } from './env';
 
 test.describe('Autenticação', () => {
   [
@@ -10,7 +11,7 @@ test.describe('Autenticação', () => {
     test(`login local funciona para perfil ${label}`, async ({ page }) => {
       await page.goto('/login');
       await page.getByLabel('E-mail').fill(email);
-      await page.getByRole('textbox', { name: 'Senha' }).fill('TestPassword123!');
+      await page.getByRole('textbox', { name: 'Senha' }).fill(E2E_PASSWORD);
       await page.getByRole('button', { name: /entrar/i }).click();
 
       await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
@@ -20,7 +21,7 @@ test.describe('Autenticação', () => {
   test('login com credenciais válidas redireciona para dashboard', async ({ page }) => {
     await page.goto('/login');
     await page.getByLabel('E-mail').fill('admin@prontomedic.test');
-    await page.getByRole('textbox', { name: 'Senha' }).fill('TestPassword123!');
+    await page.getByRole('textbox', { name: 'Senha' }).fill(E2E_PASSWORD);
     await page.getByRole('button', { name: /entrar/i }).click();
 
     await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
@@ -30,7 +31,7 @@ test.describe('Autenticação', () => {
   test('login com email inválido mostra erro', async ({ page }) => {
     await page.goto('/login');
     await page.getByLabel('E-mail').fill('inexistente@prontomedic.test');
-    await page.getByRole('textbox', { name: 'Senha' }).fill('TestPassword123!');
+    await page.getByRole('textbox', { name: 'Senha' }).fill(E2E_PASSWORD);
     await page.getByRole('button', { name: /entrar/i }).click();
 
     await expect(page.getByText(/e-mail ou senha inválidos|inválid/i)).toBeVisible();
@@ -60,7 +61,7 @@ test.describe('Autenticação', () => {
     // login
     await page.goto('/login');
     await page.getByLabel('E-mail').fill('admin@prontomedic.test');
-    await page.getByRole('textbox', { name: 'Senha' }).fill('TestPassword123!');
+    await page.getByRole('textbox', { name: 'Senha' }).fill(E2E_PASSWORD);
     await page.getByRole('button', { name: /entrar/i }).click();
     await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
 
@@ -79,7 +80,7 @@ test.describe('Autenticação', () => {
     // de staging (configurado no seed). Se não estiver, este teste pula.
     await page.goto('/login');
     await page.getByLabel('E-mail').fill('admin@prontomedic.test');
-    await page.getByRole('textbox', { name: 'Senha' }).fill('TestPassword123!');
+    await page.getByRole('textbox', { name: 'Senha' }).fill(E2E_PASSWORD);
     await page.getByRole('button', { name: /entrar/i }).click();
 
     const twoFactorField = page.getByLabel(/código 2fa|código de verificação|2fa/i);

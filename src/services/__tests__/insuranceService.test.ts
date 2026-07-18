@@ -3,6 +3,7 @@ import {
   insuranceCompanyService,
   insurancePlanService,
   paymentSourceService,
+  professionalInsuranceService,
 } from "@/services/insuranceService";
 
 vi.mock("@/lib/supabase", () => {
@@ -263,5 +264,106 @@ describe("insurancePlanService — getByInsurance", () => {
     expect(eqSpy).toHaveBeenCalledWith("insurance_company_id", 1);
     expect(eqSpy).toHaveBeenCalledWith("lg_ativo", true);
     expect(result).toHaveLength(2);
+  });
+});
+
+describe("insuranceService — demais operações e erros", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("lista fontes pagadoras na ordenação esperada e normaliza data nulo", async () => {
+    const orderSpy = vi.fn().mockReturnThis();
+    const chain: any = {
+      select: vi.fn().mockReturnThis(),
+      order: orderSpy,
+    };
+    chain.then = (resolve: any) => resolve({ data: null, error: null });
+    (supabase.from as any).mockReturnValue(chain);
+
+    await expect(paymentSourceService.getAll()).resolves.toEqual([]);
+    expect(orderSpy).toHaveBeenNthCalledWith(1, "type", { ascending: false });
+    expect(orderSpy).toHaveBeenNthCalledWith(2, "name");
+  });
+
+  it("propaga erro ao consultar fonte pagadora por id", async () => {
+    const chain: any = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: "fonte indisponível" },
+      }),
+    };
+    (supabase.from as any).mockReturnValue(chain);
+
+    await expect(paymentSourceService.getById(7)).rejects.toThrow(
+      "Erro: fonte indisponível",
+    );
+  });
+
+  it("atualiza plano e devolve o registro persistido", async () => {
+    const updated = { id: 9, name: "Executivo", lg_ativo: true };
+    const updateSpy = vi.fn().mockReturnThis();
+    const eqSpy = vi.fn().mockReturnThis();
+    const chain: any = {
+      update: updateSpy,
+      eq: eqSpy,
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: updated, error: null }),
+    };
+    (supabase.from as any).mockReturnValue(chain);
+
+    await expect(
+      insurancePlanService.update(9, { name: "Executivo" }),
+    ).resolves.toEqual(updated);
+    expect(updateSpy).toHaveBeenCalledWith({ name: "Executivo" });
+    expect(eqSpy).toHaveBeenCalledWith("id", 9);
+  });
+
+  it("propaga erro ao atualizar plano", async () => {
+    const chain: any = {
+      update: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: "plano bloqueado" },
+      }),
+    };
+    (supabase.from as any).mockReturnValue(chain);
+
+    await expect(
+      insurancePlanService.update(9, { name: "Executivo" }),
+    ).rejects.toThrow("Erro: plano bloqueado");
+  });
+
+  it("lista credenciamentos ativos do profissional", async () => {
+    const rows = [{ id: 3, professional_id: 12, lg_ativo: true }];
+    const eqSpy = vi.fn().mockReturnThis();
+    const chain: any = {
+      select: vi.fn().mockReturnThis(),
+      eq: eqSpy,
+    };
+    chain.then = (resolve: any) => resolve({ data: rows, error: null });
+    (supabase.from as any).mockReturnValue(chain);
+
+    await expect(
+      professionalInsuranceService.getByProfessional(12),
+    ).resolves.toEqual(rows);
+    expect(eqSpy).toHaveBeenCalledWith("professional_id", 12);
+    expect(eqSpy).toHaveBeenCalledWith("lg_ativo", true);
+  });
+
+  it("remove credenciamento pelo id", async () => {
+    const deleteSpy = vi.fn().mockReturnThis();
+    const eqSpy = vi.fn().mockReturnThis();
+    const chain: any = { delete: deleteSpy, eq: eqSpy };
+    chain.then = (resolve: any) => resolve({ error: null });
+    (supabase.from as any).mockReturnValue(chain);
+
+    await expect(professionalInsuranceService.delete(15)).resolves.toBeUndefined();
+    expect(deleteSpy).toHaveBeenCalledOnce();
+    expect(eqSpy).toHaveBeenCalledWith("id", 15);
   });
 });

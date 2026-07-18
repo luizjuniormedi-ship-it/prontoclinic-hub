@@ -56,8 +56,8 @@ export default function AdminPermissionsPage() {
         ]);
         setPermissions(perms);
         setUsers(usrs);
-        const enriched: Role[] = profs.map((p, idx) => ({
-          id: idx + 1,
+        const enriched: Role[] = profs.map((p) => ({
+          id: p.databaseId,
           name: p.id,
           label: ROLE_LABELS[p.id] ?? p.name,
           description: p.description,
@@ -78,29 +78,14 @@ export default function AdminPermissionsPage() {
   }, [toast]);
 
   const modules = useMemo(() => {
-    const set = new Set<string>();
-    for (const p of permissions) set.add(p.module);
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [permissions]);
+    return Object.keys(MODULE_LABELS).sort((a, b) => a.localeCompare(b));
+  }, []);
 
-  const roleByName = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const p of permissions) {
-      if (!map.has(String(p.role_id))) map.set(String(p.role_id), p.role_id);
-    }
-    return map;
-  }, [permissions]);
-
-  // Discover the role_id for each role name by inspecting permissions
+  // Use the real database ids returned by public.roles.
   const roleIdByName = useMemo(() => {
-    // Prefer the roles list order (1..N) matching backend ids
     const map = new Map<string, number>();
-    const ROLE_NAME_TO_ID: Record<string, number> = {
-      admin: 1, medico: 2, recepcao: 3, enfermagem: 4,
-      laboratorio: 5, financeiro: 6, farmacia: 7,
-    };
     for (const r of roles) {
-      map.set(r.name, ROLE_NAME_TO_ID[r.name] ?? r.id);
+      map.set(r.name, r.id);
     }
     return map;
   }, [roles]);

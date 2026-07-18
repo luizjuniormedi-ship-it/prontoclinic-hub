@@ -8,8 +8,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Edit, UserCheck, UserX, Shield } from "lucide-react";
+import { Search, Edit, KeyRound, UserCheck, UserX, Shield } from "lucide-react";
 import { userProfilesService, type UserProfileWithEmail } from "@/services/userProfilesService";
+import { authAdminService } from "@/services/authAdminService";
+import { readStoredAccessContext } from "@/services/applicationSessionStorage";
+import type { AccessContextOption } from "@/services/accessContextService";
 import { useToast } from "@/hooks/use-toast";
 
 interface PermissionProfile {
@@ -28,8 +31,8 @@ export default function AdminUsersPage() {
   const [filterProfile, setFilterProfile] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserProfileWithEmail | null>(null);
-  const [form, setForm] = useState<{ full_name: string; phone: string; cpf: string; role_name: string; lg_ativo: boolean }>({
-    full_name: "", phone: "", cpf: "", role_name: "", lg_ativo: true,
+  const [form, setForm] = useState<{ full_name: string; phone: string; cpf: string }>({
+    full_name: "", phone: "", cpf: "",
   });
 
   const load = async () => {
@@ -56,9 +59,9 @@ export default function AdminUsersPage() {
 
   const filtered = users.filter((u) => {
     const q = search.toLowerCase();
-    const matchesSearch = !q || u.full_name.toLowerCase().includes(q) || (u.email ?? "").toLowerCase().includes(q) || (u.cpf ?? "").includes(q) || (u.role_name ?? "").toLowerCase().includes(q);
-    const matchesStatus = filterStatus === "all" || (u.lg_ativo ? "active" : "inactive") === filterStatus;
-    const matchesProfile = filterProfile === "all" || (u.role_name ?? "") === filterProfile;
+    const matchesSearch = !q || u.full_name.toLowerCase().includes(q) || (u.email ?? "").toLowerCase().includes(q) || (u.cpf ?? "").includes(q) || u.role_names.some((role) => role.toLowerCase().includes(q));
+    const matchesStatus = filterStatus === "all" || (u.membership_status === "active" ? "active" : "inactive") === filterStatus;
+    const matchesProfile = filterProfile === "all" || u.role_names.includes(filterProfile);
     return matchesSearch && matchesStatus && matchesProfile;
   });
 
@@ -68,8 +71,6 @@ export default function AdminUsersPage() {
       full_name: u.full_name,
       phone: u.phone ?? "",
       cpf: u.cpf ?? "",
-      role_name: u.role_name ?? "",
-      lg_ativo: u.lg_ativo,
     });
     setDialogOpen(true);
   };
@@ -83,10 +84,8 @@ export default function AdminUsersPage() {
     try {
       await userProfilesService.update(editingUser.id, {
         full_name: form.full_name,
-        role_name: form.role_name || null,
         phone: form.phone || null,
         cpf: form.cpf || null,
-        lg_ativo: form.lg_ativo,
       });
       toast({ title: "Usuário atualizado" });
       setDialogOpen(false);
@@ -102,12 +101,37 @@ export default function AdminUsersPage() {
 
   const toggleStatus = async (u: UserProfileWithEmail) => {
     try {
-      await userProfilesService.toggleAtivo(u.id, !u.lg_ativo);
-      toast({ title: `Usuário ${u.lg_ativo ? "inativado" : "ativado"}` });
+      const context = readStoredAccessContext<AccessContextOption>();
+      if (!context?.companyId) throw new Error("Contexto empresarial ativo não encontrado.");
+      const isActive = u.membership_status === "active";
+      await authAdminService.setActive(u.id, context.companyId, !isActive);
+      toast({ title: `Usuário ${isActive ? "inativado" : "ativado"}` });
       void load();
     } catch (err) {
       toast({
         title: "Erro",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    }
+  };
+
+  const sendRecovery = async (u: UserProfileWithEmail) => {
+    try {
+      const context = readStoredAccessContext<AccessContextOption>();
+      if (!context?.companyId) throw new Error("Contexto empresarial ativo não encontrado.");
+      await authAdminService.sendRecovery(
+        u.id,
+        context.companyId,
+        `${window.location.origin}/reset-password`,
+      );
+      toast({
+        title: "Recuperação enviada",
+        description: "Se o e-mail estiver configurado, o usuário receberá as instruções.",
+      });
+    } catch (err) {
+      toast({
+        title: "Não foi possível enviar a recuperação",
         description: err instanceof Error ? err.message : String(err),
         variant: "destructive",
       });
@@ -164,22 +188,23 @@ export default function AdminUsersPage() {
                   </div>
                 </TableCell>
                 <TableCell>
-                  {u.role_name && (
+                  {u.role_names.map((role) => (
                     <Badge variant="outline" className="gap-1">
-                      <Shield className="h-3 w-3" />{u.role_name}
+                      <Shield className="h-3 w-3" />{role}
                     </Badge>
-                  )}
+                  ))}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={u.lg_ativo ? "default" : "secondary"} className={u.lg_ativo ? "bg-green-100 text-green-700 hover:bg-green-100" : "bg-muted text-muted-foreground"}>
-                    {u.lg_ativo ? "Ativo" : "Inativo"}
+                  <Badge variant={u.membership_status === "active" ? "default" : "secondary"} className={u.membership_status === "active" ? "bg-green-100 text-green-700 hover:bg-green-100" : "bg-muted text-muted-foreground"}>
+                    {u.membership_status === "active" ? "Ativo" : "Inativo"}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
                     <Button variant="ghost" size="icon" onClick={() => openEdit(u)} title="Editar"><Edit className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" onClick={() => void toggleStatus(u)} title={u.lg_ativo ? "Inativar" : "Ativar"}>
-                      {u.lg_ativo ? <UserX className="h-4 w-4 text-destructive" /> : <UserCheck className="h-4 w-4 text-green-600" />}
+                    <Button variant="ghost" size="icon" onClick={() => void sendRecovery(u)} title="Enviar recuperação de senha"><KeyRound className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" onClick={() => void toggleStatus(u)} title={u.membership_status === "active" ? "Inativar" : "Ativar"}>
+                      {u.membership_status === "active" ? <UserX className="h-4 w-4 text-destructive" /> : <UserCheck className="h-4 w-4 text-green-600" />}
                     </Button>
                   </div>
                 </TableCell>
@@ -207,25 +232,7 @@ export default function AdminUsersPage() {
               <Label>Telefone</Label>
               <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
             </div>
-            <div className="space-y-1.5">
-              <Label>Perfil de acesso</Label>
-              <Select value={form.role_name} onValueChange={(v) => setForm({ ...form, role_name: v })}>
-                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                <SelectContent>
-                  {profiles.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Status</Label>
-              <Select value={form.lg_ativo ? "active" : "inactive"} onValueChange={(v) => setForm({ ...form, lg_ativo: v === "active" })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Ativo</SelectItem>
-                  <SelectItem value="inactive">Inativo</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>

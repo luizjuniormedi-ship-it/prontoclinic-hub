@@ -126,6 +126,7 @@ __pycache__/
 *.zip
 *.7z
 .codex/
+.hermes/
 .gateway-sync.json
 outputs/
 deploy-local/

@@ -1,4 +1,3 @@
-ALTER TABLE public.professional_insurances ADD COLUMN IF NOT EXISTS cd_origem_sigh BIGINT;
-ALTER TABLE public.professional_insurances ADD COLUMN IF NOT EXISTS cd_medico BIGINT;
-ALTER TABLE public.professional_insurances ADD COLUMN IF NOT EXISTS cd_convenio INTEGER;
-ALTER TABLE public.insurance_plans ADD COLUMN IF NOT EXISTS cd_convenio INTEGER;
+-- Tombstone de compatibilidade histórica.
+-- O DDL definitivo foi incorporado às migrations canônicas 202601*.
+-- Versão preservada: 20251231022000

@@ -1,1 +1,3 @@
-ALTER TABLE public.units ADD COLUMN IF NOT EXISTS tp_unidade VARCHAR(30);
+-- Tombstone de compatibilidade histórica.
+-- O DDL definitivo foi incorporado às migrations canônicas 202601*.
+-- Versão preservada: 20251231015000

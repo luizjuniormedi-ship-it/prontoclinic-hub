@@ -19,6 +19,8 @@ export type RoleName = (typeof ROLES)[keyof typeof ROLES];
 const ROLE_ALIASES: Record<string, RoleName> = {
   administrador: "admin",
   admin: "admin",
+  superadmin: "admin",
+  super_admin: "admin",
   "recepção": "recepcao",
   recepcao: "recepcao",
   recepcionista: "recepcao",
