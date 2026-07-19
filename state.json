@@ -18,17 +18,19 @@
       "release_status": "blocked"
     }
   },
-  "remote_status": "ci_validation_pr14_waiting_for_actions_supabase_unavailable",
+  "remote_status": "pr15_open_draft_actions_not_triggered_supabase_db_recovery_in_progress",
   "advance_to_next_module": false,
   "datasigh": {
     "status": "untouched",
     "write_allowed": false
   },
   "synchronization": {
-    "local_head": "3dfaa56a050374ba45e55d52d028483ddfefdbb7",
-    "origin_main_head": "3dfaa56a050374ba45e55d52d028483ddfefdbb7",
-    "head_parity": "matched",
-    "working_tree": "dirty_uncommitted_multi_scope_changes_preserved",
+    "local_head": "9c2052a065f55029966a5ac887026c827f484698",
+    "origin_main_head": "f1cd2ce46a10da718de5e53b29e90adc276d091f",
+    "release_branch": "codex/module-1-2-sync-20260719",
+    "release_pr": "https://github.com/luizjuniormedi-ship-it/prontoclinic-hub/pull/15",
+    "head_parity": "release_branch_ahead_of_origin_main_pr15_open_draft",
+    "working_tree": "clean_release_commit_excluded_local_artifacts_preserved",
     "vps_runtime_code_sync": "diverged_local_3dfaa56_vps_d8a70ade_no_deploy",
     "vps_module_2_schema": "partial_user_profiles_roles_user_permissions_only",
     "vps_module_2_missing": [
@@ -39,7 +41,7 @@
       "delegations",
       "access_expirations"
     ],
-    "ci_validation_scope": "isolated_pr14_only"
+    "ci_validation_scope": "pr15_full_release_actions_not_registered"
   },
   "gates": {
     "typecheck": "passed",
@@ -51,14 +53,17 @@
     "last_local_revalidation": "2026-07-19",
     "lint": "passed_with_existing_warnings",
     "build": "passed",
+    "release_safety": "passed",
+    "secret_scan": "passed_585_files_and_232_staged_files",
     "ci_e2e_local_fix": "published_pr11_and_validation_pr14_waiting_for_actions",
     "vps_operational_database": "confirmed_read_only_postgresql_127.0.0.1_5432_prontoclinic",
     "vps_auth_health": "http_200_read_only",
-    "supabase_control_plane": "database_unavailable_57P03_or_ECONNREFUSED",
+    "supabase_control_plane": "project_active_database_recovery_in_progress_57P03_redo_or_ECONNREFUSED",
+    "github_pr15": "open_draft_actions_not_registered_vercel_pending",
     "remote_migration": "pending",
     "remote_rls_replay": "pending",
     "backup_rollback": "pending",
     "production_release": "blocked"
   },
-  "next_action": "Resolve the external GitHub Actions trigger/status for validation PR 14 and recover the unavailable Supabase database returning 57P03 or ECONNREFUSED; the operational PostgreSQL database is already present on the VPS. Only after recovery run the authorized Module 2 migration, Edge Function deployment, backup/rollback rehearsal, and RLS/RBAC isolation replay."
+  "next_action": "Resolve the external GitHub Actions trigger/status for PR 15 and wait for Supabase PostgreSQL recovery from 57P03 redo/ECONNREFUSED; the operational PostgreSQL database is already present on the VPS. Only after recovery run the authorized Module 2 migration, Edge Function deployment, backup/rollback rehearsal, and RLS/RBAC isolation replay."
 }

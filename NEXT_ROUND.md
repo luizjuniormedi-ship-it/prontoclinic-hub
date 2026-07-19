@@ -54,10 +54,19 @@ Consultar integralmente [PRONTOMEDIC_DIRETRIZ_MESTRE.md](docs/PRONTOMEDIC_DIRETR
 - Não foram encontradas `user_roles`, `permissions`, `unit_access`, `sector_access`, `delegations` ou `access_expirations`; também não foi identificado ledger de migrations nesse banco.
 - Conclusão: o banco da VPS não está atualizado com o Módulo 2 completo. Não aplicar a migration diretamente sem backup verificável, plano de rollback e confirmação do alvo correto (VPS nativo versus Supabase remoto).
 
+## Sincronização do release (2026-07-19)
+
+- As melhorias locais auditadas dos Módulos 1 e 2 foram publicadas na branch `codex/module-1-2-sync-20260719`, commit `9c2052a065f55029966a5ac887026c827f484698`.
+- PR draft criado: [#15](https://github.com/luizjuniormedi-ship-it/prontoclinic-hub/pull/15), contra `main` em `f1cd2ce46a10da718de5e53b29e90adc276d091f`.
+- O pacote excluiu `.env.production.local`, arquivos `tar.gz`, `__pycache__` e `scripts/reconcile_datasigh_readonly.py`; DataSIGH permanece fora do release.
+- Gates locais do commit: type-check, testes `493 passed / 1 skipped`, safety `7/7`, lint `0 erros`, build, release-safety e secret scan aprovados.
+- O Actions não registrou workflow para o commit do PR #15; o status Vercel permanece `pending`.
+- Supabase está `ACTIVE_HEALTHY`, mas o banco remoto segue em recuperação (`redo in progress`), recusando migrations com `57P03`; nenhuma escrita foi executada.
+
 ## Pendências reais antes de avançar
 
 1. Confirmar a execução do CI no commit publicado; se o workflow não iniciar, acionar o rerun pelo GitHub sem alterar o código.
-2. Recuperar a conectividade do banco Supabase remoto que retorna `57P03`/`ECONNREFUSED`, sem confundir esse bloqueio com o PostgreSQL operacional já existente na VPS.
+2. Resolver o gatilho externo do Actions no PR #15 e recuperar a conectividade do banco Supabase remoto que retorna `57P03`/`ECONNREFUSED`, sem confundir esse bloqueio com o PostgreSQL operacional já existente na VPS.
 3. Aplicar a migration `20260719090000_users_profiles_permissions.sql` somente no ambiente Supabase autorizado e após o banco aceitar conexões.
 4. Publicar a Edge Function `admin-user-invite` somente com secrets configurados no ambiente correto.
 5. Executar replay de migration, RLS/RBAC, isolamento entre empresas/unidades e fluxo de convite no ambiente remoto.
