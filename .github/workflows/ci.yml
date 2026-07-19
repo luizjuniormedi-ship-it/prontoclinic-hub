@@ -11,9 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      VITE_SUPABASE_URL: http://127.0.0.1:8000
+      VITE_SUPABASE_ANON_KEY: local-ci-anon-key
+      E2E_ENV: local
+      E2E_MODE: readonly
+      E2E_AUTH_MODE: custom
+      E2E_AUTH_READY: 'true'
 
     services:
       postgres:
@@ -75,6 +78,29 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:54322/postgres
           E2E_SEED_PASSWORD: ci-only-seed-password
 
+
+      - name: Start local auth harness
+        run: |
+          set -euo pipefail
+          export LOCAL_AUTH_HOST=127.0.0.1
+          export LOCAL_AUTH_PORT=8000
+          export PGHOST=localhost
+          export PGPORT=54322
+          export PGUSER=postgres
+          export PGDATABASE=postgres
+          export PGPASSWORD=postgres
+          export JWT_SECRET='local-ci-jwt-secret-change-me-0123456789'
+          nohup node local-auth-server.mjs > /tmp/prontomedic-auth.log 2>&1 &
+          echo $! > /tmp/prontomedic-auth.pid
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/health > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/prontomedic-auth.log
+          exit 1
+
       - name: Lint
         run: npm run lint
 
@@ -100,6 +126,14 @@ jobs:
         env:
           CI: true
           E2E_BASE_URL: http://localhost:4173
+
+
+      - name: Stop local auth harness
+        if: always()
+        run: |
+          if [ -f /tmp/prontomedic-auth.pid ]; then
+            kill "$(cat /tmp/prontomedic-auth.pid)" || true
+          fi
 
       - name: Upload test results
         if: always()
