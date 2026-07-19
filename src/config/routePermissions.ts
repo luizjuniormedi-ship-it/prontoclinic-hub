@@ -10,6 +10,7 @@ export const ROLES = {
   DIAGNOSTICO: "diagnostico",
   GESTOR: "gestor",
   ADMINISTRATIVO: "administrativo",
+  ENFERMAGEM: "enfermagem",
 } as const;
 
 export type RoleName = (typeof ROLES)[keyof typeof ROLES];
@@ -57,19 +58,24 @@ const routePermissionMap: Record<string, PermissionEntry> = {
   "/callcenter": [ROLES.ADMIN, ROLES.RECEPCAO],
   "/reception": [ROLES.ADMIN, ROLES.RECEPCAO],
   "/records": [ROLES.ADMIN, ROLES.MEDICO],
+  "/encounters": [ROLES.ADMIN, ROLES.MEDICO],
+  "/clinical-timeline": [ROLES.ADMIN, ROLES.MEDICO],
   "/attendance": [ROLES.ADMIN, ROLES.MEDICO],
   "/worklist": [ROLES.ADMIN, ROLES.DIAGNOSTICO],
   "/pacs": [ROLES.ADMIN, ROLES.DIAGNOSTICO],
+  "/dicom/reports": [ROLES.ADMIN, ROLES.DIAGNOSTICO, ROLES.MEDICO, ROLES.GESTOR],
+  "/dicom/orders": [ROLES.ADMIN, ROLES.DIAGNOSTICO, ROLES.MEDICO],
   "/dicom": [ROLES.ADMIN, ROLES.DIAGNOSTICO],
   "/financial": [ROLES.ADMIN, ROLES.FINANCEIRO, ROLES.GESTOR],
   "/billing-production": [ROLES.ADMIN, ROLES.FINANCEIRO, ROLES.GESTOR],
+  "/billing-accounts": [ROLES.ADMIN, ROLES.FINANCEIRO, ROLES.GESTOR],
   "/professional-payment": [ROLES.ADMIN, ROLES.FINANCEIRO],
   "/settings": [ROLES.ADMIN, ROLES.GESTOR, ROLES.ADMINISTRATIVO],
   "/master-data": [ROLES.ADMIN, ROLES.ADMINISTRATIVO],
   "/companies": [ROLES.ADMIN, ROLES.GESTOR, ROLES.ADMINISTRATIVO],
   "/admin": [ROLES.ADMIN, ROLES.ADMINISTRATIVO],
   "/meus-agendamentos": "*", // portal do paciente (qualquer usuario logado)
-  "/nursing": [ROLES.ADMIN, ROLES.MEDICO, ROLES.RECEPCAO], // triagem (admin, médico, recepção)
+  "/nursing": [ROLES.ADMIN, ROLES.MEDICO, ROLES.RECEPCAO, ROLES.ENFERMAGEM], // triagem + cuidados
   "/pharmacy": [ROLES.ADMIN, ROLES.MEDICO, ROLES.GESTOR, ROLES.ADMINISTRATIVO],
   "/bi": [ROLES.ADMIN, ROLES.GESTOR, ROLES.MEDICO, ROLES.FINANCEIRO],
   "/telemedicina": [ROLES.ADMIN, ROLES.MEDICO, ROLES.GESTOR],

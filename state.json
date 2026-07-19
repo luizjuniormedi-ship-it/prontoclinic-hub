@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "project": "ProntoMedic",
+  "directive": "docs/PRONTOMEDIC_DIRETRIZ_MESTRE.md",
+  "final_product_report": "docs/PRONTOMEDIC_RELATORIO_PRODUTO_FINAL.md",
+  "current_module": 2,
+  "current_module_name": "Usuários, Perfis e Permissões",
+  "local_status": "implemented_and_gates_passed",
+  "modules": {
+    "1_authentication": {
+      "local_status": "implemented_and_gates_passed",
+      "vps_status": "runtime_online_release_parity_not_revalidated",
+      "release_status": "blocked"
+    },
+    "2_users_profiles_permissions": {
+      "local_status": "implemented_and_gates_passed",
+      "vps_status": "code_and_schema_diverged_partial_schema",
+      "release_status": "blocked"
+    }
+  },
+  "remote_status": "ci_validation_pr14_waiting_for_actions_supabase_unavailable",
+  "advance_to_next_module": false,
+  "datasigh": {
+    "status": "untouched",
+    "write_allowed": false
+  },
+  "synchronization": {
+    "local_head": "3dfaa56a050374ba45e55d52d028483ddfefdbb7",
+    "origin_main_head": "3dfaa56a050374ba45e55d52d028483ddfefdbb7",
+    "head_parity": "matched",
+    "working_tree": "dirty_uncommitted_multi_scope_changes_preserved",
+    "vps_runtime_code_sync": "diverged_local_3dfaa56_vps_d8a70ade_no_deploy",
+    "vps_module_2_schema": "partial_user_profiles_roles_user_permissions_only",
+    "vps_module_2_missing": [
+      "user_roles",
+      "permissions",
+      "unit_access",
+      "sector_access",
+      "delegations",
+      "access_expirations"
+    ],
+    "ci_validation_scope": "isolated_pr14_only"
+  },
+  "gates": {
+    "typecheck": "passed",
+    "tests": "493_passed_1_skipped",
+    "module_2_focused_tests": "10_passed",
+    "local_safety_gate": "7_passed",
+    "typecheck_revalidation": "passed_2026-07-19",
+    "lint_revalidation": "0_errors_436_existing_warnings_2026-07-19",
+    "last_local_revalidation": "2026-07-19",
+    "lint": "passed_with_existing_warnings",
+    "build": "passed",
+    "ci_e2e_local_fix": "published_pr11_and_validation_pr14_waiting_for_actions",
+    "vps_operational_database": "confirmed_read_only_postgresql_127.0.0.1_5432_prontoclinic",
+    "vps_auth_health": "http_200_read_only",
+    "supabase_control_plane": "database_unavailable_57P03_or_ECONNREFUSED",
+    "remote_migration": "pending",
+    "remote_rls_replay": "pending",
+    "backup_rollback": "pending",
+    "production_release": "blocked"
+  },
+  "next_action": "Resolve the external GitHub Actions trigger/status for validation PR 14 and recover the unavailable Supabase database returning 57P03 or ECONNREFUSED; the operational PostgreSQL database is already present on the VPS. Only after recovery run the authorized Module 2 migration, Edge Function deployment, backup/rollback rehearsal, and RLS/RBAC isolation replay."
+}

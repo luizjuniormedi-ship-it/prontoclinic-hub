@@ -11,18 +11,18 @@ import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState, ErrorState } from "@/components/StateViews";
 import { StatsCard } from "@/components/StatsCard";
 import { billingsService, DbBilling } from "@/services/financialService";
-import { patientsService } from "@/services/patientsService";
 import { professionalsLookup, DbProfessional } from "@/services/appointmentsService";
 import { Patient } from "@/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabase";
 
 const formatCurrency = (v: number | null | undefined) => (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-const statusLabels: Record<string, string> = { em_aberto: "Em Aberto", faturado: "Faturado", cancelado: "Cancelado", glosa: "Glosa" };
+const statusLabels: Record<string, string> = { em_aberto: "Em Aberto", faturado: "Faturado", faturado_enviado: "Faturado enviado", cancelado: "Cancelado", glosa: "Glosa" };
 const statusColors: Record<string, string> = {
   em_aberto: "bg-warning/10 text-warning", faturado: "bg-success/10 text-success",
-  cancelado: "bg-muted text-muted-foreground", glosa: "bg-destructive/10 text-destructive",
+  faturado_enviado: "bg-success/10 text-success", cancelado: "bg-muted text-muted-foreground", glosa: "bg-destructive/10 text-destructive",
 };
 const billingTypeLabels: Record<string, string> = { particular: "Particular", convenio: "Convênio", retorno: "Retorno" };
 
@@ -50,13 +50,20 @@ export default function BillingProductionPage() {
     try {
       setLoading(true);
       setError(null);
-      const [b, pats, profs] = await Promise.all([
+      const [b, profs] = await Promise.all([
         billingsService.getAll(),
-        patientsService.getAll(),
         professionalsLookup.getAll(),
       ]);
+      const patientIds = Array.from(new Set(b.map((item) => item.patient_id).filter((id): id is string => Boolean(id))));
+      const chunks: string[][] = [];
+      for (let i = 0; i < patientIds.length; i += 100) chunks.push(patientIds.slice(i, i + 100));
+      const responses = await Promise.all(chunks.map((ids) => supabase.from("patients").select("id, full_name").in("id", ids)));
+      const patientRows = responses.flatMap(({ data, error: patientError }) => {
+        if (patientError) throw patientError;
+        return data || [];
+      });
       setBillings(b);
-      setPatients(pats);
+      setPatients(patientRows.map((p: any) => ({ id: String(p.id), name: p.full_name || "" } as Patient)));
       setProfessionals(profs);
     } catch (err) {
       setError((err as Error).message);

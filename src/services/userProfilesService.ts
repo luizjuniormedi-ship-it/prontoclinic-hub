@@ -47,28 +47,42 @@ export interface UserProfileWithEmail {
   updated_at: string;
 }
 
+export interface PermissionRole {
+  id: number;
+  name: string;
+  description: string;
+  is_system: boolean;
+  company_id: string | null;
+}
+
+export interface InviteUserInput {
+  email: string;
+  full_name: string;
+  role_name: string;
+  phone?: string | null;
+  cpf?: string | null;
+  primary_unit_id?: number | null;
+}
+
 export const userProfilesService = {
   async getAll(filters?: { search?: string; lg_ativo?: boolean }): Promise<UserProfileWithEmail[]> {
     let q = supabase
       .from("user_profiles")
-      .select("id, full_name, role_id, company_id, primary_unit_id, lg_ativo, created_at, updated_at")
+      .select("id, full_name, email, role_id, role_name, company_id, primary_unit_id, phone, cpf, lg_ativo, created_at, updated_at")
       .order("full_name");
     if (filters?.lg_ativo !== undefined) q = q.eq("lg_ativo", filters.lg_ativo);
     const { data, error } = await q;
     if (error) throw new Error(`Erro ao listar usuários: ${error.message}`);
-    // Email não está em user_profiles — vem de auth.users (não acessível via client SDK)
-    // Para admin, podemos usar a view auth.users ou uma coluna extra.
-    // Por ora, retornamos com email placeholder se não houver join.
-    return (data ?? []).map((row: { id: string; full_name: string; role_id: number | null; company_id: string | null; primary_unit_id: number | null; lg_ativo: boolean | null; created_at: string; updated_at: string }) => ({
+    return (data ?? []).map((row: { id: string; full_name: string; email: string | null; role_id: number | null; role_name: string | null; company_id: string | null; primary_unit_id: number | null; phone: string | null; cpf: string | null; lg_ativo: boolean | null; created_at: string; updated_at: string }) => ({
       id: row.id,
-      email: "", // preenchido se houver Edge Function ou join com auth.users
+      email: row.email ?? "",
       full_name: row.full_name,
       role_id: row.role_id,
-      role_name: null,
+      role_name: row.role_name,
       company_id: row.company_id,
       primary_unit_id: row.primary_unit_id,
-      phone: null,
-      cpf: null,
+      phone: row.phone,
+      cpf: row.cpf,
       lg_ativo: row.lg_ativo ?? true,
       created_at: row.created_at,
       updated_at: row.updated_at,
@@ -115,21 +129,60 @@ export const userProfilesService = {
     return userProfilesService.update(id, { lg_ativo });
   },
 
+  async requirePasswordChange(id: string): Promise<void> {
+    const { error } = await supabase
+      .from("auth_account_security")
+      .upsert({ user_id: id, must_change_password: true }, { onConflict: "user_id" });
+    if (error) throw new Error(`Erro ao exigir troca de senha: ${error.message}`);
+  },
+
+  async invite(input: InviteUserInput): Promise<{ user_id: string; company_id: string; role_name: string }> {
+    const parsed = z.object({
+      email: z.string().email(),
+      full_name: z.string().min(2).max(200),
+      role_name: z.string().min(1).max(80),
+      phone: z.string().max(30).nullable().optional(),
+      cpf: z.string().max(20).nullable().optional(),
+      primary_unit_id: z.number().int().positive().nullable().optional(),
+    }).parse(input);
+    const { data, error } = await supabase.functions.invoke("admin-user-invite", { body: parsed });
+    if (error) throw new Error(`Erro ao convidar usuário: ${error.message}`);
+    if (!data?.user_id) throw new Error("Convite não retornou um usuário provisionado.");
+    return data as { user_id: string; company_id: string; role_name: string };
+  },
+
   /**
-   * Lista perfis de permissão disponíveis.
-   * Em produção, viria de uma tabela permission_profiles com regras granulares.
-   * Por ora, retorna lista estática baseada nos role_name comuns.
+   * Lista perfis de permissão disponíveis, direto da tabela `roles`
+   * (fonte real usada em user_profiles.role_name e role_permissions).
    */
   async getProfiles(): Promise<Array<{ id: string; name: string; description: string }>> {
-    return [
-      { id: "admin", name: "Administrador", description: "Acesso total ao sistema" },
-      { id: "medico", name: "Médico", description: "Atendimento clínico e prescrição" },
-      { id: "enfermeiro", name: "Enfermeiro", description: "Triagem, evolução e checagem" },
-      { id: "farmaceutico", name: "Farmacêutico", description: "Dispensação e controle de estoque" },
-      { id: "reception", name: "Recepção", description: "Agendamento e check-in" },
-      { id: "financial", name: "Financeiro", description: "Faturamento e repasse" },
-      { id: "lab_user", name: "Laboratório", description: "Coleta, análise e liberação" },
-      { id: "imaging", name: "Imagem", description: "DICOM/PACS e laudos" },
-    ];
+    const { data, error } = await supabase
+      .from("roles")
+      .select("id, name, description")
+      .order("id");
+    if (error) throw new Error(`Erro ao listar perfis: ${error.message}`);
+    const LABELS: Record<string, string> = {
+      admin: "Administrador",
+      medico: "Médico",
+      recepcao: "Recepção",
+      enfermagem: "Enfermagem",
+      laboratorio: "Laboratório",
+      financeiro: "Financeiro",
+      farmacia: "Farmácia",
+    };
+    return (data ?? []).map((r: { id: number; name: string; description: string | null }) => ({
+      id: r.name,
+      name: LABELS[r.name] ?? r.name,
+      description: r.description ?? "",
+    }));
+  },
+
+  async getRoles(): Promise<PermissionRole[]> {
+    const { data, error } = await supabase
+      .from("roles")
+      .select("id, name, description, is_system, company_id")
+      .order("id");
+    if (error) throw new Error(`Erro ao listar papéis: ${error.message}`);
+    return (data ?? []) as PermissionRole[];
   },
 };

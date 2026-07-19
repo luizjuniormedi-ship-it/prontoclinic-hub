@@ -29,6 +29,8 @@ import {
 import { toast } from "sonner";
 import {
   tissService,
+  TISS_COMMUNICATION_RELEASE,
+  TISS_COMMUNICATION_VERSION,
   TISS_GLOSA_CODES,
   type TissXml,
 } from "@/services/tissService";
@@ -94,8 +96,6 @@ export function TissGuiaForm({
       ds_endpoint: string;
       tp_ambiente: "HOMOLOGACAO" | "PRODUCAO";
       ds_versao_tiss: string;
-      cd_certificado_a1_path?: string;
-      ds_certificado_senha?: string;
     }) => tissService.saveProtocol(companyId, payload),
     onSuccess: () => {
       toast.success("Protocolo salvo");
@@ -110,9 +110,7 @@ export function TissGuiaForm({
       cd_convenio: Number(fd.get("cd_convenio")),
       ds_endpoint: fd.get("ds_endpoint") as string,
       tp_ambiente: ((fd.get("tp_ambiente") as string) || "HOMOLOGACAO") as "HOMOLOGACAO" | "PRODUCAO",
-      ds_versao_tiss: (fd.get("ds_versao_tiss") as string) || "3.05.00",
-      cd_certificado_a1_path: (fd.get("cd_certificado_a1_path") as string) || undefined,
-      ds_certificado_senha: (fd.get("ds_certificado_senha") as string) || undefined,
+      ds_versao_tiss: TISS_COMMUNICATION_VERSION,
     });
   };
 
@@ -195,18 +193,17 @@ export function TissGuiaForm({
                   </Select>
                 </div>
                 <div>
-                  <Label>Versao TISS</Label>
-                  <Input name="ds_versao_tiss" defaultValue="3.05.00" maxLength={10} />
+                  <Label>Versão TISS</Label>
+                  <Input
+                    name="ds_versao_tiss"
+                    value={`${TISS_COMMUNICATION_RELEASE} (XML ${TISS_COMMUNICATION_VERSION})`}
+                    readOnly
+                  />
                 </div>
               </div>
-              <div>
-                <Label>Caminho do Certificado A1 (.pfx) - VITE_TISS_CERT_PATH</Label>
-                <Input name="cd_certificado_a1_path" placeholder="/etc/pc_hub/cert_a1.pfx" />
-              </div>
-              <div>
-                <Label>Senha do Certificado</Label>
-                <Input name="ds_certificado_senha" type="password" />
-              </div>
+              <p className="text-xs text-muted-foreground">
+                Certificado A1, senha e credenciais são configurados exclusivamente no gateway servidor e nunca no navegador.
+              </p>
             </div>
             <DialogFooter className="mt-4">
               <Button type="button" variant="ghost" onClick={() => setProtocolDialogOpen(false)}>

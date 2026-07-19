@@ -16,11 +16,16 @@ const envSchema = z.object({
   VITE_SUPABASE_URL: z
     .string()
     .url("VITE_SUPABASE_URL deve ser uma URL válida")
-    .refine((u) => u.includes("supabase.co"), "VITE_SUPABASE_URL deve apontar para um projeto Supabase"),
+    .refine(
+      (u) => {
+        const { hostname } = new URL(u);
+        return hostname.endsWith("supabase.co") || hostname === "localhost" || hostname === "127.0.0.1" || hostname === "191.252.196.6" || hostname === "vps68804.publiccloud.com.br";
+      },
+      "VITE_SUPABASE_URL deve apontar para um projeto Supabase ou servidor local"
+    ),
   VITE_SUPABASE_ANON_KEY: z
     .string()
-    .min(20, "VITE_SUPABASE_ANON_KEY inválida")
-    .refine((k) => k.startsWith("sb_") || k.startsWith("eyJ"), "VITE_SUPABASE_ANON_KEY deve ser uma chave Supabase (sb_...) ou JWT (eyJ...)"),
+    .min(5, "VITE_SUPABASE_ANON_KEY inválida"),
   VITE_APP_NAME: z.string().default("ProntoMedic"),
   VITE_APP_ENV: z.enum(["development", "staging", "production"]).default("development"),
   VITE_APP_URL: z.string().url().optional(),
@@ -51,7 +56,7 @@ const envSchema = z.object({
       "VITE_ORTHANC_PASS não pode ser 'orthanc' (credencial padrão insegura)"
     ),
   VITE_DICOM_BUCKET: z.string().optional(),
-  VITE_TISS_VERSION: z.string().default("3.05.00"),
+  VITE_TISS_VERSION: z.string().default("04.03.00"),
   VITE_TISS_CERT_PATH: z.string().optional(),
   VITE_TISS_CERT_PASSWORD: z.string().optional(),
   VITE_TISS_AMBIENTE: z.enum(["HOMOLOGACAO", "PRODUCAO"]).default("HOMOLOGACAO"),

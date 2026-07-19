@@ -158,8 +158,12 @@ export const dicomIntegrationService = {
    * Batch export all pending worklist items formatted for Orthanc.
    * Returns the formatted entries and marks them as exported.
    */
-  async exportPendingWorklist(): Promise<{ exported: OrthancWorklistEntry[]; count: number }> {
-    const items = await worklistQueueService.list({ status: 'pending' });
+  async exportPendingWorklist(options?: { companyId?: string; unitId?: number | null; destinationNodeId?: string }): Promise<{ exported: OrthancWorklistEntry[]; count: number }> {
+    const items = await worklistQueueService.list({
+      status: 'pending',
+      unit_id: options?.unitId,
+      destination_node_id: options?.destinationNodeId,
+    });
 
     const entries = items.map((item) => this.formatWorklistForOrthanc(item));
 
@@ -180,26 +184,38 @@ export const dicomIntegrationService = {
    *   2. Create pacs_studies record
    *   3. Update imaging_order_item status to recebido_pacs
    *   4. Update worklist_queue status to acquired
-   *   5. Create draft radiology_report
+   *   5. The database trigger creates the canonical `reports` row consumed by
+   *      the reporting UI in the same transaction as the PACS study insert.
    */
-  async handleStudyReceived(notification: OrthancStudyNotification): Promise<PacsStudy | null> {
+  async handleStudyReceived(notification: OrthancStudyNotification & { sourceNodeId?: string; unitId?: number | null }): Promise<PacsStudy | null> {
     // 1. Find matching worklist item by accession
     const accession = notification.AccessionNumber;
     if (!accession) return null;
 
-    const { data: wlItems } = await supabase
+    let worklistQuery = supabase
       .from('dicom_worklist_queue')
-      .select('*, imaging_order_items(*, imaging_orders(*))')
+      .select('*')
       .eq('accession_number', accession)
       .limit(1);
+    if (notification.unitId != null) worklistQuery = worklistQuery.eq('unit_id', notification.unitId);
+    const { data: wlItems } = await worklistQuery;
 
     const wlItem = wlItems?.[0];
     if (!wlItem) return null;
+    const { data: orderItem, error: itemError } = await supabase
+      .from('imaging_order_items')
+      .select('id, imaging_order_id')
+      .eq('id', wlItem.imaging_order_item_id)
+      .single();
+    if (itemError || !orderItem) throw itemError || new Error('Item de pedido não encontrado');
 
     // 2. Create pacs_study
     const { data: study, error } = await supabase
       .from('pacs_studies')
       .insert({
+        company_id: wlItem.company_id,
+        unit_id: notification.unitId ?? wlItem.unit_id ?? null,
+        source_node_id: notification.sourceNodeId ?? null,
         patient_id: wlItem.patient_id,
         imaging_order_item_id: wlItem.imaging_order_item_id,
         study_instance_uid: notification.StudyInstanceUID,
@@ -225,14 +241,7 @@ export const dicomIntegrationService = {
       .update({ status: 'acquired', updated_at: new Date().toISOString() })
       .eq('id', wlItem.id);
 
-    // 5. Create draft report
-    await supabase.from('radiology_reports').insert({
-      patient_id: wlItem.patient_id,
-      imaging_order_item_id: wlItem.imaging_order_item_id,
-      pacs_study_id: study.id,
-      study_instance_uid: notification.StudyInstanceUID,
-      status: 'draft',
-    });
+    await this.syncOrderStatus(orderItem.imaging_order_id);
 
     return study as PacsStudy;
   },
@@ -273,6 +282,7 @@ export const dicomIntegrationService = {
    * Used after individual items change status.
    */
   async syncOrderStatus(orderId: string): Promise<void> {
+    if (!orderId) return;
     const items = await imagingOrderItemsService.listByOrder(orderId);
     if (items.length === 0) return;
 

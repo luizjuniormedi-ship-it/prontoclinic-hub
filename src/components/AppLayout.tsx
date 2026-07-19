@@ -43,6 +43,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     "/admin/users": "Usuários",
     "/admin/profiles": "Perfis",
     "/admin/permissions": "Permissões",
+    "/admin/access": "Acessos e delegações",
     "/settings": "Configurações",
     "/purchases": "Compras",
     "/transport": "Transporte",

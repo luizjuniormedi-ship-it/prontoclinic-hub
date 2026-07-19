@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, Link, Navigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Heart, Loader2, Eye, EyeOff, AlertCircle, UserPlus, ArrowRight, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
+import { consumeAuthReturnPath } from "@/lib/authSecurity";
 
 type LoginError = { title: string; description?: string } | null;
 
@@ -23,10 +24,16 @@ function translateLoginError(raw: string | undefined): LoginError {
   if (msg.includes("too many requests")) {
     return { title: "Muitas tentativas.", description: "Aguarde alguns minutos e tente novamente." };
   }
+  if (msg.includes("inativa") || msg.includes("inactive") || msg.includes("bloquead")) {
+    return { title: "Acesso bloqueado.", description: "Procure um administrador para regularizar sua conta." };
+  }
+  if (msg.includes("2fa") || msg.includes("autenticador")) {
+    return { title: "Autenticação adicional indisponível.", description: "Procure o administrador para configurar seu autenticador." };
+  }
   if (msg.includes("user not found")) {
     return { title: "Usuário não encontrado.", description: "Verifique o e-mail ou faça o pré-cadastro." };
   }
-  return { title: raw };
+  return { title: "Não foi possível concluir o login.", description: "Verifique seus dados ou procure o administrador." };
 }
 
 export default function LoginPage() {
@@ -37,13 +44,16 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<LoginError>(null);
-  const { login, isAuthenticated } = useAuth();
+  const { login, verifyTwoFactor, logout, isAuthenticated, twoFactor } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  useEffect(() => {
+    if (twoFactor) setRequires2FA(true);
+  }, [twoFactor]);
+
   if (isAuthenticated) {
-    navigate("/", { replace: true });
-    return null;
+    return <Navigate to="/" replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -63,10 +73,10 @@ export default function LoginPage() {
       const needs2FA = (result as { requires2FA?: boolean }).requires2FA;
       if (needs2FA) {
         setRequires2FA(true);
-        toast({ title: "Código 2FA enviado para seu e-mail." });
+        toast({ title: "Informe o código do aplicativo autenticador." });
         return;
       }
-      navigate("/");
+      navigate(consumeAuthReturnPath(), { replace: true });
       return;
     }
     setError(translateLoginError(result.error));
@@ -79,11 +89,14 @@ export default function LoginPage() {
       return;
     }
     setLoading(true);
-    // Simulação: backend final chamaria supabase.auth.verifyOtp ou similar.
-    // Por enquanto, tratamos como sucesso parcial e pedimos para re-entrar.
+    const result = await verifyTwoFactor(twoFactorCode);
     setLoading(false);
-    toast({ title: "Verificação adicional em desenvolvimento." });
-    navigate("/");
+    if (!result.success) {
+      setError({ title: "Não foi possível validar o código 2FA.", description: result.error });
+      return;
+    }
+    toast({ title: "Autenticação em duas etapas concluída." });
+    navigate(consumeAuthReturnPath(), { replace: true });
   };
 
   return (
@@ -179,8 +192,8 @@ export default function LoginPage() {
           ) : (
             <form onSubmit={handle2FASubmit} className="space-y-4" aria-label="Verificação em duas etapas">
               <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
-                Sua conta exige verificação em duas etapas. Informe o código de 6 dígitos enviado para
-                seu e-mail.
+                Sua conta exige verificação em duas etapas. Informe o código de 6 dígitos do seu
+                aplicativo autenticador.
               </div>
               <div className="space-y-2">
                 <Label htmlFor="twoFactorCode">Código 2FA</Label>
@@ -207,6 +220,7 @@ export default function LoginPage() {
                   setRequires2FA(false);
                   setTwoFactorCode("");
                   setError(null);
+                  void logout("local");
                 }}
                 className="block w-full text-xs text-muted-foreground hover:text-foreground"
               >

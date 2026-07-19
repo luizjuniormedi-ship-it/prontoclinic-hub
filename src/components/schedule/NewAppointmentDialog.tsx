@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { AlertTriangle, Info } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
-import { DbProfessional, DbSpecialty, DbAppointmentType, appointmentsService } from "@/services/appointmentsService";
+import { DbProfessional, DbSpecialty, DbAppointmentType, DbServiceCatalog, SchedulingRequirements, appointmentsService } from "@/services/appointmentsService";
+import { patientsService } from "@/services/patientsService";
 import { validateAppointmentFields, checkOverlap, checkReturnRule, handleServiceError } from "@/services/validationService";
 import { Patient } from "@/types";
 import { useToast } from "@/hooks/use-toast";
@@ -19,12 +20,14 @@ interface NewAppointmentDialogProps {
   professionals: DbProfessional[];
   specialties: DbSpecialty[];
   appointmentTypes: DbAppointmentType[];
+  services: DbServiceCatalog[];
+  insurances: Array<{ id: string; name: string }>;
   patients: Patient[];
   selectedDate: string;
   onCreated: () => void;
 }
 
-export function NewAppointmentDialog({ open, onOpenChange, professionals, specialties, appointmentTypes, patients, selectedDate, onCreated }: NewAppointmentDialogProps) {
+export function NewAppointmentDialog({ open, onOpenChange, professionals, specialties, appointmentTypes, services, insurances, patients, selectedDate, onCreated }: NewAppointmentDialogProps) {
   const { toast } = useToast();
   const [patientId, setPatientId] = useState("");
   const [professionalId, setProfessionalId] = useState("");
@@ -35,13 +38,25 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
   const [endTime, setEndTime] = useState("");
   const [isReturn, setIsReturn] = useState(false);
   const [notes, setNotes] = useState("");
+  const [serviceId, setServiceId] = useState("none");
+  const [serviceSearch, setServiceSearch] = useState("");
+  const [insuranceId, setInsuranceId] = useState("private");
+  const [cardNumber, setCardNumber] = useState("");
+  const [authorizationNumber, setAuthorizationNumber] = useState("");
+  const [requirements, setRequirements] = useState<SchedulingRequirements | null>(null);
   const [saving, setSaving] = useState(false);
+  const [patientSearch, setPatientSearch] = useState("");
+  const [patientResults, setPatientResults] = useState<Patient[]>([]);
+  const [patientSearchLoading, setPatientSearchLoading] = useState(false);
 
   // Validation states
   const [overlapWarning, setOverlapWarning] = useState<string | null>(null);
   const [returnWarning, setReturnWarning] = useState<string | null>(null);
   const [returnOverrideConfirmed, setReturnOverrideConfirmed] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const dateInputRef = useRef<HTMLInputElement>(null);
+  const startTimeInputRef = useRef<HTMLInputElement>(null);
+  const endTimeInputRef = useRef<HTMLInputElement>(null);
 
   // Reset on selectedDate change
   useEffect(() => { setDate(selectedDate); }, [selectedDate]);
@@ -50,6 +65,9 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
     setPatientId(""); setProfessionalId(""); setSpecialtyId("");
     setAppointmentTypeId(""); setDate(selectedDate); setStartTime("");
     setEndTime(""); setIsReturn(false); setNotes(""); setSaving(false);
+    setServiceId("none"); setServiceSearch(""); setInsuranceId("private"); setCardNumber("");
+    setAuthorizationNumber(""); setRequirements(null);
+    setPatientSearch(""); setPatientResults([]); setPatientSearchLoading(false);
     setOverlapWarning(null); setReturnWarning(null);
     setReturnOverrideConfirmed(false); setValidationErrors([]);
   };
@@ -122,14 +140,78 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
     return () => clearTimeout(timer);
   }, [patientId, specialtyId, specialties]);
 
+  useEffect(() => {
+    const term = patientSearch.trim();
+    if (term.length < 2) {
+      setPatientResults([]);
+      setPatientSearchLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        setPatientSearchLoading(true);
+        const result = await patientsService.search(term);
+        if (!cancelled) setPatientResults(result.slice(0, 50));
+      } catch {
+        if (!cancelled) setPatientResults([]);
+      } finally {
+        if (!cancelled) setPatientSearchLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [patientSearch]);
+
+  const patientOptions = patientSearch.trim().length >= 2 ? patientResults : patients;
+  const activeProfessionals = professionals.filter((p) => {
+    const status = p.status?.toLowerCase();
+    if (status) return status === "active" || status === "ativo";
+    return p.lg_ativo !== false;
+  });
+
+  useEffect(() => {
+    if (!patientId || !professionalId) { setRequirements(null); return; }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const result = await appointmentsService.getRequirements({
+          patientId,
+          professionalId,
+          serviceId: serviceId === "none" ? undefined : serviceId,
+          insuranceId: insuranceId === "private" ? undefined : insuranceId,
+          cardNumber,
+        });
+        if (!cancelled) {
+          setRequirements(result);
+          if (!cardNumber && result.card_number) setCardNumber(result.card_number);
+        }
+      } catch (error) {
+        if (!cancelled) setRequirements({ errors: [error instanceof Error ? error.message : "Falha na validação"] } as SchedulingRequirements);
+      }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [patientId, professionalId, serviceId, insuranceId, cardNumber]);
+
   const handleSubmit = async () => {
+    // Native date/time inputs can update their DOM value before React receives
+    // the event. Read the controls at submit time so validation and RPC use
+    // exactly what the operator sees.
+    const submittedDate = dateInputRef.current?.value || date;
+    const submittedStartTime = startTimeInputRef.current?.value || startTime;
+    const submittedEndTime = endTimeInputRef.current?.value || endTime;
+
     // Validate fields
     const errors = validateAppointmentFields({
       patient_id: patientId,
       professional_id: professionalId,
-      appointment_date: date,
-      start_time: startTime,
-      end_time: endTime,
+      appointment_date: submittedDate,
+      start_time: submittedStartTime,
+      end_time: submittedEndTime,
     });
 
     if (errors.length > 0) {
@@ -140,6 +222,10 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
     // Block on overlap
     if (overlapWarning) {
       toast({ title: "Conflito de horário", description: "Resolva o conflito antes de agendar.", variant: "destructive" });
+      return;
+    }
+    if (requirements?.errors.length) {
+      setValidationErrors(requirements.errors);
       return;
     }
 
@@ -158,9 +244,13 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
         professional_id: professionalId,
         specialty_id: specialtyId || undefined,
         appointment_type_id: appointmentTypeId || undefined,
-        appointment_date: date,
-        start_time: startTime,
-        end_time: endTime || undefined,
+        service_id: serviceId === "none" ? undefined : serviceId,
+        insurance_id: insuranceId === "private" ? undefined : insuranceId,
+        card_number: cardNumber || undefined,
+        authorization_number: authorizationNumber || undefined,
+        appointment_date: submittedDate,
+        start_time: submittedStartTime,
+        end_time: submittedEndTime || undefined,
         is_return: isReturn || returnOverrideConfirmed,
         notes: returnOverrideConfirmed
           ? `[Override 30 dias] ${notes || ""}`.trim()
@@ -236,11 +326,20 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
           )}
 
           <div className="space-y-2">
-            <Label>Paciente *</Label>
+            <Label htmlFor="appointment-patient-search">Paciente *</Label>
+            <Input
+              id="appointment-patient-search"
+              aria-label="Buscar paciente para agendamento"
+              placeholder="Buscar por nome, CPF ou telefone..."
+              value={patientSearch}
+              onChange={(e) => setPatientSearch(e.target.value)}
+            />
             <Select value={patientId} onValueChange={setPatientId}>
-              <SelectTrigger><SelectValue placeholder="Selecione o paciente" /></SelectTrigger>
+              <SelectTrigger aria-label="Selecionar paciente">
+                <SelectValue placeholder={patientSearchLoading ? "Buscando..." : "Selecione o paciente"} />
+              </SelectTrigger>
               <SelectContent>
-                {patients.map((p) => (
+                {patientOptions.map((p) => (
                   <SelectItem key={p.id} value={p.id}>{p.name}{p.cpf ? ` — ${p.cpf}` : ""}</SelectItem>
                 ))}
               </SelectContent>
@@ -251,7 +350,7 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
             <div className="space-y-2">
               <Label>Especialidade</Label>
               <Select value={specialtyId} onValueChange={(v) => { setSpecialtyId(v); setProfessionalId(""); }}>
-                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectTrigger aria-label="Selecionar especialidade"><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>
                   {specialties.map((s) => (
                     <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
@@ -262,7 +361,7 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
             <div className="space-y-2">
               <Label>Tipo de Atendimento</Label>
               <Select value={appointmentTypeId} onValueChange={(v) => { setAppointmentTypeId(v); if (startTime) handleStartTimeChange(startTime); }}>
-                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectTrigger aria-label="Selecionar tipo de atendimento"><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>
                   {appointmentTypes.map((t) => (
                     <SelectItem key={t.id} value={t.id}>{t.name} ({t.default_duration_minutes || 30}min)</SelectItem>
@@ -275,38 +374,60 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
           <div className="space-y-2">
             <Label>Profissional *</Label>
             <Select value={professionalId} onValueChange={setProfessionalId}>
-              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+              <SelectTrigger aria-label="Selecionar profissional"><SelectValue placeholder="Selecione" /></SelectTrigger>
               <SelectContent>
-                {professionals.filter((p) => p.status === "active").map((p) => (
+                {activeProfessionals.map((p) => (
                   <SelectItem key={p.id} value={p.id}>{p.full_name} — {p.category}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Serviço/procedimento</Label>
+              <Input value={serviceSearch} onChange={(e) => setServiceSearch(e.target.value)} placeholder="Filtrar serviço" />
+              <Select value={serviceId} onValueChange={setServiceId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="none">Não informado</SelectItem>{services.filter((s) => s.lg_ativo !== false && (!serviceSearch.trim() || s.name.toLowerCase().includes(serviceSearch.trim().toLowerCase()) || (s.code || "").toLowerCase().includes(serviceSearch.trim().toLowerCase()))).slice(0, 100).map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Convênio</Label>
+              <Select value={insuranceId} onValueChange={setInsuranceId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="private">Particular</SelectItem>{insurances.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {insuranceId !== "private" && <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><div className="space-y-2"><Label>Carteirinha/matrícula</Label><Input value={cardNumber} onChange={(e) => setCardNumber(e.target.value)} /></div><div className="space-y-2"><Label>Autorização</Label><Input value={authorizationNumber} onChange={(e) => setAuthorizationNumber(e.target.value)} placeholder={requirements?.requires_authorization ? "Obrigatória ou ficará pendente" : "Não obrigatória"} /></div></div>}
+
+          {requirements && (requirements.preparation || requirements.requires_authorization || requirements.requires_eligibility || requirements.errors.length > 0) && <Card className={requirements.errors.length ? "border-destructive/40" : "border-warning/30"}><CardContent className="p-3 space-y-1"><p className="text-sm font-medium">Requisitos do agendamento</p>{requirements.requires_authorization && <p className="text-xs">Autorização do convênio necessária.</p>}{requirements.requires_eligibility && <p className="text-xs">Elegibilidade da carteirinha ficará pendente de validação.</p>}{requirements.preparation && <p className="text-xs"><strong>Preparo:</strong> {requirements.preparation}</p>}{requirements.errors.map((error) => <p key={error} className="text-xs text-destructive">{error}</p>)}</CardContent></Card>}
+
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-2">
-              <Label>Data *</Label>
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              <Label htmlFor="appointment-date">Data *</Label>
+              <Input ref={dateInputRef} id="appointment-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} onInput={(e) => setDate(e.currentTarget.value)} />
             </div>
             <div className="space-y-2">
-              <Label>Início *</Label>
-              <Input type="time" value={startTime} onChange={(e) => handleStartTimeChange(e.target.value)} />
+              <Label htmlFor="appointment-start-time">Início *</Label>
+              <Input ref={startTimeInputRef} id="appointment-start-time" type="time" value={startTime} onChange={(e) => handleStartTimeChange(e.target.value)} onInput={(e) => handleStartTimeChange(e.currentTarget.value)} />
             </div>
             <div className="space-y-2">
-              <Label>Fim</Label>
-              <Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+              <Label htmlFor="appointment-end-time">Fim</Label>
+              <Input ref={endTimeInputRef} id="appointment-end-time" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} onInput={(e) => setEndTime(e.currentTarget.value)} />
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label>Observações</Label>
-            <Textarea placeholder="Notas adicionais..." value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} maxLength={500} />
+            <Label htmlFor="appointment-notes">Observações</Label>
+            <Textarea id="appointment-notes" placeholder="Notas adicionais..." value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} maxLength={500} />
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={handleClose}>Cancelar</Button>
-          <Button onClick={handleSubmit} disabled={saving || !!overlapWarning}>
+          <Button onClick={handleSubmit} disabled={saving || !!overlapWarning || Boolean(requirements?.errors.length)}>
             {saving ? "Salvando..." : "Agendar"}
           </Button>
         </DialogFooter>

@@ -1,6 +1,6 @@
 import { test as authed, expect } from './fixtures/auth';
 
-authed.describe('Faturamento', () => {
+authed.describe('Faturamento @mutating', () => {
   authed.beforeEach(async ({ loginAs }) => {
     await loginAs('admin');
   });

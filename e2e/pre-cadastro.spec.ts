@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { credentialsFor } from './fixtures/auth';
 
-test.describe('Pré-cadastro público (PWA)', () => {
+test.describe('Pré-cadastro público (PWA) @mutating', () => {
   test('acessar /pre-cadastro sem login', async ({ page }) => {
     await page.goto('/pre-cadastro');
     await expect(page.getByRole('heading', { name: /pré-cadastro/i })).toBeVisible();
@@ -83,8 +84,9 @@ test.describe('Pré-cadastro público (PWA)', () => {
   test('admin promove pré-cadastro para paciente', async ({ page }) => {
     // Login como admin e verificar lista de pré-cadastros pendentes
     await page.goto('/login');
-    await page.getByLabel('E-mail').fill('admin@prontomedic.test');
-    await page.getByLabel('Senha').fill('TestPassword123!');
+    const credentials = credentialsFor('admin');
+    await page.getByLabel('E-mail').fill(credentials.email);
+    await page.getByLabel('Senha').fill(credentials.password);
     await page.getByRole('button', { name: /entrar/i }).click();
     await page.waitForURL(/\/(?!login)/);
 

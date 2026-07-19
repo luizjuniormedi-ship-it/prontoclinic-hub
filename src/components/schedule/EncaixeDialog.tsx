@@ -62,6 +62,14 @@ export function EncaixeDialog({ open, onOpenChange, professionals, specialties, 
       toast({ title: "Justificativa obrigatória", variant: "destructive" });
       return;
     }
+    if (conflicts.length > 0) {
+      toast({
+        title: "Conflito de horário",
+        description: "O encaixe com conflito exige aprovação em fluxo próprio.",
+        variant: "destructive",
+      });
+      return;
+    }
     try {
       setSaving(true);
       await appointmentsService.create({
@@ -73,11 +81,11 @@ export function EncaixeDialog({ open, onOpenChange, professionals, specialties, 
         start_time: time,
         end_time: endTime || undefined,
         notes: `[ENCAIXE] ${reason}`,
+        is_walkin: true,
         status: "scheduled",
       });
       toast({
         title: "Encaixe criado com sucesso!",
-        description: conflicts.length > 0 ? "Conflito de horário ignorado." : undefined,
       });
       handleClose();
       onCreated();
@@ -150,7 +158,7 @@ export function EncaixeDialog({ open, onOpenChange, professionals, specialties, 
                 {conflicts.map((c) => (
                   <p key={c.id} className="text-xs text-muted-foreground">{c.time} — {c.patientName} ({c.duration}min)</p>
                 ))}
-                <Badge variant="outline" className="bg-warning/10 text-warning border-0 text-[10px]">O encaixe será permitido mesmo com conflito</Badge>
+                <Badge variant="outline" className="bg-warning/10 text-warning border-0 text-[10px]">Conflito bloqueado nesta etapa</Badge>
               </CardContent>
             </Card>
           )}
@@ -161,7 +169,7 @@ export function EncaixeDialog({ open, onOpenChange, professionals, specialties, 
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={handleClose}>Cancelar</Button>
-          <Button onClick={handleSubmit} disabled={saving}>{saving ? "Salvando..." : "Confirmar Encaixe"}</Button>
+          <Button onClick={handleSubmit} disabled={saving || conflicts.length > 0}>{saving ? "Salvando..." : "Confirmar Encaixe"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

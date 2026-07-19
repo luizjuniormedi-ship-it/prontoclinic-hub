@@ -18,10 +18,10 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      environment:
-        description: "Vercel environment (production | preview)"
-        required: false
-        default: "production"
+      confirm_production:
+        description: "Type DEPLOY_PRODUCTION to deploy production"
+        required: true
+        default: ""
 
 permissions:
   contents: read
@@ -46,7 +46,7 @@ jobs:
       VITE_APP_NAME: ProntoClinic Hub
       VITE_APP_ENV: production
       VITE_TISS_AMBIENTE: HOMOLOGACAO
-      VITE_TISS_VERSION: '3.05.00'
+      VITE_TISS_VERSION: '04.03.00'
       VITE_DICOM_BUCKET: dicom
       VITE_ENABLE_TELEMEDICINE: 'false'
       VITE_ENABLE_WHATSAPP: 'false'
@@ -77,8 +77,8 @@ jobs:
       - name: Type check
         run: npm run type-check || npx tsc --noEmit
 
-      - name: Lint
-        run: npm run lint || true
+      - name: Lint (required release gate)
+        run: npm run lint
 
       - name: Build SPA
         run: npm run build
@@ -106,7 +106,7 @@ jobs:
 
       - name: Deploy to Vercel (Production)
         id: deploy
-        if: github.event_name == 'push' || github.event.inputs.environment == 'production'
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.confirm_production == 'DEPLOY_PRODUCTION'
         uses: amondnet/vercel-action@v25
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
@@ -118,7 +118,7 @@ jobs:
 
       - name: Deploy to Vercel (Preview)
         id: deploy-preview
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'preview'
+        if: false
         uses: amondnet/vercel-action@v25
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}

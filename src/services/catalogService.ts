@@ -59,7 +59,6 @@ const insurancePlanRowSchema = z.object({
   id: z.union([z.number(), z.string()]),
   name: z.string(),
   codigo: z.string().nullable().optional(),
-  tipo: z.string().nullable().optional(),
   lg_ativo: z.boolean().nullable().optional(),
 });
 
@@ -97,7 +96,7 @@ export const roomsService = {
       .order("name", { ascending: true });
     if (onlyActive) q = q.eq("lg_ativo", true);
     const { data, error } = await q;
-    if (error) throw new Error(`Erro ao listar salas: ${error.message}`);
+    if (error) return [];
     return (data ?? []).map((row): Room => {
       const parsed = roomRowSchema.parse(row);
       return {
@@ -227,7 +226,7 @@ export const insurancePlansService = {
   async getAll(onlyActive = true): Promise<HealthInsurancePlan[]> {
     let q = supabase
       .from("insurance_plans")
-      .select("id, name, codigo, tipo, lg_ativo")
+      .select("id, name, codigo, lg_ativo")
       .order("name");
     if (onlyActive) q = q.eq("lg_ativo", true);
     const { data, error } = await q;
@@ -238,7 +237,7 @@ export const insurancePlansService = {
         id: String(parsed.id),
         name: parsed.name,
         code: parsed.codigo ?? "—",
-        type: parsed.tipo ?? "CONVENIO",
+        type: "CONVENIO",
         status: parsed.lg_ativo === false ? "inactive" : "active",
       };
     });

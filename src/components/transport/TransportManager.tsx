@@ -34,6 +34,7 @@ import {
   type Equipe,
   type Remocao,
 } from "@/services/transportService";
+import { useConfirm } from "@/hooks/useConfirm";
 
 const URGENCIA_COLOR: Record<string, string> = {
   BAIXA: "bg-gray-100 text-gray-700",
@@ -350,6 +351,7 @@ function EquipeTab() {
 }
 
 function RemocoesTab() {
+  const { promptText } = useConfirm();
   const [statusFiltro, setStatusFiltro] = useState<string>("");
   const [isOpen, setIsOpen] = useState(false);
   const [form, setForm] = useState({
@@ -523,20 +525,20 @@ function RemocoesTab() {
                     <TableCell>
                       <div className="flex gap-1">
                         {(r.tp_status === "PENDENTE" || r.tp_status === "AGENDADA") && (
-                          <Button size="sm" variant="outline" onClick={() => {
-                            const km = prompt("Quilometragem inicial:");
+                          <Button size="sm" variant="outline" onClick={async () => {
+                            const km = await promptText({ title: "Iniciar transporte", label: "Quilometragem inicial", required: true });
                             if (km) iniciarMut.mutate({ id: r.id, km: Number(km) });
                           }}><Play className="h-3 w-3" /></Button>
                         )}
                         {r.tp_status === "EM_ANDAMENTO" && (
-                          <Button size="sm" variant="outline" onClick={() => {
-                            const km = prompt("Quilometragem final:");
+                          <Button size="sm" variant="outline" onClick={async () => {
+                            const km = await promptText({ title: "Finalizar transporte", label: "Quilometragem final", required: true });
                             if (km) finalizarMut.mutate({ id: r.id, km: Number(km) });
                           }}><Square className="h-3 w-3" /></Button>
                         )}
                         {r.tp_status !== "CONCLUIDA" && r.tp_status !== "CANCELADA" && (
-                          <Button size="sm" variant="ghost" onClick={() => {
-                            const motivo = prompt("Motivo do cancelamento:");
+                          <Button size="sm" variant="ghost" onClick={async () => {
+                            const motivo = await promptText({ title: "Cancelar transporte", label: "Motivo do cancelamento", required: true });
                             if (motivo) cancelarMut.mutate({ id: r.id, motivo });
                           }}><X className="h-3 w-3 text-red-500" /></Button>
                         )}

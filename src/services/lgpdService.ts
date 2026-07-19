@@ -13,7 +13,7 @@
  * Operacoes:
  *   - getConsentimentos / updateConsentimento
  *   - requestAcesso / requestPortabilidade / requestEsquecimento / requestRevogacao
- *   - executeEsquecimento (RPC anonymize_patient)
+ *   - executeEsquecimento (RPC request_anonymize_patient)
  *   - exportarDados (payload de portabilidade)
  *   - getPoliticaRetencao / setPoliticaRetencao
  *   - getSolicitacoes / processarSolicitacao
@@ -347,7 +347,7 @@ export const lgpdService = {
     return { solicitacao, anonimizacao };
   },
 
-  /** Executa a anonimizacao (chama a RPC `anonymize_patient`). */
+  /** Executa a solicitacao segura de anonimizacao (tenant + papel validados no backend). */
   async executeEsquecimento(
     patientId: number,
     motivo: MotivoAnonimizacao
@@ -356,7 +356,7 @@ export const lgpdService = {
     if (!Number.isInteger(patientId) || patientId <= 0) {
       throw new Error("patientId invalido");
     }
-    const { data, error } = await supabase.rpc("anonymize_patient", {
+    const { data, error } = await supabase.rpc("request_anonymize_patient", {
       p_paciente_id: patientId,
       p_motivo: motivo,
     });

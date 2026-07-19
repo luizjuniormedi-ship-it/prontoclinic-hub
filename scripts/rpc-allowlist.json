@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "default_grantees": ["authenticated"],
+  "required": [
+    "request_anonymize_patient", "bedside_check", "billing_check_pending", "calc_imc",
+    "calcular_kpis_diarios", "calcular_valor_estoque", "cancel_pre_cadastro",
+    "cancel_schedule_block_secure", "check_prescription_safety",
+    "close_waitlist_entry_secure", "confirm_pre_cadastro",
+    "convert_waitlist_to_appointment_secure", "create_appointment_with_requirements_secure",
+    
+    "create_pre_cadastro", "create_schedule_block_secure", "create_waitlist_entry_secure",
+    "criar_sala_telemedicina", "current_company_id", "detectar_alertas_bi",
+    "finalizar_sala_telemedicina", "find_price", "gerar_senha_triagem",
+    "get_professional_available_slots", "get_reception_checkin_readiness",
+    "get_scheduling_requirements", "log_data_access", "perform_reception_checkin_secure",
+    "promote_pre_cadastro", "publish_dicom_report", "create_imaging_order_from_attendance",
+    "sign_and_release_radiology_report", "deliver_radiology_report", "rectify_radiology_report", "queue_notification",
+    "recalc_tiss_total_glosa", "record_confirmation_attempt_secure",
+    "refresh_confirmation_queue_secure", "registrar_consentimento_gravacao",
+    "registrar_movimentacao_estoque", "reschedule_appointment_secure",
+    "tiss_get_stats", "update_appointment_status_secure",
+    "update_reception_authorization_secure", "update_reception_eligibility_secure"
+  ],
+  "grantee_exceptions": {
+    "create_pre_cadastro": ["anon", "authenticated"],
+    "confirm_pre_cadastro": ["anon", "authenticated"],
+    "cancel_pre_cadastro": ["authenticated"],
+    "current_company_id": ["authenticated"],
+    "get_reception_checkin_readiness": ["authenticated"],
+    "perform_reception_checkin_secure": ["authenticated"],
+    "update_reception_authorization_secure": ["authenticated"],
+    "update_reception_eligibility_secure": ["authenticated"]
+  }
+}

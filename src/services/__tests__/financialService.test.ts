@@ -15,6 +15,7 @@ vi.mock("@/lib/supabase", () => {
     gte: vi.fn().mockReturnThis(),
     lte: vi.fn().mockReturnThis(),
     in: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockReturnThis(),
     maybeSingle: vi.fn(),
     single: vi.fn(),
   };
@@ -44,6 +45,9 @@ describe("billingsService — getAll", () => {
         professional_id: null,
         appointment_id: null,
         billing_type: "consulta",
+        insurance_company_id: null,
+        amount: 300,
+        total: 250,
         gross_amount: 300,
         discount: 50,
         net_amount: 250,
@@ -59,6 +63,9 @@ describe("billingsService — getAll", () => {
         professional_id: "prof-uuid",
         appointment_id: null,
         billing_type: "exame",
+        insurance_company_id: "insurance-uuid",
+        amount: 500,
+        total: 500,
         gross_amount: 500,
         discount: 0,
         net_amount: 500,
@@ -70,13 +77,15 @@ describe("billingsService — getAll", () => {
 
     const chain: any = {
       select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockResolvedValue({ data: rows, error: null }),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: rows, error: null }),
     };
     (supabase.from as any).mockReturnValue(chain);
 
     const result = await billingsService.getAll();
 
     expect(supabase.from).toHaveBeenCalledWith("billings");
+    expect(chain.select).toHaveBeenCalledWith("id, company_id, patient_id, amount, status, created_at");
     expect(result).toHaveLength(2);
     expect(result[0].id).toBe("b-1");
     expect(result[0].net_amount).toBe(250);
@@ -86,7 +95,8 @@ describe("billingsService — getAll", () => {
   it("retorna array vazio quando não há dados", async () => {
     const chain: any = {
       select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockResolvedValue({ data: null, error: null }),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: null, error: null }),
     };
     (supabase.from as any).mockReturnValue(chain);
 
@@ -97,7 +107,8 @@ describe("billingsService — getAll", () => {
   it("lança erro quando supabase retorna error", async () => {
     const chain: any = {
       select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockResolvedValue({ data: null, error: { message: "boom" } }),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: null, error: { message: "boom" } }),
     };
     (supabase.from as any).mockReturnValue(chain);
 
@@ -131,7 +142,9 @@ describe("billingsService — create", () => {
     expect(insertedArg.status).toBe("em_aberto");
     expect(insertedArg.discount).toBe(0);
     expect(insertedArg.patient_id).toBe("patient-uuid");
-    expect(result).toEqual(inserted);
+    expect(result.id).toBe(inserted.id);
+    expect(result.gross_amount).toBe(0);
+    expect(result.net_amount).toBe(0);
   });
 
   it("preserva status e discount quando fornecidos", async () => {
@@ -212,6 +225,64 @@ describe("billingsService — updateStatus", () => {
   });
 });
 
+describe("billingsService — idempotência por atendimento", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("reutiliza cobrança existente e não insere uma segunda", async () => {
+    const existing = { id: "b-1", appointment_id: "a-1", company_id: "c-1", status: "em_aberto", amount: 100, total: 100 };
+    const lookup = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: existing, error: null }),
+    };
+    (supabase.from as any).mockReturnValue(lookup);
+
+    const result = await billingsService.createForAppointment({ appointment_id: "a-1", company_id: "c-1", patient_id: "p-1", gross_amount: 100, net_amount: 100 });
+
+    expect(result.id).toBe("b-1");
+    expect(supabase.from).toHaveBeenCalledTimes(1);
+  });
+
+  it("persiste appointment_id quando não há cobrança anterior", async () => {
+    const lookup = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+    };
+    const insert = {
+      insert: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: "b-2", appointment_id: "a-2", amount: 100, total: 100 }, error: null }),
+    };
+    (supabase.from as any).mockReturnValueOnce(lookup).mockReturnValueOnce(insert);
+
+    await billingsService.createForAppointment({ appointment_id: "a-2", patient_id: "p-1", gross_amount: 100, net_amount: 100 });
+
+    expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({ appointment_id: "a-2" }));
+  });
+
+  it("deduplica chamadas concorrentes para o mesmo atendimento na sessão", async () => {
+    const lookup = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: { id: "b-3", appointment_id: "a-3", status: "em_aberto", amount: 100, total: 100 }, error: null }),
+    };
+    (supabase.from as any).mockReturnValue(lookup);
+
+    const [first, second] = await Promise.all([
+      billingsService.createForAppointment({ appointment_id: "a-3", patient_id: "p-1", gross_amount: 100, net_amount: 100 }),
+      billingsService.createForAppointment({ appointment_id: "a-3", patient_id: "p-1", gross_amount: 100, net_amount: 100 }),
+    ]);
+
+    expect(first.id).toBe("b-3");
+    expect(second.id).toBe("b-3");
+    expect(supabase.from).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("financialService — getAll", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -240,7 +311,8 @@ describe("financialService — getAll", () => {
 
     const chain: any = {
       select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockResolvedValue({ data: rows, error: null }),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: rows, error: null }),
     };
     (supabase.from as any).mockReturnValue(chain);
 
@@ -255,7 +327,8 @@ describe("financialService — getAll", () => {
   it("retorna array vazio quando data=null", async () => {
     const chain: any = {
       select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockResolvedValue({ data: null, error: null }),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: null, error: null }),
     };
     (supabase.from as any).mockReturnValue(chain);
 
@@ -266,7 +339,8 @@ describe("financialService — getAll", () => {
   it("lança erro quando supabase retorna error", async () => {
     const chain: any = {
       select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockResolvedValue({ data: null, error: { message: "x" } }),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: null, error: { message: "x" } }),
     };
     (supabase.from as any).mockReturnValue(chain);
 

@@ -10,13 +10,15 @@ import { AppointmentCard } from "@/components/schedule/AppointmentCard";
 import { NewAppointmentDialog } from "@/components/schedule/NewAppointmentDialog";
 import { QuickActionDialog } from "@/components/schedule/QuickActionDialog";
 import { EncaixeDialog } from "@/components/schedule/EncaixeDialog";
-import { appointmentsService, professionalsLookup, specialtiesLookup, appointmentTypesLookup, DbAppointment, DbProfessional, DbSpecialty, DbAppointmentType } from "@/services/appointmentsService";
+import { SchedulingOperationsPanel } from "@/components/schedule/SchedulingOperationsPanel";
+import { appointmentsService, professionalsLookup, specialtiesLookup, appointmentTypesLookup, servicesCatalogLookup, DbAppointment, DbProfessional, DbSpecialty, DbAppointmentType, DbServiceCatalog } from "@/services/appointmentsService";
 import { supabase } from "@/lib/supabase";
 import { Appointment, AppointmentStatus, Patient } from "@/types";
 import type { AppointmentTypeLiteral, PatientDbRow } from "@/types/missing";
 import { useToast } from "@/hooks/use-toast";
 import { useDebounce } from "@/hooks/useDebounce";
 import { friendlyError } from "@/utils/friendlyError";
+import { localDateKey } from "@/utils/formatters";
 
 const weekDays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
@@ -57,12 +59,14 @@ function toDisplayAppointment(
     doctorName: professional?.full_name || "Profissional não encontrado",
     specialty: specialty?.name,
     unitId: db.unit_id || undefined,
+    insuranceCompanyId: (db as any).insurance_company_id || undefined,
     date: db.appointment_date,
     time: db.start_time?.substring(0, 5) || "00:00",
     duration,
     status: (db.status as AppointmentStatus) || "scheduled",
     type: type as AppointmentTypeLiteral,
-    typeLabel: appType?.name,
+    typeLabel: appType?.name || undefined,
+    serviceName: db.service_name || undefined,
     notes: db.notes || undefined,
   };
 }
@@ -72,10 +76,14 @@ export default function SchedulePage() {
   const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
   const [specialties, setSpecialties] = useState<DbSpecialty[]>([]);
   const [appointmentTypes, setAppointmentTypes] = useState<DbAppointmentType[]>([]);
+  const [services, setServices] = useState<DbServiceCatalog[]>([]);
+  const [insurances, setInsurances] = useState<Array<{ id: string; name: string }>>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [insuranceNames, setInsuranceNames] = useState<Record<string, string>>({});
+  const [units, setUnits] = useState<Array<{ id: string; name: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [selectedDate, setSelectedDate] = useState(() => localDateKey());
   const [view, setView] = useState<"day" | "week">("day");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [encaixeOpen, setEncaixeOpen] = useState(false);
@@ -88,21 +96,41 @@ export default function SchedulePage() {
   const [specialtyFilter, setSpecialtyFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [unitFilter, setUnitFilter] = useState("all");
 
   // Quick action
   const [quickAction, setQuickAction] = useState("");
   const [quickActionAppointment, setQuickActionAppointment] = useState<Appointment | null>(null);
   const [quickActionOpen, setQuickActionOpen] = useState(false);
+  const initialLoadRef = useRef(false);
 
   const loadLookups = useCallback(async () => {
-    const [profs, specs, types] = await Promise.all([
+    const [profs, specs, types, serviceRows] = await Promise.all([
       professionalsLookup.getAll(),
       specialtiesLookup.getAll(),
       appointmentTypesLookup.getAll(),
+      servicesCatalogLookup.getAll(),
     ]);
     setProfessionals(profs);
     setSpecialties(specs);
     setAppointmentTypes(types);
+    setServices(serviceRows);
+
+    try {
+      const [{ data: ins }, { data: unitRows }] = await Promise.all([
+        supabase.from("insurance_companies").select("id, name"),
+        supabase.from("units").select("id, name").order("name"),
+      ]);
+      if (ins) {
+        setInsuranceNames(Object.fromEntries(ins.map((i: any) => [String(i.id), i.name])));
+        setInsurances(ins.map((i: any) => ({ id: String(i.id), name: i.name })).sort((a, b) => a.name.localeCompare(b.name)));
+      }
+      if (unitRows) {
+        setUnits(unitRows.map((u: any) => ({ id: String(u.id), name: u.name })));
+      }
+    } catch {
+      setUnits([]);
+    }
   }, []);
 
   const loadAppointments = useCallback(async (date: string) => {
@@ -113,8 +141,8 @@ export default function SchedulePage() {
     const endOfWeek = new Date(startOfWeek);
     endOfWeek.setDate(startOfWeek.getDate() + 6);
 
-    const startStr = startOfWeek.toISOString().split("T")[0];
-    const endStr = endOfWeek.toISOString().split("T")[0];
+    const startStr = localDateKey(startOfWeek);
+    const endStr = localDateKey(endOfWeek);
 
     const data = await appointmentsService.getByDateRange(startStr, endStr);
     setDbAppointments(data);
@@ -126,10 +154,23 @@ export default function SchedulePage() {
         .from("patients")
         .select("id, full_name, cpf, birth_date, phone, email, sex, insurance_plan_id, insurance_card_number, allergies, clinical_alerts, created_at, updated_at")
         .in("id", patientIds);
+
+      // Load insurance names for display
+      const insuranceIds = [...new Set((pats || []).map((p: any) => p.insurance_plan_id).filter(Boolean))];
+      let insuranceMap: Record<string, string> = {};
+      if (insuranceIds.length > 0) {
+        const { data: insurances } = await supabase
+          .from("insurance_companies")
+          .select("id, name")
+          .in("id", insuranceIds);
+        if (insurances) {
+          insuranceMap = Object.fromEntries(insurances.map((i: any) => [String(i.id), i.name]));
+        }
+      }
       setPatients((pats || []).map((row: PatientDbRow) => ({
         id: String(row.id), companyId: undefined, name: row.full_name || "", cpf: row.cpf || "",
         birthDate: row.birth_date || "", phone: row.phone || "", email: row.email || "",
-        gender: row.sex || "O", healthInsurance: row.insurance_plan_id === null || row.insurance_plan_id === undefined ? undefined : String(row.insurance_plan_id), healthInsuranceNumber: row.insurance_card_number ?? undefined,
+        gender: row.sex || "O", healthInsurance: row.insurance_plan_id ? (insuranceMap[String(row.insurance_plan_id)] || "Convênio #" + row.insurance_plan_id) : undefined, healthInsuranceNumber: row.insurance_card_number ?? undefined,
         allergies: row.allergies ?? undefined, clinicalAlerts: row.clinical_alerts ?? undefined,
         createdAt: row.created_at || "", updatedAt: row.updated_at || "",
       })) as Patient[]);
@@ -138,37 +179,58 @@ export default function SchedulePage() {
     }
   }, []);
 
+  const refreshAppointments = useCallback(async (date: string) => {
+    try {
+      setError(null);
+      await loadAppointments(date);
+    } catch (err) {
+      const message = friendlyError(err, "Carregar agenda");
+      setError(message);
+      throw err;
+    }
+  }, [loadAppointments]);
+
   const loadAll = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       await loadLookups();
-      await loadAppointments(selectedDate);
+      await refreshAppointments(selectedDate);
      } catch (err) {
       setError(friendlyError(err, "Carregar agenda"));
     } finally {
       setLoading(false);
     }
-  }, [loadLookups, loadAppointments, selectedDate]);
+  }, [loadLookups, refreshAppointments, selectedDate]);
 
   useEffect(() => {
-    loadAll();
-  }, []);
+    if (initialLoadRef.current) return;
+    initialLoadRef.current = true;
+    void loadAll();
+  }, [loadAll]);
 
   // Reload appointments when date changes (without reloading lookups)
   useEffect(() => {
     if (!loading) {
-      loadAppointments(selectedDate).catch(() => {});
+      refreshAppointments(selectedDate).catch(() => {});
     }
-  }, [selectedDate]);
+  }, [selectedDate, refreshAppointments]);
 
   // Convert all DB appointments to display format
   const appointments = useMemo(() =>
-    dbAppointments.map((db) => toDisplayAppointment(db, patients, professionals, specialties, appointmentTypes)),
-    [dbAppointments, patients, professionals, specialties, appointmentTypes]
+    dbAppointments.map((db) => {
+      const appt = toDisplayAppointment(db, patients, professionals, specialties, appointmentTypes);
+      // Resolve insurance name from appointment's insurance_company_id
+      const icId = (db as any).insurance_company_id;
+      if (icId && insuranceNames[String(icId)]) {
+        (appt as any).insuranceName = insuranceNames[String(icId)];
+      }
+      return appt;
+    }),
+    [dbAppointments, patients, professionals, specialties, appointmentTypes, insuranceNames]
   );
 
-  const hasFilters = debouncedSearch !== "" || doctorFilter !== "all" || specialtyFilter !== "all" || typeFilter !== "all" || statusFilter !== "all";
+  const hasFilters = debouncedSearch !== "" || doctorFilter !== "all" || specialtyFilter !== "all" || typeFilter !== "all" || statusFilter !== "all" || unitFilter !== "all";
 
   const clearFilters = () => {
     setSearch("");
@@ -176,6 +238,7 @@ export default function SchedulePage() {
     setSpecialtyFilter("all");
     setTypeFilter("all");
     setStatusFilter("all");
+    setUnitFilter("all");
   };
 
   const dayAppointments = appointments
@@ -191,6 +254,7 @@ export default function SchedulePage() {
       if (specialtyFilter !== "all" && a.specialty !== specialtyFilter) return false;
       if (typeFilter !== "all" && a.type !== typeFilter) return false;
       if (statusFilter !== "all" && a.status !== statusFilter) return false;
+      if (unitFilter !== "all" && a.unitId !== unitFilter) return false;
       return true;
     })
     .sort((a, b) => a.time.localeCompare(b.time));
@@ -201,7 +265,7 @@ export default function SchedulePage() {
   const changeDate = (dir: number) => {
     const d = new Date(selectedDate + "T00:00:00");
     d.setDate(d.getDate() + (view === "week" ? dir * 7 : dir));
-    setSelectedDate(d.toISOString().split("T")[0]);
+    setSelectedDate(localDateKey(d));
   };
 
   const getWeekDates = () => {
@@ -212,7 +276,7 @@ export default function SchedulePage() {
     return Array.from({ length: 7 }, (_, i) => {
       const date = new Date(start);
       date.setDate(start.getDate() + i);
-      return date.toISOString().split("T")[0];
+      return localDateKey(date);
     });
   };
 
@@ -232,10 +296,22 @@ export default function SchedulePage() {
     setQuickActionOpen(true);
   };
 
-  const handleQuickActionConfirm = async (appointment: Appointment, newStatus: AppointmentStatus, notes?: string) => {
+  const handleQuickActionConfirm = async (
+    appointment: Appointment,
+    newStatus: AppointmentStatus,
+    details?: { reason?: string; newDate?: string; newTime?: string }
+  ) => {
     try {
-      await appointmentsService.updateStatus(appointment.id, newStatus, notes);
-      await loadAppointments(selectedDate);
+      if (details?.newDate && details?.newTime) {
+        await appointmentsService.reschedule(appointment.id, {
+          appointment_date: details.newDate,
+          start_time: details.newTime,
+          reason: details.reason || "Remarcação solicitada",
+        });
+      } else {
+        await appointmentsService.updateStatus(appointment.id, newStatus, details?.reason);
+      }
+      await refreshAppointments(selectedDate);
       const labels: Record<string, string> = {
         waiting: "Check-in realizado",
         in_progress: "Atendimento iniciado",
@@ -316,6 +392,7 @@ export default function SchedulePage() {
             className="h-8 w-8"
             onClick={() => changeDate(-1)}
             aria-label={`Dia anterior${view === "week" ? " (voltar uma semana)" : ""}`}
+            title={view === "week" ? "Semana anterior" : "Dia anterior"}
           >
             <ChevronLeft className="h-4 w-4" aria-hidden="true" />
           </Button>
@@ -328,6 +405,7 @@ export default function SchedulePage() {
             className="h-8 w-8"
             onClick={() => changeDate(1)}
             aria-label={`Próximo dia${view === "week" ? " (avançar uma semana)" : ""}`}
+            title={view === "week" ? "Próxima semana" : "Próximo dia"}
           >
             <ChevronRight className="h-4 w-4" aria-hidden="true" />
           </Button>
@@ -335,7 +413,7 @@ export default function SchedulePage() {
             variant="ghost"
             size="sm"
             className="text-xs"
-            onClick={() => setSelectedDate(new Date().toISOString().split("T")[0])}
+            onClick={() => setSelectedDate(localDateKey())}
             aria-label="Ir para hoje"
           >
             Hoje
@@ -368,8 +446,18 @@ export default function SchedulePage() {
         specialtyFilter={specialtyFilter} onSpecialtyFilter={setSpecialtyFilter}
         typeFilter={typeFilter} onTypeFilter={setTypeFilter}
         statusFilter={statusFilter} onStatusFilter={setStatusFilter}
+        unitFilter={unitFilter} onUnitFilter={setUnitFilter}
         doctors={doctorsForFilter} specialties={specialtiesForFilter}
+        units={units}
         onClearFilters={clearFilters} hasFilters={hasFilters}
+      />
+
+      <SchedulingOperationsPanel
+        professionals={professionals}
+        specialties={specialties}
+        appointmentTypes={appointmentTypes}
+        selectedDate={selectedDate}
+        onAppointmentCreated={() => refreshAppointments(selectedDate)}
       />
 
       {/* Content */}
@@ -384,7 +472,7 @@ export default function SchedulePage() {
           {getWeekDates().map((date, i) => {
             const dayApps = appointments.filter((a) => a.date === date);
             const isSelected = date === selectedDate;
-            const isToday = date === new Date().toISOString().split("T")[0];
+            const isToday = date === localDateKey();
             const waiting = dayApps.filter((a) => a.status === "waiting").length;
             return (
               <Card
@@ -438,6 +526,8 @@ export default function SchedulePage() {
         professionals={professionals}
         specialties={specialties}
         appointmentTypes={appointmentTypes}
+        services={services}
+        insurances={insurances}
         patients={patients}
         selectedDate={selectedDate}
         onCreated={handleAppointmentCreated}

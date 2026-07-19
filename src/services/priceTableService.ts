@@ -58,13 +58,9 @@ export const priceTableService = {
   }): Promise<PriceTable[]> {
     let q = supabase
       .from("price_tables")
-      .select(`
-        *,
-        service:services_catalog(name),
-        plan:insurance_plans(name),
-        appointment_type:appointment_types(name)
-      `)
-      .order("dt_inicio", { ascending: false });
+      .select("*")
+      .order("dt_inicio", { ascending: false })
+      .limit(200);
 
     if (filters?.serviceId) q = q.eq("service_id", filters.serviceId);
     if (filters?.planId !== undefined) {
@@ -76,6 +72,14 @@ export const priceTableService = {
     const { data, error } = await q;
     if (error) throw new Error(`Erro: ${error.message}`);
     return data || [];
+  },
+
+  async count(): Promise<number> {
+    const { count, error } = await supabase
+      .from("price_tables")
+      .select("id", { count: "exact", head: true });
+    if (error) throw new Error(`Erro ao contar preços: ${error.message}`);
+    return count || 0;
   },
 
   async findPrice(

@@ -1,14 +1,22 @@
 // ── DICOM/PACS Types ──────────────────────────────────
 
 export type DicomNodeType = 'pacs' | 'modality' | 'ris' | 'worklist' | 'viewer';
+export type DicomNodeKind = 'pacs' | 'worklist';
+export type DicomNodeHealth = 'unknown' | 'healthy' | 'degraded' | 'offline';
 
 export interface DicomNode {
   id: string;
   name: string;
   node_type: DicomNodeType;
+  node_kind?: DicomNodeKind;
+  unit_id?: number | null;
   aetitle: string;
   ip_address?: string;
   port?: number;
+  rest_endpoint_ref?: string | null;
+  priority?: number;
+  is_default?: boolean;
+  health_status?: DicomNodeHealth;
   local_port?: number;
   description?: string;
   active: boolean;
@@ -18,7 +26,7 @@ export interface DicomNode {
 
 export interface DicomModality {
   id: string;
-  unit_id?: string;
+  unit_id?: number | null;
   name: string;
   manufacturer?: string;
   model?: string;
@@ -28,6 +36,7 @@ export interface DicomModality {
   port?: number;
   worklist_enabled: boolean;
   pacs_node_id?: string;
+  worklist_node_id?: string;
   room_name?: string;
   active: boolean;
   created_at: string;
@@ -35,6 +44,7 @@ export interface DicomModality {
   // joined
   unit_name?: string;
   pacs_node_name?: string;
+  worklist_node_name?: string;
 }
 
 export type ImagingOrderStatus =
@@ -89,6 +99,8 @@ export type WorklistQueueStatus = 'pending' | 'exported' | 'acquired' | 'cancell
 
 export interface DicomWorklistItem {
   id: string;
+  unit_id?: number | null;
+  destination_node_id?: string | null;
   imaging_order_item_id: string;
   patient_id: string;
   patient_name: string;
@@ -126,7 +138,8 @@ export interface PacsStudy {
   pacs_status: PacsStudyStatus;
   received_at?: string;
   company_id?: string;
-  unit_id?: string;
+  unit_id?: number | null;
+  source_node_id?: string | null;
   created_at: string;
   updated_at: string;
   // joined

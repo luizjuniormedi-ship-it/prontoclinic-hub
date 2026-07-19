@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState } from "@/components/StateViews";
 import { dicomNodesService } from "@/services/dicomService";
+import { listDicomUnits } from "@/services/dicomNodeRoutingService";
 import type { DicomNode, DicomNodeType } from "@/types/dicom";
 import { toast } from "@/hooks/use-toast";
 
@@ -20,25 +21,29 @@ const nodeTypeLabels: Record<DicomNodeType, string> = {
 
 export default function DicomNodesPage() {
   const [nodes, setNodes] = useState<DicomNode[]>([]);
+  const [units, setUnits] = useState<Array<{ id: number; name: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<DicomNode | null>(null);
-  const [form, setForm] = useState({ name: '', node_type: 'pacs' as DicomNodeType, aetitle: '', ip_address: '', port: '', description: '', active: true });
+  const [form, setForm] = useState({ name: '', node_type: 'pacs' as DicomNodeType, unit_id: '', aetitle: '', ip_address: '', port: '', description: '', active: true });
 
   const load = () => {
     setLoading(true);
-    dicomNodesService.list().then((data) => setNodes(data as unknown as DicomNode[])).catch(() => toast({ title: "Erro ao carregar nós DICOM", variant: "destructive" })).finally(() => setLoading(false));
+    Promise.all([dicomNodesService.list(), listDicomUnits()]).then(([data, unitOptions]) => {
+      setNodes(data as unknown as DicomNode[]);
+      setUnits(unitOptions);
+    }).catch(() => toast({ title: "Erro ao carregar nós DICOM", variant: "destructive" })).finally(() => setLoading(false));
   };
 
   useEffect(load, []);
 
-  const openNew = () => { setEditing(null); setForm({ name: '', node_type: 'pacs', aetitle: '', ip_address: '', port: '', description: '', active: true }); setDialogOpen(true); };
-  const openEdit = (n: DicomNode) => { setEditing(n); setForm({ name: n.name, node_type: n.node_type, aetitle: n.aetitle, ip_address: n.ip_address || '', port: n.port?.toString() || '', description: n.description || '', active: n.active }); setDialogOpen(true); };
+  const openNew = () => { setEditing(null); setForm({ name: '', node_type: 'pacs', unit_id: '', aetitle: '', ip_address: '', port: '', description: '', active: true }); setDialogOpen(true); };
+  const openEdit = (n: DicomNode) => { setEditing(n); setForm({ name: n.name, node_type: n.node_type, unit_id: n.unit_id == null ? '' : String(n.unit_id), aetitle: n.aetitle, ip_address: n.ip_address || '', port: n.port?.toString() || '', description: n.description || '', active: n.active }); setDialogOpen(true); };
 
   const save = async () => {
     if (!form.name || !form.aetitle) { toast({ title: "Nome e AE Title são obrigatórios", variant: "destructive" }); return; }
     try {
-      const payload = { ...form, port: form.port ? parseInt(form.port, 10) : null };
+      const payload = { ...form, unit_id: form.unit_id ? Number(form.unit_id) : null, port: form.port ? parseInt(form.port, 10) : null };
       if (editing) await dicomNodesService.update(editing.id, payload);
       else await dicomNodesService.create(payload);
       toast({ title: editing ? "Nó atualizado" : "Nó criado" });
@@ -57,13 +62,14 @@ export default function DicomNodesPage() {
         <div className="rounded-lg border bg-card overflow-auto">
           <Table>
             <TableHeader><TableRow>
-              <TableHead>Nome</TableHead><TableHead>Tipo</TableHead><TableHead>AE Title</TableHead>
+              <TableHead>Nome</TableHead><TableHead>Unidade</TableHead><TableHead>Tipo</TableHead><TableHead>AE Title</TableHead>
               <TableHead>IP</TableHead><TableHead>Porta</TableHead><TableHead>Status</TableHead><TableHead></TableHead>
             </TableRow></TableHeader>
             <TableBody>
               {nodes.map((n) => (
                 <TableRow key={n.id}>
                   <TableCell className="font-medium">{n.name}</TableCell>
+                  <TableCell className="text-xs">{units.find((u) => u.id === n.unit_id)?.name || 'Padrão da empresa'}</TableCell>
                   <TableCell><Badge variant="outline" className="text-[10px]">{nodeTypeLabels[n.node_type]}</Badge></TableCell>
                   <TableCell className="font-mono text-xs">{n.aetitle}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{n.ip_address || '—'}</TableCell>
@@ -82,6 +88,12 @@ export default function DicomNodesPage() {
           <DialogHeader><DialogTitle>{editing ? 'Editar Nó DICOM' : 'Novo Nó DICOM'}</DialogTitle></DialogHeader>
           <div className="grid gap-4 py-2">
             <div><Label>Nome *</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
+            <div><Label>Unidade</Label>
+              <Select value={form.unit_id || "company-default"} onValueChange={(v) => setForm({ ...form, unit_id: v === "company-default" ? "" : v })}>
+                <SelectTrigger><SelectValue placeholder="Padrão da empresa" /></SelectTrigger>
+                <SelectContent><SelectItem value="company-default">Padrão da empresa</SelectItem>{units.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
             <div><Label>Tipo</Label>
               <Select value={form.node_type} onValueChange={(v) => setForm({ ...form, node_type: v as DicomNodeType })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>

@@ -28,6 +28,10 @@ export function getValidAppointmentTransitions(status: string): string[] {
   return appointmentTransitions[status] || [];
 }
 
+export function canStartAppointment(status: string): boolean {
+  return status === 'waiting';
+}
+
 // ── Imaging order status transitions ──
 
 const imagingTransitions: Record<string, string[]> = {

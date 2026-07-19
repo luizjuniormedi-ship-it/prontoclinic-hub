@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "policy": "Only entries with SQL definition and explicit EXECUTE grant are PROVEN.",
+  "contracts": [
+    {"domain":"agenda","name":"create_appointment_secure","status":"PROVEN","source":"supabase/migrations/20260708090000_scheduling_phase1.sql","grant_role":"authenticated"},
+    {"domain":"agenda","name":"update_appointment_status_secure","status":"PROVEN","source":"supabase/migrations/20260708090000_scheduling_phase1.sql","grant_role":"authenticated"},
+    {"domain":"agenda","name":"reschedule_appointment_secure","status":"PROVEN","source":"supabase/migrations/20260708090000_scheduling_phase1.sql","grant_role":"authenticated"},
+    {"domain":"agenda","name":"get_professional_available_slots","status":"BLOCKED","reason":"SQL definition not located"},
+    {"domain":"agenda","name":"get_scheduling_requirements","status":"BLOCKED","reason":"SQL definition not located"},
+    {"domain":"call_center","name":"create_waitlist_entry_secure","status":"BLOCKED","reason":"SQL definition not located"},
+    {"domain":"call_center","name":"close_waitlist_entry_secure","status":"BLOCKED","reason":"SQL definition not located"},
+    {"domain":"call_center","name":"convert_waitlist_to_appointment_secure","status":"BLOCKED","reason":"SQL definition not located"},
+    {"domain":"call_center","name":"refresh_confirmation_queue_secure","status":"BLOCKED","reason":"SQL definition not located"},
+    {"domain":"call_center","name":"record_confirmation_attempt_secure","status":"BLOCKED","reason":"SQL definition not located"},
+    {"domain":"call_center","name":"create_schedule_block_secure","status":"BLOCKED","reason":"SQL definition not located"},
+    {"domain":"call_center","name":"cancel_schedule_block_secure","status":"BLOCKED","reason":"SQL definition not located"},
+    {"domain":"faturamento","name":"tiss_get_stats","status":"BLOCKED","source":"supabase/migrations/20260101000010_tiss.sql","reason":"SQL definition exists; EXECUTE grant not proven"},
+    {"domain":"faturamento","name":"billing_check_pending","status":"BLOCKED","reason":"SQL definition not located"},
+    {"domain":"faturamento","name":"recalc_tiss_total_glosa","status":"BLOCKED","reason":"SQL definition not located"}
+  ]
+}

@@ -19,6 +19,7 @@ import type { ImagingOrder, ImagingOrderItem } from "@/types/dicom";
 import { imagingStatusLabels, imagingStatusColors, priorityLabels, priorityColors } from "@/types/dicom";
 import { toast } from "@/hooks/use-toast";
 import { formatDate } from "@/utils/formatters";
+import { useConfirm } from "@/hooks/useConfirm";
 
 const MODALITY_TYPES = ['CR','CT','MR','US','DX','XA','MG','PT','NM','RF','OT'];
 
@@ -39,7 +40,6 @@ type LateralityLiteral = 'left' | 'right' | 'bilateral' | 'na' | '';
 type ImagingPriorityLiteral = 'normal' | 'urgent' | 'emergency';
 
 interface LookupPatient { id: string; full_name: string; }
-interface LookupProfessional { id: string; full_name: string; }
 interface LookupAppointment {
   id: string;
   appointment_date: string;
@@ -54,6 +54,7 @@ const emptyItemForm = (): NewItemForm => ({
 });
 
 export default function ImagingOrdersPage() {
+  const { confirm } = useConfirm();
   const [orders, setOrders] = useState<ImagingOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -67,7 +68,6 @@ export default function ImagingOrdersPage() {
 
   // Lookups
   const [patients, setPatients] = useState<LookupPatient[]>([]);
-  const [professionals, setProfessionals] = useState<LookupProfessional[]>([]);
   const [appointments, setAppointments] = useState<LookupAppointment[]>([]);
 
   // New order form
@@ -89,12 +89,8 @@ export default function ImagingOrdersPage() {
   useEffect(load, [statusFilter]);
 
   const loadLookups = async () => {
-    const [p, pr] = await Promise.all([
-      supabase.from('patients').select('id, full_name').order('full_name').limit(200),
-      supabase.from('professionals').select('id, full_name').order('full_name').limit(100),
-    ]);
+    const p = await supabase.from('patients').select('id, full_name').order('full_name').limit(200);
     setPatients(p.data || []);
-    setProfessionals(pr.data || []);
   };
 
   // Load appointments when patient changes
@@ -138,13 +134,8 @@ export default function ImagingOrdersPage() {
 
     setSaving(true);
     try {
-      // Find physician name for referring field
-      const physician = professionals.find(p => p.id === form.requesting_physician_id);
-
       const order = await imagingOrdersService.create({
         patient_id: form.patient_id,
-        requesting_physician_id: form.requesting_physician_id || undefined,
-        referring_physician_name: physician?.full_name,
         clinical_indication: form.clinical_indication,
         priority: form.priority as ImagingPriorityLiteral,
         notes: form.notes,
@@ -236,7 +227,7 @@ export default function ImagingOrdersPage() {
   };
 
   const cancelOrder = async (order: ImagingOrder) => {
-    if (!confirm("Cancelar este pedido e todos os seus itens? Esta ação removerá itens da worklist.")) return;
+    if (!await confirm({ title: "Cancelar este pedido?", description: "Remove todos os itens e os tira da worklist.", destructive: true, confirmText: "Cancelar pedido" })) return;
     try {
       await dicomIntegrationService.cancelOrder(order.id);
       toast({ title: "Pedido cancelado" });
@@ -348,10 +339,10 @@ export default function ImagingOrdersPage() {
             {/* Link to appointment */}
             {appointments.length > 0 && (
               <div><Label className="flex items-center gap-1"><Link className="h-3 w-3" />Vincular a Agendamento</Label>
-                <Select value={form.scheduling_id} onValueChange={(v) => setForm({ ...form, scheduling_id: v })}>
+                <Select value={form.scheduling_id || "none"} onValueChange={(v) => setForm({ ...form, scheduling_id: v === "none" ? "" : v })}>
                   <SelectTrigger><SelectValue placeholder="Opcional..." /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Nenhum</SelectItem>
+                    <SelectItem value="none">Nenhum</SelectItem>
                     {appointments.map((a: LookupAppointment) => (
                       <SelectItem key={a.id} value={a.id}>
                         {a.appointment_date} {a.start_time} — {a.professionals?.full_name || 'Prof.'} ({a.status})
@@ -363,12 +354,7 @@ export default function ImagingOrdersPage() {
             )}
 
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Médico Solicitante</Label>
-                <Select value={form.requesting_physician_id} onValueChange={(v) => setForm({ ...form, requesting_physician_id: v })}>
-                  <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                  <SelectContent>{professionals.map(p => <SelectItem key={p.id} value={p.id}>{p.full_name}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
+              <div><Label>Médico Solicitante</Label><Input value="Profissional vinculado à sessão" disabled /></div>
               <div><Label>Prioridade</Label>
                 <Select value={form.priority} onValueChange={(v) => setForm({ ...form, priority: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>

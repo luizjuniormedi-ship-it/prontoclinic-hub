@@ -18,6 +18,7 @@
  */
 
 import { supabase } from "@/lib/supabase";
+import { getLegacyOrthancUrl, resolveDicomNodeRoute } from "@/services/dicomNodeRoutingService";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -48,6 +49,7 @@ export type ReportTemplateType =
 export interface DicomEquipment {
   id: number;
   company_id: string;
+  unit_id?: number | null;
   ds_equipment: string;
   ds_aetitle: string;
   ds_type: DicomModality;
@@ -55,6 +57,8 @@ export interface DicomEquipment {
   ds_port: number;
   ds_location?: string;
   lg_worklist: boolean;
+  pacs_node_id?: string | null;
+  worklist_node_id?: string | null;
   lg_verify_photo: boolean;
   ds_format_name: string;
   ds_manufacturer?: string;
@@ -84,6 +88,8 @@ export interface DicomWorklistItem {
 export interface DicomExam {
   id: number;
   company_id: string;
+  unit_id?: number | null;
+  source_node_id?: string | null;
   cd_dicom_exame?: string; // StudyInstanceUID
   ds_id_patient?: string;
   cd_laudo?: number;
@@ -149,13 +155,30 @@ export interface ReportTemplate {
 
 // ── Helpers ────────────────────────────────────────────────────────
 
-const ORTHANC_URL = (import.meta.env.VITE_ORTHANC_URL as string) || "http://localhost:8042";
-const ORTHANC_USER = (import.meta.env.VITE_ORTHANC_USER as string) || "orthanc";
-const ORTHANC_PASS = (import.meta.env.VITE_ORTHANC_PASS as string) || "orthanc";
+const ORTHANC_URL = getLegacyOrthancUrl();
+const DICOM_GATEWAY_PATH = ((import.meta.env.VITE_DICOM_GATEWAY_URL as string | undefined)
+  || `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/dicom-gateway`).replace(/\/$/, "");
 
-/** Build Basic Auth header for Orthanc REST API */
-function orthancAuth(): string {
-  return "Basic " + btoa(`${ORTHANC_USER}:${ORTHANC_PASS}`);
+function equipmentRoute(equipment: Pick<DicomEquipment, "unit_id" | "pacs_node_id">) {
+  return { nodeId: equipment.pacs_node_id ?? undefined, unitId: equipment.unit_id ?? undefined };
+}
+
+/**
+ * DICOM REST calls go through the server-side gateway. The direct URL is only
+ * a compatibility fallback for old local installations that do not expose
+ * the gateway yet; no Orthanc credential is ever read by this bundle.
+ */
+async function orthancFetch(path: string, init?: RequestInit, route?: { nodeId?: string; unitId?: number | null }): Promise<Response> {
+  const params = new URLSearchParams({ path });
+  if (route?.nodeId) params.set("node_id", route.nodeId);
+  if (route?.unitId != null) params.set("unit_id", String(route.unitId));
+  const gatewayUrl = `${DICOM_GATEWAY_PATH}?${params.toString()}`;
+  const { data: sessionData } = await supabase.auth.getSession();
+  const headers = new Headers(init?.headers);
+  if (sessionData.session?.access_token) headers.set("Authorization", `Bearer ${sessionData.session.access_token}`);
+  const gatewayResponse = await fetch(gatewayUrl, { ...init, headers });
+  if (gatewayResponse.status !== 404 || !import.meta.env.DEV) return gatewayResponse;
+  return fetch(`${ORTHANC_URL}${path}`, init);
 }
 
 function formatDicomDate(iso?: string): string {
@@ -262,11 +285,10 @@ export const equipmentService = {
     }
     const t0 = performance.now();
     try {
-      const res = await fetch(`${ORTHANC_URL}/modalities/${eq.ds_aetitle}/echo`, {
+      const res = await orthancFetch(`/modalities/${eq.ds_aetitle}/echo`, {
         method: "POST",
-        headers: { Authorization: orthancAuth() },
         signal: AbortSignal.timeout(5000),
-      });
+      }, equipmentRoute(eq));
       const t1 = performance.now();
       if (!res.ok) {
         return {
@@ -478,14 +500,15 @@ export const examService = {
     if (!eq) {
       throw new Error("Equipamento de destino nao configurado para este exame");
     }
-    const res = await fetch(
-      `${ORTHANC_URL}/peers/${eq.ds_aetitle}/store`,
+    const res = await orthancFetch(
+      `/peers/${eq.ds_aetitle}/store`,
       {
         method: "POST",
-        headers: { Authorization: orthancAuth(), "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ StudyInstanceUID: exam.cd_dicom_exame }),
         signal: AbortSignal.timeout(30000),
-      }
+      },
+      equipmentRoute(eq)
     );
     if (!res.ok) {
       const txt = await res.text();
@@ -673,16 +696,15 @@ export const reportService = {
   ): Promise<DicomReport> {
     // upsert por cd_dicom_exam: se ja existe, atualiza
     const { data: existing } = await supabase
-      .from("radiology_reports")
+      .from("reports")
       .select("*")
       .eq("imaging_order_item_id", examId) // legado: usar order_item como proxy
       .maybeSingle();
     if (existing) {
       const { data, error } = await supabase
-        .from("radiology_reports")
+        .from("reports")
         .update({
-          content,
-          radiologist_name: signedBy,
+          conclusion: content,
           updated_at: new Date().toISOString(),
         })
         .eq("id", existing.id)
@@ -691,23 +713,13 @@ export const reportService = {
       if (error) throw error;
       return this.mapRow(data);
     }
-    const { data, error } = await supabase
-      .from("radiology_reports")
-      .insert({
-        imaging_order_item_id: examId,
-        content,
-        radiologist_name: signedBy,
-        status: "draft",
-      })
-      .select()
-      .single();
-    if (error) throw error;
-    return this.mapRow(data);
+    void signedBy;
+    throw new Error("O laudo canônico é criado automaticamente quando o estudo é recebido pelo PACS.");
   },
 
   async getReport(examId: number): Promise<DicomReport | null> {
     const { data, error } = await supabase
-      .from("radiology_reports")
+      .from("reports")
       .select("*")
       .eq("imaging_order_item_id", examId)
       .order("updated_at", { ascending: false })
@@ -722,7 +734,7 @@ export const reportService = {
    */
   async list(filters?: { company_id?: string; status?: string }): Promise<DicomReport[]> {
     let q = supabase
-      .from("radiology_reports")
+      .from("reports")
       .select("*")
       .order("updated_at", { ascending: false })
       .limit(200);
@@ -767,9 +779,9 @@ export const reportService = {
       cd_dicom_exam: (r.imaging_order_item_id as number) ?? 0,
       cd_patient: (r.patient_id as number) ?? undefined,
       cd_laudo: (r.imaging_order_item_id as number) ?? undefined,
-      ds_content: (r.content as string) || "",
-      ds_status: ((r.status as string) || "draft").toUpperCase() as DicomReport["ds_status"],
-      ds_signed_by: r.radiologist_name as string | undefined,
+      ds_content: (r.conclusion as string) || (r.findings as string) || "",
+      ds_status: (["liberado", "entregue"].includes(String(r.status)) ? "FINAL" : "DRAFT") as DicomReport["ds_status"],
+      ds_signed_by: r.signed_by_name as string | undefined,
       dt_signed_at: r.signed_at as string | undefined,
       lg_published_app: false,
       cd_origem_sigh: r.cd_origem_sigh as number | undefined,
@@ -786,15 +798,14 @@ export const dicomWeb = {
    * QIDO-RS: busca estudos por patient ID
    * Endpoint: GET /studies?PatientID=...
    */
-  async queryStudiesByPatient(patientId: string): Promise<Array<{
+  async queryStudiesByPatient(patientId: string, route?: { nodeId?: string; unitId?: number | null }): Promise<Array<{
     studyInstanceUID: string;
     studyDate?: string;
     studyTime?: string;
     modality?: string;
     accessionNumber?: string;
   }>> {
-    const url = `${ORTHANC_URL}/dicom-web/studies?PatientID=${encodeURIComponent(patientId)}`;
-    const res = await fetch(url, { headers: { Authorization: orthancAuth() } });
+    const res = await orthancFetch(`/dicom-web/studies?PatientID=${encodeURIComponent(patientId)}`, undefined, route);
     if (!res.ok) throw new Error(`QIDO-RS falhou: ${res.status}`);
     const arr = await res.json();
     return (arr || []).map((s: Record<string, { Value?: string[] } | undefined>) => ({
@@ -810,45 +821,102 @@ export const dicomWeb = {
    * WADO-RS: retorna URL para download de uma instancia DICOM
    * Endpoint: GET /studies/{study}/instances/{sop}
    */
-  getInstanceUrl(studyInstanceUID: string, sopInstanceUID: string): string {
-    return `${ORTHANC_URL}/dicom-web/studies/${studyInstanceUID}/instances/${sopInstanceUID}`;
+  getInstanceUrl(studyInstanceUID: string, sopInstanceUID: string, route?: { nodeId?: string; unitId?: number | null }): string {
+    const params = new URLSearchParams({ path: `/dicom-web/studies/${studyInstanceUID}/instances/${sopInstanceUID}` });
+    if (route?.nodeId) params.set("node_id", route.nodeId);
+    if (route?.unitId != null) params.set("unit_id", String(route.unitId));
+    return `${DICOM_GATEWAY_PATH}?${params.toString()}`;
+  },
+
+  /** Baixa a instância pelo gateway autenticado para consumidores que não
+   * conseguem anexar Authorization (como o loader legado do Cornerstone). */
+  async getInstanceObjectUrl(
+    studyInstanceUID: string,
+    sopInstanceUID: string,
+    route?: { nodeId?: string; unitId?: number | null }
+  ): Promise<string> {
+    const res = await orthancFetch(
+      `/dicom-web/studies/${encodeURIComponent(studyInstanceUID)}/instances/${encodeURIComponent(sopInstanceUID)}`,
+      undefined,
+      route
+    );
+    if (!res.ok) throw new Error(`WADO-RS falhou: ${res.status}`);
+    return URL.createObjectURL(await res.blob());
   },
 
   /** WADO-URI (legado): retorna URL para visualizacao em viewer */
-  getWadoUri(studyInstanceUID: string): string {
-    return `${ORTHANC_URL}/wado?requestType=WADO&studyUID=${studyInstanceUID}&contentType=image/jpeg`;
+  getWadoUri(studyInstanceUID: string, route?: { nodeId?: string; unitId?: number | null }): string {
+    const params = new URLSearchParams({ path: `/wado?requestType=WADO&studyUID=${studyInstanceUID}&contentType=image/jpeg` });
+    if (route?.nodeId) params.set("node_id", route.nodeId);
+    if (route?.unitId != null) params.set("unit_id", String(route.unitId));
+    return `${DICOM_GATEWAY_PATH}?${params.toString()}`;
   },
 };
 
 // ── DICOM Nodes (PACS/MWL/Viewer) Service ──────────────────────────
-// Persistido em `dicom_nodes` (novo alias da tabela dicom_equipment ou
-// tabela dedicada `dicom_nodes`). Para este projeto, reaproveitamos o
-// storage da tabela `dicom_equipment` mapeando os campos.
+// Persistido em `dicom_nodes`. O fallback para dicom_equipment mantém o
+// comportamento de instalações que ainda nao aplicaram a migration.
+
+async function currentCompanyId(): Promise<string | undefined> {
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) throw new Error("Sessao autenticada obrigatoria para criar um no DICOM");
+  const { data } = await supabase.from("user_profiles").select("company_id").eq("id", auth.user.id).maybeSingle();
+  if (!data?.company_id) throw new Error("Usuario autenticado sem empresa ativa");
+  return data.company_id as string;
+}
+
+function isMissingRelation(error: unknown): boolean {
+  const e = error as { code?: string; message?: string } | null;
+  return e?.code === "PGRST116" || e?.code === "42P01" || Boolean(e?.message?.includes("does not exist"));
+}
 
 export const nodesService = {
   async list(companyId?: string): Promise<Array<{
     id: string;
     name: string;
     node_type: string;
+    node_kind?: "pacs" | "worklist";
+    unit_id?: number | null;
     aetitle: string;
     ip_address?: string;
     port?: number;
+    rest_endpoint_ref?: string | null;
+    priority?: number;
+    is_default?: boolean;
+    health_status?: string;
     description?: string;
     active: boolean;
   }>> {
-    // Se houver companyId, filtra; senão retorna todos
-    let q = supabase.from("dicom_equipment").select("*").order("ds_equipment");
+    let q = supabase.from("dicom_nodes").select("*").order("priority").order("name");
     if (companyId) q = q.eq("company_id", companyId);
-    const { data, error } = await q;
+    const modern = await q;
+    if (!modern.error) return (modern.data || []).map((r: Record<string, unknown>) => ({
+      id: String(r.id),
+      name: (r.name as string) ?? "",
+      node_type: (r.node_kind as string) ?? "pacs",
+      node_kind: r.node_kind as "pacs" | "worklist",
+      unit_id: (r.unit_id as number | null) ?? null,
+      aetitle: (r.aetitle as string) ?? "",
+      ip_address: r.dicom_host as string | undefined,
+      port: r.dicom_port as number | undefined,
+      rest_endpoint_ref: r.rest_endpoint_ref as string | null | undefined,
+      priority: r.priority as number | undefined,
+      is_default: r.is_default as boolean | undefined,
+      health_status: r.health_status as string | undefined,
+      description: r.last_health_error as string | undefined,
+      active: (r.is_active as boolean) ?? true,
+    }));
+    if (!isMissingRelation(modern.error)) throw modern.error;
+
+    let legacy = supabase.from("dicom_equipment").select("*").order("ds_equipment");
+    if (companyId) legacy = legacy.eq("company_id", companyId);
+    const { data, error } = await legacy;
     if (error) throw error;
     return (data || []).map((r: Record<string, unknown>) => ({
-      id: String(r.id),
-      name: (r.ds_equipment as string) ?? "",
-      node_type: (r.ds_type as string) ?? "pacs",
-      aetitle: (r.ds_aetitle as string) ?? "",
-      ip_address: r.ds_ip as string | undefined,
-      port: r.ds_port as number | undefined,
-      description: r.ds_observacao as string | undefined,
+      id: String(r.id), name: (r.ds_equipment as string) ?? "",
+      node_type: "pacs", node_kind: "pacs", unit_id: (r.unit_id as number | null) ?? null,
+      aetitle: (r.ds_aetitle as string) ?? "", ip_address: r.ds_ip as string | undefined,
+      port: r.ds_port as number | undefined, description: r.ds_observacao as string | undefined,
       active: (r.lg_active as boolean) ?? true,
     }));
   },
@@ -856,25 +924,31 @@ export const nodesService = {
   async create(payload: {
     name: string;
     node_type: string;
+    unit_id?: number | null;
     aetitle: string;
     ip_address?: string;
     port?: number;
+    rest_endpoint_ref?: string | null;
+    priority?: number;
+    is_default?: boolean;
     description?: string;
     active?: boolean;
   }): Promise<{ id: string }> {
-    const { data, error } = await supabase
-      .from("dicom_equipment")
-      .insert({
-        ds_equipment: payload.name,
-        ds_aetitle: payload.aetitle,
-        ds_type: (payload.node_type as DicomModality) || "US",
-        ds_ip: payload.ip_address,
-        ds_port: payload.port || 104,
-        ds_observacao: payload.description,
-        lg_active: payload.active ?? true,
-      })
-      .select("id")
-      .single();
+    const companyId = await currentCompanyId();
+    const { data, error } = await supabase.from("dicom_nodes").insert({
+      company_id: companyId,
+      unit_id: payload.unit_id ?? null,
+      name: payload.name,
+      node_kind: payload.node_type === "worklist" ? "worklist" : "pacs",
+      aetitle: payload.aetitle,
+      dicom_host: payload.ip_address,
+      dicom_port: payload.port || 4242,
+      rest_endpoint_ref: payload.rest_endpoint_ref ?? null,
+      priority: payload.priority ?? 100,
+      is_default: payload.is_default ?? false,
+      is_active: payload.active ?? true,
+      last_health_error: payload.description,
+    }).select("id").single();
     if (error) throw error;
     return { id: String(data.id) };
   },
@@ -882,24 +956,29 @@ export const nodesService = {
   async update(id: string, payload: Partial<{
     name: string;
     node_type: string;
+    unit_id?: number | null;
     aetitle: string;
     ip_address?: string;
     port?: number;
+    rest_endpoint_ref?: string | null;
+    priority?: number;
+    is_default?: boolean;
     description?: string;
     active?: boolean;
   }>): Promise<void> {
     const updates: Record<string, unknown> = {};
-    if (payload.name !== undefined) updates.ds_equipment = payload.name;
-    if (payload.aetitle !== undefined) updates.ds_aetitle = payload.aetitle;
-    if (payload.node_type !== undefined) updates.ds_type = payload.node_type;
-    if (payload.ip_address !== undefined) updates.ds_ip = payload.ip_address;
-    if (payload.port !== undefined) updates.ds_port = payload.port;
-    if (payload.description !== undefined) updates.ds_observacao = payload.description;
-    if (payload.active !== undefined) updates.lg_active = payload.active;
-    const { error } = await supabase
-      .from("dicom_equipment")
-      .update(updates)
-      .eq("id", Number(id));
+    if (payload.name !== undefined) updates.name = payload.name;
+    if (payload.aetitle !== undefined) updates.aetitle = payload.aetitle;
+    if (payload.node_type !== undefined) updates.node_kind = payload.node_type === "worklist" ? "worklist" : "pacs";
+    if (payload.ip_address !== undefined) updates.dicom_host = payload.ip_address;
+    if (payload.port !== undefined) updates.dicom_port = payload.port;
+    if (payload.unit_id !== undefined) updates.unit_id = payload.unit_id;
+    if (payload.rest_endpoint_ref !== undefined) updates.rest_endpoint_ref = payload.rest_endpoint_ref;
+    if (payload.priority !== undefined) updates.priority = payload.priority;
+    if (payload.is_default !== undefined) updates.is_default = payload.is_default;
+    if (payload.description !== undefined) updates.last_health_error = payload.description;
+    if (payload.active !== undefined) updates.is_active = payload.active;
+    const { error } = await supabase.from("dicom_nodes").update(updates).eq("id", id);
     if (error) throw error;
   },
 };
@@ -907,8 +986,9 @@ export const nodesService = {
 // ── DICOM Modalities (worklist SCP) Service ────────────────────────
 // View derivada de dicom_equipment filtrada por lg_worklist=true.
 export const modalitiesService = {
-  async list(companyId?: string): Promise<Array<{
+  async list(companyId?: string, unitId?: number | null): Promise<Array<{
     id: string;
+    unit_id?: number | null;
     name: string;
     modality_type: string;
     aetitle: string;
@@ -918,6 +998,9 @@ export const modalitiesService = {
     port?: number;
     worklist_enabled: boolean;
     pacs_node_id?: string;
+    worklist_node_id?: string;
+    pacs_node_name?: string;
+    worklist_node_name?: string;
     room_name?: string;
     active: boolean;
   }>> {
@@ -926,10 +1009,12 @@ export const modalitiesService = {
       .select("*")
       .order("ds_equipment");
     if (companyId) q = q.eq("company_id", companyId);
+    if (unitId != null) q = q.eq("unit_id", unitId);
     const { data, error } = await q;
     if (error) throw error;
     return (data || []).map((r: Record<string, unknown>) => ({
       id: String(r.id),
+      unit_id: (r.unit_id as number | null) ?? null,
       name: (r.ds_equipment as string) ?? "",
       modality_type: (r.ds_type as string) ?? "US",
       aetitle: (r.ds_aetitle as string) ?? "",
@@ -938,7 +1023,8 @@ export const modalitiesService = {
       ip_address: r.ds_ip as string | undefined,
       port: r.ds_port as number | undefined,
       worklist_enabled: (r.lg_worklist as boolean) ?? false,
-      pacs_node_id: r.cd_pacs_node ? String(r.cd_pacs_node) : undefined,
+      pacs_node_id: r.pacs_node_id ? String(r.pacs_node_id) : undefined,
+      worklist_node_id: r.worklist_node_id ? String(r.worklist_node_id) : undefined,
       room_name: r.ds_location as string | undefined,
       active: (r.lg_active as boolean) ?? true,
     }));
@@ -946,6 +1032,7 @@ export const modalitiesService = {
 
   async create(payload: {
     name: string;
+    unit_id?: number | null;
     modality_type: string;
     aetitle: string;
     manufacturer?: string;
@@ -954,12 +1041,16 @@ export const modalitiesService = {
     port?: number | null;
     worklist_enabled?: boolean;
     pacs_node_id?: string | null;
+    worklist_node_id?: string | null;
     room_name?: string;
     active?: boolean;
   }): Promise<{ id: string }> {
+    const companyId = await currentCompanyId();
     const { data, error } = await supabase
       .from("dicom_equipment")
       .insert({
+        company_id: companyId,
+        unit_id: payload.unit_id ?? null,
         ds_equipment: payload.name,
         ds_aetitle: payload.aetitle,
         ds_type: (payload.modality_type as DicomModality) || "US",
@@ -969,7 +1060,8 @@ export const modalitiesService = {
         ds_port: payload.port || 104,
         ds_location: payload.room_name,
         lg_worklist: payload.worklist_enabled ?? false,
-        cd_pacs_node: payload.pacs_node_id ? Number(payload.pacs_node_id) : null,
+        pacs_node_id: payload.pacs_node_id || null,
+        worklist_node_id: payload.worklist_node_id || null,
         lg_active: payload.active ?? true,
       })
       .select("id")
@@ -980,6 +1072,7 @@ export const modalitiesService = {
 
   async update(id: string, payload: Partial<{
     name: string;
+    unit_id?: number | null;
     modality_type: string;
     aetitle: string;
     manufacturer?: string;
@@ -988,11 +1081,13 @@ export const modalitiesService = {
     port?: number | null;
     worklist_enabled?: boolean;
     pacs_node_id?: string | null;
+    worklist_node_id?: string | null;
     room_name?: string;
     active?: boolean;
   }>): Promise<void> {
     const updates: Record<string, unknown> = {};
     if (payload.name !== undefined) updates.ds_equipment = payload.name;
+    if (payload.unit_id !== undefined) updates.unit_id = payload.unit_id;
     if (payload.aetitle !== undefined) updates.ds_aetitle = payload.aetitle;
     if (payload.modality_type !== undefined) updates.ds_type = payload.modality_type;
     if (payload.manufacturer !== undefined) updates.ds_manufacturer = payload.manufacturer;
@@ -1001,7 +1096,8 @@ export const modalitiesService = {
     if (payload.port !== undefined) updates.ds_port = payload.port;
     if (payload.room_name !== undefined) updates.ds_location = payload.room_name;
     if (payload.worklist_enabled !== undefined) updates.lg_worklist = payload.worklist_enabled;
-    if (payload.pacs_node_id !== undefined) updates.cd_pacs_node = payload.pacs_node_id ? Number(payload.pacs_node_id) : null;
+    if (payload.pacs_node_id !== undefined) updates.pacs_node_id = payload.pacs_node_id || null;
+    if (payload.worklist_node_id !== undefined) updates.worklist_node_id = payload.worklist_node_id || null;
     if (payload.active !== undefined) updates.lg_active = payload.active;
     const { error } = await supabase
       .from("dicom_equipment")
@@ -1018,12 +1114,14 @@ export const modalitiesService = {
 import type { WorklistQueueStatus, DicomWorklistItem as DicomWorklistItemAlias } from "@/types/dicom";
 
 export const worklistQueueServiceRaw = {
-  async list(filters?: { status?: string }): Promise<DicomWorklistItemAlias[]> {
+  async list(filters?: { status?: string; unit_id?: number | null; destination_node_id?: string }): Promise<DicomWorklistItemAlias[]> {
     let q = supabase
       .from("dicom_worklist_queue")
       .select("*")
       .order("scheduled_datetime", { ascending: false });
     if (filters?.status) q = q.eq("status", filters.status);
+    if (filters?.unit_id != null) q = q.eq("unit_id", filters.unit_id);
+    if (filters?.destination_node_id) q = q.eq("destination_node_id", filters.destination_node_id);
     const { data, error } = await q;
     if (error) {
       // Se a tabela não existir (404), retorna array vazio silenciosamente
@@ -1064,9 +1162,16 @@ export const worklistQueueServiceRaw = {
     order: import("@/types/dicom").ImagingOrder,
     patient: { id: string; full_name: string; birth_date?: string; sex?: string; cpf?: string }
   ): Promise<DicomWorklistItemAlias> {
+    const unitId = order.unit_id == null ? null : Number(order.unit_id);
+    const route = order.company_id
+      ? await resolveDicomNodeRoute(order.company_id, { unitId, kind: "worklist" })
+      : { node: null };
     const { data, error } = await supabase
       .from("dicom_worklist_queue")
       .insert({
+        company_id: order.company_id,
+        unit_id: unitId,
+        destination_node_id: route.node?.id ?? null,
         imaging_order_item_id: item.id,
         patient_id: order.patient_id,
         patient_name: patient.full_name,
@@ -1153,9 +1258,29 @@ export const imagingOrdersServiceReal = {
   },
 
   async create(payload: Partial<ImagingOrder>): Promise<ImagingOrder> {
+    const { data: authData } = await supabase.auth.getUser();
+    if (!authData.user) throw new Error("Sessão obrigatória para criar pedido de imagem.");
+    const { data: professional, error: professionalError } = await supabase
+      .from("professionals")
+      .select("id, full_name, company_id")
+      .eq("user_id", authData.user.id)
+      .eq("lg_ativo", true)
+      .single();
+    if (professionalError || !professional) throw new Error("Usuário sem profissional ativo vinculado.");
+    const { data: profile } = await supabase.from("user_profiles").select("primary_unit_id").eq("id", authData.user.id).maybeSingle();
+    const accession = `PM-${new Date().toISOString().replace(/\D/g, "").slice(0, 17)}-${crypto.randomUUID().slice(0, 6)}`;
     const { data, error } = await supabase
       .from("imaging_orders")
-      .insert(payload)
+      .insert({
+        ...payload,
+        company_id: professional.company_id,
+        unit_id: payload.unit_id ?? profile?.primary_unit_id ?? null,
+        requesting_physician_id: professional.id,
+        referring_physician_name: professional.full_name,
+        accession_number: payload.accession_number || accession,
+        status: payload.status || "agendado",
+        created_by: authData.user.id,
+      })
       .select()
       .single();
     if (error) throw error;
@@ -1236,26 +1361,33 @@ import type { RadiologyReport } from "@/types/dicom";
 export const radiologyReportsServiceReal = {
   async list(filters?: { status?: string; company_id?: string }): Promise<RadiologyReport[]> {
     let q = supabase
-      .from("radiology_reports")
-      .select("*, patients(full_name)")
+      .from("reports")
+      .select("*")
       .order("updated_at", { ascending: false })
       .limit(200);
     if (filters?.status) q = q.eq("status", filters.status);
     if (filters?.company_id) q = q.eq("company_id", filters.company_id);
     const { data, error } = await q;
     if (error) throw error;
-    return (data || []).map((r: Record<string, unknown>) => {
-      const patient = r.patients as { full_name?: string } | null;
-      return {
-        ...(r as unknown as RadiologyReport),
-        patient_name: patient?.full_name,
-      } as RadiologyReport;
-    });
+    const rows = (data || []) as unknown as RadiologyReport[];
+    // Resolve nomes de pacientes numa 2a query (proxy REST local nao faz embedding)
+    const patientIds = [...new Set(rows.map((r) => r.patient_id).filter(Boolean))];
+    const nameById: Record<string, string> = {};
+    if (patientIds.length > 0) {
+      const { data: pats } = await supabase
+        .from("patients")
+        .select("id, full_name")
+        .in("id", patientIds as string[]);
+      for (const p of (pats || []) as Array<{ id: string; full_name: string }>) {
+        nameById[String(p.id)] = p.full_name;
+      }
+    }
+    return rows.map((r) => ({ ...r, patient_name: nameById[String(r.patient_id)] }));
   },
 
   async update(id: string, updates: Partial<RadiologyReport>): Promise<void> {
     const { error } = await supabase
-      .from("radiology_reports")
+      .from("reports")
       .update({
         ...updates,
         updated_at: new Date().toISOString(),
@@ -1265,15 +1397,8 @@ export const radiologyReportsServiceReal = {
   },
 
   async sign(id: string, radiologistName: string): Promise<void> {
-    const { error } = await supabase
-      .from("radiology_reports")
-      .update({
-        radiologist_name: radiologistName,
-        status: "final",
-        signed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id);
+    void radiologistName;
+    const { error } = await supabase.rpc("sign_and_release_radiology_report", { p_report_id: id });
     if (error) throw error;
   },
 };
@@ -1294,7 +1419,7 @@ export const dicomDashboardServiceReal = {
     const [eqRes, wlRes, repRes, ordRes] = await Promise.all([
       supabase.from("dicom_equipment").select("id, lg_worklist, lg_active", { count: "exact" }),
       supabase.from("dicom_worklist_queue").select("status", { count: "exact" }),
-      supabase.from("radiology_reports").select("status", { count: "exact" }),
+      supabase.from("reports").select("status", { count: "exact" }),
       supabase.from("imaging_orders").select("status", { count: "exact" }),
     ]);
 
@@ -1308,8 +1433,8 @@ export const dicomDashboardServiceReal = {
       worklistEnabled: eq.filter(e => e.lg_worklist === true).length,
       worklistPending: wl.filter(w => w.status === "pending").length,
       worklistExported: wl.filter(w => w.status === "exported").length,
-      pendingReports: rep.filter(r => r.status === "draft" || r.status === "preliminary").length,
-      completedReports: rep.filter(r => r.status === "final" || r.status === "amended").length,
+      pendingReports: rep.filter(r => ["aguardando_laudo", "em_digitacao", "em_revisao", "aguardando_assinatura"].includes(r.status || "")).length,
+      completedReports: rep.filter(r => r.status === "liberado" || r.status === "entregue").length,
       ordersInAcquisition: ord.filter(o => o.status === "em_aquisicao").length,
       ordersSentPacs: ord.filter(o => o.status === "enviado_pacs" || o.status === "recebido_pacs").length,
     };

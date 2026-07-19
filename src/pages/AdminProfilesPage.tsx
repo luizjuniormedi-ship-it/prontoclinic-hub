@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Search, Shield, Lock, Users } from "lucide-react";
 import { userProfilesService } from "@/services/userProfilesService";
+import { rolePermissionsService } from "@/services/rolePermissionsService";
 import { useToast } from "@/hooks/use-toast";
 
 interface ProfileWithCount {
@@ -27,18 +28,24 @@ export default function AdminProfilesPage() {
     const load = async () => {
       setLoading(true);
       try {
-        const [profs, users] = await Promise.all([
+        const [profs, users, perms, roles] = await Promise.all([
           userProfilesService.getProfiles(),
           userProfilesService.getAll(),
+          rolePermissionsService.getAll(),
+          userProfilesService.getRoles(),
         ]);
         // Enriquece com contagem de usuários por role
         const enriched: ProfileWithCount[] = profs.map((p) => {
           const count = users.filter((u) => (u.role_name ?? "") === p.id).length;
-          // Permissões estimadas: 1 por módulo (em produção, viriam de uma tabela permission_matrix)
+          const roleId = roles.find((role) => role.name === p.id)?.id;
+          const permissionCount = roleId === undefined
+            ? 0
+            : perms.filter((permission) => permission.role_id === roleId && Object.entries(permission)
+              .some(([key, value]) => key.startsWith("can_") && value === true)).length;
           return {
             ...p,
             userCount: count,
-            permissions: 8, // valor estimado — substituir por count real quando houver tabela
+            permissions: permissionCount,
             isSystem: p.id === "admin",
           };
         });

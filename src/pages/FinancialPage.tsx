@@ -14,11 +14,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { financialService, DbFinancialTransaction } from "@/services/financialService";
 import { billingsService } from "@/services/financialService";
-import { patientsService } from "@/services/patientsService";
 import { professionalsLookup, DbProfessional } from "@/services/appointmentsService";
 import { Patient } from "@/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabase";
 
 const formatCurrency = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const formatDate = (d: string) => { try { return new Date(d + "T00:00:00").toLocaleDateString("pt-BR"); } catch { return d; } };
@@ -54,13 +54,22 @@ export default function FinancialPage() {
     try {
       setLoading(true);
       setError(null);
-      const [txns, pats, profs] = await Promise.all([
+      const [txns, profs] = await Promise.all([
         financialService.getAll(),
-        patientsService.getAll(),
         professionalsLookup.getAll(),
       ]);
+      const patientIds = Array.from(new Set(txns.map((t) => t.patient_id).filter((id): id is string => Boolean(id))));
+      const chunks: string[][] = [];
+      for (let i = 0; i < patientIds.length; i += 100) chunks.push(patientIds.slice(i, i + 100));
+      const patientResponses = await Promise.all(chunks.map((ids) =>
+        supabase.from("patients").select("id, full_name").in("id", ids)
+      ));
+      const patientRows = patientResponses.flatMap(({ data, error: patientError }) => {
+        if (patientError) throw patientError;
+        return data || [];
+      });
       setTransactions(txns);
-      setPatients(pats);
+      setPatients(patientRows.map((p: any) => ({ id: String(p.id), name: p.full_name || "" } as Patient)));
       setProfessionals(profs);
     } catch (err) {
       setError((err as Error).message);
@@ -71,19 +80,19 @@ export default function FinancialPage() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  const getPatientName = (id: string | null) => patients.find((p) => p.id === id)?.name || "—";
+  const getPatientName = (id: string | null, fallback?: string | null) => fallback || patients.find((p) => p.id === id)?.name || "—";
   const getProfName = (id: string | null) => professionals.find((p) => p.id === id)?.full_name || "—";
 
   const filtered = transactions.filter((t) => {
     const q = search.toLowerCase();
-    const patientName = getPatientName(t.patient_id).toLowerCase();
+    const patientName = getPatientName(t.patient_id, t.patient_name).toLowerCase();
     const matchSearch = !search || patientName.includes(q);
     const matchStatus = statusFilter === "all" || t.status === statusFilter;
     return matchSearch && matchStatus;
   });
 
-  const totalPaid = transactions.filter((t) => t.status === "pago").reduce((s, t) => s + t.amount, 0);
-  const totalPending = transactions.filter((t) => t.status === "pendente").reduce((s, t) => s + t.amount, 0);
+  const totalPaid = transactions.filter((t) => t.status === "pago" || t.status === "faturado").reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  const totalPending = transactions.filter((t) => t.status === "pendente" || t.status === "em_aberto").reduce((s, t) => s + (Number(t.amount) || 0), 0);
 
   const handleMarkPaid = async () => {
     if (!paymentDialog) return;
@@ -191,7 +200,7 @@ export default function FinancialPage() {
             <TableBody>
               {filtered.map((t) => (
                 <TableRow key={t.id} className={t.status === "pendente" ? "" : t.status === "cancelado" ? "opacity-50" : ""}>
-                  <TableCell className="font-medium text-sm">{getPatientName(t.patient_id)}</TableCell>
+                  <TableCell className="font-medium text-sm">{getPatientName(t.patient_id, t.patient_name)}</TableCell>
                   <TableCell className="font-medium text-sm">{formatCurrency(t.amount)}</TableCell>
                   <TableCell className="text-xs">{t.discount > 0 ? `-${formatCurrency(t.discount)}` : "—"}</TableCell>
                   <TableCell className="text-xs">{t.payment_method ? (methodLabels[t.payment_method] || t.payment_method) : "—"}</TableCell>
@@ -226,7 +235,7 @@ export default function FinancialPage() {
           {paymentDialog && (
             <div className="space-y-4">
               <div className="rounded-lg bg-muted/50 p-3 space-y-1">
-                <p className="font-medium text-sm">{getPatientName(paymentDialog.patient_id)}</p>
+                <p className="font-medium text-sm">{getPatientName(paymentDialog.patient_id, paymentDialog.patient_name)}</p>
                 <p className="text-lg font-bold text-primary">{formatCurrency(paymentDialog.amount)}</p>
               </div>
               <div className="space-y-2">

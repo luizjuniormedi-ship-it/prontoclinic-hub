@@ -5,7 +5,17 @@ export function formatCurrency(value: number): string {
 }
 
 export function formatDate(date: string): string {
-  return new Date(date + "T00:00:00").toLocaleDateString("pt-BR");
+  if (!date) return "—";
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date}T00:00:00` : date;
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? "—" : parsed.toLocaleDateString("pt-BR");
+}
+
+export function localDateKey(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export function formatCPF(cpf: string): string {
@@ -87,5 +97,5 @@ export function daysBetween(dateA: string, dateB: string): number {
 export function addDays(date: string, days: number): string {
   const d = new Date(date + "T00:00:00");
   d.setDate(d.getDate() + days);
-  return d.toISOString().split("T")[0];
+  return localDateKey(d);
 }

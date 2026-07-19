@@ -9,11 +9,23 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      confirm_production:
+        description: "Type DEPLOY_PRODUCTION to publish"
+        required: true
+        default: ""
 
 jobs:
   deploy:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.confirm_production == 'DEPLOY_PRODUCTION'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment:
+      name: production
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -29,6 +41,9 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
+      - name: Lint (required release gate)
+        run: npm run lint
+
       - name: Build SPA
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
@@ -38,7 +53,7 @@ jobs:
           VITE_ENABLE_TELEMEDICINE: 'false'
           VITE_ENABLE_WHATSAPP: 'false'
           VITE_TISS_AMBIENTE: HOMOLOGACAO
-          VITE_TISS_VERSION: '3.05.00'
+          VITE_TISS_VERSION: '04.03.00'
           VITE_DICOM_BUCKET: dicom
         run: |
           if [ -z "$VITE_SUPABASE_URL" ]; then

@@ -22,8 +22,10 @@ import {
   type Certificado,
   type AssinaturaAuditoria,
 } from "@/services/assinaturaDigitalService";
+import { useConfirm } from "@/hooks/useConfirm";
 
 export function AssinaturaDigitalPanel() {
+  const { confirm } = useConfirm();
   const { toast } = useToast();
   const [certificados, setCertificados] = useState<Certificado[]>([]);
   const [auditoria, setAuditoria] = useState<AssinaturaAuditoria[]>([]);
@@ -95,7 +97,7 @@ export function AssinaturaDigitalPanel() {
   }, [cdProfissional, tpCertificado, nrSerie, cdEmissor, dtInicio, dtFim, toast, carregar]);
 
   const handleRevogar = useCallback(async (id: number) => {
-    if (!window.confirm("Revogar este certificado? Esta ação não pode ser desfeita.")) return;
+    if (!await confirm({ title: "Revogar certificado?", description: "Esta ação não pode ser desfeita.", destructive: true, confirmText: "Revogar" })) return;
     try {
       await assinaturaDigitalService.certificados.revogar(id, {
         ds_motivo_revogacao: "Revogação manual via painel",

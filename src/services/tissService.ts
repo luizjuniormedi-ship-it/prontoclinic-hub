@@ -8,7 +8,7 @@
  *   - BPA / SUS              → futuro (todas vazias no SIGH)
  *
  * Padrão TISS da ANS (Agência Nacional de Saúde Suplementar)
- *   - Versão atual: 3.05.00
+ *   - Comunicação vigente para guias: 04.03.00 (ANS, maio/2026)
  *   - Componentes: comunicacaoBeneficiario, solicitacaoProcedimento,
  *     demonstrativoAnaliseConta, demonstrativoPagamento, recursoGlosa
  *   - Schema XSD: https://www.gov.br/ans/pt-br/assuntos/prestadores/
@@ -41,12 +41,18 @@ export type TissTipoGuia =
 
 export type TissAmbiente = "HOMOLOGACAO" | "PRODUCAO";
 
+/** A ANS publica a release como 04.03.00; o dm_versao do XSD exige 4.03.00. */
+export const TISS_COMMUNICATION_RELEASE = "04.03.00" as const;
+export const TISS_COMMUNICATION_VERSION = "4.03.00" as const;
+export type TissCommunicationVersion = typeof TISS_COMMUNICATION_VERSION;
+
 export type GlosaStatus = "PENDENTE" | "ENVIADO" | "DEFERIDO" | "INDEFERIDO" | "PARCIAL";
 
 export interface TissXml {
   id: number;
   company_id: string;
   cd_fatura?: number;
+  appointment_id?: number;
   cd_convenio?: number;
   ds_descricao?: string;
   ds_filename?: string;
@@ -109,10 +115,6 @@ export interface TissProtocol {
   ds_endpoint: string;
   ds_versao_tiss: string;
   tp_ambiente: TissAmbiente;
-  cd_certificado_a1_path?: string;
-  ds_certificado_senha?: string;
-  ds_usuario?: string;
-  ds_senha?: string;
   lg_active: boolean;
   ds_observacao?: string;
   dt_ultimo_teste?: string;
@@ -159,15 +161,6 @@ export const TISS_GLOSA_CODES: Array<{ codigo: string; descricao: string }> = [
 
 // ── Helpers ────────────────────────────────────────────────────────
 
-function sha256(text: string): Promise<string> {
-  const enc = new TextEncoder().encode(text);
-  return crypto.subtle.digest("SHA-256", enc).then((buf) => {
-    return Array.from(new Uint8Array(buf))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-  });
-}
-
 function xmlEscape(s: string): string {
   if (!s) return "";
   return s
@@ -186,6 +179,408 @@ function isoToTissDate(iso?: string): string {
 function isoToTissDateTime(iso?: string): string {
   if (!iso) return new Date().toISOString();
   return iso;
+}
+
+export interface TissXmlBuildInput {
+  appointmentId: number;
+  tipoGuia: TissTipoGuia;
+  nr_carteira: string;
+  cd_atendimento?: string;
+  pacienteNome: string;
+  profissionalNome: string;
+  professionalLicense: string;
+  providerCnpj: string;
+  registroAns: string;
+  /** Campos obrigatórios no tissGuiasV4_03_00.xsd para uma guia SP/SADT. */
+  cnes?: string;
+  professionalCouncilCode?: string;
+  professionalStateCode?: string;
+  professionalCbos?: string;
+  atendimentoRN?: "S" | "N";
+  caraterAtendimento?: "1" | "2";
+  tipoAtendimento?: "01" | "02" | "03" | "04" | "08" | "09" | "10" | "13" | "23";
+  indicadorAcidente?: "0" | "1" | "2" | "9";
+  regimeAtendimento?: "01" | "02" | "03" | "04" | "05";
+  dataExecucao?: string;
+  versao?: TissCommunicationVersion;
+  procedimentos: Array<{
+    cd_tuss: string;
+    ds_procedimento: string;
+    qt: number;
+    vl_unitario: number;
+  }>;
+  vl_total?: number;
+  agora?: Date;
+}
+
+function decodeXmlText(value: string): string {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+function leftRotate32(value: number, amount: number): number {
+  return ((value << amount) | (value >>> (32 - amount))) >>> 0;
+}
+
+function md5Iso88591(value: string): string {
+  const bytes = encodeIso88591(value);
+  const paddedLength = Math.ceil((bytes.length + 9) / 64) * 64;
+  const padded = new Uint8Array(paddedLength);
+  padded.set(bytes);
+  padded[bytes.length] = 0x80;
+  const bitLength = bytes.length * 8;
+  const view = new DataView(padded.buffer);
+  view.setUint32(paddedLength - 8, bitLength >>> 0, true);
+  view.setUint32(paddedLength - 4, Math.floor(bitLength / 0x100000000), true);
+
+  let a0 = 0x67452301;
+  let b0 = 0xefcdab89;
+  let c0 = 0x98badcfe;
+  let d0 = 0x10325476;
+  const shifts = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21];
+
+  for (let offset = 0; offset < padded.length; offset += 64) {
+    let a = a0;
+    let b = b0;
+    let c = c0;
+    let d = d0;
+    for (let i = 0; i < 64; i++) {
+      let f: number;
+      let g: number;
+      if (i < 16) {
+        f = (b & c) | (~b & d);
+        g = i;
+      } else if (i < 32) {
+        f = (d & b) | (~d & c);
+        g = (5 * i + 1) % 16;
+      } else if (i < 48) {
+        f = b ^ c ^ d;
+        g = (3 * i + 5) % 16;
+      } else {
+        f = c ^ (b | ~d);
+        g = (7 * i) % 16;
+      }
+      const word = view.getUint32(offset + g * 4, true);
+      const constant = Math.floor(Math.abs(Math.sin(i + 1)) * 0x100000000) >>> 0;
+      const nextB = (b + leftRotate32((a + f + constant + word) >>> 0, shifts[Math.floor(i / 16) * 4 + (i % 4)])) >>> 0;
+      a = d;
+      d = c;
+      c = b;
+      b = nextB;
+    }
+    a0 = (a0 + a) >>> 0;
+    b0 = (b0 + b) >>> 0;
+    c0 = (c0 + c) >>> 0;
+    d0 = (d0 + d) >>> 0;
+  }
+
+  return [a0, b0, c0, d0]
+    .flatMap((word) => [word & 0xff, (word >>> 8) & 0xff, (word >>> 16) & 0xff, (word >>> 24) & 0xff])
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase();
+}
+
+/** Calcula o MD5 TISS sobre os valores da transação, sem tags e sem epílogo. */
+export function calculateTissTransactionMd5(transactionXml: string): string {
+  const withoutEpilogue = transactionXml.replace(/<ans:epilogo>[\s\S]*?<\/ans:epilogo>/, "");
+  const values = Array.from(withoutEpilogue.matchAll(/>([^<]*)</g))
+    .map((match) => match[1])
+    .filter((value) => value.trim().length > 0)
+    .map(decodeXmlText)
+    .join("");
+  if (!values) {
+    throw new Error("Não foi possível calcular o MD5 TISS: transação sem valores.");
+  }
+  return md5Iso88591(values);
+}
+
+function onlyDigits(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+function requireTiss403SadtFields(input: TissXmlBuildInput): void {
+  if (input.tipoGuia !== "SP/SADT") {
+    throw new Error("O gerador TISS 04.03.00 implementa somente guia SP/SADT.");
+  }
+  const required: Array<[string, unknown]> = [
+    ["nr_carteira", input.nr_carteira],
+    ["professionalLicense", onlyDigits(input.professionalLicense)],
+    ["providerCnpj", onlyDigits(input.providerCnpj)],
+    ["registroAns", onlyDigits(input.registroAns)],
+    ["cnes", input.cnes],
+    ["professionalCouncilCode", input.professionalCouncilCode],
+    ["professionalStateCode", input.professionalStateCode],
+    ["professionalCbos", input.professionalCbos],
+    ["atendimentoRN", input.atendimentoRN],
+    ["caraterAtendimento", input.caraterAtendimento],
+    ["tipoAtendimento", input.tipoAtendimento],
+    ["indicadorAcidente", input.indicadorAcidente],
+    ["regimeAtendimento", input.regimeAtendimento],
+  ];
+  const missing = required.filter(([, value]) => !value).map(([name]) => name);
+  if (missing.length) {
+    throw new Error(`Dados obrigatórios TISS 04.03.00 ausentes: ${missing.join(", ")}.`);
+  }
+  if (onlyDigits(input.providerCnpj).length !== 14) {
+    throw new Error("CNPJ do prestador deve conter 14 dígitos para TISS 04.03.00.");
+  }
+  if (!/^\d{6}$/.test(onlyDigits(input.registroAns))) {
+    throw new Error("Registro ANS deve conter 6 dígitos para TISS 04.03.00.");
+  }
+  if (!input.procedimentos.length) {
+    throw new Error("A guia SP/SADT deve conter ao menos um procedimento executado.");
+  }
+  for (const procedure of input.procedimentos) {
+    if (!/^\d{1,10}$/.test(procedure.cd_tuss) || procedure.qt <= 0 || procedure.vl_unitario < 0) {
+      throw new Error("Procedimento TISS inválido: informe código TUSS numérico, quantidade positiva e valor não negativo.");
+    }
+  }
+}
+
+/**
+ * Builds a TISS message without network or database side effects.
+ * Persistence and operator delivery are deliberately handled by separate steps.
+ */
+export function buildTissXml(input: TissXmlBuildInput): { xml: string; vlTotal: number; hash: string } {
+  requireTiss403SadtFields(input);
+  const agora = input.agora ?? new Date();
+  const version = input.versao ?? TISS_COMMUNICATION_VERSION;
+  if (version !== TISS_COMMUNICATION_VERSION) {
+    throw new Error(`Versão de comunicação não suportada pelo gerador: ${version}.`);
+  }
+  const executionDate = isoToTissDate(input.dataExecucao ?? agora.toISOString());
+  const executionTime = agora.toISOString().substring(11, 19);
+  const providerCnpj = onlyDigits(input.providerCnpj);
+  const registroAns = onlyDigits(input.registroAns);
+  const professionalLicense = onlyDigits(input.professionalLicense);
+  const vlTotal =
+    input.vl_total ??
+    input.procedimentos.reduce((acc, p) => acc + p.qt * p.vl_unitario, 0);
+  const procs = input.procedimentos
+    .map(
+      (p, index) => `
+            <ans:procedimentoExecutado>
+              <ans:sequencialItem>${index + 1}</ans:sequencialItem>
+              <ans:dataExecucao>${executionDate}</ans:dataExecucao>
+              <ans:horaInicial>${executionTime}</ans:horaInicial>
+              <ans:procedimento>
+                <ans:codigoTabela>22</ans:codigoTabela>
+                <ans:codigoProcedimento>${xmlEscape(p.cd_tuss)}</ans:codigoProcedimento>
+                <ans:descricaoProcedimento>${xmlEscape(p.ds_procedimento)}</ans:descricaoProcedimento>
+              </ans:procedimento>
+              <ans:quantidadeExecutada>${p.qt}</ans:quantidadeExecutada>
+              <ans:reducaoAcrescimo>1.00</ans:reducaoAcrescimo>
+              <ans:valorUnitario>${p.vl_unitario.toFixed(2)}</ans:valorUnitario>
+              <ans:valorTotal>${(p.qt * p.vl_unitario).toFixed(2)}</ans:valorTotal>
+            </ans:procedimentoExecutado>`
+    )
+    .join("");
+  const transactionId = String(agora.getTime()).slice(-12);
+  const guideNumber = xmlEscape(input.cd_atendimento || String(input.appointmentId));
+  const transactionXml = `<?xml version="1.0" encoding="ISO-8859-1"?>
+<ans:mensagemTISS xmlns:ans="http://www.ans.gov.br/padroes/tiss/schemas">
+  <ans:cabecalho>
+    <ans:identificacaoTransacao>
+      <ans:tipoTransacao>ENVIO_LOTE_GUIAS</ans:tipoTransacao>
+      <ans:sequencialTransacao>${transactionId}</ans:sequencialTransacao>
+      <ans:dataRegistroTransacao>${isoToTissDate(agora.toISOString())}</ans:dataRegistroTransacao>
+      <ans:horaRegistroTransacao>${executionTime}</ans:horaRegistroTransacao>
+    </ans:identificacaoTransacao>
+    <ans:origem>
+      <ans:identificacaoPrestador><ans:CNPJ>${providerCnpj}</ans:CNPJ></ans:identificacaoPrestador>
+    </ans:origem>
+    <ans:destino>
+      <ans:registroANS>${registroAns}</ans:registroANS>
+    </ans:destino>
+    <ans:Padrao>${version}</ans:Padrao>
+  </ans:cabecalho>
+  <ans:prestadorParaOperadora>
+    <ans:loteGuias>
+      <ans:numeroLote>${transactionId}</ans:numeroLote>
+      <ans:guiasTISS>
+        <ans:guiaSP-SADT>
+          <ans:cabecalhoGuia>
+            <ans:registroANS>${registroAns}</ans:registroANS>
+            <ans:numeroGuiaPrestador>${guideNumber}</ans:numeroGuiaPrestador>
+          </ans:cabecalhoGuia>
+          <ans:dadosBeneficiario>
+            <ans:numeroCarteira>${xmlEscape(input.nr_carteira)}</ans:numeroCarteira>
+            <ans:atendimentoRN>${input.atendimentoRN}</ans:atendimentoRN>
+          </ans:dadosBeneficiario>
+          <ans:dadosSolicitante>
+            <ans:contratadoSolicitante><ans:cnpjContratado>${providerCnpj}</ans:cnpjContratado></ans:contratadoSolicitante>
+            <ans:nomeContratadoSolicitante>${xmlEscape(input.profissionalNome)}</ans:nomeContratadoSolicitante>
+            <ans:profissionalSolicitante>
+              <ans:nomeProfissional>${xmlEscape(input.profissionalNome)}</ans:nomeProfissional>
+              <ans:conselhoProfissional>${input.professionalCouncilCode}</ans:conselhoProfissional>
+              <ans:numeroConselhoProfissional>${professionalLicense}</ans:numeroConselhoProfissional>
+              <ans:UF>${input.professionalStateCode}</ans:UF>
+              <ans:CBOS>${input.professionalCbos}</ans:CBOS>
+            </ans:profissionalSolicitante>
+          </ans:dadosSolicitante>
+          <ans:dadosSolicitacao>
+            <ans:dataSolicitacao>${executionDate}</ans:dataSolicitacao>
+            <ans:caraterAtendimento>${input.caraterAtendimento}</ans:caraterAtendimento>
+          </ans:dadosSolicitacao>
+          <ans:dadosExecutante>
+            <ans:contratadoExecutante><ans:cnpjContratado>${providerCnpj}</ans:cnpjContratado></ans:contratadoExecutante>
+            <ans:CNES>${xmlEscape(input.cnes!)}</ans:CNES>
+          </ans:dadosExecutante>
+          <ans:dadosAtendimento>
+            <ans:tipoAtendimento>${input.tipoAtendimento}</ans:tipoAtendimento>
+            <ans:indicacaoAcidente>${input.indicadorAcidente}</ans:indicacaoAcidente>
+            <ans:regimeAtendimento>${input.regimeAtendimento}</ans:regimeAtendimento>
+          </ans:dadosAtendimento>
+          <ans:procedimentosExecutados>${procs}
+          </ans:procedimentosExecutados>
+          <ans:valorTotal>
+            <ans:valorProcedimentos>${vlTotal.toFixed(2)}</ans:valorProcedimentos>
+            <ans:valorTotalGeral>${vlTotal.toFixed(2)}</ans:valorTotalGeral>
+          </ans:valorTotal>
+        </ans:guiaSP-SADT>
+      </ans:guiasTISS>
+    </ans:loteGuias>
+  </ans:prestadorParaOperadora>`;
+  const hash = calculateTissTransactionMd5(transactionXml);
+  const xml = `${transactionXml}
+  <ans:epilogo><ans:hash>${hash}</ans:hash></ans:epilogo>
+</ans:mensagemTISS>`;
+  return { xml, vlTotal, hash };
+}
+
+export interface TissTransmissionResult {
+  sent: boolean;
+  status: number;
+  protocolo?: string;
+  response?: string;
+  reason?: string;
+}
+
+export function buildTissLoteGuiasSoapEnvelope(xml: string): string {
+  const cabecalho = xml.match(/<ans:cabecalho>[\s\S]*?<\/ans:cabecalho>/)?.[0];
+  const loteGuias = xml.match(/<ans:loteGuias>[\s\S]*?<\/ans:loteGuias>/)?.[0];
+  const hash = xml.match(/<ans:epilogo>\s*<ans:hash>([A-Fa-f0-9]{32})<\/ans:hash>\s*<\/ans:epilogo>/)?.[1];
+  if (!cabecalho || !loteGuias || !hash) {
+    throw new Error("XML TISS incompleto para montar o envelope SOAP loteGuiasWS.");
+  }
+  return `<?xml version="1.0" encoding="ISO-8859-1"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ans="http://www.ans.gov.br/padroes/tiss/schemas">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <ans:loteGuiasWS>
+      ${cabecalho}
+      ${loteGuias}
+      <ans:hash>${hash}</ans:hash>
+    </ans:loteGuiasWS>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+}
+
+function encodeIso88591(text: string): Uint8Array {
+  const bytes: number[] = [];
+  for (const character of text) {
+    const codePoint = character.codePointAt(0)!;
+    if (codePoint > 255) {
+      throw new Error(`Caractere fora de ISO-8859-1 no XML TISS: U+${codePoint.toString(16).toUpperCase()}.`);
+    }
+    bytes.push(codePoint);
+  }
+  return Uint8Array.from(bytes);
+}
+
+export function validateTissTransmissionPrerequisites(input: {
+  xmlBody?: string;
+  xmlVersion: string;
+  protocolVersion?: string;
+  hasServerTransport: boolean;
+}): string {
+  const xmlBody = input.xmlBody?.trim();
+  if (!xmlBody) {
+    throw new Error("XML TISS ausente. Gere e valide a guia antes da transmissão.");
+  }
+  if (!input.protocolVersion || input.protocolVersion !== input.xmlVersion) {
+    throw new Error(
+      `Versão TISS incompatível: XML ${input.xmlVersion}, protocolo ${input.protocolVersion || "não informado"}.`
+    );
+  }
+  if (input.xmlVersion !== TISS_COMMUNICATION_VERSION) {
+    throw new Error(
+      `Versão TISS não homologada para envio: ${input.xmlVersion}. O gerador suporta ${TISS_COMMUNICATION_VERSION}.`
+    );
+  }
+  const declaredVersion = xmlBody.match(/<ans:Padrao>([^<]+)<\/ans:Padrao>/)?.[1];
+  if (declaredVersion !== input.xmlVersion) {
+    throw new Error(
+      `Versão declarada no XML (${declaredVersion || "ausente"}) diverge da versão persistida (${input.xmlVersion}).`
+    );
+  }
+  if (!/<ans:epilogo>\s*<ans:hash>(?!0{32}<\/ans:hash>)[A-Fa-f0-9]{32}<\/ans:hash>\s*<\/ans:epilogo>/.test(xmlBody)) {
+    throw new Error("Hash MD5 TISS ausente ou pendente. O epílogo deve ser calculado no servidor antes do envio.");
+  }
+  if (!input.hasServerTransport) {
+    throw new Error(
+      "Transmissão TISS direta pelo navegador está desabilitada. Use o gateway servidor com validação XSD e certificado A1."
+    );
+  }
+  return xmlBody;
+}
+
+/**
+ * Sends one XML through an explicitly injected server transport. The request
+ * follows the official SOAP 1.1 loteGuias WSDL; no browser fetch fallback exists.
+ */
+export async function transmitTissXml(input: {
+  endpoint: string;
+  xml: string;
+  tipoGuia?: TissTipoGuia;
+  fetchImpl?: typeof fetch;
+  timeoutMs?: number;
+}): Promise<TissTransmissionResult> {
+  const requestFetch = input.fetchImpl;
+  if (!requestFetch) {
+    return {
+      sent: false,
+      status: 0,
+      reason: "Transporte TISS não injetado. O envio direto pelo navegador permanece desabilitado.",
+    };
+  }
+
+  try {
+    const soapEnvelope = buildTissLoteGuiasSoapEnvelope(input.xml);
+    const response = await requestFetch(input.endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/xml; charset=iso-8859-1",
+        SOAPAction: '""',
+      },
+      body: encodeIso88591(soapEnvelope),
+      signal: AbortSignal.timeout(input.timeoutMs ?? 30000),
+    });
+    const responseText = await response.text();
+    const protocolMatch = responseText.match(
+      /<(?:[\w.-]+:)?(?:numeroProtocolo|protocolo)[^>]*>([^<]+)<\/(?:[\w.-]+:)?(?:numeroProtocolo|protocolo)>/
+    );
+    const protocolo = protocolMatch?.[1];
+
+    return {
+      sent: response.ok,
+      status: response.status,
+      protocolo,
+      response: responseText,
+      reason: response.ok ? undefined : `HTTP ${response.status}: ${responseText.substring(0, 500)}`,
+    };
+  } catch (error) {
+    return {
+      sent: false,
+      status: 0,
+      reason: error instanceof Error ? error.message : "Falha no envio",
+    };
+  }
 }
 
 // ── Service ────────────────────────────────────────────────────────
@@ -227,7 +622,8 @@ export const tissService = {
   // ── Geracao do XML TISS ───────────────────────────────────────
 
   /**
-   * Gera XML TISS 3.05 para um agendamento e seus procedimentos
+   * Gera XML TISS SP/SADT da release de comunicação 04.03.00
+   * (valor canônico dm_versao no XSD: 4.03.00).
    * Estrutura:
    *   <ans:mensagemTISS>
    *     <ans:cabecalho>...</ans:cabecalho>
@@ -250,6 +646,16 @@ export const tissService = {
       nr_carteira: string;
       cd_atendimento?: string;
       vl_total?: number;
+      cnes?: string;
+      professionalCouncilCode?: string;
+      professionalStateCode?: string;
+      professionalCbos?: string;
+      atendimentoRN?: "S" | "N";
+      caraterAtendimento?: "1" | "2";
+      tipoAtendimento?: "01" | "02" | "03" | "04" | "08" | "09" | "10" | "13" | "23";
+      indicadorAcidente?: "0" | "1" | "2" | "9";
+      regimeAtendimento?: "01" | "02" | "03" | "04" | "05";
+      dataExecucao?: string;
       procedimentos: Array<{
         cd_tuss: string;
         ds_procedimento: string;
@@ -280,80 +686,38 @@ export const tissService = {
       .single();
 
     const agora = new Date();
-    const vlTotal = codes.vl_total ?? codes.procedimentos.reduce((acc, p) => acc + p.qt * p.vl_unitario, 0);
-
-    const procs = codes.procedimentos
-      .map(
-        (p) => `
-      <ans:procedimento>
-        <ans:codigoTabela>22</ans:codigoTabela>
-        <ans:codigoProcedimento>${xmlEscape(p.cd_tuss)}</ans:codigoProcedimento>
-        <ans:descricaoProcedimento>${xmlEscape(p.ds_procedimento)}</ans:descricaoProcedimento>
-        <ans:quantidadeExecutada>${p.qt}</ans:quantidadeExecutada>
-        <ans:valorUnitario>${p.vl_unitario.toFixed(2)}</ans:valorUnitario>
-        <ans:valorTotal>${(p.qt * p.vl_unitario).toFixed(2)}</ans:valorTotal>
-      </ans:procedimento>`
-      )
-      .join("");
-
-    const guiaTipo =
-      codes.tipoGuia === "CONSULTA"
-        ? `<ans:guiaConsulta>
-        <ans:numeroGuiaPrestador>${codes.cd_atendimento || appointmentId}</ans:numeroGuiaPrestador>
-        <ans:beneficiario>
-          <ans:numeroCarteira>${xmlEscape(codes.nr_carteira)}</ans:numeroCarteira>
-          <ans:nomeBeneficiario>${xmlEscape(paciente?.full_name || "")}</ans:nomeBeneficiario>
-        </ans:beneficiario>
-        <ans:profissionalExecutante>
-          <ans:nomeProfissional>${xmlEscape(prof?.full_name || "")}</ans:nomeProfissional>
-          <ans:conselhoProfissional>CRM</ans:conselhoProfissional>
-          <ans:numeroConselhoProfissional>${xmlEscape(prof?.professional_license || "")}</ans:numeroConselhoProfissional>
-        </ans:profissionalExecutante>
-        <ans:valorProcedimento>${vlTotal.toFixed(2)}</ans:valorProcedimento>
-      </ans:guiaConsulta>`
-        : `<ans:guiaSP-SADT>
-        <ans:numeroGuiaPrestador>${codes.cd_atendimento || appointmentId}</ans:numeroGuiaPrestador>
-        <ans:beneficiario>
-          <ans:numeroCarteira>${xmlEscape(codes.nr_carteira)}</ans:numeroCarteira>
-          <ans:nomeBeneficiario>${xmlEscape(paciente?.full_name || "")}</ans:nomeBeneficiario>
-        </ans:beneficiario>
-        <ans:procedimentosExecutados>${procs}</ans:procedimentosExecutados>
-        <ans:valorTotal>${vlTotal.toFixed(2)}</ans:valorTotal>
-      </ans:guiaSP-SADT>`;
-
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<ans:mensagemTISS xmlns:ans="http://www.ans.gov.br/padroes/tiss/schemas" versao="3.05.00">
-  <ans:cabecalho>
-    <ans:identificacaoTransacao>
-      <ans:tipoTransacao>ENVIO_LOTE_GUIAS</ans:tipoTransacao>
-      <ans:sequencialTransacao>${agora.getTime()}</ans:sequencialTransacao>
-      <ans:dataRegistroTransacao>${agora.toISOString()}</ans:dataRegistroTransacao>
-      <ans:horaRegistroTransacao>${agora.toTimeString().substring(0, 8)}</ans:horaRegistroTransacao>
-    </ans:identificacaoTransacao>
-    <ans:origem>
-      <ans:identificacaoPrestador>${xmlEscape(company?.cnpj || "")}</ans:identificacaoPrestador>
-    </ans:origem>
-    <ans:destino>
-      <ans:registroANS>${xmlEscape(convenio?.registro_ans || "")}</ans:registroANS>
-    </ans:destino>
-  </ans:cabecalho>
-  <ans:prestadorParaOperadora>
-    <ans:loteGuias>
-      <ans:numeroLote>${Date.now()}</ans:numeroLote>
-      <ans:guias>
-        ${guiaTipo}
-      </ans:guias>
-    </ans:loteGuias>
-  </ans:prestadorParaOperadora>
-</ans:mensagemTISS>`;
-
-    const hash = await sha256(xml);
+    const built = buildTissXml({
+      appointmentId,
+      tipoGuia: codes.tipoGuia,
+      nr_carteira: codes.nr_carteira,
+      cd_atendimento: codes.cd_atendimento,
+      pacienteNome: paciente?.full_name || "",
+      profissionalNome: prof?.full_name || "",
+      professionalLicense: prof?.professional_license || "",
+      providerCnpj: company?.cnpj || "",
+      registroAns: convenio?.registro_ans || "",
+      cnes: codes.cnes,
+      professionalCouncilCode: codes.professionalCouncilCode,
+      professionalStateCode: codes.professionalStateCode,
+      professionalCbos: codes.professionalCbos,
+      atendimentoRN: codes.atendimentoRN,
+      caraterAtendimento: codes.caraterAtendimento,
+      tipoAtendimento: codes.tipoAtendimento,
+      indicadorAcidente: codes.indicadorAcidente,
+      regimeAtendimento: codes.regimeAtendimento,
+      dataExecucao: codes.dataExecucao,
+      procedimentos: codes.procedimentos,
+      vl_total: codes.vl_total,
+      agora,
+    });
+    const { xml, vlTotal, hash } = built;
 
     // Persistir
     const { data: row, error } = await supabase
       .from("tiss_xml")
       .insert({
         company_id: company?.id,
+        appointment_id: appointmentId,
         cd_convenio: codes.cd_convenio,
         ds_descricao: `${convenio?.name || "Convenio"} - ${codes.tipoGuia} - Apt ${appointmentId}`,
         ds_filename: `tiss_${appointmentId}_${Date.now()}.xml`,
@@ -363,7 +727,7 @@ export const tissService = {
         vl_informado: vlTotal,
         bl_xml_enviado: xml,
         ds_hash_envio: hash,
-        ds_versao_tiss: "3.05.00",
+        ds_versao_tiss: TISS_COMMUNICATION_VERSION,
         tp_ambiente: "HOMOLOGACAO",
         status: "PENDENTE",
       })
@@ -378,11 +742,20 @@ export const tissService = {
 
   /**
    * Envia o XML TISS para a operadora via webservice
-   * Em homologacao: chama o endpoint configurado (VITE_TISS_ENDPOINT_<CONVENIO>)
-   * Em producao: usa certificado A1 e assina o XML
+   * Em homologação: aceita apenas transporte servidor explicitamente injetado.
+   * Em produção: permanece bloqueado no cliente; certificado A1 e assinatura
+   * pertencem ao gateway servidor homologado.
    */
-  async sendToOperadora(tissXmlId: number): Promise<{ sent: boolean; protocolo?: string; response?: unknown }> {
+  async sendToOperadora(
+    tissXmlId: number,
+    options: { fetchImpl?: typeof fetch } = {}
+  ): Promise<{ sent: boolean; protocolo?: string; response?: unknown }> {
     const xml = await this.getById(tissXmlId);
+    if (xml.tp_ambiente === "PRODUCAO") {
+      throw new Error(
+        "Envio TISS de produção está bloqueado no cliente. Use o gateway servidor homologado com XSD, MD5 e certificado A1."
+      );
+    }
 
     // Buscar protocolo (endpoint) da operadora
     const { data: proto } = await supabase
@@ -399,36 +772,23 @@ export const tissService = {
       );
     }
 
-    const start = Date.now();
-    let sent = false;
-    let protocolo: string | undefined;
-    let respXml: string | undefined;
-    let motivoRejeicao: string | undefined;
+    const xmlBody = validateTissTransmissionPrerequisites({
+      xmlBody: xml.bl_xml_enviado,
+      xmlVersion: xml.ds_versao_tiss,
+      protocolVersion: proto.ds_versao_tiss,
+      hasServerTransport: Boolean(options.fetchImpl),
+    });
 
-    try {
-      const res = await fetch(proto.ds_endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "text/xml; charset=utf-8",
-          SOAPAction: `"tissAction/${xml.ds_tipo_guia || "ENVIO_LOTE_GUIAS"}"`,
-        },
-        body: xml.bl_xml_enviado || "",
-        signal: AbortSignal.timeout(30000),
-      });
-      sent = res.ok;
-      respXml = await res.text();
-
-      // Extrair protocolo do XML de retorno (parser simples)
-      const m = respXml.match(/<ns\d:protocolo[^>]*>([^<]+)<\/ns\d:protocolo>|<protocolo[^>]*>([^<]+)<\/protocolo>/);
-      protocolo = m?.[1] || m?.[2];
-
-      if (!sent) {
-        motivoRejeicao = `HTTP ${res.status}: ${respXml.substring(0, 500)}`;
-      }
-    } catch (e) {
-      sent = false;
-      motivoRejeicao = e instanceof Error ? e.message : "Falha no envio";
-    }
+    const transmission = await transmitTissXml({
+      endpoint: proto.ds_endpoint,
+      xml: xmlBody,
+      tipoGuia: xml.ds_tipo_guia,
+      fetchImpl: options.fetchImpl,
+    });
+    const sent = transmission.sent;
+    const protocolo = transmission.protocolo;
+    const respXml = transmission.response;
+    const motivoRejeicao = transmission.reason;
 
     const now = new Date().toISOString();
     await supabase
@@ -543,8 +903,11 @@ export const tissService = {
       .single();
     if (error) throw error;
 
+    // O status so pode avancar depois que o recálculo canonico confirmar.
+    const { error: recalcError } = await supabase.rpc("recalc_tiss_total_glosa", { p_id: tissXmlId });
+    if (recalcError) throw recalcError;
+
     // Atualizar status da guia
-    await supabase.rpc("recalc_tiss_total_glosa", { p_id: tissXmlId }).then(() => null, () => null);
     await supabase
       .from("tiss_xml")
       .update({ status: "GLOSADO", updated_at: new Date().toISOString() })
@@ -565,62 +928,10 @@ export const tissService = {
   // ── Recurso de Glosa ───────────────────────────────────────────
 
   async enviarRecurso(glosaId: number, recursoXML: string): Promise<{ sent: boolean; protocolo?: string }> {
-    const hash = await sha256(recursoXML);
-    const now = new Date().toISOString();
-    let sent = false;
-    let protocolo: string | undefined;
-    try {
-      const { data: glosa } = await supabase
-        .from("tiss_glosas")
-        .select("cd_tiss_xml")
-        .eq("id", glosaId)
-        .single();
-      const { data: xml } = await supabase
-        .from("tiss_xml")
-        .select("cd_convenio, tp_ambiente")
-        .eq("id", glosa?.cd_tiss_xml || 0)
-        .single();
-      const { data: proto } = await supabase
-        .from("tiss_protocols")
-        .select("ds_endpoint")
-        .eq("cd_convenio", xml?.cd_convenio || 0)
-        .eq("tp_ambiente", xml?.tp_ambiente || "HOMOLOGACAO")
-        .eq("lg_active", true)
-        .maybeSingle();
-
-      if (proto) {
-        const res = await fetch(proto.ds_endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "text/xml; charset=utf-8" },
-          body: recursoXML,
-          signal: AbortSignal.timeout(30000),
-        });
-        sent = res.ok;
-        const txt = await res.text();
-        const m = txt.match(/<protocolo[^>]*>([^<]+)<\/protocolo>/);
-        protocolo = m?.[1];
-      } else {
-        // Em homologacao, simular sucesso
-        sent = true;
-        protocolo = `REC_HOM_${Date.now()}`;
-      }
-    } catch {
-      sent = false;
-    }
-
-    await supabase
-      .from("tiss_glosas")
-      .update({
-        lg_recurso_enviado: sent,
-        dt_recurso: now,
-        ds_protocolo_recurso: protocolo,
-        bl_xml_recurso: recursoXML,
-        ds_status_recurso: sent ? "ENVIADO" : "PENDENTE",
-        updated_at: now,
-      })
-      .eq("id", glosaId);
-
-    return { sent, protocolo };
+    void recursoXML;
+    throw new Error(
+      `Envio do recurso de glosa ${glosaId} está bloqueado no cliente até existir gateway servidor TISS 04.03.00 homologado.`
+    );
   },
 
   async gerarXMLRecurso(glosaId: number): Promise<string> {
@@ -631,27 +942,9 @@ export const tissService = {
       .single();
     if (!glosa) throw new Error("Glosa nao encontrada");
 
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<ans:mensagemTISS xmlns:ans="http://www.ans.gov.br/padroes/tiss/schemas" versao="3.05.00">
-  <ans:cabecalho>
-    <ans:identificacaoTransacao>
-      <ans:tipoTransacao>ENVIO_RECURSO_GLOSA</ans:tipoTransacao>
-      <ans:sequencialTransacao>${Date.now()}</ans:sequencialTransacao>
-      <ans:dataRegistroTransacao>${new Date().toISOString()}</ans:dataRegistroTransacao>
-    </ans:identificacaoTransacao>
-  </ans:cabecalho>
-  <ans:operadoraParaPrestador>
-    <ans:recursoGlosa>
-      <ans:protocoloGlosaOriginal>${xmlEscape(glosa.tiss_xml?.ds_protocolo || "")}</ans:protocoloGlosaOriginal>
-      <ans:dataGlosaOriginal>${isoToTissDate(glosa.tiss_xml?.dt_fatura)}</ans:dataGlosaOriginal>
-      <ans:codigoGlosa>${xmlEscape(glosa.cd_glosa_code || "")}</ans:codigoGlosa>
-      <ans:motivoGlosa>${xmlEscape(glosa.ds_motivo || "")}</ans:motivoGlosa>
-      <ans:valorGlosa>${glosa.vl_glosa.toFixed(2)}</ans:valorGlosa>
-      <ans:justificativaPrestador>Recurso administrativo - solicitamos revisao da glosa com base na documentacao clinica anexa.</ans:justificativaPrestador>
-    </ans:recursoGlosa>
-  </ans:operadoraParaPrestador>
-</ans:mensagemTISS>`;
-    return xml;
+    throw new Error(
+      `Recurso de glosa ${glosaId} não foi migrado para o XSD 04.03.00 e permanece bloqueado para evitar XML incompatível.`
+    );
   },
 
   // ── Geracao de Fatura Mensal ───────────────────────────────────
@@ -706,7 +999,7 @@ export const tissService = {
         vl_informado: vlTotalApt,
         vl_liberado: 0,
         vl_glosa: 0,
-        ds_versao_tiss: "3.05.00",
+        ds_versao_tiss: TISS_COMMUNICATION_VERSION,
         tp_ambiente: "HOMOLOGACAO",
         status: "PENDENTE",
       });
@@ -794,7 +1087,7 @@ export const tissService = {
   async listProtocols(companyId: string): Promise<TissProtocol[]> {
     const { data, error } = await supabase
       .from("tiss_protocols")
-      .select("*")
+      .select("id, company_id, cd_convenio, ds_endpoint, ds_versao_tiss, tp_ambiente, lg_active, dt_ultimo_teste, ds_status_teste, created_at, updated_at")
       .eq("company_id", companyId)
       .order("cd_convenio");
     if (error) throw error;
@@ -809,12 +1102,8 @@ export const tissService = {
       company_id: companyId,
       cd_convenio: data.cd_convenio,
       ds_endpoint: data.ds_endpoint,
-      ds_versao_tiss: data.ds_versao_tiss || "3.05.00",
+      ds_versao_tiss: data.ds_versao_tiss || TISS_COMMUNICATION_VERSION,
       tp_ambiente: data.tp_ambiente || "HOMOLOGACAO",
-      cd_certificado_a1_path: data.cd_certificado_a1_path,
-      ds_certificado_senha: data.ds_certificado_senha,
-      ds_usuario: data.ds_usuario,
-      ds_senha: data.ds_senha,
       lg_active: data.lg_active ?? true,
       ds_observacao: data.ds_observacao,
     };

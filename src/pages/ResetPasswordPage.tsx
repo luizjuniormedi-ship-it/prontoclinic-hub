@@ -7,36 +7,57 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
+import { PASSWORD_POLICY, validatePassword } from "@/lib/authSecurity";
 
 export default function ResetPasswordPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [isRecovery, setIsRecovery] = useState(false);
+  const [isAuthorized, setIsAuthorized] = useState(false);
+  const [checkingAccess, setCheckingAccess] = useState(true);
   const navigate = useNavigate();
   const { toast } = useToast();
 
   useEffect(() => {
-    // Check for recovery token in URL hash
-    const hash = window.location.hash;
-    if (hash.includes("type=recovery")) {
-      setIsRecovery(true);
-    }
+    let active = true;
+
+    const detectAccess = async () => {
+      // Recovery links may be exchanged for a session asynchronously by
+      // supabase-js, while first-access users already have a normal session.
+      const hash = window.location.hash;
+      if (hash.includes("type=recovery")) setIsAuthorized(true);
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (active && session) setIsAuthorized(true);
+      } catch {
+        // A sessão pode ter expirado ou o adaptador de Auth pode estar indisponível.
+        // Em ambos os casos, não mantemos a tela presa no estado de carregamento.
+      } finally {
+        if (active) setCheckingAccess(false);
+      }
+    };
+
+    void detectAccess();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === "PASSWORD_RECOVERY") {
-        setIsRecovery(true);
+        setIsAuthorized(true);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password.length < 6) {
-      toast({ title: "A senha deve ter pelo menos 6 caracteres", variant: "destructive" });
+    const passwordErrors = validatePassword(password);
+    if (passwordErrors.length > 0) {
+      toast({ title: "A senha não atende à política de segurança", description: passwordErrors.join(" "), variant: "destructive" });
       return;
     }
     if (password !== confirmPassword) {
@@ -47,17 +68,39 @@ export default function ResetPasswordPage() {
     try {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { error: profileError } = await supabase
+          .from("auth_account_security")
+          .upsert({
+            user_id: user.id,
+            must_change_password: false,
+            password_changed_at: new Date().toISOString(),
+            password_expires_at: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString(),
+          }, { onConflict: "user_id" });
+        if (profileError) throw profileError;
+      }
       setSuccess(true);
       toast({ title: "Senha redefinida com sucesso!" });
       setTimeout(() => navigate("/login"), 2000);
     } catch (err) {
-      toast({ title: "Erro ao redefinir senha", description: (err as Error).message, variant: "destructive" });
+      toast({ title: "Não foi possível redefinir a senha", description: "Confira os requisitos e tente novamente.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
   };
 
-  if (!isRecovery && !success) {
+  if (checkingAccess && !success) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5 p-4">
+        <Card className="w-full max-w-md shadow-lg">
+          <CardContent className="p-6 text-center text-muted-foreground">Validando acesso...</CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!isAuthorized && !success) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5 p-4">
         <Card className="w-full max-w-md shadow-lg">
@@ -99,7 +142,7 @@ export default function ResetPasswordPage() {
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  minLength={6}
+                  minLength={PASSWORD_POLICY.minLength}
                 />
               </div>
               <div className="space-y-2">
@@ -110,9 +153,12 @@ export default function ResetPasswordPage() {
                   placeholder="••••••••"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  minLength={6}
+                  minLength={PASSWORD_POLICY.minLength}
                 />
               </div>
+              <p className="text-xs text-muted-foreground">
+                Use pelo menos {PASSWORD_POLICY.minLength} caracteres, com maiúscula, minúscula, número e símbolo.
+              </p>
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Redefinir Senha

@@ -17,7 +17,7 @@ import { test as authed } from './fixtures/auth';
  *   - Cancelamento pelo balcão
  */
 
-authed.describe('Recepção — Check-in', () => {
+authed.describe('Recepção — Check-in @mutating', () => {
   authed.beforeEach(async ({ loginAs }) => {
     await loginAs('reception');
   });

@@ -1,6 +1,6 @@
 import { test as authed, expect } from './fixtures/auth';
 
-authed.describe('LGPD', () => {
+authed.describe('LGPD @destructive', () => {
   authed.beforeEach(async ({ loginAs }) => {
     await loginAs('admin');
   });

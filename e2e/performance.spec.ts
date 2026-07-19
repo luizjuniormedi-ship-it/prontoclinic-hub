@@ -1,10 +1,12 @@
 import { test, expect } from '@playwright/test';
+import { credentialsFor } from './fixtures/auth';
 
-test.describe('Performance', () => {
+test.describe('Performance @readonly', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/login');
-    await page.getByLabel('E-mail').fill('admin@prontomedic.test');
-    await page.getByLabel('Senha').fill('TestPassword123!');
+    const credentials = credentialsFor('admin');
+    await page.getByLabel('E-mail').fill(credentials.email);
+    await page.getByLabel('Senha').fill(credentials.password);
     await page.getByRole('button', { name: /entrar/i }).click();
     await page.waitForURL(/\/(?!login)/);
   });

@@ -15,7 +15,7 @@ import { test as authed } from './fixtures/auth';
  *   - Histórico do destinatário
  */
 
-authed.describe('Notificações Multicanal', () => {
+authed.describe('Notificações Multicanal @mutating', () => {
   authed.beforeEach(async ({ loginAs }) => {
     await loginAs('admin');
   });

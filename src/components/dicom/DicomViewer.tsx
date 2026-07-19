@@ -27,10 +27,8 @@ import { Label } from "@/components/ui/label";
 import { ZoomIn, ZoomOut, Move, Sun, Ruler, Type, Download, RefreshCw, AlertCircle, Loader2 } from "lucide-react";
 import { dicomWeb, type DicomExamImage, type DicomExam } from "@/services/dicomService";
 import { supabase } from "@/lib/supabase";
+import { toast } from "@/hooks/use-toast";
 
-const ORTHANC_URL = (import.meta.env.VITE_ORTHANC_URL as string) || "http://localhost:8042";
-const ORTHANC_USER = (import.meta.env.VITE_ORTHANC_USER as string) || "orthanc";
-const ORTHANC_PASS = (import.meta.env.VITE_ORTHANC_PASS as string) || "orthanc";
 
 interface CornerstoneLike {
   enable(el: HTMLElement): void;
@@ -88,10 +86,6 @@ async function loadCornerstone(): Promise<boolean> {
   });
 }
 
-function orthancHeaders(): HeadersInit {
-  return { Authorization: "Basic " + btoa(`${ORTHANC_USER}:${ORTHANC_PASS}`) };
-}
-
 interface Props {
   exam: DicomExam;
   image: DicomExamImage;
@@ -129,6 +123,7 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
   // Carregar Cornerstone + imagem
   useEffect(() => {
     let mounted = true;
+    let currentObjectUrl: string | undefined;
     const cs = window.cornerstone;
     const cst = window.cornerstoneTools;
     (async () => {
@@ -146,11 +141,13 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
         cs.enable(el);
         if (cst) cst.init();
 
-        const imageId = buildImageId(displayImage, exam);
-        if (!imageId) {
+        const resource = await buildImageResource(displayImage, exam);
+        if (!resource) {
           setStatus("fallback");
           return;
         }
+        currentObjectUrl = resource.objectUrl;
+        const imageId = resource.imageId;
         await cs.loadAndCacheImage(imageId);
         if (!mounted) return;
         const img = await cs.loadImage(imageId);
@@ -172,6 +169,7 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
       try {
         if (elementRef.current && cs) cs.disable(elementRef.current);
       } catch { /* noop */ }
+      if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
     };
   }, [displayImage.id, exam.id]);
 
@@ -204,7 +202,7 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
 
   const handleSnapshot = useCallback(() => {
     if (status !== "ready" || !elementRef.current || !window.cornerstone) {
-      alert("Viewer nao inicializado");
+      toast({ title: "Viewer não inicializado", variant: "destructive" });
       return;
     }
     try {
@@ -218,10 +216,10 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
         a.download = `${exam.cd_dicom_exame || exam.id}_${displayImage.nr_instance || 0}.png`;
         a.click();
       } else {
-        alert("Snapshot gerado, mas o download foi bloqueado (LGPD: paciente sem consentimento PUSH).");
+        toast({ title: "Download bloqueado", description: "LGPD: paciente sem consentimento PUSH.", variant: "destructive" });
       }
     } catch (e) {
-      alert("Falha ao gerar snapshot: " + (e instanceof Error ? e.message : ""));
+      toast({ title: "Falha ao gerar snapshot", description: e instanceof Error ? e.message : "", variant: "destructive" });
     }
   }, [status, exam, displayImage, lgpdConsentPush, onSnapshot]);
 
@@ -358,14 +356,24 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
   );
 }
 
-function buildImageId(image: DicomExamImage, exam: DicomExam): string | null {
-  // WADO-URI scheme: wadouri:https://...
+async function buildImageResource(image: DicomExamImage, exam: DicomExam): Promise<{ imageId: string; objectUrl: string } | null> {
   if (image.ds_sop_instance_uid) {
-    return `wadouri:${ORTHANC_URL}/instances/${image.ds_sop_instance_uid}/file`;
+    if (exam.cd_dicom_exame) {
+      const objectUrl = await dicomWeb.getInstanceObjectUrl(
+        exam.cd_dicom_exame,
+        image.ds_sop_instance_uid,
+        { nodeId: exam.source_node_id ?? undefined, unitId: exam.unit_id ?? undefined }
+      );
+      return { imageId: `wadouri:${objectUrl}`, objectUrl };
+    }
   }
   if (exam.cd_dicom_exame && image.nr_instance !== undefined) {
-    // Tenta WADO-RS
-    return `wadors:${ORTHANC_URL}/dicom-web/studies/${exam.cd_dicom_exame}/instances/${image.nr_instance}`;
+    const objectUrl = await dicomWeb.getInstanceObjectUrl(
+      exam.cd_dicom_exame,
+      String(image.nr_instance),
+      { nodeId: exam.source_node_id ?? undefined, unitId: exam.unit_id ?? undefined }
+    );
+    return { imageId: `wadouri:${objectUrl}`, objectUrl };
   }
   return null;
 }

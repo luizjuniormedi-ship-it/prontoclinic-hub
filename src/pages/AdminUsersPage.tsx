@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Edit, UserCheck, UserX, Shield } from "lucide-react";
+import { Search, Edit, UserCheck, UserX, Shield, KeyRound, UserPlus } from "lucide-react";
 import { userProfilesService, type UserProfileWithEmail } from "@/services/userProfilesService";
 import { useToast } from "@/hooks/use-toast";
 
@@ -27,7 +27,10 @@ export default function AdminUsersPage() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterProfile, setFilterProfile] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserProfileWithEmail | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [createForm, setCreateForm] = useState({ email: "", full_name: "", role_name: "", phone: "", cpf: "", primary_unit_id: "" });
   const [form, setForm] = useState<{ full_name: string; phone: string; cpf: string; role_name: string; lg_ativo: boolean }>({
     full_name: "", phone: "", cpf: "", role_name: "", lg_ativo: true,
   });
@@ -100,6 +103,36 @@ export default function AdminUsersPage() {
     }
   };
 
+  const openCreate = () => {
+    setCreateForm({ email: "", full_name: "", role_name: profiles[0]?.id ?? "", phone: "", cpf: "", primary_unit_id: "" });
+    setCreateDialogOpen(true);
+  };
+
+  const handleCreate = async () => {
+    if (!createForm.email.trim() || !createForm.full_name.trim() || !createForm.role_name) {
+      toast({ title: "Nome, e-mail e perfil são obrigatórios", variant: "destructive" });
+      return;
+    }
+    try {
+      setCreating(true);
+      await userProfilesService.invite({
+        email: createForm.email.trim(),
+        full_name: createForm.full_name.trim(),
+        role_name: createForm.role_name,
+        phone: createForm.phone.trim() || null,
+        cpf: createForm.cpf.trim() || null,
+        primary_unit_id: createForm.primary_unit_id ? Number(createForm.primary_unit_id) : null,
+      });
+      toast({ title: "Convite enviado", description: "O usuário receberá o link de ativação por e-mail." });
+      setCreateDialogOpen(false);
+      void load();
+    } catch (err) {
+      toast({ title: "Erro ao convidar usuário", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const toggleStatus = async (u: UserProfileWithEmail) => {
     try {
       await userProfilesService.toggleAtivo(u.id, !u.lg_ativo);
@@ -111,6 +144,15 @@ export default function AdminUsersPage() {
         description: err instanceof Error ? err.message : String(err),
         variant: "destructive",
       });
+    }
+  };
+
+  const requirePasswordChange = async (u: UserProfileWithEmail) => {
+    try {
+      await userProfilesService.requirePasswordChange(u.id);
+      toast({ title: "Troca de senha exigida", description: "O usuário deverá definir uma nova senha no próximo acesso." });
+    } catch (err) {
+      toast({ title: "Erro ao exigir troca de senha", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
     }
   };
 
@@ -140,6 +182,7 @@ export default function AdminUsersPage() {
             {profiles.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
           </SelectContent>
         </Select>
+        <Button onClick={openCreate} className="shrink-0"><UserPlus className="mr-2 h-4 w-4" />Novo usuário</Button>
       </div>
 
       <div className="border rounded-lg">
@@ -178,6 +221,7 @@ export default function AdminUsersPage() {
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
                     <Button variant="ghost" size="icon" onClick={() => openEdit(u)} title="Editar"><Edit className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" onClick={() => void requirePasswordChange(u)} title="Exigir troca de senha no próximo acesso"><KeyRound className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="icon" onClick={() => void toggleStatus(u)} title={u.lg_ativo ? "Inativar" : "Ativar"}>
                       {u.lg_ativo ? <UserX className="h-4 w-4 text-destructive" /> : <UserCheck className="h-4 w-4 text-green-600" />}
                     </Button>
@@ -231,6 +275,24 @@ export default function AdminUsersPage() {
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
             <Button onClick={() => void handleSave()}>Salvar</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={createDialogOpen} onOpenChange={(open) => { if (!creating) setCreateDialogOpen(open); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Cadastrar usuário</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5"><Label>Nome completo *</Label><Input value={createForm.full_name} onChange={(e) => setCreateForm({ ...createForm, full_name: e.target.value })} /></div>
+            <div className="space-y-1.5"><Label>E-mail *</Label><Input type="email" value={createForm.email} onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5"><Label>CPF</Label><Input value={createForm.cpf} onChange={(e) => setCreateForm({ ...createForm, cpf: e.target.value })} /></div>
+              <div className="space-y-1.5"><Label>Telefone</Label><Input value={createForm.phone} onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })} /></div>
+            </div>
+            <div className="space-y-1.5"><Label>Perfil *</Label><Select value={createForm.role_name} onValueChange={(v) => setCreateForm({ ...createForm, role_name: v })}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{profiles.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-1.5"><Label>ID da unidade principal</Label><Input type="number" min="1" value={createForm.primary_unit_id} onChange={(e) => setCreateForm({ ...createForm, primary_unit_id: e.target.value })} placeholder="Opcional" /></div>
+            <p className="text-xs text-muted-foreground">A conta será criada pelo endpoint administrativo seguro e o usuário receberá um convite para ativação.</p>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateDialogOpen(false)} disabled={creating}>Cancelar</Button><Button onClick={() => void handleCreate()} disabled={creating}>{creating ? "Enviando..." : "Enviar convite"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

@@ -31,6 +31,7 @@ import {
   type Prescricao,
   type Evolucao,
 } from "@/services/internacaoService";
+import { useConfirm } from "@/hooks/useConfirm";
 
 const COR_LEITO: Record<LeitoOcupacao["tp_leito"], string> = {
   ENFERMARIA: "bg-blue-100 border-blue-300 text-blue-900",
@@ -81,6 +82,7 @@ const EVOLUCAO_INICIAL: EvolucaoFormState = {
 };
 
 export function InternacaoManager() {
+  const { confirm } = useConfirm();
   const { toast } = useToast();
   const { professionalId, isLoading: loadingProfessional, error: professionalError } = useCurrentProfessional();
   const [mapa, setMapa] = useState<LeitoOcupacao[]>([]);
@@ -139,7 +141,7 @@ export function InternacaoManager() {
 
   const handleDarAlta = useCallback(async () => {
     if (!selectedInternacao) return;
-    if (!window.confirm("Confirmar alta deste paciente?")) return;
+    if (!await confirm({ title: "Confirmar alta deste paciente?", confirmText: "Dar alta" })) return;
     try {
       await internacaoService.internacoes.darAlta(selectedInternacao.id, {
         tp_alta: "MELHORADO",

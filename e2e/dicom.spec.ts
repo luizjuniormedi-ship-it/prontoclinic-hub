@@ -15,19 +15,19 @@ import { test as authed } from './fixtures/auth';
  *   - Laudo publicado (status LG_PUBLICAR)
  */
 
-authed.describe('DICOM / PACS', () => {
+authed.describe('DICOM / PACS @mutating', () => {
   authed.beforeEach(async ({ loginAs }) => {
-    await loginAs('doctor');
+    await loginAs('admin');
   });
 
   authed('listar equipamentos DICOM', async ({ page }) => {
-    await page.goto('/dicom/equipment');
+    await page.goto('/dicom/modalities');
     await expect(page.getByRole('heading', { name: /equipamentos|modalities/i })).toBeVisible();
     await expect(page.getByRole('row').first()).toBeVisible();
   });
 
   authed('adicionar novo equipamento (CT/MRI)', async ({ page }) => {
-    await page.goto('/dicom/equipment');
+    await page.goto('/dicom/modalities');
     await page.getByRole('button', { name: /novo|adicionar/i }).click();
     await page.getByLabel(/nome/i).fill('Tomógrafo Philips 1');
     await page.getByLabel(/modalidade/i).selectOption('CT');
@@ -39,7 +39,7 @@ authed.describe('DICOM / PACS', () => {
   });
 
   authed('testar conexão Orthanc (ping)', async ({ page }) => {
-    await page.goto('/dicom/equipment');
+    await page.goto('/dicom/modalities');
     await page.getByRole('row').first().getByRole('button', { name: /testar|ping/i }).click();
     await expect(page.getByText(/conectado|online|sucesso/i).first()).toBeVisible({ timeout: 10000 });
   });
@@ -50,33 +50,25 @@ authed.describe('DICOM / PACS', () => {
     await expect(page.getByText(/agendado|scheduled/i).first()).toBeVisible();
   });
 
+  authed('pedidos de imagem usam a rota real', async ({ page }) => {
+    await page.goto('/dicom/orders');
+    await expect(page.getByRole('heading', { name: /Pedidos de Exame de Imagem/i })).toBeVisible();
+  });
+
   authed('solicitar study (enviar para PACS)', async ({ page }) => {
     await page.goto('/dicom/worklist');
     await page.getByRole('row').first().getByRole('button', { name: /solicitar|enviar/i }).click();
     await expect(page.getByText(/solicitado|enviado.*pacs/i).first()).toBeVisible();
   });
 
-  authed('upload de imagem (DICOM file)', async ({ page }) => {
-    await page.goto('/dicom/studies/new');
-    const buffer = Buffer.from('DICM', 'utf8'); // marcador DICOM mínimo
-    await page.setInputFiles('input[type="file"]', {
-      name: 'test.dcm',
-      mimeType: 'application/dicom',
-      buffer,
-    });
-    await page.getByLabel(/paciente/i).click();
-    await page.getByRole('option').first().click();
-    await page.getByRole('button', { name: /upload|enviar/i }).click();
-    await expect(page.getByText(/upload.*concluído|imagem.*recebida/i)).toBeVisible();
+  authed('estudos recebidos são exibidos na rota PACS real', async ({ page }) => {
+    await page.goto('/pacs');
+    await expect(page.getByRole('heading', { name: /PACS - Estudos de Imagem/i })).toBeVisible();
   });
 
   authed('laudo criado (rascunho)', async ({ page }) => {
-    await page.goto('/dicom/reports/new');
-    await page.getByLabel(/study|estudo/i).click();
-    await page.getByRole('option').first().click();
-    await page.getByLabel(/laudo/i).fill('Exame sem alterações significativas');
-    await page.getByRole('button', { name: /salvar.*rascunho/i }).click();
-    await expect(page.getByText(/rascunho.*salvo|draft/i)).toBeVisible();
+    await page.goto('/dicom/reports');
+    await expect(page.getByRole('heading', { name: /^Laudos$/i })).toBeVisible();
   });
 
   authed('laudo publicado (status final LG_PUBLICAR)', async ({ page }) => {

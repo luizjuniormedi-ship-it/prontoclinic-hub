@@ -8,6 +8,7 @@ import {
   getValidImagingTransitions,
   getValidReportTransitions,
   appointmentStatusLabels,
+  canStartAppointment,
 } from "@/services/statusTransitions";
 
 describe("statusTransitions — appointments", () => {
@@ -17,6 +18,12 @@ describe("statusTransitions — appointments", () => {
 
   it("NÃO permite scheduled -> completed (pula estado)", () => {
     expect(canTransitionAppointment("scheduled", "completed")).toBe(false);
+  });
+
+  it("só permite iniciar atendimento após o check-in", () => {
+    expect(canStartAppointment("waiting")).toBe(true);
+    expect(canStartAppointment("confirmed")).toBe(false);
+    expect(canStartAppointment("scheduled")).toBe(false);
   });
 
   it("NÃO permite completed -> in_progress (estado terminal)", () => {

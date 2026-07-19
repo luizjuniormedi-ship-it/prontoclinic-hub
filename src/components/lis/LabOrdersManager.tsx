@@ -263,12 +263,12 @@ export function LabOrdersManager() {
               <div className="flex flex-wrap items-end gap-2">
                 <div>
                   <Label>Status</Label>
-                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <Select value={filterStatus || "all"} onValueChange={(value) => setFilterStatus(value === "all" ? "" : value)}>
                     <SelectTrigger className="w-40">
                       <SelectValue placeholder="Todos" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Todos</SelectItem>
+                      <SelectItem value="all">Todos</SelectItem>
                       {LAB_STATUS_OPTIONS.map((s) => (
                         <SelectItem key={s} value={s}>
                           {s}
@@ -392,12 +392,12 @@ export function LabOrdersManager() {
                 </div>
                 <div>
                   <Label>Categoria</Label>
-                  <Select value={filterCategoria} onValueChange={setFilterCategoria}>
+                  <Select value={filterCategoria || "all"} onValueChange={(value) => setFilterCategoria(value === "all" ? "" : value)}>
                     <SelectTrigger className="w-44">
                       <SelectValue placeholder="Todas" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Todas</SelectItem>
+                      <SelectItem value="all">Todas</SelectItem>
                       {LAB_CATEGORIAS.map((c) => (
                         <SelectItem key={c} value={c}>
                           {c}
@@ -408,12 +408,12 @@ export function LabOrdersManager() {
                 </div>
                 <div>
                   <Label>Material</Label>
-                  <Select value={filterMaterial} onValueChange={setFilterMaterial}>
+                  <Select value={filterMaterial || "all"} onValueChange={(value) => setFilterMaterial(value === "all" ? "" : value)}>
                     <SelectTrigger className="w-32">
                       <SelectValue placeholder="Todos" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Todos</SelectItem>
+                      <SelectItem value="all">Todos</SelectItem>
                       {LAB_MATERIAIS.map((m) => (
                         <SelectItem key={m} value={m}>
                           {m}

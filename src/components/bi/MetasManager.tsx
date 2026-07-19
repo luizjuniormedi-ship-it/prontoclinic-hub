@@ -28,6 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 import type {
   Meta, PeriodoTipo, ComparacaoTipo, KpiCodigo,
 } from "@/services/biService";
+import { useConfirm } from "@/hooks/useConfirm";
 
 interface MetasManagerProps {
   companyId: string;
@@ -83,6 +84,7 @@ const initialForm: FormState = {
 export function MetasManager({
   companyId, metas, loading, onSalvar, onExcluir,
 }: MetasManagerProps) {
+  const { confirm } = useConfirm();
   void companyId;
   const { toast } = useToast();
   const [editando, setEditando] = useState<Meta | null>(null);
@@ -147,7 +149,7 @@ export function MetasManager({
   };
 
   const excluir = async (m: Meta) => {
-    if (!window.confirm(`Excluir meta "${m.cd_kpi}"?`)) return;
+    if (!await confirm({ title: `Excluir meta "${m.cd_kpi}"?`, destructive: true, confirmText: "Excluir" })) return;
     try {
       await onExcluir(m.id);
       toast({ title: "Meta excluída." });

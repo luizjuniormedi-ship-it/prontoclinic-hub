@@ -29,16 +29,31 @@ export default function MedicalRecordsPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    Promise.all([
-      supabase.from("patients").select("id, full_name, birth_date, sex, allergies, clinical_alerts, insurance_plan_id").order("full_name"),
-      professionalsLookup.getAll(),
-    ]).then(([{ data, error: e }, profs]) => {
-      if (e) { setError(e.message); setLoading(false); return; }
-      setPatients(data || []);
-      setProfessionals(profs);
-      setLoading(false);
-    }).catch((err) => { setError((err as Error).message); setLoading(false); });
+    professionalsLookup.getAll()
+      .then(setProfessionals)
+      .catch((err) => setError((err as Error).message))
+      .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    const term = debouncedSearch.trim();
+    if (term.length < 2) {
+      setPatients([]);
+      return;
+    }
+    let cancelled = false;
+    supabase.from("patients")
+      .select("id, full_name, birth_date, sex, allergies, clinical_alerts, insurance_plan_id")
+      .ilike("full_name", `%${term.replace(/[%_]/g, "")}%`)
+      .order("full_name")
+      .limit(50)
+      .then(({ data, error: queryError }) => {
+        if (cancelled) return;
+        if (queryError) setError(queryError.message);
+        else setPatients(data || []);
+      });
+    return () => { cancelled = true; };
+  }, [debouncedSearch]);
 
   const loadRecords = useCallback(async (patientId: string) => {
     setRecordsLoading(true);
@@ -55,11 +70,7 @@ export default function MedicalRecordsPage() {
     loadRecords(p.id);
   };
 
-  const filtered = patients.filter((p) => {
-    if (!debouncedSearch.trim()) return true;
-    const q = debouncedSearch.toLowerCase();
-    return p.full_name.toLowerCase().includes(q);
-  });
+  const filtered = patients;
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
@@ -130,7 +141,7 @@ export default function MedicalRecordsPage() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input placeholder="Buscar por nome..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
-      {filtered.length === 0 ? <EmptyState icon={Users} title="Nenhum paciente encontrado" /> : (
+      {debouncedSearch.trim().length < 2 ? <EmptyState icon={Search} title="Busque um paciente" description="Digite ao menos 2 caracteres para localizar o prontuário." /> : filtered.length === 0 ? <EmptyState icon={Users} title="Nenhum paciente encontrado" /> : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((p) => {
             const age = p.birth_date ? calculateAge(p.birth_date) : null;

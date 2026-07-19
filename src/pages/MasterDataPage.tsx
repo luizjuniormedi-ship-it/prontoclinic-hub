@@ -30,6 +30,7 @@ export default function MasterDataPage() {
   const [insurances, setInsurances] = useState<HealthInsurancePlan[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [prices, setPrices] = useState<DbPriceEntry[]>([]);
+  const [priceTotal, setPriceTotal] = useState(0);
   const [appointmentTypes, setAppointmentTypes] = useState<DbAppointmentType[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -44,7 +45,7 @@ export default function MasterDataPage() {
 
   const loadPrices = useCallback(async () => {
     try {
-      const [p, at] = await Promise.all([priceTableService.getAll(), appointmentTypesLookup.getAll()]);
+      const [p, at, total] = await Promise.all([priceTableService.getAll(), appointmentTypesLookup.getAll(), priceTableService.count()]);
       // Converter PriceTable[] → DbPriceEntry[]
       const dbEntries: DbPriceEntry[] = (p || []).map((entry) => ({
         id: entry.id,
@@ -59,12 +60,13 @@ export default function MasterDataPage() {
         updated_at: entry.updated_at,
       }));
       setPrices(dbEntries);
+      setPriceTotal(total);
       setAppointmentTypes(at);
     } catch { /* table may not exist yet */ }
   }, []);
 
   useEffect(() => {
-    Promise.all([
+    Promise.allSettled([
       catalogService.specialties.getAll(),
       catalogService.appointmentTypes.getConsultations(),
       catalogService.appointmentTypes.getExams(),
@@ -74,11 +76,13 @@ export default function MasterDataPage() {
       catalogService.rooms.getAllWithUnits(),
       loadPrices(),
     ]).then(([sp, ct, ex, pr, th, ins, rm]) => {
-      setSpecialties(sp); setConsultations(ct); setExams(ex);
-      setProcedures(pr); setTherapies(th); setInsurances(ins); setRooms(rm);
-      setLoading(false);
-    }).catch((err) => {
-      console.error("Erro ao carregar cadastros:", err);
+      setSpecialties(sp.status === "fulfilled" ? sp.value : []);
+      setConsultations(ct.status === "fulfilled" ? ct.value : []);
+      setExams(ex.status === "fulfilled" ? ex.value : []);
+      setProcedures(pr.status === "fulfilled" ? pr.value : []);
+      setTherapies(th.status === "fulfilled" ? th.value : []);
+      setInsurances(ins.status === "fulfilled" ? ins.value : []);
+      setRooms(rm.status === "fulfilled" ? rm.value : []);
       setLoading(false);
     });
   }, [loadPrices]);
@@ -186,7 +190,7 @@ export default function MasterDataPage() {
 
       <Tabs defaultValue="prices">
         <TabsList className="flex-wrap h-auto gap-1">
-          <TabsTrigger value="prices">Preços ({prices.length})</TabsTrigger>
+          <TabsTrigger value="prices">Preços ({priceTotal.toLocaleString("pt-BR")})</TabsTrigger>
           <TabsTrigger value="specialties">Especialidades ({specialties.length})</TabsTrigger>
           <TabsTrigger value="consultations">Consultas ({consultations.length})</TabsTrigger>
           <TabsTrigger value="exams">Exames ({exams.length})</TabsTrigger>
@@ -198,6 +202,7 @@ export default function MasterDataPage() {
 
         {/* Prices */}
         <TabsContent value="prices">
+          {priceTotal > prices.length && <p className="mb-3 text-xs text-muted-foreground">Exibindo os 200 preços mais recentes de {priceTotal.toLocaleString("pt-BR")} registros.</p>}
           <div className="flex justify-end mb-3">
             <Button onClick={openNewPrice}><Plus className="mr-2 h-4 w-4" />Novo Preço</Button>
           </div>

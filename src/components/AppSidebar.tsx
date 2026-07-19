@@ -8,7 +8,7 @@ import {
   ListChecks, Calculator, FileSpreadsheet, ListPlus, Pill,
   HeartPulse, BarChart3, FlaskConical, Video,
   BedDouble, Scissors, AlertOctagon, FileSignature, Sparkles,
-  Truck, ShoppingCart, Star, Ambulance,
+  Truck, ShoppingCart, Star, Ambulance, Clock, Syringe,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, useSidebar,
@@ -23,9 +23,12 @@ const mainItems: MenuGroup = {
     { title: "Agenda", url: "/schedule", icon: Calendar },
     { title: "Recepção", url: "/reception", icon: UserCheck },
     { title: "Triagem", url: "/nursing/triage", icon: HeartPulse },
+    { title: "Cuidados Enfermagem", url: "/nursing/care", icon: Syringe },
     { title: "Pacientes", url: "/patients", icon: Users },
     { title: "Profissionais", url: "/professionals", icon: Stethoscope },
     { title: "Prontuário", url: "/records", icon: FileText },
+    { title: "Atendimento (PEP)", url: "/encounters", icon: Stethoscope },
+    { title: "Timeline Clínica", url: "/clinical-timeline", icon: Clock },
     { title: "Farmácia", url: "/pharmacy", icon: Pill },
     { title: "Laboratório", url: "/lab", icon: FlaskConical },
     { title: "Call Center", url: "/callcenter", icon: Phone },
@@ -72,6 +75,7 @@ const financialItems: MenuGroup = {
     {
       groupTitle: "Operação",
       items: [
+        { title: "Contas", url: "/billing-accounts", icon: Receipt },
         { title: "Produção", url: "/billing-production", icon: Receipt },
         { title: "TISS", url: "/admin/tiss", icon: FileSpreadsheet },
         { title: "Repasse", url: "/professional-payment", icon: Banknote },
@@ -154,6 +158,7 @@ const adminItems: MenuGroup = {
         { title: "Usuários", url: "/admin/users", icon: UserCog },
         { title: "Perfis", url: "/admin/profiles", icon: ShieldCheck },
         { title: "Permissões", url: "/admin/permissions", icon: KeyRound },
+        { title: "Acessos e delegações", url: "/admin/access", icon: KeyRound },
         { title: "Empresas", url: "/companies", icon: Building2 },
       ],
     },

@@ -2,6 +2,7 @@ import { MoreHorizontal, UserCheck, Play, Calendar, X, UserX } from "lucide-reac
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Appointment } from "@/types";
+import { canStartAppointment } from "@/services/statusTransitions";
 
 interface QuickActionsMenuProps {
   appointment: Appointment;
@@ -10,7 +11,7 @@ interface QuickActionsMenuProps {
 
 export function QuickActionsMenu({ appointment, onAction }: QuickActionsMenuProps) {
   const canCheckIn = appointment.status === "confirmed" || appointment.status === "scheduled";
-  const canStart = appointment.status === "waiting" || appointment.status === "confirmed";
+  const canStart = canStartAppointment(appointment.status);
   const canReschedule = appointment.status !== "completed" && appointment.status !== "cancelled";
   const canCancel = appointment.status !== "completed" && appointment.status !== "cancelled";
   const canNoShow = appointment.status !== "completed" && appointment.status !== "cancelled" && appointment.status !== "no_show";
@@ -18,7 +19,13 @@ export function QuickActionsMenu({ appointment, onAction }: QuickActionsMenuProp
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-8 w-8">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          title="Mais ações"
+          aria-label={`Mais ações para ${appointment.patientName} às ${appointment.time}`}
+        >
           <MoreHorizontal className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>

@@ -50,7 +50,25 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:chromium": "playwright test --project=chromium",
-    "test:all": "npm run test:unit && npm run test:e2e"
+    "test:all": "npm run test:unit && npm run test:e2e",
+    "auth:local": "node local-auth-server.mjs",
+    "local:start": "powershell -ExecutionPolicy Bypass -File scripts/start-local.ps1",
+    "local:stop": "powershell -ExecutionPolicy Bypass -File scripts/stop-local.ps1",
+    "local:health": "powershell -ExecutionPolicy Bypass -File scripts/health-local.ps1",
+    "test:local-safety": "node --test scripts/__tests__/e2e-safety.test.mjs scripts/__tests__/rpc-role-policy.test.mjs && node --check local-auth-server.mjs",
+    "secret:scan": "powershell -ExecutionPolicy Bypass -File scripts/secret-scan.ps1",
+    "secret:scan:staged": "powershell -ExecutionPolicy Bypass -File scripts/secret-scan.ps1 --staged",
+    "test:release-safety": "node scripts/validate-release-safety.mjs",
+    "validate:rpc-parity": "node scripts/validate-rpc-parity.mjs",
+    "validate:rpc-surfaces": "node scripts/validate-rpc-surfaces.mjs",
+    "validate:rpc-contract": "node scripts/validate-rpc-contract.mjs",
+    "validate:migration-order": "node scripts/validate-migration-order.mjs",
+    "release:migration-manifest": "node scripts/generate-release-migration-manifest.mjs"
+     ,"validate:mvp-lexical-gate": "node scripts/validate-mvp-lexical-gate.mjs"
+     ,"validate:baseline-parity": "node scripts/validate-baseline-source-parity.mjs"
+     ,"validate:mvp-hashes": "node scripts/validate-mvp-manifest-hashes.mjs"
+     ,"validate:mvp-package": "node scripts/validate-mvp-package-structure.mjs"
+     ,"validate:mvp-runtime-gate": "powershell -ExecutionPolicy Bypass -File scripts/run-mvp-runtime-gate.ps1"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -93,6 +111,7 @@
     "input-otp": "^1.4.2",
     "lucide-react": "^0.462.0",
     "next-themes": "^0.3.0",
+    "pg": "^8.22.0",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",

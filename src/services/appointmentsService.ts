@@ -1,5 +1,4 @@
 import { supabase } from '@/lib/supabase';
-import { canTransitionAppointment } from './statusTransitions';
 
 // ── Lookup types matching Supabase schema ──
 
@@ -14,6 +13,7 @@ export interface DbProfessional {
   phone: string | null;
   email: string | null;
   status: string | null;
+  lg_ativo?: boolean | null;
   default_duration_minutes: number | null;
   created_at: string;
   updated_at: string;
@@ -38,10 +38,15 @@ export interface DbAppointmentType {
 
 export interface DbServiceCatalog {
   id: string;
+  code?: string | null;
   name: string;
   specialty_id: string | null;
   default_duration_minutes: number | null;
   price: number | null;
+  lg_ativo?: boolean | null;
+  vl_particular?: number | null;
+  lg_autorizacao?: number | null;
+  ds_preparo?: string | null;
   created_at: string;
 }
 
@@ -60,6 +65,7 @@ export interface DbAppointment {
   status: string;
   is_return: boolean | null;
   notes: string | null;
+  service_name: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -125,7 +131,48 @@ export interface AppointmentCreateInput {
   end_time?: string;
   status?: string;
   is_return?: boolean;
+  is_walkin?: boolean;
   notes?: string;
+  insurance_id?: string;
+  card_number?: string;
+  authorization_number?: string;
+}
+
+export interface SchedulingRequirements {
+  insurance_id: number | null;
+  insurance_name: string | null;
+  card_number: string | null;
+  professional_credentialed: boolean;
+  requires_authorization: boolean;
+  requires_eligibility: boolean;
+  preparation: string | null;
+  service_name: string | null;
+  private_price: number | null;
+  errors: string[];
+}
+
+export interface AppointmentRescheduleInput {
+  appointment_date: string;
+  start_time: string;
+  end_time?: string;
+  reason: string;
+}
+
+function toBigIntParam(value: string | undefined, field: string): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(field + ' inválido.');
+  }
+  return parsed;
+}
+
+function requiredBigIntParam(value: string | undefined, field: string): number {
+  const parsed = toBigIntParam(value, field);
+  if (parsed === null) {
+    throw new Error(field + ' é obrigatório.');
+  }
+  return parsed;
 }
 
 export const appointmentsService = {
@@ -146,42 +193,67 @@ export const appointmentsService = {
   },
 
   async create(input: AppointmentCreateInput): Promise<DbAppointment> {
-    const row: Record<string, any> = { ...input };
-    if (!row.status) row.status = 'scheduled';
+    const { data, error } = await supabase.rpc('create_appointment_with_requirements_secure', {
+      p_patient_id: requiredBigIntParam(input.patient_id, 'Paciente'),
+      p_professional_id: requiredBigIntParam(input.professional_id, 'Profissional'),
+      p_appointment_date: input.appointment_date,
+      p_start_time: input.start_time,
+      p_end_time: input.end_time || null,
+      p_company_id: input.company_id || null,
+      p_unit_id: toBigIntParam(input.unit_id, 'Unidade'),
+      p_specialty_id: toBigIntParam(input.specialty_id, 'Especialidade'),
+      p_service_id: toBigIntParam(input.service_id, 'Serviço'),
+      p_appointment_type_id: toBigIntParam(input.appointment_type_id, 'Tipo de atendimento'),
+      p_status: input.status || 'scheduled',
+      p_is_return: !!input.is_return,
+      p_is_walkin: !!input.is_walkin,
+      p_notes: input.notes || null,
+      p_insurance_id: toBigIntParam(input.insurance_id, 'Convênio'),
+      p_card_number: input.card_number || null,
+      p_authorization_number: input.authorization_number || null,
+    });
+    if (error) throw new Error('Erro ao criar agendamento: ' + error.message);
+    return data as DbAppointment;
+  },
 
-    const { data, error } = await supabase
-      .from('appointments')
-      .insert(row)
-      .select()
-      .single();
-    if (error) throw new Error(`Erro ao criar agendamento: ${error.message}`);
-    return data;
+  async getRequirements(input: {
+    patientId: string;
+    professionalId: string;
+    serviceId?: string;
+    insuranceId?: string;
+    cardNumber?: string;
+  }): Promise<SchedulingRequirements> {
+    const { data, error } = await supabase.rpc('get_scheduling_requirements', {
+      p_patient_id: requiredBigIntParam(input.patientId, 'Paciente'),
+      p_professional_id: requiredBigIntParam(input.professionalId, 'Profissional'),
+      p_service_id: toBigIntParam(input.serviceId, 'Serviço'),
+      p_insurance_id: toBigIntParam(input.insuranceId, 'Convênio'),
+      p_card_number: input.cardNumber || null,
+    });
+    if (error) throw new Error('Erro ao validar requisitos: ' + error.message);
+    return data as SchedulingRequirements;
   },
 
   async updateStatus(id: string, newStatus: string, notes?: string): Promise<DbAppointment> {
-    // Fetch current status for validation
-    const { data: current, error: fetchErr } = await supabase
-      .from('appointments')
-      .select('status')
-      .eq('id', id)
-      .single();
-    if (fetchErr) throw new Error(`Erro ao buscar agendamento: ${fetchErr.message}`);
+    const { data, error } = await supabase.rpc('update_appointment_status_secure', {
+      p_appointment_id: requiredBigIntParam(id, 'Agendamento'),
+      p_new_status: newStatus,
+      p_reason: notes || null,
+    });
+    if (error) throw new Error('Erro ao atualizar agendamento: ' + error.message);
+    return data as DbAppointment;
+  },
 
-    if (!canTransitionAppointment(current.status, newStatus)) {
-      throw new Error(`Transição inválida: ${current.status} → ${newStatus}`);
-    }
-
-    const row: Record<string, any> = { status: newStatus, updated_at: new Date().toISOString() };
-    if (notes !== undefined) row.notes = notes;
-
-    const { data, error } = await supabase
-      .from('appointments')
-      .update(row)
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) throw new Error(`Erro ao atualizar agendamento: ${error.message}`);
-    return data;
+  async reschedule(id: string, input: AppointmentRescheduleInput): Promise<DbAppointment> {
+    const { data, error } = await supabase.rpc('reschedule_appointment_secure', {
+      p_appointment_id: requiredBigIntParam(id, 'Agendamento'),
+      p_new_appointment_date: input.appointment_date,
+      p_new_start_time: input.start_time,
+      p_new_end_time: input.end_time || null,
+      p_reason: input.reason,
+    });
+    if (error) throw new Error('Erro ao remarcar agendamento: ' + error.message);
+    return data as DbAppointment;
   },
 
   async update(id: string, input: Partial<AppointmentCreateInput>): Promise<DbAppointment> {
@@ -198,11 +270,7 @@ export const appointmentsService = {
   },
 
   async delete(id: string): Promise<void> {
-    const { error } = await supabase
-      .from('appointments')
-      .delete()
-      .eq('id', id);
-    if (error) throw new Error(`Erro ao excluir agendamento: ${error.message}`);
+    await this.updateStatus(id, 'cancelled', 'Cancelamento lógico solicitado');
   },
 
   async getPatientLastCompleted(patientId: string, specialtyId: string): Promise<DbAppointment | null> {

@@ -18,6 +18,9 @@ import { priceTableService } from "@/services/priceTableService";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { calculateAge } from "@/utils/formatters";
+import { friendlyError } from "@/utils/friendlyError";
+import { imagingJourneyService } from "@/services/imagingJourneyService";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface PatientInfo { id: string; full_name: string; birth_date: string | null; sex: string | null; allergies: string | null; clinical_alerts: string | null; insurance_plan_id: string | null; }
 interface AppointmentInfo { id: string; patient_id: string; professional_id: string; specialty_id: string | null; unit_id: string | null; company_id: string | null; appointment_type_id: string | null; status: string; }
@@ -30,6 +33,7 @@ export default function AttendancePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [recordSaved, setRecordSaved] = useState(false);
   const [patient, setPatient] = useState<PatientInfo | null>(null);
   const [appointment, setAppointment] = useState<AppointmentInfo | null>(null);
 
@@ -45,25 +49,41 @@ export default function AttendancePage() {
   const [conduct, setConduct] = useState("");
   const [prescription, setPrescription] = useState("");
   const [examRequests, setExamRequests] = useState("");
+  const [examModality, setExamModality] = useState("US");
+  const [examPriority, setExamPriority] = useState<"normal" | "urgent" | "emergency">("normal");
+  const [imagingOrderCreated, setImagingOrderCreated] = useState(false);
   const [returnNotes, setReturnNotes] = useState("");
   const [vitalSigns, setVitalSigns] = useState({ bloodPressure: "", heartRate: "", temperature: "", weight: "", height: "", oxygenSaturation: "" });
 
-  useEffect(() => {
-    if (!appointmentId) return;
-    (async () => {
-      try {
-        const { data: appt, error: ae } = await supabase.from("appointments").select("*").eq("id", appointmentId).maybeSingle();
-        if (ae || !appt) { setError("Atendimento não encontrado."); setLoading(false); return; }
-        setAppointment(appt);
+  const loadAppointment = useCallback(async () => {
+    if (!appointmentId) {
+      setError("Atendimento não informado.");
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const { data: appt, error: ae } = await supabase.from("appointments").select("*").eq("id", appointmentId).maybeSingle();
+      if (ae) throw ae;
+      if (!appt) throw new Error("Atendimento não encontrado.");
+      setAppointment(appt);
 
-        if (appt.patient_id) {
-          const { data: pat } = await supabase.from("patients").select("id, full_name, birth_date, sex, allergies, clinical_alerts, insurance_plan_id").eq("id", appt.patient_id).maybeSingle();
-          setPatient(pat);
-        }
-        setLoading(false);
-      } catch (err) { setError((err as Error).message); setLoading(false); }
-    })();
+      if (appt.patient_id) {
+        const { data: pat, error: pe } = await supabase.from("patients").select("id, full_name, birth_date, sex, allergies, clinical_alerts, insurance_plan_id").eq("id", appt.patient_id).maybeSingle();
+        if (pe) throw pe;
+        setPatient(pat);
+      } else {
+        setPatient(null);
+      }
+    } catch (err) {
+      setError(friendlyError(err, "Carregar atendimento"));
+    } finally {
+      setLoading(false);
+    }
   }, [appointmentId]);
+
+  useEffect(() => { void loadAppointment(); }, [loadAppointment]);
 
   const handleSave = async () => {
     if (!patient || !appointment) return;
@@ -74,6 +94,13 @@ export default function AttendancePage() {
 
     setSaving(true);
     try {
+      if (appointment.status === "waiting") {
+        const updated = await appointmentsService.updateStatus(appointment.id, "in_progress");
+        setAppointment((current) => current ? { ...current, status: updated.status } : current);
+      } else if (appointment.status !== "in_progress") {
+        throw new Error("O atendimento precisa estar em andamento antes de ser finalizado.");
+      }
+
       const vs: Record<string, any> = {};
       if (vitalSigns.bloodPressure) vs.bloodPressure = vitalSigns.bloodPressure;
       if (vitalSigns.heartRate) vs.heartRate = Number(vitalSigns.heartRate);
@@ -100,16 +127,30 @@ export default function AttendancePage() {
         returnNotes && `**Retorno:** ${returnNotes}`,
       ].filter(Boolean).join("\n\n");
 
-      await medicalRecordsService.create({
-        patient_id: patient.id,
-        professional_id: appointment.professional_id,
-        appointment_id: appointment.id,
-        company_id: appointment.company_id || user?.company_id || undefined,
-        unit_id: appointment.unit_id || user?.primary_unit_id || undefined,
-        anamnesis: anamnesis || undefined,
-        evolution: evolution || undefined,
-        vital_signs: Object.keys(vs).length > 0 ? vs : undefined,
-      });
+      if (!recordSaved) {
+        await medicalRecordsService.create({
+          patient_id: patient.id,
+          professional_id: appointment.professional_id,
+          appointment_id: appointment.id,
+          company_id: appointment.company_id || user?.company_id || undefined,
+          unit_id: appointment.unit_id || user?.primary_unit_id || undefined,
+          anamnesis: anamnesis || undefined,
+          evolution: evolution || undefined,
+          vital_signs: Object.keys(vs).length > 0 ? vs : undefined,
+        });
+        setRecordSaved(true);
+      }
+
+      if (examRequests.trim() && !imagingOrderCreated) {
+        await imagingJourneyService.createFromAttendance({
+          appointmentId: appointment.id,
+          examName: examRequests,
+          modalityType: examModality,
+          clinicalIndication: diagnosis || chiefComplaint || hda,
+          priority: examPriority,
+        });
+        setImagingOrderCreated(true);
+      }
 
       // Update appointment status to completed (with validation)
       await appointmentsService.updateStatus(appointment.id, "completed");
@@ -123,7 +164,7 @@ export default function AttendancePage() {
         const price = priceLookup.vl_particular + priceLookup.vl_convenio;
         const billingType = patient.insurance_plan_id ? "convenio" : "particular";
 
-        await billingsService.create({
+        await billingsService.createForAppointment({
           patient_id: patient.id,
           professional_id: appointment.professional_id || undefined,
           appointment_id: appointment.id,
@@ -148,14 +189,14 @@ export default function AttendancePage() {
       toast({ title: "Atendimento salvo e finalizado!" });
       navigate("/reception");
     } catch (err) {
-      toast({ title: "Erro ao salvar", description: (err as Error).message, variant: "destructive" });
+      toast({ title: "Erro ao salvar", description: friendlyError(err, "Salvar atendimento"), variant: "destructive" });
     } finally {
       setSaving(false);
     }
   };
 
   if (loading) return <LoadingState />;
-  if (error) return <ErrorState message={error} onRetry={() => navigate("/reception")} />;
+  if (error) return <ErrorState message={error} onRetry={() => void loadAppointment()} />;
   if (!patient || !appointment) return <ErrorState message="Dados não encontrados" />;
 
   return (
@@ -183,7 +224,7 @@ export default function AttendancePage() {
           <div>
             <p className="font-semibold">{patient.full_name}</p>
             <p className="text-xs text-muted-foreground">
-              {patient.birth_date ? `${calculateAge(patient.birth_date)} anos` : ""} • {patient.sex === "M" ? "Masc." : patient.sex === "F" ? "Fem." : "Outro"} • {patient.insurance_plan_id || "Particular"}
+              {patient.birth_date ? `${calculateAge(patient.birth_date)} anos` : ""} • {patient.sex === "M" ? "Masc." : patient.sex === "F" ? "Fem." : "Outro"} • {patient.insurance_plan_id ? `Convênio #${patient.insurance_plan_id}` : "Particular"}
             </p>
           </div>
           {patient.allergies && (
@@ -242,7 +283,14 @@ export default function AttendancePage() {
             <div className="space-y-2"><Label>CID</Label><Input placeholder="Ex: J06.9" value={cid} onChange={(e) => setCid(e.target.value)} /></div>
           </div>
           <div className="space-y-2"><Label>Conduta</Label><Textarea rows={3} placeholder="Conduta médica..." value={conduct} onChange={(e) => setConduct(e.target.value)} /></div>
-          <div className="space-y-2"><Label>Solicitação de Exames</Label><Textarea rows={2} placeholder="Exames solicitados..." value={examRequests} onChange={(e) => setExamRequests(e.target.value)} /></div>
+          <div className="rounded-lg border p-3 space-y-3">
+            <div className="space-y-2"><Label>Exame de imagem</Label><Textarea rows={2} placeholder="Ex.: Ultrassonografia de abdome total" value={examRequests} onChange={(e) => setExamRequests(e.target.value)} /></div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-2"><Label>Modalidade</Label><Select value={examModality} onValueChange={setExamModality}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["US","CT","MR","CR","DX","MG","XA","NM","PT","RF","OT"].map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>Prioridade</Label><Select value={examPriority} onValueChange={(value) => setExamPriority(value as "normal" | "urgent" | "emergency")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="normal">Normal</SelectItem><SelectItem value="urgent">Urgente</SelectItem><SelectItem value="emergency">Emergência</SelectItem></SelectContent></Select></div>
+            </div>
+            <p className="text-xs text-muted-foreground">Ao finalizar, será criado um pedido estruturado e uma entrada na Worklist da unidade.</p>
+          </div>
           <div className="space-y-2"><Label>Retorno</Label><Input placeholder="Ex: 15 dias, 1 mês" value={returnNotes} onChange={(e) => setReturnNotes(e.target.value)} /></div>
         </TabsContent>
 

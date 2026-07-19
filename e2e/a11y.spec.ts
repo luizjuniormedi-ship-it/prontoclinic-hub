@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { credentialsFor } from './fixtures/auth';
 
 const protectedRoutes = [
   { name: 'dashboard', path: '/' },
@@ -9,12 +10,13 @@ const protectedRoutes = [
   { name: 'admin/lgpd', path: '/admin/lgpd' }
 ];
 
-test.describe('Acessibilidade (WCAG 2.1 AA)', () => {
+test.describe('Acessibilidade (WCAG 2.1 AA) @readonly', () => {
   test.beforeEach(async ({ page }) => {
     // Login como admin antes de testar rotas protegidas
     await page.goto('/login');
-    await page.getByLabel('E-mail').fill('admin@prontomedic.test');
-    await page.getByLabel('Senha').fill('TestPassword123!');
+    const credentials = credentialsFor('admin');
+    await page.getByLabel('E-mail').fill(credentials.email);
+    await page.getByLabel('Senha').fill(credentials.password);
     await page.getByRole('button', { name: /entrar/i }).click();
     await page.waitForURL(/\/(?!login)/);
   });

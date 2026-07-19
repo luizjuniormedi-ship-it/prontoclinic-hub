@@ -15,7 +15,7 @@ import { test as authed } from './fixtures/auth';
  *   - Ver histórico de evoluções
  */
 
-authed.describe('Prontuário', () => {
+authed.describe('Prontuário @mutating', () => {
   authed.beforeEach(async ({ loginAs }) => {
     await loginAs('doctor');
   });

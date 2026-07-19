@@ -72,7 +72,7 @@ export function TelemedicineLobby({
     // @ts-expect-error addEventListener em connection
     navigator.connection?.addEventListener?.("change", handler);
     return () => {
-      // @ts-expect-error
+      // @ts-expect-error NetworkInformation is not fully typed across supported browsers.
       navigator.connection?.removeEventListener?.("change", handler);
     };
   }, []);
