@@ -57,7 +57,7 @@ Consultar integralmente [PRONTOMEDIC_DIRETRIZ_MESTRE.md](docs/PRONTOMEDIC_DIRETR
 ## Sincronização do release (2026-07-19)
 
 - As melhorias locais auditadas dos Módulos 1 e 2 foram publicadas na branch `codex/module-1-2-sync-20260719`, commit `9c2052a065f55029966a5ac887026c827f484698`.
-- PR draft criado: [#15](https://github.com/luizjuniormedi-ship-it/prontoclinic-hub/pull/15), contra `main` em `f1cd2ce46a10da718de5e53b29e90adc276d091f`.
+- PR draft criado: [#15](https://github.com/luizjuniormedi-ship-it/prontoclinic-hub/pull/15), contra `main` em `f1cd2ce46a10da718de5e53b29e90adc276d091f`; HEAD atual da branch `f070a4e5e153c73e8c159b13b55e063ed502a6bc` contém o registro operacional após o commit de código `9c2052a`.
 - O pacote excluiu `.env.production.local`, arquivos `tar.gz`, `__pycache__` e `scripts/reconcile_datasigh_readonly.py`; DataSIGH permanece fora do release.
 - Gates locais do commit: type-check, testes `493 passed / 1 skipped`, safety `7/7`, lint `0 erros`, build, release-safety e secret scan aprovados.
 - O Actions não registrou workflow para o commit do PR #15; o status Vercel permanece `pending`.

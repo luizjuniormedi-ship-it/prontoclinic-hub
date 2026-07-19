@@ -25,7 +25,7 @@
     "write_allowed": false
   },
   "synchronization": {
-    "local_head": "9c2052a065f55029966a5ac887026c827f484698",
+    "local_head": "f070a4e5e153c73e8c159b13b55e063ed502a6bc",
     "origin_main_head": "f1cd2ce46a10da718de5e53b29e90adc276d091f",
     "release_branch": "codex/module-1-2-sync-20260719",
     "release_pr": "https://github.com/luizjuniormedi-ship-it/prontoclinic-hub/pull/15",
