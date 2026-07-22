@@ -31,10 +31,10 @@ export default function DicomWorklistPage() {
 
   useEffect(load, [statusFilter]);
 
-  const markExported = async (id: string) => {
+  const queueExport = async (id: string) => {
     try {
-      await worklistQueueService.markExported(id);
-      toast({ title: "Marcado como exportado" });
+      await worklistQueueService.queueExport(id);
+      toast({ title: "Envio ao Worklist solicitado" });
       load();
     } catch { toast({ title: "Erro", variant: "destructive" }); }
   };
@@ -96,7 +96,7 @@ export default function DicomWorklistPage() {
                     <div className="flex gap-1">
                       {i.status === 'pending' && (
                         <>
-                          <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => markExported(i.id)}>Exportar</Button>
+                          <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => queueExport(i.id)}>Enviar</Button>
                           <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-destructive" onClick={() => cancel(i.id)}>Cancelar</Button>
                         </>
                       )}

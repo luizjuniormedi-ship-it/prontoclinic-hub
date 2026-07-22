@@ -106,6 +106,13 @@ export interface DicomWorklistItem {
   referring_physician_name?: string;
   status: WorklistQueueStatus;
   exported_to_worklist: boolean;
+  export_state?: 'pending' | 'exporting' | 'exported' | 'failed';
+  export_attempts?: number;
+  last_export_error?: string;
+  orthanc_worklist_id?: string;
+  delete_state?: 'not_required' | 'pending' | 'deleting' | 'deleted' | 'failed';
+  last_delete_error?: string;
+  orthanc_deleted_at?: string;
   last_export_at?: string;
   created_at: string;
   updated_at: string;

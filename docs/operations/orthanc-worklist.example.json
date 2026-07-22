@@ -1,0 +1,29 @@
+{
+  "Name": "ProntoMedic Orthanc",
+  "DicomAet": "PRONTOMEDIC",
+  "DicomPort": 4242,
+  "HttpPort": 8042,
+  "RemoteAccessAllowed": false,
+  "AuthenticationEnabled": true,
+  "Plugins": [
+    "OrthancExplorer2.dll",
+    "OrthancWorklists.dll"
+  ],
+  "Worklists": {
+    "Enable": true,
+    "FilterIssuerAet": false,
+    "LimitAnswers": 0,
+    "SaveInOrthancDatabase": true,
+    "SetStudyInstanceUidIfMissing": true,
+    "DeleteWorklistsOnStableStudy": true,
+    "DeleteWorklistsDelay": 24,
+    "HousekeepingInterval": 60
+  },
+  "DicomModalities": {
+    "datasigh-pacs": [
+      "datasigh",
+      "192.168.25.252",
+      11112
+    ]
+  }
+}

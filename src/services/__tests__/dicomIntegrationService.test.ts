@@ -29,12 +29,12 @@ vi.mock("@/services/dicomService", () => ({
   },
   worklistQueueService: {
     list: vi.fn(),
-    markExported: vi.fn(),
+    queueExport: vi.fn(),
     cancel: vi.fn(),
     createFromOrderItem: vi.fn(),
   } as unknown as typeof import("@/services/dicomService").worklistQueueService & {
     list: ReturnType<typeof vi.fn>;
-    markExported: ReturnType<typeof vi.fn>;
+    queueExport: ReturnType<typeof vi.fn>;
     cancel: ReturnType<typeof vi.fn>;
     createFromOrderItem: ReturnType<typeof vi.fn>;
   },
@@ -139,20 +139,20 @@ describe("dicomIntegrationService — getOrthancConfigTemplate", () => {
 describe("dicomIntegrationService — exportPendingWorklist", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("formata e marca todos os itens pendentes como exportados", async () => {
+  it("formata e enfileira os itens sem confirmar exportação antecipadamente", async () => {
     (worklistQueueService.list as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([
       mockWorklistItem,
       { ...mockWorklistItem, id: "wl2", accession_number: "ACC002" },
     ]);
-    (worklistQueueService.markExported as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    (worklistQueueService.queueExport as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 
     const result = await dicomIntegrationService.exportPendingWorklist();
 
     expect(result.count).toBe(2);
     expect(result.exported[0]["0008,0050"]).toBe("ACC001");
     expect(worklistQueueService.list).toHaveBeenCalledWith({ status: "pending" });
-    expect(worklistQueueService.markExported).toHaveBeenCalledWith("wl1");
-    expect(worklistQueueService.markExported).toHaveBeenCalledWith("wl2");
+    expect(worklistQueueService.queueExport).toHaveBeenCalledWith("wl1");
+    expect(worklistQueueService.queueExport).toHaveBeenCalledWith("wl2");
   });
 });
 
