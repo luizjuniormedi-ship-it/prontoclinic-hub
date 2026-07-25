@@ -316,6 +316,8 @@ SELECT pg_temp.assert_true(
 );
 
 SELECT public.perform_reception_checkin_secure(850052, 'normal', NULL);
+RESET ROLE;
+
 SELECT pg_temp.assert_true(
   EXISTS (
     SELECT 1
@@ -345,5 +347,4 @@ SELECT pg_temp.assert_true(
   'check-in por convênio deve preservar vínculos da conta, guia e contas a receber'
 );
 
-RESET ROLE;
 ROLLBACK;
