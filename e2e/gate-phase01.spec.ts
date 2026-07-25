@@ -112,6 +112,8 @@ test.describe('Gate fase 0/1', () => {
     const patientA = page.getByText('Paciente E2E A').locator('xpath=ancestor::*[contains(@class,"rounded-lg") or contains(@class,"border")][1]');
     await patientA.getByRole('button', { name: /^Fazer check-in\./ }).click();
     await expect(page.getByRole('dialog', { name: 'Jornada do check-in' })).toBeVisible();
+    await expect(page.getByText('Preparar cobrança')).toBeVisible();
+    await page.getByRole('button', { name: /^Preparar cobrança\./ }).click();
     await expect(page.getByText('Paciente pronto para o check-in')).toBeVisible();
     await page.getByRole('button', { name: /^Concluir check-in\./ }).click();
     await expect(page.getByText(/^Check-in concluído · Senha C\d{3}$/).first()).toBeVisible();
@@ -151,4 +153,3 @@ test.describe('Gate fase 0/1', () => {
     await expect(page.getByText('Nenhum paciente encontrado')).toBeVisible();
   });
 });
-
