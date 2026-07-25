@@ -289,11 +289,11 @@ BEGIN
   SELECT COALESCE(
     NULLIF(v_a.cd_autorizacao, ''),
     (
-      SELECT NULLIF(authorization.authorization_number, '')
-      FROM public.reception_authorizations authorization
-      WHERE authorization.appointment_id = v_a.id
-        AND authorization.status IN ('autorizada','parcialmente_autorizada','liberada_excecao')
-      ORDER BY authorization.authorized_at DESC NULLS LAST, authorization.created_at DESC
+      SELECT NULLIF(authorization_row.authorization_number, '')
+      FROM public.reception_authorizations authorization_row
+      WHERE authorization_row.appointment_id = v_a.id
+        AND authorization_row.status IN ('autorizada','parcialmente_autorizada','liberada_excecao')
+      ORDER BY authorization_row.authorized_at DESC NULLS LAST, authorization_row.created_at DESC
       LIMIT 1
     ),
     v_authorization_number
@@ -419,11 +419,11 @@ BEGIN
   SELECT COALESCE(
     NULLIF(v_a.cd_autorizacao, ''),
     (
-      SELECT NULLIF(authorization.authorization_number, '')
-      FROM public.reception_authorizations authorization
-      WHERE authorization.appointment_id = v_a.id
-        AND authorization.status IN ('autorizada','parcialmente_autorizada','liberada_excecao')
-      ORDER BY authorization.authorized_at DESC NULLS LAST, authorization.created_at DESC
+      SELECT NULLIF(authorization_row.authorization_number, '')
+      FROM public.reception_authorizations authorization_row
+      WHERE authorization_row.appointment_id = v_a.id
+        AND authorization_row.status IN ('autorizada','parcialmente_autorizada','liberada_excecao')
+      ORDER BY authorization_row.authorized_at DESC NULLS LAST, authorization_row.created_at DESC
       LIMIT 1
     )
   ) INTO v_authorization_number;
@@ -1135,9 +1135,9 @@ BEGIN
   END IF;
 
   IF EXISTS (
-    SELECT 1 FROM public.reception_authorizations authorization
-    WHERE authorization.appointment_id = v_a.id
-      AND authorization.status NOT IN ('nao_necessaria','autorizada','parcialmente_autorizada','liberada_excecao')
+    SELECT 1 FROM public.reception_authorizations authorization_row
+    WHERE authorization_row.appointment_id = v_a.id
+      AND authorization_row.status NOT IN ('nao_necessaria','autorizada','parcialmente_autorizada','liberada_excecao')
   ) THEN
     v_issues := v_issues || jsonb_build_array(jsonb_build_object(
       'type','authorization','severity','blocking','description','Autorização pendente ou inválida'
