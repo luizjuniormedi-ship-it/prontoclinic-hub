@@ -216,6 +216,12 @@ INSERT INTO public.insurance_plans (
   850040, '85000000-0000-0000-0000-000000000001', 850030,
   'Plano Checkout', TRUE
 );
+
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub = '85000000-0000-0000-0000-000000000010';
+SET LOCAL request.jwt.claim.aal = 'aal2';
+SET LOCAL request.jwt.claims = '{"sub":"85000000-0000-0000-0000-000000000010","role":"authenticated","aal":"aal2","session_id":"85000000-0000-0000-0000-000000000099"}';
+
 UPDATE public.patients
    SET insurance_plan_id = 850040,
        insurance_card_number = 'CARD-850'
@@ -229,11 +235,6 @@ INSERT INTO public.appointments (
   850020, 850010, 850030, CURRENT_DATE,
   TIME '10:00', TIME '10:30', 'scheduled', 'Checkout convênio'
 );
-
-SET LOCAL ROLE authenticated;
-SET LOCAL request.jwt.claim.sub = '85000000-0000-0000-0000-000000000010';
-SET LOCAL request.jwt.claim.aal = 'aal2';
-SET LOCAL request.jwt.claims = '{"sub":"85000000-0000-0000-0000-000000000010","role":"authenticated","aal":"aal2","session_id":"85000000-0000-0000-0000-000000000099"}';
 
 SELECT public.prepare_reception_checkout_secure(
   850052, 'convenio', 200, 0, 20, 180,
