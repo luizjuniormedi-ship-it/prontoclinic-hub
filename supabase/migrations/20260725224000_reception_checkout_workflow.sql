@@ -310,7 +310,7 @@ BEGIN
     'insurance_id', v_a.insurance_company_id,
     'insurance_plan_id', v_p.insurance_plan_id,
     'service_id', v_a.service_id,
-    'service_name', COALESCE(v_a.service_name, v_service.name, 'Atendimento'),
+    'service_name', COALESCE(v_service.name, 'Atendimento'),
     'gross_amount', v_gross,
     'discount_amount', v_discount,
     'net_amount', v_net,
@@ -427,7 +427,6 @@ BEGIN
   ) INTO v_authorization_number;
 
   v_description := COALESCE(
-    NULLIF(v_a.service_name, ''),
     (SELECT name FROM public.services_catalog WHERE id = v_a.service_id),
     'Atendimento ambulatorial'
   );
@@ -497,7 +496,7 @@ BEGIN
     metadata, created_by
   ) VALUES (
     v_a.company_id, v_account.id, 'agenda', v_a.id::TEXT,
-    CASE WHEN NULLIF(v_a.service_name, '') IS NULL THEN 'consulta' ELSE 'servico_agendado' END,
+    CASE WHEN v_a.service_id IS NULL THEN 'consulta' ELSE 'servico_agendado' END,
     v_a.service_id, v_description, 1, ROUND(COALESCE(p_gross_amount, 0), 2),
     ROUND(COALESCE(p_gross_amount, 0), 2), ROUND(COALESCE(p_discount_amount, 0), 2),
     v_net, ROUND(COALESCE(p_patient_responsibility, 0), 2),
@@ -953,7 +952,7 @@ BEGIN
       'appointment_date', v_a.appointment_date,
       'professional_id', v_a.professional_id,
       'service_id', v_a.service_id,
-      'service_name', v_a.service_name,
+      'service_name', (SELECT name FROM public.services_catalog WHERE id = v_a.service_id),
       'insurance_id', v_a.insurance_company_id,
       'insurance_plan_id', v_p.insurance_plan_id,
       'authorization_number', v_account.authorization_number,
@@ -1317,7 +1316,7 @@ BEGIN
   ) VALUES (
     v_a.company_id, v_checkin.id, v_a.patient_id, v_a.id,
     'C', v_number, p_priority,
-    CASE WHEN COALESCE(v_a.service_name, '') <> '' THEN 'procedimento' ELSE 'consulta' END
+    CASE WHEN v_a.service_id IS NOT NULL THEN 'procedimento' ELSE 'consulta' END
   )
   ON CONFLICT (checkin_id) DO UPDATE SET
     priority = EXCLUDED.priority,
