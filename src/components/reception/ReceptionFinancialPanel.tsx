@@ -148,18 +148,24 @@ export function ReceptionFinancialPanel({
     return { label: "Regularizada", variant: "secondary" as const };
   }, [summary]);
 
-  const run = async (action: string, operation: () => Promise<unknown>, success: string) => {
+  const run = async (
+    action: string,
+    operation: () => Promise<unknown>,
+    success: string,
+  ): Promise<boolean> => {
     try {
       setBusyAction(action);
       await operation();
       toast({ title: success });
       await onChanged();
+      return true;
     } catch (error) {
       toast({
         title: "Não foi possível concluir a ação",
         description: (error as Error).message,
         variant: "destructive",
       });
+      return false;
     } finally {
       setBusyAction(null);
     }
@@ -205,21 +211,20 @@ export function ReceptionFinancialPanel({
     const attemptKey = paymentAttemptKey || `reception-${appointmentId}-${crypto.randomUUID()}`;
     if (!paymentAttemptKey) setPaymentAttemptKey(attemptKey);
 
-    try {
-      await run("payment", () => receptionCheckoutService.registerPayment({
-        appointmentId,
-        amount: paymentValue,
-        paymentMethod,
-        idempotencyKey: attemptKey,
-        externalReference: paymentReference,
-        installmentCount: Number(installmentCount) || 1,
-        notes: paymentNotes,
-      }), "Pagamento registrado e título atualizado");
+    const succeeded = await run("payment", () => receptionCheckoutService.registerPayment({
+      appointmentId,
+      amount: paymentValue,
+      paymentMethod,
+      idempotencyKey: attemptKey,
+      externalReference: paymentReference,
+      installmentCount: Number(installmentCount) || 1,
+      notes: paymentNotes,
+    }), "Pagamento registrado e título atualizado");
+
+    if (succeeded) {
       setPaymentAttemptKey("");
       setPaymentReference("");
       setPaymentNotes("");
-    } catch {
-      // run already reports the error; keep the same idempotency key for a safe retry.
     }
   };
 

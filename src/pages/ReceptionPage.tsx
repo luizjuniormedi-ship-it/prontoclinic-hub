@@ -297,6 +297,12 @@ export default function ReceptionPage() {
     setExceptionReason("");
   };
 
+  const refreshCheckinReadiness = useCallback(async () => {
+    if (!checkinTarget) return;
+    const nextReadiness = await receptionService.getReadiness(checkinTarget.id);
+    setReadiness(nextReadiness);
+  }, [checkinTarget]);
+
   const confirmCheckin = async () => {
     if (!checkinTarget || !readiness) return;
     if (!readiness.ready && !exceptionReason.trim()) {
@@ -625,6 +631,7 @@ export default function ReceptionPage() {
           if (checkinTarget) navigate(`/patients/${checkinTarget.patientId}/edit`);
         }}
         onResolveIssue={resolveIssueFromCheckin}
+        onCheckoutChanged={refreshCheckinReadiness}
       />
 
       <Dialog open={Boolean(pendingTarget)} onOpenChange={(open) => !open && !checkingIn && setPendingTarget(null)}>
