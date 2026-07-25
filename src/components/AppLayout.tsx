@@ -10,11 +10,13 @@ import { LiveRegion, useLiveAnnounce } from "@/components/a11y/LiveRegion";
 import { useApplicationSession } from "@/hooks/useApplicationSession";
 import { initializeAccessContext } from "@/services/accessContextBootstrap";
 import { getNavigationItemForPath } from "@/config/navigation";
+import { useActiveAccessRole } from "@/hooks/useActiveAccessRole";
 
 type ContextStatus = "loading" | "ready" | "selection-required" | "error";
 
 export function AppLayout({ children }: { children: ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
+  const activeRoleName = useActiveAccessRole(user?.role_name);
   const location = useLocation();
   const { message, announce } = useLiveAnnounce();
   const [contextStatus, setContextStatus] = useState<ContextStatus>("loading");
@@ -43,7 +45,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     };
   }, [isAuthenticated, isLoading]);
 
-  useKeyboardShortcuts();
+  useKeyboardShortcuts(activeRoleName);
   const currentPage = getNavigationItemForPath(location.pathname)?.title ?? "Página";
 
   if (isLoading) {

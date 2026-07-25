@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Activity, AlertOctagon, Banknote, BarChart3, BedDouble, Bell, Building2,
-  Calculator, Calendar, Clock, Database, DollarSign, FileImage, FileSignature,
+  Calculator, Calendar, CalendarCheck, Clock, Database, DollarSign, FileImage, FileSignature,
   FileSpreadsheet, FileText, FlaskConical, HeartPulse, KeyRound, LayoutDashboard,
   ListChecks, ListPlus, Monitor, Phone, Pill, Receipt, Scissors, ScrollText,
   Server, Settings, Shield, ShieldCheck, ShoppingCart, Sparkles, Star,
@@ -21,6 +21,11 @@ export type NavigationItem = {
   icon: LucideIcon;
   workspace: NavigationWorkspace;
   keywords: string[];
+  /**
+   * Rotas privadas abertas a partir desta tela, mas que não devem virar outro
+   * item de menu. Ex.: o atendimento atual é iniciado pela lista de atendimentos.
+   */
+  relatedRoutes?: string[];
 };
 
 export const navigationWorkspaces: Array<{ id: NavigationWorkspace; label: string }> = [
@@ -36,8 +41,17 @@ export const navigationWorkspaces: Array<{ id: NavigationWorkspace; label: strin
 
 const item = (
   id: string, title: string, description: string, url: string, icon: LucideIcon,
-  workspace: NavigationWorkspace, keywords: string[] = [],
-): NavigationItem => ({ id, title, description, url, icon, workspace, keywords });
+  workspace: NavigationWorkspace, keywords: string[] = [], relatedRoutes: string[] = [],
+): NavigationItem => ({
+  id,
+  title,
+  description,
+  url,
+  icon,
+  workspace,
+  keywords,
+  relatedRoutes: relatedRoutes.length > 0 ? relatedRoutes : undefined,
+});
 
 export const navigationItems: NavigationItem[] = [
   item("dashboard", "Dashboard", "Veja prioridades, indicadores e atalhos do seu perfil.", "/", LayoutDashboard, "inicio", ["início", "painel"]),
@@ -45,13 +59,14 @@ export const navigationItems: NavigationItem[] = [
   item("schedule", "Agenda", "Agende, confirme, remarque e acompanhe consultas, exames e procedimentos.", "/schedule", Calendar, "operacao", ["horário", "encaixe", "espera"]),
   item("reception", "Recepção", "Faça check-in, resolva pendências, valide convênio e encaminhe o paciente.", "/reception", UserCheck, "operacao", ["check-in", "elegibilidade", "autorização", "guia"]),
   item("patients", "Pacientes", "Pesquise, cadastre e consulte os dados administrativos do paciente.", "/patients", Users, "operacao", ["cpf", "cns", "carteirinha"]),
+  item("my-appointments", "Meus agendamentos", "Consulte seus próximos agendamentos e o histórico de marcações.", "/meus-agendamentos", CalendarCheck, "operacao", ["portal", "consulta", "exame"]),
   item("call-center", "Call Center", "Registre contatos e transforme solicitações em agendamentos.", "/callcenter", Phone, "operacao", ["telefone", "ligação", "campanha"]),
   item("pa", "Pronto Atendimento", "Acompanhe a jornada do paciente no pronto atendimento.", "/pa", AlertOctagon, "operacao", ["urgência", "emergência"]),
   item("telemedicine", "Telemedicina", "Acesse salas, atendimentos e documentos de consultas remotas.", "/telemedicina", Video, "operacao", ["teleconsulta", "vídeo"]),
 
   item("professionals", "Profissionais", "Cadastre habilitações, unidades, convênios e disponibilidade profissional.", "/professionals", Stethoscope, "assistencia", ["crm", "rqe", "grade"]),
   item("records", "Prontuário", "Consulte a história clínica longitudinal e os documentos do paciente.", "/records", FileText, "assistencia", ["pep", "histórico", "evolução"]),
-  item("encounters", "Atendimento clínico", "Abra e acompanhe atendimentos médicos em andamento.", "/encounters", Stethoscope, "assistencia", ["consulta", "episódio"]),
+  item("encounters", "Atendimento clínico", "Abra e acompanhe atendimentos médicos em andamento.", "/encounters", Stethoscope, "assistencia", ["consulta", "episódio"], ["/attendance"]),
   item("clinical-timeline", "Timeline clínica", "Visualize eventos clínicos do paciente em ordem cronológica.", "/clinical-timeline", Clock, "assistencia", ["linha do tempo"]),
   item("nursing-triage", "Triagem", "Registre sinais vitais, queixa e classificação de risco.", "/nursing/triage", HeartPulse, "assistencia", ["enfermagem", "risco"]),
   item("nursing-care", "Cuidados de enfermagem", "Execute medicações, procedimentos, tarefas e evoluções de enfermagem.", "/nursing/care", Syringe, "assistencia", ["medicação", "procedimento"]),
@@ -123,14 +138,34 @@ export function getAccessibleNavigation(roleName: string | null | undefined): Na
 export function getSidebarNavigation(roleName: string | null | undefined): NavigationItem[] {
   const role = normalizeRoleName(roleName);
   if (!role) return getAccessibleNavigation(roleName).slice(0, 6);
-  const allowed = new Set(sidebarByRole[role]);
-  return getAccessibleNavigation(roleName).filter((entry) => allowed.has(entry.id));
+  const accessibleById = new Map(
+    getAccessibleNavigation(roleName).map((entry) => [entry.id, entry])
+  );
+  return sidebarByRole[role]
+    .map((id) => accessibleById.get(id))
+    .filter((entry): entry is NavigationItem => Boolean(entry));
+}
+
+export function getNavigationSearchValue(entry: NavigationItem): string {
+  return [entry.title, entry.description, ...entry.keywords].join(" ");
 }
 
 export function getNavigationItemForPath(pathname: string): NavigationItem | undefined {
+  const matchesPath = (route: string) => (
+    route === "/"
+      ? pathname === "/"
+      : pathname === route || pathname.startsWith(`${route}/`)
+  );
+
   return [...navigationItems]
-    .sort((a, b) => b.url.length - a.url.length)
-    .find((entry) => entry.url === "/" ? pathname === "/" : pathname.startsWith(entry.url));
+    .sort((a, b) => {
+      const longestRoute = (entry: NavigationItem) => Math.max(
+        entry.url.length,
+        ...(entry.relatedRoutes ?? []).map((route) => route.length),
+      );
+      return longestRoute(b) - longestRoute(a);
+    })
+    .find((entry) => [entry.url, ...(entry.relatedRoutes ?? [])].some(matchesPath));
 }
 
 export function getWorkspaceLabel(workspace: NavigationWorkspace): string {

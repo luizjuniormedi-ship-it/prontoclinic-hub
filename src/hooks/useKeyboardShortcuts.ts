@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { canAccessRoute } from "@/config/routePermissions";
 
 /**
  * Global keyboard shortcuts:
@@ -13,7 +14,7 @@ import { useNavigate } from "react-router-dom";
  *   - g + m         → Cadastros mestres
  *   - g + s         → Configurações
  */
-export function useKeyboardShortcuts() {
+export function useKeyboardShortcuts(roleName: string | null | undefined) {
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -21,10 +22,10 @@ export function useKeyboardShortcuts() {
     let gTimeout: ReturnType<typeof setTimeout>;
 
     const handler = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
+      const target = event.target;
 
       if (
-        target &&
+        target instanceof HTMLElement &&
         (target.matches('input, textarea, select, [contenteditable="true"]') || target.isContentEditable)
       ) {
         if (event.key === "Escape") target.blur();
@@ -39,7 +40,11 @@ export function useKeyboardShortcuts() {
 
       if ((event.ctrlKey || event.metaKey) && (event.key === "n" || event.key === "N")) {
         event.preventDefault();
-        navigate("/schedule?action=new");
+        if (canAccessRoute(roleName, "/schedule")) {
+          navigate("/schedule?action=new");
+        } else {
+          document.dispatchEvent(new CustomEvent("open-navigation-command"));
+        }
         return;
       }
 
@@ -51,7 +56,6 @@ export function useKeyboardShortcuts() {
       if (event.key === "?") {
         event.preventDefault();
         document.dispatchEvent(new CustomEvent("show-shortcuts"));
-        document.dispatchEvent(new CustomEvent("toggle-shortcuts-help"));
         return;
       }
 
@@ -64,7 +68,7 @@ export function useKeyboardShortcuts() {
           s: "/settings",
         };
         const route = routes[event.key.toLowerCase()];
-        if (route) {
+        if (route && canAccessRoute(roleName, route)) {
           event.preventDefault();
           navigate(route);
           gPrefix = false;
@@ -85,5 +89,5 @@ export function useKeyboardShortcuts() {
       document.removeEventListener("keydown", handler);
       clearTimeout(gTimeout);
     };
-  }, [navigate]);
+  }, [navigate, roleName]);
 }

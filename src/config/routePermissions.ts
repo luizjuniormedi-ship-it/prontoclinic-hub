@@ -118,7 +118,9 @@ export function canAccessRoute(roleName: string | null | undefined, path: string
 
   const sortedPrefixes = Object.keys(routePermissionMap).sort((a, b) => b.length - a.length);
   for (const prefix of sortedPrefixes) {
-    const matches = prefix === "/" ? path === "/" : path.startsWith(prefix);
+    const matches = prefix === "/"
+      ? path === "/"
+      : path === prefix || path.startsWith(`${prefix}/`);
     if (!matches) continue;
     const entry = routePermissionMap[prefix];
     if (entry === "*") return true;

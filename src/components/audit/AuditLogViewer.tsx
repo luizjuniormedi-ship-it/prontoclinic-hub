@@ -56,6 +56,7 @@ import {
 import { AuditLog, AuditFilters } from "@/types";
 import { auditService } from "@/services/auditService";
 import { AuditLogRow, formatDateTime } from "./AuditLogRow";
+import { PageBreadcrumb } from "@/components/PageHeader";
 
 // Cores/helpers foram movidos para AuditLogRow.tsx (linha memoizada)
 
@@ -120,6 +121,7 @@ export function AuditLogViewer() {
 
   return (
     <div className="space-y-4 p-6">
+      <PageBreadcrumb currentTitle="Auditoria" />
       <Card>
         <CardHeader>
           <div className="flex items-start justify-between">

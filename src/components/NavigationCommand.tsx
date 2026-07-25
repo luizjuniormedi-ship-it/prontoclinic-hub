@@ -8,8 +8,10 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import {
   getAccessibleNavigation,
+  getNavigationSearchValue,
   navigationWorkspaces,
   type NavigationItem,
 } from "@/config/navigation";
@@ -39,18 +41,30 @@ export function NavigationCommand({ open, onOpenChange, roleName }: NavigationCo
   };
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput placeholder="Buscar telas e funções..." />
-      <CommandList className="max-h-[70vh]">
+    <CommandDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      commandLabel="Buscar telas e funções"
+    >
+      <DialogTitle className="sr-only">Todos os módulos</DialogTitle>
+      <DialogDescription className="sr-only">
+        Pesquise telas e funções autorizadas para o perfil ativo.
+      </DialogDescription>
+      <CommandInput
+        aria-label="Buscar telas e funções"
+        placeholder="Buscar telas e funções..."
+      />
+      <CommandList className="max-h-[70vh]" aria-label="Módulos disponíveis">
         <CommandEmpty>Nenhuma tela disponível para esta busca.</CommandEmpty>
         {groups.map((group) => (
           <CommandGroup key={group.id} heading={group.label}>
             {group.items.map((entry) => (
               <CommandItem
                 key={entry.id}
-                value={[entry.title, entry.description, ...entry.keywords].join(" ")}
+                value={getNavigationSearchValue(entry)}
                 onSelect={() => openItem(entry)}
                 className="items-start gap-3 py-3"
+                aria-label={`${entry.title}. ${entry.description}`}
               >
                 <entry.icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <div className="min-w-0">

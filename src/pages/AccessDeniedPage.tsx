@@ -1,10 +1,12 @@
 import { ShieldX } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useActiveAccessRole } from "@/hooks/useActiveAccessRole";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 
 export default function AccessDeniedPage() {
   const { user } = useAuth();
+  const activeRoleName = useActiveAccessRole(user?.role_name);
   const navigate = useNavigate();
 
   return (
@@ -15,9 +17,9 @@ export default function AccessDeniedPage() {
       <h1 className="text-2xl font-bold text-foreground">Acesso Negado</h1>
       <p className="text-muted-foreground max-w-md">
         Você não tem permissão para acessar este recurso.
-        {user?.role_name && (
+        {activeRoleName && (
           <span className="block mt-1 text-sm">
-            Seu perfil atual: <strong className="text-foreground">{user.role_name}</strong>
+            Seu perfil atual: <strong className="text-foreground">{activeRoleName}</strong>
           </span>
         )}
       </p>

@@ -32,6 +32,7 @@ import {
 } from "@/services/dicomService";
 import { useAuth } from "@/hooks/useAuth";
 import { useConfirm } from "@/hooks/useConfirm";
+import { PageBreadcrumb } from "@/components/PageHeader";
 
 const MODALITIES: DicomModality[] = ["US", "CT", "MR", "CR", "XA", "PT", "NM", "MG", "DX", "ECG"];
 
@@ -106,6 +107,7 @@ export function DicomEquipmentManager() {
 
   return (
     <div className="space-y-4 p-6">
+      <PageBreadcrumb currentTitle="Equipamentos DICOM" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Equipamentos DICOM</h1>

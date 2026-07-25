@@ -22,6 +22,7 @@ import { Plus, Search, Calculator } from "lucide-react";
 import { priceTableService, type PriceTable } from "@/services/priceTableService";
 import { insuranceCompanyService } from "@/services/insuranceService";
 import { supabase } from "@/lib/supabase";
+import { PageBreadcrumb } from "@/components/PageHeader";
 
 export function PriceTableEditor() {
   const [search, setSearch] = useState("");
@@ -91,6 +92,7 @@ export function PriceTableEditor() {
 
   return (
     <div className="space-y-4 p-6">
+      <PageBreadcrumb currentTitle="Tabelas de preços" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Tabela de Precos</h1>

@@ -17,6 +17,7 @@ import { FlatSection, type MenuGroup } from "./sidebar/SidebarSection";
 import { SidebarFooter } from "./sidebar/SidebarFooter";
 import { getSidebarNavigation } from "@/config/navigation";
 import { normalizeRoleName } from "@/config/routePermissions";
+import { useActiveAccessRole } from "@/hooks/useActiveAccessRole";
 
 const roleLabels: Record<string, string> = {
   admin: "Administração",
@@ -37,7 +38,7 @@ export function AppSidebar() {
   const collapsed = state === "collapsed";
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const roleName = user?.role_name;
+  const roleName = useActiveAccessRole(user?.role_name);
   const normalizedRole = normalizeRoleName(roleName);
 
   const primaryGroup = useMemo<MenuGroup>(() => ({

@@ -207,15 +207,15 @@ const App = () => (
             <Route path="/dicom/worklist" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomWorklistPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/dicom/dashboard" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomDashboardPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/dicom/reports" element={<AppLayout><ProtectedRoute path="/dicom/reports"><LazyRoute><RadiologyReportsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/admin/dicom" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><DicomEquipmentManager /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/admin/report-templates" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><ReportTemplateEditor /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/dicom" element={<AppLayout><ProtectedRoute path="/admin/dicom"><LazyRoute><DicomEquipmentManager /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/report-templates" element={<AppLayout><ProtectedRoute path="/admin/report-templates"><LazyRoute><ReportTemplateEditor /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* Financial */}
             <Route path="/financial" element={<AppLayout><ProtectedRoute path="/financial"><LazyRoute><FinancialPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/billing-production" element={<AppLayout><ProtectedRoute path="/billing-production"><LazyRoute><BillingProductionPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/billing-accounts" element={<AppLayout><ProtectedRoute path="/billing-accounts"><LazyRoute><BillingAccountsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/professional-payment" element={<AppLayout><ProtectedRoute path="/professional-payment"><LazyRoute><ProfessionalPaymentPage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/admin/tiss" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><TissManager /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/tiss" element={<AppLayout><ProtectedRoute path="/admin/tiss"><LazyRoute><TissManager /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* Master + Companies */}
             <Route path="/settings" element={<AppLayout><ProtectedRoute path="/settings"><LazyRoute><SettingsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
@@ -223,17 +223,17 @@ const App = () => (
             <Route path="/companies" element={<AppLayout><ProtectedRoute path="/companies"><LazyRoute><CompaniesPage /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* Admin (users/profiles/permissions) */}
-            <Route path="/admin/users" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><AdminUsersPage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/admin/profiles" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><AdminProfilesPage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/admin/permissions" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><AdminPermissionsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/users" element={<AppLayout><ProtectedRoute path="/admin/users"><LazyRoute><AdminUsersPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/profiles" element={<AppLayout><ProtectedRoute path="/admin/profiles"><LazyRoute><AdminProfilesPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/permissions" element={<AppLayout><ProtectedRoute path="/admin/permissions"><LazyRoute><AdminPermissionsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* Admin (insurances / price tables / LGPD / audit / notifications) */}
-            <Route path="/admin/insurances" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><InsuranceManager /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/admin/price-tables" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><PriceTableEditor /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/admin/credentialing" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><ProfessionalCredentialingPage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/admin/lgpd" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><LGPDManager /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/admin/audit" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><AuditLogViewer /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/admin/notifications" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><NotificationCenter /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/insurances" element={<AppLayout><ProtectedRoute path="/admin/insurances"><LazyRoute><InsuranceManager /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/price-tables" element={<AppLayout><ProtectedRoute path="/admin/price-tables"><LazyRoute><PriceTableEditor /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/credentialing" element={<AppLayout><ProtectedRoute path="/admin/credentialing"><LazyRoute><ProfessionalCredentialingPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/lgpd" element={<AppLayout><ProtectedRoute path="/admin/lgpd"><LazyRoute><LGPDManager /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/audit" element={<AppLayout><ProtectedRoute path="/admin/audit"><LazyRoute><AuditLogViewer /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/notifications" element={<AppLayout><ProtectedRoute path="/admin/notifications"><LazyRoute><NotificationCenter /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* LIS / Laboratório */}
             <Route path="/lab" element={<AppLayout><ProtectedRoute path="/lab"><LazyRoute><LabPage /></LazyRoute></ProtectedRoute></AppLayout>} />

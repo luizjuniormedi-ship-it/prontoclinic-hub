@@ -18,8 +18,8 @@ const SHORTCUT_GROUPS: { title: string; items: Shortcut[] }[] = [
   {
     title: "Ações globais",
     items: [
-      { keys: ["Ctrl", "K"], description: "Focar o campo de busca global", icon: <Search className="h-3.5 w-3.5" /> },
-      { keys: ["Ctrl", "N"], description: "Criar novo agendamento", icon: <Plus className="h-3.5 w-3.5" /> },
+      { keys: ["Ctrl", "K"], description: "Abrir Todos os módulos e a busca global", icon: <Search className="h-3.5 w-3.5" /> },
+      { keys: ["Ctrl", "N"], description: "Criar novo agendamento, quando autorizado", icon: <Plus className="h-3.5 w-3.5" /> },
       { keys: ["Esc"], description: "Fechar modal ou caixa de diálogo aberta", icon: <X className="h-3.5 w-3.5" /> },
       { keys: ["?"], description: "Abrir esta ajuda de atalhos", icon: <HelpCircle className="h-3.5 w-3.5" /> },
     ],

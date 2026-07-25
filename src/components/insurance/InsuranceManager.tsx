@@ -27,6 +27,7 @@ import {
   type PaymentSourceType,
 } from "@/services/insuranceService";
 import { InsuranceRow } from "./InsuranceRow";
+import { PageBreadcrumb } from "@/components/PageHeader";
 
 export function InsuranceManager() {
   const [search, setSearch] = useState("");
@@ -88,6 +89,7 @@ export function InsuranceManager() {
 
   return (
     <div className="space-y-4 p-6">
+      <PageBreadcrumb currentTitle="Convênios" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Convenios e Planos</h1>

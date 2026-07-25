@@ -1,7 +1,19 @@
 import { test as base, expect, Page } from '@playwright/test';
 import { E2E_PASSWORD } from '../env';
 
-export type UserRole = 'admin' | 'doctor' | 'reception' | 'patient';
+export type UserRole =
+  | 'admin'
+  | 'doctor'
+  | 'reception'
+  | 'patient'
+  | 'manager'
+  | 'nursing'
+  | 'laboratory'
+  | 'diagnostics'
+  | 'pharmacy'
+  | 'financial'
+  | 'dpo'
+  | 'administrative';
 
 /* eslint-disable react-hooks/rules-of-hooks */
 // This file is a Playwright fixture using `use()` from @playwright/test.
@@ -21,7 +33,15 @@ export const test = base.extend<{
         admin: { email: 'admin@prontomedic.test', password: E2E_PASSWORD },
         doctor: { email: 'doctor@prontomedic.test', password: E2E_PASSWORD },
         reception: { email: 'recepcao@prontomedic.test', password: E2E_PASSWORD },
-        patient: { email: 'paciente@prontomedic.test', password: E2E_PASSWORD }
+        patient: { email: 'paciente@prontomedic.test', password: E2E_PASSWORD },
+        manager: { email: 'gestor@prontomedic.test', password: E2E_PASSWORD },
+        nursing: { email: 'enfermagem@prontomedic.test', password: E2E_PASSWORD },
+        laboratory: { email: 'laboratorio@prontomedic.test', password: E2E_PASSWORD },
+        diagnostics: { email: 'diagnostico@prontomedic.test', password: E2E_PASSWORD },
+        pharmacy: { email: 'farmacia@prontomedic.test', password: E2E_PASSWORD },
+        financial: { email: 'financeiro@prontomedic.test', password: E2E_PASSWORD },
+        dpo: { email: 'dpo@prontomedic.test', password: E2E_PASSWORD },
+        administrative: { email: 'administrativo@prontomedic.test', password: E2E_PASSWORD }
       }[role];
 
       await page.goto('/login');

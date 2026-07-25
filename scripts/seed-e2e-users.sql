@@ -30,8 +30,16 @@ ON CONFLICT (id) DO UPDATE SET
 INSERT INTO public.roles (name, description, lg_ativo)
 VALUES
   ('admin', 'Administrador E2E', true),
+  ('gestor', 'Gestor E2E', true),
   ('medico', 'Medico E2E', true),
   ('recepcao', 'Recepcao E2E', true),
+  ('enfermagem', 'Enfermagem E2E', true),
+  ('laboratorio', 'Laboratorio E2E', true),
+  ('diagnostico', 'Diagnostico E2E', true),
+  ('farmacia', 'Farmacia E2E', true),
+  ('financeiro', 'Financeiro E2E', true),
+  ('dpo', 'DPO E2E', true),
+  ('administrativo', 'Administrativo E2E', true),
   ('paciente', 'Paciente E2E', true)
 ON CONFLICT (name) DO UPDATE SET lg_ativo = true;
 
@@ -51,7 +59,15 @@ seed_users(id, email, full_name, role_name) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid, 'admin@prontomedic.test', 'Admin E2E', 'admin'),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid, 'doctor@prontomedic.test', 'Medico E2E', 'medico'),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 'recepcao@prontomedic.test', 'Recepcao E2E', 'recepcao'),
-    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente@prontomedic.test', 'Paciente E2E', 'paciente')
+    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente@prontomedic.test', 'Paciente E2E', 'paciente'),
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'gestor@prontomedic.test', 'Gestor E2E', 'gestor'),
+    ('eeeeeeee-0000-4000-8000-000000000006'::uuid, 'enfermagem@prontomedic.test', 'Enfermagem E2E', 'enfermagem'),
+    ('eeeeeeee-0000-4000-8000-000000000007'::uuid, 'laboratorio@prontomedic.test', 'Laboratorio E2E', 'laboratorio'),
+    ('eeeeeeee-0000-4000-8000-000000000008'::uuid, 'diagnostico@prontomedic.test', 'Diagnostico E2E', 'diagnostico'),
+    ('eeeeeeee-0000-4000-8000-000000000009'::uuid, 'farmacia@prontomedic.test', 'Farmacia E2E', 'farmacia'),
+    ('eeeeeeee-0000-4000-8000-000000000010'::uuid, 'financeiro@prontomedic.test', 'Financeiro E2E', 'financeiro'),
+    ('eeeeeeee-0000-4000-8000-000000000011'::uuid, 'dpo@prontomedic.test', 'DPO E2E', 'dpo'),
+    ('eeeeeeee-0000-4000-8000-000000000012'::uuid, 'administrativo@prontomedic.test', 'Administrativo E2E', 'administrativo')
 ),
 upsert_auth AS (
   INSERT INTO auth.users (
@@ -128,7 +144,15 @@ WITH seed_users(id, role_name) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid, 'admin'),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid, 'medico'),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 'recepcao'),
-    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente')
+    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente'),
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'gestor'),
+    ('eeeeeeee-0000-4000-8000-000000000006'::uuid, 'enfermagem'),
+    ('eeeeeeee-0000-4000-8000-000000000007'::uuid, 'laboratorio'),
+    ('eeeeeeee-0000-4000-8000-000000000008'::uuid, 'diagnostico'),
+    ('eeeeeeee-0000-4000-8000-000000000009'::uuid, 'farmacia'),
+    ('eeeeeeee-0000-4000-8000-000000000010'::uuid, 'financeiro'),
+    ('eeeeeeee-0000-4000-8000-000000000011'::uuid, 'dpo'),
+    ('eeeeeeee-0000-4000-8000-000000000012'::uuid, 'administrativo')
 ), base_company AS (
   SELECT id FROM public.companies WHERE id = 'eeeeeeee-1000-4000-8000-000000000001'
 )
@@ -142,7 +166,15 @@ WITH desired(user_id, role_name) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid, 'admin'),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid, 'medico'),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 'recepcao'),
-    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente')
+    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente'),
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'gestor'),
+    ('eeeeeeee-0000-4000-8000-000000000006'::uuid, 'enfermagem'),
+    ('eeeeeeee-0000-4000-8000-000000000007'::uuid, 'laboratorio'),
+    ('eeeeeeee-0000-4000-8000-000000000008'::uuid, 'diagnostico'),
+    ('eeeeeeee-0000-4000-8000-000000000009'::uuid, 'farmacia'),
+    ('eeeeeeee-0000-4000-8000-000000000010'::uuid, 'financeiro'),
+    ('eeeeeeee-0000-4000-8000-000000000011'::uuid, 'dpo'),
+    ('eeeeeeee-0000-4000-8000-000000000012'::uuid, 'administrativo')
 )
 DELETE FROM public.membership_roles mr
 USING public.memberships m, public.roles r
@@ -160,7 +192,15 @@ WITH seed_users(id, role_name) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid, 'admin'),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid, 'medico'),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 'recepcao'),
-    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente')
+    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente'),
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'gestor'),
+    ('eeeeeeee-0000-4000-8000-000000000006'::uuid, 'enfermagem'),
+    ('eeeeeeee-0000-4000-8000-000000000007'::uuid, 'laboratorio'),
+    ('eeeeeeee-0000-4000-8000-000000000008'::uuid, 'diagnostico'),
+    ('eeeeeeee-0000-4000-8000-000000000009'::uuid, 'farmacia'),
+    ('eeeeeeee-0000-4000-8000-000000000010'::uuid, 'financeiro'),
+    ('eeeeeeee-0000-4000-8000-000000000011'::uuid, 'dpo'),
+    ('eeeeeeee-0000-4000-8000-000000000012'::uuid, 'administrativo')
 )
 INSERT INTO public.membership_roles (membership_id, role_id)
 SELECT m.id, r.id
@@ -203,7 +243,15 @@ WITH seed_users(id) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid),
-    ('eeeeeeee-0000-4000-8000-000000000004'::uuid)
+    ('eeeeeeee-0000-4000-8000-000000000004'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000006'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000007'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000008'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000009'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000010'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000011'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000012'::uuid)
 ), base_unit AS (
   SELECT id, company_id FROM public.units WHERE id = 91001
 )
@@ -227,7 +275,15 @@ WITH desired(user_id, unit_id) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid, 91002),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid, 91001),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 91001),
-    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 91001)
+    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 91001),
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 91001),
+    ('eeeeeeee-0000-4000-8000-000000000006'::uuid, 91001),
+    ('eeeeeeee-0000-4000-8000-000000000007'::uuid, 91001),
+    ('eeeeeeee-0000-4000-8000-000000000008'::uuid, 91001),
+    ('eeeeeeee-0000-4000-8000-000000000009'::uuid, 91001),
+    ('eeeeeeee-0000-4000-8000-000000000010'::uuid, 91001),
+    ('eeeeeeee-0000-4000-8000-000000000011'::uuid, 91001),
+    ('eeeeeeee-0000-4000-8000-000000000012'::uuid, 91001)
 )
 DELETE FROM public.membership_units mu
 USING public.memberships m

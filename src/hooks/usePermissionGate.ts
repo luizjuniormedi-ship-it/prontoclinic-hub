@@ -1,9 +1,10 @@
 import { useAuth } from "@/hooks/useAuth";
 import { canAccessRoute } from "@/config/routePermissions";
+import { useActiveAccessRole } from "@/hooks/useActiveAccessRole";
 
 export function usePermissionGate(path: string) {
   const { user, isLoading } = useAuth();
-  const roleName = user?.role_name ?? null;
+  const roleName = useActiveAccessRole(user?.role_name);
   const allowed = canAccessRoute(roleName, path);
 
   if (!isLoading && !allowed) {

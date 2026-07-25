@@ -11,6 +11,7 @@ import { formatDate, calculateAge, formatCPF } from "@/utils/formatters";
 import { maskPhone } from "@/utils/masks";
 import { medicalRecordsService, DbMedicalRecord } from "@/services/medicalRecordsService";
 import { professionalsLookup, DbProfessional } from "@/services/appointmentsService";
+import { PageBreadcrumb } from "@/components/PageHeader";
 
 interface PatientFull {
   id: string;
@@ -65,6 +66,7 @@ export default function PatientDetailPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      <PageBreadcrumb currentTitle={patient.full_name} />
       {/* Clinical header */}
       <div className="rounded-lg border bg-card p-4">
         <div className="flex items-start justify-between flex-wrap gap-3">

@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { NavLink } from "@/components/NavLink";
+import { useLocation } from "react-router-dom";
 
 type Icon = React.ComponentType<{ className?: string }>;
 
@@ -15,6 +16,7 @@ export type MenuItem = {
   url: string;
   icon: Icon;
   description?: string;
+  relatedRoutes?: string[];
 };
 
 export type SubItem = {
@@ -34,6 +36,11 @@ function MenuTooltip({ title, description }: { title: string; description?: stri
 }
 
 export function SidebarItem({ item, collapsed }: { item: MenuItem; collapsed: boolean }) {
+  const location = useLocation();
+  const relatedRouteActive = (item.relatedRoutes ?? []).some((route) => (
+    location.pathname === route || location.pathname.startsWith(`${route}/`)
+  ));
+
   return (
     <SidebarMenuItem>
       <Tooltip delayDuration={350}>
@@ -42,6 +49,7 @@ export function SidebarItem({ item, collapsed }: { item: MenuItem; collapsed: bo
             <NavLink
               to={item.url}
               end={item.url === "/"}
+              forceActive={relatedRouteActive}
               className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
               activeClassName="bg-sidebar-accent text-sidebar-accent-foreground"
               aria-label={item.description ? `${item.title}. ${item.description}` : item.title}

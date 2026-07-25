@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
-import { Grid3X3, Search } from "lucide-react";
+import { Grid3X3, HelpCircle, Search } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { NotificationBell } from "./NotificationBell";
 import { UserMenu } from "./UserMenu";
-import { CompanySwitcher } from "./CompanySwitcher";
+import { ThemeToggle } from "./ThemeToggle";
 import { AccessContextSwitcher } from "./AccessContextSwitcher";
 import { NavigationCommand } from "./NavigationCommand";
+import { ExplainedActionButton } from "./ExplainedActionButton";
+import { canAccessRoute } from "@/config/routePermissions";
+import { useActiveAccessRole } from "@/hooks/useActiveAccessRole";
 
 const STORAGE_KEY = "prontomedic-theme";
 type Theme = "light" | "dark";
@@ -39,6 +42,7 @@ export function AppHeader() {
   const navigate = useNavigate();
   const [theme, toggleTheme] = useTheme();
   const [navigationOpen, setNavigationOpen] = useState(false);
+  const activeRoleName = useActiveAccessRole(user?.role_name);
 
   useEffect(() => {
     const openNavigation = () => setNavigationOpen(true);
@@ -50,6 +54,12 @@ export function AppHeader() {
     await logout();
     navigate("/login", { replace: true });
   };
+
+  const openHelp = () => {
+    document.dispatchEvent(new CustomEvent("show-shortcuts"));
+  };
+
+  const canOpenNotificationCenter = canAccessRoute(activeRoleName, "/admin/notifications");
 
   return (
     <>
@@ -70,7 +80,7 @@ export function AppHeader() {
           </TooltipContent>
         </Tooltip>
 
-        <div className="flex-1 max-w-xl">
+        <div className="hidden flex-1 max-w-xl sm:block">
           <button
             id="global-search"
             type="button"
@@ -87,36 +97,50 @@ export function AppHeader() {
         </div>
 
         <div className="flex items-center gap-2">
+          <ExplainedActionButton
+            label="Todos os módulos"
+            description="Pesquise e abra qualquer área permitida para o seu perfil."
+            icon={Grid3X3}
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            labelClassName="hidden xl:inline"
+            onClick={() => setNavigationOpen(true)}
+          />
+
+          <AccessContextSwitcher />
+          <span className="hidden md:inline-flex">
+            <ThemeToggle theme={theme} onToggleTheme={toggleTheme} />
+          </span>
+          <NotificationBell
+            onOpenCenter={canOpenNotificationCenter ? () => navigate("/admin/notifications") : undefined}
+          />
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
-                onClick={() => setNavigationOpen(true)}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                aria-label="Abrir todos os módulos"
+                onClick={openHelp}
+                className="hidden h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:inline-flex"
+                aria-label="Abrir ajuda e atalhos de teclado"
               >
-                <Grid3X3 className="h-4 w-4" aria-hidden="true" />
+                <HelpCircle className="h-4 w-4" aria-hidden="true" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-xs">
-              <p className="font-medium">Todos os módulos</p>
-              <p className="text-xs text-muted-foreground">
-                Pesquise e abra qualquer área permitida para o seu perfil.
-              </p>
-            </TooltipContent>
+            <TooltipContent side="bottom">Ajuda e atalhos</TooltipContent>
           </Tooltip>
-
-          <AccessContextSwitcher />
-          <CompanySwitcher theme={theme} onToggleTheme={toggleTheme} />
-          <NotificationBell count={3} />
-          <UserMenu fullName={user?.full_name} roleName={user?.role_name} onLogout={handleLogout} />
+          <UserMenu
+            fullName={user?.full_name}
+            roleName={activeRoleName}
+            onOpenHelp={openHelp}
+            onLogout={handleLogout}
+          />
         </div>
       </header>
 
       <NavigationCommand
         open={navigationOpen}
         onOpenChange={setNavigationOpen}
-        roleName={user?.role_name}
+        roleName={activeRoleName}
       />
     </>
   );
