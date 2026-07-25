@@ -11,6 +11,7 @@ import { useApplicationSession } from "@/hooks/useApplicationSession";
 import { initializeAccessContext } from "@/services/accessContextBootstrap";
 import { getNavigationItemForPath } from "@/config/navigation";
 import { useActiveAccessRole } from "@/hooks/useActiveAccessRole";
+import { PageBreadcrumb } from "@/components/PageHeader";
 
 type ContextStatus = "loading" | "ready" | "selection-required" | "error";
 
@@ -29,8 +30,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
     }
 
     let active = true;
+    const onContextChanging = () => active && setContextStatus("loading");
     const onContextChanged = () => active && setContextStatus("ready");
+    const onContextChangeFailed = () => active && setContextStatus("ready");
+    window.addEventListener("prontomedic:access-context-changing", onContextChanging);
     window.addEventListener("prontomedic:access-context-changed", onContextChanged);
+    window.addEventListener("prontomedic:access-context-change-failed", onContextChangeFailed);
     void initializeAccessContext()
       .then((selected) => {
         if (active) setContextStatus(selected ? "ready" : "selection-required");
@@ -41,7 +46,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
     return () => {
       active = false;
+      window.removeEventListener("prontomedic:access-context-changing", onContextChanging);
       window.removeEventListener("prontomedic:access-context-changed", onContextChanged);
+      window.removeEventListener("prontomedic:access-context-change-failed", onContextChangeFailed);
     };
   }, [isAuthenticated, isLoading]);
 
@@ -72,7 +79,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
             className="flex-1 p-4 md:p-6 overflow-auto focus:outline-none"
             onFocus={() => announce(`Navegou para ${currentPage}`)}
           >
-            {contextStatus === "ready" ? children : (
+            {contextStatus === "ready" ? (
+              <>
+                <PageBreadcrumb currentTitle={currentPage} />
+                {children}
+              </>
+            ) : (
               <div className="flex min-h-64 items-center justify-center text-center" role="status" aria-live="polite">
                 {contextStatus === "loading" ? (
                   <Loader2 className="h-8 w-8 animate-spin text-primary" aria-label="Ativando contexto de acesso" />

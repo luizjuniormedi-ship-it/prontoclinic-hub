@@ -32,7 +32,6 @@ import {
 } from "@/services/dicomService";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
-import { PageBreadcrumb } from "@/components/PageHeader";
 
 const TEMPLATE_TYPES: { value: ReportTemplateType; label: string }[] = [
   { value: "RADIOLOGIA", label: "Radiologia" },
@@ -163,7 +162,6 @@ export function ReportTemplateEditor() {
 
   return (
     <div className="space-y-4 p-6">
-      <PageBreadcrumb currentTitle="Modelos de laudo" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Templates de Laudo</h1>

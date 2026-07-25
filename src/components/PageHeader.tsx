@@ -19,7 +19,7 @@ export function PageBreadcrumb({ currentTitle }: { currentTitle: string }) {
   if (!workspaceLabel) return null;
 
   return (
-    <nav aria-label="Localização da página" className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
+    <nav aria-label="Localização da página" className="mb-4 flex items-center gap-1 text-xs text-muted-foreground">
       <span>{workspaceLabel}</span>
       <ChevronRight className="h-3 w-3" aria-hidden="true" />
       <span aria-current="page">{currentTitle}</span>
@@ -31,7 +31,6 @@ export function PageHeader({ title, description, actions, titleId }: PageHeaderP
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
-        <PageBreadcrumb currentTitle={title} />
         <h1 id={titleId} className="text-2xl font-bold tracking-tight">{title}</h1>
         {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
       </div>

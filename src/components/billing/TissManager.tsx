@@ -32,7 +32,6 @@ import { TissStats } from "./TissStats";
 import { TissLoteList } from "./TissLoteList";
 import { TissGuiaForm } from "./TissGuiaForm";
 import { TissXmlPreview } from "./TissXmlPreview";
-import { PageBreadcrumb } from "@/components/PageHeader";
 
 export function TissManager() {
   const { user } = useAuth();
@@ -76,7 +75,6 @@ export function TissManager() {
 
   return (
     <div className="space-y-4 p-6">
-      <PageBreadcrumb currentTitle="TISS" />
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-2xl font-bold">Faturamento TISS</h1>

@@ -21,9 +21,12 @@ async function assertAccessible(page: Page, label: string) {
   expect(results.violations, `${label}: violações Axe`).toEqual([]);
 }
 
-async function selectContext(page: Page, option: RegExp) {
-  await page.getByRole('button', { name: 'Selecionar empresa, unidade e perfil' }).click();
+async function selectContext(page: Page, option: RegExp, expectedUnit: string) {
+  const trigger = page.getByRole('button', { name: 'Selecionar empresa, unidade e perfil' });
+  await trigger.click();
   await page.getByRole('menuitem', { name: option }).click();
+  await expect(trigger).toBeEnabled();
+  await expect(trigger).toContainText(expectedUnit);
   await expect(page.getByText('Selecione seu contexto de acesso')).toBeHidden();
 }
 
@@ -61,7 +64,7 @@ test.describe('Gate fase 0/1', () => {
     await page.getByRole('button', { name: /^entrar$/i }).click();
     await expect(page).not.toHaveURL(/\/login/, { timeout: 10_000 });
 
-    await selectContext(page, UNIT_A);
+    await selectContext(page, UNIT_A, 'Unidade E2E A');
     const beforeReload = await page.evaluate(() => JSON.parse(sessionStorage.getItem('prontomedic-application-session') || 'null'));
     expect(beforeReload?.session_id).toBeTruthy();
     await page.reload();
@@ -122,7 +125,7 @@ test.describe('Gate fase 0/1', () => {
     await expect(page.getByText(RECORD_MARKER)).toBeVisible();
     await assertAccessible(page, 'prontuário persistido');
 
-    await selectContext(page, UNIT_B);
+    await selectContext(page, UNIT_B, 'Unidade E2E B');
     await page.goto('/patients');
     await expect(page.getByText('Paciente E2E B')).toBeVisible();
     await expect(page.getByText('Paciente E2E A')).toBeHidden();

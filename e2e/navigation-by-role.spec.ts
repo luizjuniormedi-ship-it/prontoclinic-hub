@@ -25,6 +25,10 @@ const scenarios: ProfileScenario[] = [
   { role: 'administrative', canonicalRole: 'administrativo', label: 'administrativo', dailyItem: 'Profissionais', launcherItem: 'Profissionais', keyword: 'crm', destination: /\/professionals$/i, forbiddenRoute: '/encounters' },
 ];
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 test.describe('navegação real por perfil', () => {
   test.beforeEach(({ browserName }) => {
     test.skip(browserName !== 'chromium', 'Matriz de perfis executada uma vez no Chromium.');
@@ -35,7 +39,9 @@ test.describe('navegação real por perfil', () => {
       await loginAs(scenario.role);
 
       const mainNavigation = page.getByRole('navigation', { name: 'Navegação principal' });
-      await expect(mainNavigation.getByText(scenario.dailyItem, { exact: true })).toBeVisible();
+      await expect(mainNavigation.getByRole('link', {
+        name: new RegExp(`^${escapeRegExp(scenario.dailyItem)}(?:\\.|$)`, 'i'),
+      })).toBeVisible();
 
       await page.getByRole('button', { name: /todos os módulos/i }).first().click();
       const launcher = page.getByRole('dialog', { name: 'Todos os módulos' });

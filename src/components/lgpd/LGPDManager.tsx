@@ -24,12 +24,10 @@ import { SolicitacoesTab } from "./tabs/SolicitacoesTab";
 import { PoliticaRetencaoTab } from "./tabs/PoliticaRetencaoTab";
 import { AnonimizacaoMassaTab } from "./tabs/AnonimizacaoMassaTab";
 import { AuditoriaAcessoTab } from "./tabs/AuditoriaAcessoTab";
-import { PageBreadcrumb } from "@/components/PageHeader";
 
 export function LGPDManager() {
   return (
     <div className="space-y-4 p-6">
-      <PageBreadcrumb currentTitle="LGPD e privacidade" />
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Shield className="h-6 w-6" />
