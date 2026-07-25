@@ -78,6 +78,44 @@ INSERT INTO public.membership_units (membership_id, unit_id) VALUES
   ('85000000-0000-0000-0000-000000000020', 850001),
   ('85000000-0000-0000-0000-000000000020', 850002);
 
+-- O fixture força uma recepção sem edição ampla da agenda. Assim, o contrato
+-- comprova que somente a transição controlada de check-in é autorizada.
+INSERT INTO public.role_permissions (
+  company_id, role_id, module,
+  can_view, can_create, can_edit, can_delete, can_export
+)
+SELECT
+  '85000000-0000-0000-0000-000000000001'::UUID,
+  role.id,
+  permission.module,
+  permission.can_view,
+  permission.can_create,
+  permission.can_edit,
+  FALSE,
+  FALSE
+FROM public.roles role
+CROSS JOIN (
+  VALUES
+    ('recepcao', TRUE, TRUE, TRUE),
+    ('agenda', TRUE, TRUE, FALSE),
+    ('appointments', TRUE, TRUE, FALSE)
+) AS permission(module, can_view, can_create, can_edit)
+WHERE role.name = 'recepcao'
+ON CONFLICT (company_id, role_id, module) DO UPDATE
+SET can_view = EXCLUDED.can_view,
+    can_create = EXCLUDED.can_create,
+    can_edit = EXCLUDED.can_edit,
+    can_delete = FALSE,
+    can_export = FALSE,
+    updated_at = NOW();
+
+UPDATE public.role_permissions
+SET can_edit = FALSE,
+    updated_at = NOW()
+WHERE company_id = '85000000-0000-0000-0000-000000000001'
+  AND role_id = (SELECT id FROM public.roles WHERE name = 'recepcao')
+  AND lower(module) IN ('agenda', 'appointments');
+
 INSERT INTO public.professionals (id, company_id, full_name, lg_ativo)
 VALUES (850010, '85000000-0000-0000-0000-000000000001', 'Profissional Checkout', TRUE);
 
