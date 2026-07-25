@@ -91,8 +91,9 @@ describe("ReceptionFinancialPanel", () => {
   it("prepara uma única pré-conta com responsabilidade por pagador", async () => {
     const { onChanged } = renderPanel(summary());
 
-    expect(screen.getByText("Preparar cobrança")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /^Preparar cobrança\./ }));
+    const prepareCharge = screen.getByRole("button", { name: /^Preparar cobrança\./ });
+    expect(prepareCharge).toBeEnabled();
+    fireEvent.click(prepareCharge);
 
     await waitFor(() => expect(mocks.prepare).toHaveBeenCalledWith(expect.objectContaining({
       appointmentId: "101",

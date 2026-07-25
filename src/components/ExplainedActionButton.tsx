@@ -118,7 +118,7 @@ export function ExplainedActionButton({
               </span>
             ) : button}
           </TooltipTrigger>
-          <TooltipContent id={descriptionId} className="max-w-xs" side={tooltipSide} sideOffset={8}>
+          <TooltipContent className="max-w-xs" side={tooltipSide} sideOffset={8}>
             <p className="font-medium">
               {disabled && disabledReason ? `${label} indisponível` : label}
             </p>
@@ -126,6 +126,7 @@ export function ExplainedActionButton({
           </TooltipContent>
         </Tooltip>
 
+        <span id={descriptionId} className="sr-only">{description}</span>
         {disabled && disabledReason && (
           <span id={disabledReasonId} className="max-w-xs text-xs text-muted-foreground">
             {disabledReason}
