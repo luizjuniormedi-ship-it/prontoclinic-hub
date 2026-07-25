@@ -99,20 +99,21 @@ test.describe('Gate fase 0/1', () => {
     await assertAccessible(page, 'pacientes unidade A');
 
     await page.goto('/reception');
+    await expect(page.getByRole('heading', { name: 'Recepção do dia', level: 1 })).toBeVisible();
     await expect(page.getByText('Paciente E2E A')).toBeVisible();
     await expect(page.getByText('Paciente E2E B')).toBeHidden();
     const patientA = page.getByText('Paciente E2E A').locator('xpath=ancestor::*[contains(@class,"rounded-lg") or contains(@class,"border")][1]');
-    await patientA.getByRole('button', { name: 'Check-in' }).click();
-    await expect(page.getByRole('dialog', { name: 'Check-in administrativo' })).toBeVisible();
-    await expect(page.getByText('Paciente liberado para check-in')).toBeVisible();
-    await page.getByRole('button', { name: 'Concluir check-in' }).click();
+    await patientA.getByRole('button', { name: /^Fazer check-in\./ }).click();
+    await expect(page.getByRole('dialog', { name: 'Jornada do check-in' })).toBeVisible();
+    await expect(page.getByText('Paciente pronto para o check-in')).toBeVisible();
+    await page.getByRole('button', { name: /^Concluir check-in\./ }).click();
     await expect(page.getByText(/^Check-in concluído · Senha C\d{3}$/).first()).toBeVisible();
-    await expect(page.getByRole('dialog', { name: 'Check-in administrativo' })).toBeHidden();
-    await expect(page.getByRole('heading', { name: 'Recepção', level: 1 })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Jornada do check-in' })).toBeHidden();
+    await expect(page.getByRole('heading', { name: 'Recepção do dia', level: 1 })).toBeVisible();
     await assertAccessible(page, 'recepção após check-in');
 
     const waitingA = page.getByText('Paciente E2E A').locator('xpath=ancestor::*[contains(@class,"rounded-lg") or contains(@class,"border")][1]');
-    await waitingA.getByRole('button', { name: 'Iniciar' }).click();
+    await waitingA.getByRole('button', { name: /^Abrir atendimento\./ }).click();
     await expect(page).toHaveURL(/\/attendance\/91001/);
     await expect(page.getByRole('heading', { name: 'Atendimento' })).toBeVisible();
     await assertAccessible(page, 'atendimento');
