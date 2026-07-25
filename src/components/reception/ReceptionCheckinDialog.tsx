@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ExplainedActionButton } from "@/components/actions/ExplainedActionButton";
+import { ReceptionFinancialPanel } from "@/components/reception/ReceptionFinancialPanel";
 import {
   buildReceptionJourney,
   getBlockingReceptionIssues,
@@ -48,6 +49,7 @@ interface ReceptionCheckinDialogProps {
   onConfirm: () => void;
   onOpenPatient: () => void;
   onResolveIssue: (type: string) => void;
+  onCheckoutChanged: () => Promise<void>;
 }
 
 const statusStyles: Record<ReceptionJourneyStep["status"], string> = {
@@ -55,6 +57,8 @@ const statusStyles: Record<ReceptionJourneyStep["status"], string> = {
   attention: "border-destructive/30 bg-destructive/5 text-destructive",
   pending: "border-border bg-muted/30 text-muted-foreground",
 };
+
+const financialIssueTypes = new Set(["billing", "payment", "tiss_guide"]);
 
 function StepIcon({ status }: { status: ReceptionJourneyStep["status"] }) {
   if (status === "complete") return <CheckCircle2 className="h-4 w-4" aria-hidden="true" />;
@@ -66,6 +70,8 @@ function issueActionLabel(type: string): string {
   if (["registration", "document", "documents", "insurance_card", "insurance", "payer"].includes(type)) {
     return "Corrigir cadastro";
   }
+  if (type === "tiss_guide") return "Abrir guia";
+  if (["billing", "payment"].includes(type)) return "Abrir cobrança";
   return "Resolver pendência";
 }
 
@@ -83,6 +89,7 @@ export function ReceptionCheckinDialog({
   onConfirm,
   onOpenPatient,
   onResolveIssue,
+  onCheckoutChanged,
 }: ReceptionCheckinDialogProps) {
   const steps = buildReceptionJourney(readiness);
   const blockingIssues = getBlockingReceptionIssues(readiness);
@@ -94,9 +101,21 @@ export function ReceptionCheckinDialog({
   else if (requiresException && !canReleaseException) disabledReason = "Existem pendências bloqueantes e seu perfil não pode liberar por exceção.";
   else if (missingExceptionReason) disabledReason = "Informe a justificativa e o risco assumido para liberar por exceção.";
 
+  const handleIssueAction = (type: string) => {
+    if (["registration", "document", "documents", "insurance_card", "insurance", "payer"].includes(type)) {
+      onOpenPatient();
+      return;
+    }
+    if (financialIssueTypes.has(type)) {
+      document.getElementById("reception-financial-title")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    onResolveIssue(type);
+  };
+
   return (
     <Dialog open={Boolean(appointment)} onOpenChange={(open) => !open && !loading && onClose()}>
-      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+      <DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserRoundCheck className="h-5 w-5 text-primary" aria-hidden="true" />
@@ -136,7 +155,7 @@ export function ReceptionCheckinDialog({
                 Confira o que está pronto e resolva somente as etapas que exigem atenção.
               </p>
             </div>
-            <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {steps.map((step, index) => (
                 <li key={step.id} className={`rounded-lg border p-3 ${statusStyles[step.status]}`}>
                   <div className="flex items-start gap-2">
@@ -149,13 +168,7 @@ export function ReceptionCheckinDialog({
                           type="button"
                           variant="link"
                           className="mt-1 h-auto p-0 text-xs"
-                          onClick={() => {
-                            if (["registration", "document", "documents", "insurance_card", "insurance", "payer"].includes(step.issue!.type)) {
-                              onOpenPatient();
-                            } else {
-                              onResolveIssue(step.issue!.type);
-                            }
-                          }}
+                          onClick={() => handleIssueAction(step.issue!.type)}
                           aria-label={`${issueActionLabel(step.issue.type)}. ${step.issue.description}`}
                         >
                           {issueActionLabel(step.issue.type)}
@@ -170,9 +183,17 @@ export function ReceptionCheckinDialog({
 
           {loading && !readiness ? (
             <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground" role="status">
-              Validando cadastro, convênio, elegibilidade e autorização...
+              Validando cadastro, convênio, elegibilidade, autorização, guia e cobrança...
             </div>
-          ) : readiness ? (
+          ) : appointment ? (
+            <ReceptionFinancialPanel
+              appointmentId={appointment.id}
+              summary={readiness?.checkout}
+              onChanged={onCheckoutChanged}
+            />
+          ) : null}
+
+          {readiness ? (
             <div
               className={`rounded-lg border p-3 ${readiness.ready ? "border-success/30 bg-success/5" : "border-destructive/30 bg-destructive/5"}`}
               role="status"
