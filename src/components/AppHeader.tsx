@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { Search } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { Grid3X3, Search } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/useAuth";
@@ -9,6 +8,7 @@ import { NotificationBell } from "./NotificationBell";
 import { UserMenu } from "./UserMenu";
 import { CompanySwitcher } from "./CompanySwitcher";
 import { AccessContextSwitcher } from "./AccessContextSwitcher";
+import { NavigationCommand } from "./NavigationCommand";
 
 const STORAGE_KEY = "prontomedic-theme";
 type Theme = "light" | "dark";
@@ -25,15 +25,26 @@ function useTheme() {
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle("dark", theme === "dark");
-    try { window.localStorage.setItem(STORAGE_KEY, theme); } catch { /* ignore */ }
+    try {
+      window.localStorage.setItem(STORAGE_KEY, theme);
+    } catch {
+      // Storage may be unavailable in restricted browser contexts.
+    }
   }, [theme]);
-  return [theme, () => setTheme((t) => (t === "light" ? "dark" : "light"))] as const;
+  return [theme, () => setTheme((current) => (current === "light" ? "dark" : "light"))] as const;
 }
 
 export function AppHeader() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [theme, toggleTheme] = useTheme();
+  const [navigationOpen, setNavigationOpen] = useState(false);
+
+  useEffect(() => {
+    const openNavigation = () => setNavigationOpen(true);
+    document.addEventListener("open-navigation-command", openNavigation);
+    return () => document.removeEventListener("open-navigation-command", openNavigation);
+  }, []);
 
   const handleLogout = async () => {
     await logout();
@@ -41,44 +52,72 @@ export function AppHeader() {
   };
 
   return (
-    <header
-      className="h-14 border-b bg-card flex items-center px-4 gap-4 shrink-0"
-      role="banner"
-      aria-label="Cabeçalho da aplicação"
-    >
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <SidebarTrigger className="text-muted-foreground" aria-label="Alternar barra lateral" />
-        </TooltipTrigger>
-        <TooltipContent>Alternar barra lateral</TooltipContent>
-      </Tooltip>
+    <>
+      <header
+        className="h-14 border-b bg-card flex items-center px-4 gap-3 shrink-0"
+        role="banner"
+        aria-label="Cabeçalho da aplicação"
+      >
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <SidebarTrigger className="text-muted-foreground" aria-label="Alternar barra lateral" />
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs">
+            <p className="font-medium">Alternar barra lateral</p>
+            <p className="text-xs text-muted-foreground">
+              Recolhe ou expande os atalhos do seu trabalho diário.
+            </p>
+          </TooltipContent>
+        </Tooltip>
 
-      <div className="flex-1 max-w-md">
-        <div className="relative">
-          <label htmlFor="global-search" className="sr-only">Buscar (atalho Ctrl+K)</label>
-          <Search
-            className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none"
-            aria-hidden="true"
-          />
-          <Input
+        <div className="flex-1 max-w-xl">
+          <button
             id="global-search"
-            placeholder="Buscar pacientes, agendamentos..."
-            className="pl-9 h-9 bg-muted/50 border-0 focus-visible:ring-1"
-            aria-keyshortcuts="Control+K"
-            aria-describedby="global-search-hint"
-          />
-          <span id="global-search-hint" className="sr-only">
-            Use Control mais K para focar este campo a qualquer momento.
-          </span>
+            type="button"
+            onClick={() => setNavigationOpen(true)}
+            className="flex h-9 w-full items-center gap-2 rounded-md bg-muted/50 px-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Buscar telas e funções. Atalho Control K"
+          >
+            <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="flex-1 truncate">Buscar telas e funções...</span>
+            <kbd className="hidden rounded border bg-background px-1.5 py-0.5 text-[10px] font-medium sm:inline-flex">
+              Ctrl K
+            </kbd>
+          </button>
         </div>
-      </div>
 
-      <div className="flex items-center gap-2">
-        <AccessContextSwitcher />
-        <CompanySwitcher theme={theme} onToggleTheme={toggleTheme} />
-        <NotificationBell count={3} />
-        <UserMenu fullName={user?.full_name} roleName={user?.role_name} onLogout={handleLogout} />
-      </div>
-    </header>
+        <div className="flex items-center gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => setNavigationOpen(true)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label="Abrir todos os módulos"
+              >
+                <Grid3X3 className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-xs">
+              <p className="font-medium">Todos os módulos</p>
+              <p className="text-xs text-muted-foreground">
+                Pesquise e abra qualquer área permitida para o seu perfil.
+              </p>
+            </TooltipContent>
+          </Tooltip>
+
+          <AccessContextSwitcher />
+          <CompanySwitcher theme={theme} onToggleTheme={toggleTheme} />
+          <NotificationBell count={3} />
+          <UserMenu fullName={user?.full_name} roleName={user?.role_name} onLogout={handleLogout} />
+        </div>
+      </header>
+
+      <NavigationCommand
+        open={navigationOpen}
+        onOpenChange={setNavigationOpen}
+        roleName={user?.role_name}
+      />
+    </>
   );
 }
