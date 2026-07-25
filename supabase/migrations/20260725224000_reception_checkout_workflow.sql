@@ -699,6 +699,21 @@ BEGIN
   FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Prepare a cobrança antes de registrar o pagamento'; END IF;
 
+  SELECT * INTO v_payment
+  FROM public.financial_transactions
+  WHERE company_id = v_a.company_id
+    AND idempotency_key = p_idempotency_key;
+  IF FOUND THEN
+    IF v_payment.billing_account_id IS DISTINCT FROM v_account.id
+       OR v_payment.amount IS DISTINCT FROM ROUND(p_amount, 2)
+       OR v_payment.payment_method IS DISTINCT FROM p_payment_method
+       OR v_payment.external_reference IS DISTINCT FROM NULLIF(trim(COALESCE(p_external_reference, '')), '')
+       OR v_payment.installment_count IS DISTINCT FROM GREATEST(COALESCE(p_installment_count, 1), 1) THEN
+      RAISE EXCEPTION 'Chave de idempotência já utilizada com dados diferentes';
+    END IF;
+    RETURN public.get_reception_checkout_summary(v_a.id);
+  END IF;
+
   SELECT COALESCE(SUM(amount), 0) INTO v_total_paid
   FROM public.financial_transactions
   WHERE billing_account_id = v_account.id
@@ -746,7 +761,9 @@ BEGIN
       AND idempotency_key = p_idempotency_key;
     IF v_payment.billing_account_id IS DISTINCT FROM v_account.id
        OR v_payment.amount IS DISTINCT FROM ROUND(p_amount, 2)
-       OR v_payment.payment_method IS DISTINCT FROM p_payment_method THEN
+       OR v_payment.payment_method IS DISTINCT FROM p_payment_method
+       OR v_payment.external_reference IS DISTINCT FROM NULLIF(trim(COALESCE(p_external_reference, '')), '')
+       OR v_payment.installment_count IS DISTINCT FROM GREATEST(COALESCE(p_installment_count, 1), 1) THEN
       RAISE EXCEPTION 'Chave de idempotência já utilizada com dados diferentes';
     END IF;
     RETURN public.get_reception_checkout_summary(v_a.id);
