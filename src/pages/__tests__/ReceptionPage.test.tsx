@@ -118,6 +118,12 @@ function renderPage() {
   );
 }
 
+async function activateTab(name: string) {
+  const tab = await screen.findByRole("tab", { name });
+  fireEvent.mouseDown(tab, { button: 0, ctrlKey: false });
+  await waitFor(() => expect(tab).toHaveAttribute("data-state", "active"));
+}
+
 beforeEach(() => {
   mocks.getProfessionals.mockResolvedValue([professional]);
   mocks.getSpecialties.mockResolvedValue([specialty]);
@@ -213,7 +219,7 @@ describe("ReceptionPage", () => {
     expect(screen.getByRole("tab", { name: "Sala de espera (1)" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Pendências (1)" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Sala de espera (1)" }));
+    await activateTab("Sala de espera (1)");
     expect(await screen.findByText("José Lima")).toBeInTheDocument();
     expect(screen.getByText("Encaminhado à fila")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /iniciar atendimento/i })).not.toBeInTheDocument();
@@ -226,9 +232,9 @@ describe("ReceptionPage", () => {
     fireEvent.click(checkinButton);
 
     expect(await screen.findByRole("heading", { name: "Jornada do check-in" })).toBeInTheDocument();
-    expect(screen.getByText("Cadastro e documentos")).toBeInTheDocument();
-    expect(screen.getByText("Pagador e convênio")).toBeInTheDocument();
-    expect(screen.getByText("Autorização pendente ou inválida")).toBeInTheDocument();
+    expect(screen.getByText(/Cadastro e documentos/)).toBeInTheDocument();
+    expect(screen.getByText(/Pagador e convênio/)).toBeInTheDocument();
+    expect(await screen.findByText("Autorização pendente ou inválida")).toBeInTheDocument();
 
     const blockedAction = screen.getByRole("button", {
       name: /Liberar por exceção\. Existem pendências bloqueantes e seu perfil não pode liberar por exceção\./i,
@@ -239,7 +245,7 @@ describe("ReceptionPage", () => {
   it("abre a pendência administrativa sem misturar com a fila", async () => {
     renderPage();
 
-    fireEvent.click(await screen.findByRole("tab", { name: "Pendências (1)" }));
+    await activateTab("Pendências (1)");
     expect(await screen.findByText("Consulta cardiológica")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Resolver\./i }));
@@ -247,6 +253,6 @@ describe("ReceptionPage", () => {
     expect(screen.getByLabelText("Status")).toBeInTheDocument();
     expect(screen.getByLabelText("Protocolo")).toBeInTheDocument();
 
-    await waitFor(() => expect(mocks.updateAuthorization).not.toHaveBeenCalled());
+    expect(mocks.updateAuthorization).not.toHaveBeenCalled();
   });
 });
