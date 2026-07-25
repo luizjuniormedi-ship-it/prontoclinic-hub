@@ -22,7 +22,6 @@ export default function MedicalRecordsPage() {
   const [patients, setPatients] = useState<PatientRow[]>([]);
   const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
   const [professionalsWarning, setProfessionalsWarning] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPatient, setSelectedPatient] = useState<PatientRow | null>(null);
   const [records, setRecords] = useState<DbMedicalRecord[]>([]);
@@ -39,7 +38,6 @@ export default function MedicalRecordsPage() {
           "Os nomes dos profissionais não puderam ser carregados. A busca de prontuários continua disponível.",
         );
       })
-      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -79,7 +77,6 @@ export default function MedicalRecordsPage() {
 
   const filtered = patients;
 
-  if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
 
   if (selectedPatient) {
@@ -153,7 +150,13 @@ export default function MedicalRecordsPage() {
       )}
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input placeholder="Buscar por nome..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <Input
+          aria-label="Buscar paciente por nome"
+          placeholder="Buscar por nome..."
+          className="pl-9"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
       </div>
       {debouncedSearch.trim().length < 2 ? <EmptyState icon={Search} title="Busque um paciente" description="Digite ao menos 2 caracteres para localizar o prontuário." /> : filtered.length === 0 ? <EmptyState icon={Users} title="Nenhum paciente encontrado" /> : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

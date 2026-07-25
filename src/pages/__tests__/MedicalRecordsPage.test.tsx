@@ -32,10 +32,28 @@ describe("MedicalRecordsPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByPlaceholderText("Buscar por nome...")).toBeVisible();
+    expect(
+      screen.getByRole("textbox", { name: "Buscar paciente por nome" }),
+    ).toBeVisible();
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Os nomes dos profissionais não puderam ser carregados",
     );
     expect(screen.queryByRole("heading", { name: "Erro" })).not.toBeInTheDocument();
+  });
+
+  it("não bloqueia a busca enquanto o catálogo de profissionais está pendente", () => {
+    vi.mocked(professionalsLookup.getAll).mockReturnValue(
+      new Promise(() => undefined),
+    );
+
+    render(
+      <MemoryRouter>
+        <MedicalRecordsPage />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.getByRole("textbox", { name: "Buscar paciente por nome" }),
+    ).toBeVisible();
   });
 });

@@ -145,7 +145,7 @@ test.describe('Gate fase 0/1', () => {
     await expect(page.getByText('Atendimento salvo e finalizado!', { exact: true }).first()).toBeVisible();
 
     await page.goto('/records');
-    await page.getByPlaceholder('Buscar por nome...').fill('Paciente E2E A');
+    await page.getByRole('textbox', { name: 'Buscar paciente por nome' }).fill('Paciente E2E A');
     await page.getByText('Paciente E2E A').click();
     await expect(page.getByText(RECORD_MARKER)).toBeVisible();
     await assertAccessible(page, 'prontuário persistido');
@@ -162,7 +162,7 @@ test.describe('Gate fase 0/1', () => {
     await assertAccessible(page, 'pacientes unidade B');
 
     await page.goto('/records');
-    await page.getByPlaceholder('Buscar por nome...').fill('Paciente E2E A');
+    await page.getByRole('textbox', { name: 'Buscar paciente por nome' }).fill('Paciente E2E A');
     await expect(page.getByText('Nenhum paciente encontrado')).toBeVisible();
   });
 });
