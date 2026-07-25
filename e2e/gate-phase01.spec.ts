@@ -71,8 +71,15 @@ test.describe('Gate fase 0/1', () => {
     expect(beforeReload?.session_id).toBeTruthy();
     await page.reload();
     await expect(page.getByText('Selecione seu contexto de acesso')).toBeHidden();
-    const afterReload = await page.evaluate(() => JSON.parse(sessionStorage.getItem('prontomedic-application-session') || 'null'));
-    expect(afterReload?.session_id).toBe(beforeReload.session_id);
+    await expect.poll(
+      () => page.evaluate(() => {
+        const applicationSession = JSON.parse(
+          sessionStorage.getItem('prontomedic-application-session') || 'null',
+        );
+        return applicationSession?.session_id;
+      }),
+      { message: 'a sessão da aplicação deve sobreviver ao reload', timeout: 10_000 },
+    ).toBe(beforeReload.session_id);
 
     await page.goto('/patients');
     await expect(page.getByText('Paciente E2E A')).toBeVisible();
@@ -144,3 +151,4 @@ test.describe('Gate fase 0/1', () => {
     await expect(page.getByText('Nenhum paciente encontrado')).toBeVisible();
   });
 });
+

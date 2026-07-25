@@ -59,6 +59,7 @@ import { type Appointment, type AppointmentStatus } from "@/types";
 import type { AppointmentStatusForBadge, AppointmentTypeLiteral } from "@/types/missing";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { useActiveAccessRole } from "@/hooks/useActiveAccessRole";
 import { calculateAge } from "@/utils/formatters";
 import { useDebounce } from "@/hooks/useDebounce";
 import { canAccessRoute, normalizeRoleName } from "@/config/routePermissions";
@@ -174,7 +175,7 @@ export default function ReceptionPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const today = receptionDateKey();
-  const roleName = user?.role_name;
+  const roleName = useActiveAccessRole(user?.role_name);
   const normalizedRole = normalizeRoleName(roleName);
   const rawRole = roleName?.trim().toLowerCase() || "";
   const canReleaseException = normalizedRole === "admin"

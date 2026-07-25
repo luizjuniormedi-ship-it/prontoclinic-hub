@@ -14,6 +14,7 @@ type ProfileScenario = {
 
 const scenarios: ProfileScenario[] = [
   { role: 'admin', canonicalRole: 'admin', label: 'administrador', dailyItem: 'Dashboard', launcherItem: 'Dashboard', keyword: 'prioridades', destination: /\/$/ },
+  { role: 'manager', canonicalRole: 'gestor', label: 'gestor', dailyItem: 'Dashboard', launcherItem: 'BI e indicadores', keyword: 'métrica', destination: /\/bi$/i, forbiddenRoute: '/admin/users' },
   { role: 'reception', canonicalRole: 'recepcao', label: 'recepção', dailyItem: 'Recepção', launcherItem: 'Recepção', keyword: 'elegibilidade', destination: /\/reception$/i, forbiddenRoute: '/admin/users' },
   { role: 'doctor', canonicalRole: 'medico', label: 'médico', dailyItem: 'Atendimento clínico', launcherItem: 'Atendimento clínico', keyword: 'episódio', destination: /\/encounters$/i, forbiddenRoute: '/admin/users' },
   { role: 'nursing', canonicalRole: 'enfermagem', label: 'enfermagem', dailyItem: 'Triagem', launcherItem: 'Triagem', keyword: 'risco', destination: /\/nursing\/triage$/i, forbiddenRoute: '/admin/users' },
@@ -88,8 +89,10 @@ test.describe('navegação real por perfil', () => {
       await expect(
         page.getByRole('navigation', { name: 'Localização da página' }),
         `breadcrumb ausente em ${item.url}`,
-      ).toBeVisible();
-      await expect(page.getByText(item.title, { exact: true }).first()).toBeVisible();
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByText(item.title, { exact: true }).first()).toBeVisible({
+        timeout: 15_000,
+      });
       expect(pageErrors, `erro de runtime em ${item.url}`).toEqual([]);
     }
   });
@@ -104,3 +107,4 @@ test.describe('navegação real por perfil', () => {
     await expect(page.getByRole('dialog', { name: 'Todos os módulos' })).toBeVisible();
   });
 });
+

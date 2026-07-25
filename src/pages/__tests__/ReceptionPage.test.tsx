@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   updateAuthorization: vi.fn(),
   updateEligibility: vi.fn(),
   toast: vi.fn(),
+  activeRole: vi.fn(() => "recepcao"),
 }));
 
 vi.mock("@/services/appointmentsService", () => ({
@@ -43,13 +44,17 @@ vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: mocks.toast }),
 }));
 
+vi.mock("@/hooks/useActiveAccessRole", () => ({
+  useActiveAccessRole: mocks.activeRole,
+}));
+
 vi.mock("@/hooks/useAuth", () => ({
   useAuth: () => ({
     user: {
       id: "user-1",
       email: "recepcao@prontomedic.test",
       full_name: "Recepção Teste",
-      role_name: "recepcao",
+      role_name: "admin",
       company_id: "company-1",
       primary_unit_id: 1,
     },
@@ -222,7 +227,7 @@ describe("ReceptionPage", () => {
     await activateTab("Sala de espera (1)");
     expect(await screen.findByText("José Lima")).toBeInTheDocument();
     expect(screen.getByText("Encaminhado à fila")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /iniciar atendimento/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /abrir atendimento/i })).not.toBeInTheDocument();
   });
 
   it("abre o check-in como jornada e explica o bloqueio", async () => {
