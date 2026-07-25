@@ -1,16 +1,15 @@
 import { ReactNode, useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { AppHeader } from "@/components/AppHeader";
 import { useAuth } from "@/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { LiveRegion } from "@/components/a11y/LiveRegion";
-import { useLiveAnnounce } from "@/components/a11y/LiveRegion";
-import { useLocation } from "react-router-dom";
+import { LiveRegion, useLiveAnnounce } from "@/components/a11y/LiveRegion";
 import { useApplicationSession } from "@/hooks/useApplicationSession";
 import { initializeAccessContext } from "@/services/accessContextBootstrap";
+import { getNavigationItemForPath } from "@/config/navigation";
 
 type ContextStatus = "loading" | "ready" | "selection-required" | "error";
 
@@ -34,7 +33,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
       .then((selected) => {
         if (active) setContextStatus(selected ? "ready" : "selection-required");
       })
-      .catch(() => active && setContextStatus("error"));
+      .catch(() => {
+        if (active) setContextStatus("error");
+      });
 
     return () => {
       active = false;
@@ -42,57 +43,18 @@ export function AppLayout({ children }: { children: ReactNode }) {
     };
   }, [isAuthenticated, isLoading]);
 
-  // Mount global keyboard shortcuts (Ctrl+K, Ctrl+N, g+d, g+a, ...)
   useKeyboardShortcuts();
-
-  // Announce page changes to screen readers (polite, non-urgent)
-  const pathLabels: Record<string, string> = {
-    "/": "Dashboard",
-    "/patients": "Pacientes",
-    "/professionals": "Profissionais",
-    "/schedule": "Agenda",
-    "/callcenter": "Call Center",
-    "/reception": "Recepção",
-    "/records": "Prontuário",
-    "/worklist": "Worklist",
-    "/pacs": "PACS",
-    "/dicom/orders": "Pedidos de Imagem",
-    "/dicom/worklist": "DICOM Worklist",
-    "/dicom/reports": "Laudos",
-    "/dicom/modalities": "Equipamentos",
-    "/dicom/nodes": "Nós DICOM",
-    "/dicom/dashboard": "Integração DICOM",
-    "/financial": "Financeiro",
-    "/billing-production": "Faturamento",
-    "/professional-payment": "Pagamento de Profissionais",
-    "/companies": "Empresas",
-    "/master-data": "Cadastros",
-    "/admin/users": "Usuários",
-    "/admin/profiles": "Perfis",
-    "/admin/permissions": "Permissões",
-    "/settings": "Configurações",
-    "/purchases": "Compras",
-    "/transport": "Transporte",
-    "/nps": "NPS",
-  };
-  const currentPage = pathLabels[location.pathname] || "Página";
+  const currentPage = getNavigationItemForPath(location.pathname)?.title ?? "Página";
 
   if (isLoading) {
     return (
-      <div
-        className="min-h-screen flex items-center justify-center bg-background"
-        role="status"
-        aria-live="polite"
-        aria-label="Carregando aplicação"
-      >
+      <div className="min-h-screen flex items-center justify-center bg-background" role="status" aria-live="polite" aria-label="Carregando aplicação">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
 
   return (
     <SidebarProvider>
@@ -105,7 +67,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             role="main"
             tabIndex={-1}
             aria-label={`Conteúdo principal: ${currentPage}`}
-            className="flex-1 p-6 overflow-auto focus:outline-none"
+            className="flex-1 p-4 md:p-6 overflow-auto focus:outline-none"
             onFocus={() => announce(`Navegou para ${currentPage}`)}
           >
             {contextStatus === "ready" ? children : (
