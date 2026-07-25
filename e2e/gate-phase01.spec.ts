@@ -109,11 +109,24 @@ test.describe('Gate fase 0/1', () => {
     await expect(page.getByRole('heading', { name: 'Recepção do dia', level: 1 })).toBeVisible();
     await expect(page.getByText('Paciente E2E A')).toBeVisible();
     await expect(page.getByText('Paciente E2E B')).toBeHidden();
+    const readinessResponse = await authenticatedFetch(
+      page,
+      '/rest/v1/rpc/get_reception_checkin_readiness',
+      { method: 'POST', body: JSON.stringify({ p_appointment_id: 91001 }) },
+    );
+    expect(readinessResponse.status, readinessResponse.body).toBe(200);
+    const readiness = JSON.parse(readinessResponse.body) as {
+      checkout?: { appointment_id?: number; prepared?: boolean };
+    };
+    expect(readiness.checkout?.appointment_id).toBe(91001);
+    expect(readiness.checkout?.prepared).toBe(false);
+
     const patientA = page.getByRole('group', { name: 'Agendamento de Paciente E2E A' });
     await patientA.getByRole('button', { name: /^Fazer check-in\./ }).click();
     await expect(page.getByRole('dialog', { name: 'Jornada do check-in' })).toBeVisible();
-    await expect(page.getByText('Preparar cobrança')).toBeVisible();
-    await page.getByRole('button', { name: /^Preparar cobrança\./ }).click();
+    const prepareCheckout = page.getByRole('button', { name: /^Preparar cobrança\./ });
+    await expect(prepareCheckout).toBeVisible({ timeout: 15_000 });
+    await prepareCheckout.click();
     await expect(page.getByText('Paciente pronto para o check-in')).toBeVisible();
     await page.getByRole('button', { name: /^Concluir check-in\./ }).click();
     await expect(page.getByText(/^Check-in concluído · Senha C\d{3}$/).first()).toBeVisible();
