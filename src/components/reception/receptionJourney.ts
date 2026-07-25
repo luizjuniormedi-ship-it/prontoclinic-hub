@@ -6,6 +6,8 @@ export type ReceptionJourneyStepId =
   | "payer"
   | "eligibility"
   | "authorization"
+  | "tiss"
+  | "billing"
   | "destination";
 
 export type ReceptionJourneyStepStatus = "complete" | "attention" | "pending";
@@ -23,6 +25,8 @@ const issueTypesByStep: Partial<Record<ReceptionJourneyStepId, string[]>> = {
   payer: ["insurance_card", "insurance", "payer"],
   eligibility: ["eligibility"],
   authorization: ["authorization"],
+  tiss: ["tiss_guide"],
+  billing: ["billing", "payment"],
 };
 
 const defaultDescriptions: Record<ReceptionJourneyStepId, string> = {
@@ -31,6 +35,8 @@ const defaultDescriptions: Record<ReceptionJourneyStepId, string> = {
   payer: "Pagador, convênio e carteirinha conferidos ou não aplicáveis.",
   eligibility: "Elegibilidade válida ou não exigida para este atendimento.",
   authorization: "Autorização válida ou não exigida para este atendimento.",
+  tiss: "Guia TISS válida e assinada ou não exigida para este atendimento.",
+  billing: "Pré-conta, responsabilidade por pagador e pagamento conferidos.",
   destination: "A senha e o destino serão definidos ao concluir o check-in.",
 };
 
@@ -40,6 +46,8 @@ const labels: Record<ReceptionJourneyStepId, string> = {
   payer: "Pagador e convênio",
   eligibility: "Elegibilidade",
   authorization: "Autorização",
+  tiss: "Guia TISS",
+  billing: "Valores e pagamento",
   destination: "Fila e destino",
 };
 
@@ -61,6 +69,8 @@ export function buildReceptionJourney(
     "payer",
     "eligibility",
     "authorization",
+    "tiss",
+    "billing",
     "destination",
   ];
 
@@ -68,10 +78,15 @@ export function buildReceptionJourney(
     const issue = issueForStep(id, readiness);
     let status: ReceptionJourneyStepStatus = "pending";
 
-    if (id === "identification") status = "complete";
-    else if (id === "destination") status = "pending";
-    else if (issue) status = "attention";
-    else if (readiness) status = "complete";
+    if (id === "identification") {
+      status = "complete";
+    } else if (id === "destination") {
+      status = "pending";
+    } else if (issue) {
+      status = "attention";
+    } else if (readiness) {
+      status = "complete";
+    }
 
     return {
       id,
