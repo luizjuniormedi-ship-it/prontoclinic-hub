@@ -50,7 +50,7 @@ async function authenticatedFetch(page: Page, path: string, init: RequestInit) {
 }
 
 test.describe('Gate fase 0/1', () => {
-  test.describe.configure({ mode: 'serial' });
+  test.describe.configure({ mode: 'serial', retries: 0 });
   test.beforeEach(({ browserName }, testInfo) => {
     test.skip(
       browserName !== 'chromium' || testInfo.project.name !== 'chromium',

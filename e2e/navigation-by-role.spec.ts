@@ -31,6 +31,8 @@ function escapeRegExp(value: string) {
 }
 
 test.describe('navegação real por perfil', () => {
+  test.describe.configure({ retries: 0 });
+
   test.beforeEach(({ browserName }, testInfo) => {
     test.skip(
       browserName !== 'chromium' || testInfo.project.name !== 'chromium',
@@ -83,7 +85,7 @@ test.describe('navegação real por perfil', () => {
     await loginAs('admin');
 
     for (const item of getAccessibleNavigation('admin')) {
-      await page.goto(item.url);
+      await page.goto(item.url, { waitUntil: 'networkidle' });
       await expect(page.getByTestId('lazy-route-loading')).toBeHidden();
       await expect(page.getByRole('heading', { name: /erro de render/i })).toHaveCount(0);
       await expect(
