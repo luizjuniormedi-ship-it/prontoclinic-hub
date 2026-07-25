@@ -648,7 +648,7 @@ TO authenticated;
 
 GRANT EXECUTE ON FUNCTION public.billing_check_pending(BIGINT) TO authenticated;
 
-REVOKE ALL ON FUNCTION public.billing_check_pending(BIGINT) FROM anon;
+REVOKE ALL ON FUNCTION public.billing_check_pending(BIGINT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.seed_tiss_versions_for_company() FROM PUBLIC;
 
 COMMENT ON TABLE public.billing_accounts IS
