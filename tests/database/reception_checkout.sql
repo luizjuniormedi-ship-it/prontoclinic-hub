@@ -284,24 +284,7 @@ SELECT pg_temp.assert_true(
     JOIN checkout_appointment_before before_row USING (id)
     WHERE appointment.id = 850052
       AND appointment.status = 'waiting'
-      AND appointment.notes ~ '^Check-in realizado - senha C[0-9]{3}
-SELECT pg_temp.assert_true(
-  EXISTS (
-    SELECT 1 FROM public.reception_checkins checkin
-    JOIN public.billing_accounts account ON account.id = checkin.billing_account_id
-    JOIN public.reception_tiss_guides guide ON guide.id = checkin.tiss_guide_id
-    WHERE checkin.appointment_id = 850052
-      AND checkin.payer_type = 'convenio'
-      AND checkin.has_payment_pending
-      AND checkin.has_tiss_guide
-      AND guide.status = 'signed'
-  ),
-  'check-in por convênio deve preservar vínculos da conta, guia e contas a receber'
-);
-
-RESET ROLE;
-ROLLBACK;
-
+      AND appointment.notes ~ '^Check-in realizado - senha C[0-9]{3}$'
       AND (
         to_jsonb(appointment) - ARRAY['status', 'notes', 'updated_at']::TEXT[]
         = before_row.row_data - ARRAY['status', 'notes', 'updated_at']::TEXT[]
