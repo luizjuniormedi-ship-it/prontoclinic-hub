@@ -218,16 +218,15 @@ INSERT INTO public.insurance_plans (
 );
 UPDATE public.patients
    SET insurance_plan_id = 850040,
-       insurance_company_id = 850030,
        insurance_card_number = 'CARD-850'
  WHERE id = 850020;
 INSERT INTO public.appointments (
   id, company_id, unit_id, patient_id, professional_id,
-  insurance_company_id, ds_matricula,
+  insurance_company_id,
   appointment_date, start_time, end_time, status, notes
 ) VALUES (
   850052, '85000000-0000-0000-0000-000000000001', 850001,
-  850020, 850010, 850030, 'CARD-850', CURRENT_DATE,
+  850020, 850010, 850030, CURRENT_DATE,
   TIME '10:00', TIME '10:30', 'scheduled', 'Checkout convênio'
 );
 

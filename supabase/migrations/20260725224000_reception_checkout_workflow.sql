@@ -137,14 +137,14 @@ BEGIN
     v_net := v_gross;
 
     IF v_a.insurance_company_id IS NOT NULL THEN
-      SELECT CASE copay_model
-        WHEN 'fixed' THEN COALESCE(fixed_amount, 0)
-        WHEN 'percentage' THEN ROUND(v_net * COALESCE(percentage, 0) / 100, 2)
-        WHEN 'percentage_cap' THEN LEAST(
+      SELECT CASE model
+        WHEN 'valor_fixo' THEN COALESCE(fixed_amount, 0)
+        WHEN 'percentual' THEN ROUND(v_net * COALESCE(percentage, 0) / 100, 2)
+        WHEN 'percentual_com_teto' THEN LEAST(
           ROUND(v_net * COALESCE(percentage, 0) / 100, 2),
-          COALESCE(ceiling_amount, v_net)
+          COALESCE(cap_amount, v_net)
         )
-        WHEN 'percentage_floor' THEN GREATEST(
+        WHEN 'percentual_com_piso' THEN GREATEST(
           ROUND(v_net * COALESCE(percentage, 0) / 100, 2),
           COALESCE(floor_amount, 0)
         )
@@ -156,7 +156,7 @@ BEGIN
         AND rule.insurance_company_id = v_a.insurance_company_id
         AND (rule.insurance_plan_id IS NULL OR rule.insurance_plan_id = v_p.insurance_plan_id)
         AND (rule.service_id IS NULL OR rule.service_id = v_a.service_id)
-        AND rule.status = 'active'
+        AND rule.status = 'ativo'
         AND rule.valid_from <= CURRENT_DATE
         AND (rule.valid_until IS NULL OR rule.valid_until >= CURRENT_DATE)
       ORDER BY
@@ -213,7 +213,7 @@ BEGIN
       AND coverage.insurance_company_id = v_a.insurance_company_id
       AND (coverage.insurance_plan_id IS NULL OR coverage.insurance_plan_id = v_p.insurance_plan_id)
       AND (coverage.service_id IS NULL OR coverage.service_id = v_a.service_id)
-      AND coverage.status = 'active'
+      AND coverage.status IN ('permitido','apenas_com_autorizacao')
       AND coverage.valid_from <= CURRENT_DATE
       AND (coverage.valid_until IS NULL OR coverage.valid_until >= CURRENT_DATE)
     ORDER BY
@@ -228,7 +228,7 @@ BEGIN
         WHERE rule.company_id = v_a.company_id
           AND rule.insurance_company_id = v_a.insurance_company_id
           AND (rule.insurance_plan_id IS NULL OR rule.insurance_plan_id = v_p.insurance_plan_id)
-          AND rule.status = 'active'
+          AND rule.active = TRUE
           AND rule.valid_from <= CURRENT_DATE
           AND (rule.valid_until IS NULL OR rule.valid_until >= CURRENT_DATE)
       ) INTO v_requires_tiss;
@@ -241,7 +241,7 @@ BEGIN
     WHERE rule.company_id = v_a.company_id
       AND rule.insurance_company_id = v_a.insurance_company_id
       AND (rule.insurance_plan_id IS NULL OR rule.insurance_plan_id = v_p.insurance_plan_id)
-      AND rule.status = 'active'
+      AND rule.active = TRUE
       AND rule.valid_from <= CURRENT_DATE
       AND (rule.valid_until IS NULL OR rule.valid_until >= CURRENT_DATE)
     ORDER BY (rule.insurance_plan_id IS NOT NULL)::INTEGER DESC, rule.valid_from DESC
@@ -453,7 +453,7 @@ BEGIN
       'payer_type', p_payer_type,
       'insurance_id', v_a.insurance_company_id,
       'insurance_plan_id', v_p.insurance_plan_id,
-      'card_number', COALESCE(v_a.ds_matricula, v_p.insurance_card_number, v_p.ds_matricula)
+      'card_number', COALESCE(v_p.insurance_card_number, to_jsonb(v_p)->>'ds_matricula', to_jsonb(v_p)->>'insurance_number')
     ),
     jsonb_build_object(
       'gross_amount', ROUND(COALESCE(p_gross_amount, 0), 2),
@@ -910,7 +910,7 @@ BEGIN
   WHERE rule.company_id = v_a.company_id
     AND rule.insurance_company_id = v_a.insurance_company_id
     AND (rule.insurance_plan_id IS NULL OR rule.insurance_plan_id = v_p.insurance_plan_id)
-    AND rule.status = 'active'
+    AND rule.active = TRUE
     AND rule.valid_from <= CURRENT_DATE
     AND (rule.valid_until IS NULL OR rule.valid_until >= CURRENT_DATE)
   ORDER BY (rule.insurance_plan_id IS NOT NULL)::INTEGER DESC, rule.valid_from DESC
@@ -947,7 +947,7 @@ BEGIN
     jsonb_build_object(
       'patient_id', v_a.patient_id,
       'patient_name', v_p.full_name,
-      'card_number', COALESCE(v_a.ds_matricula, v_p.insurance_card_number, v_p.ds_matricula),
+      'card_number', COALESCE(v_p.insurance_card_number, to_jsonb(v_p)->>'ds_matricula', to_jsonb(v_p)->>'insurance_number'),
       'appointment_id', v_a.id,
       'appointment_date', v_a.appointment_date,
       'professional_id', v_a.professional_id,
@@ -1115,7 +1115,7 @@ BEGIN
   END IF;
 
   IF v_a.insurance_company_id IS NOT NULL
-     AND NULLIF(trim(COALESCE(v_a.ds_matricula, v_p.insurance_card_number, v_p.ds_matricula, '')), '') IS NULL THEN
+     AND NULLIF(trim(COALESCE(v_p.insurance_card_number, to_jsonb(v_p)->>'ds_matricula', to_jsonb(v_p)->>'insurance_number', '')), '') IS NULL THEN
     v_issues := v_issues || jsonb_build_array(jsonb_build_object(
       'type','insurance_card','severity','blocking','description','Carteirinha ou matrícula ausente'
     ));
