@@ -10,6 +10,7 @@ DATABASE=$1
 PGHOST=${PGHOST:-localhost}
 PGPORT=${PGPORT:-5432}
 PGUSER=${PGUSER:-postgres}
+REPLAY_QUIET=${REPLAY_QUIET:-0}
 
 PSQL=(psql -v ON_ERROR_STOP=1 -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$DATABASE")
 
@@ -34,6 +35,15 @@ for migration in supabase/migrations/*.sql; do
   if [[ -n "${REPLAY_STOP_BEFORE:-}" && "$(basename "$migration")" == "${REPLAY_STOP_BEFORE}" ]]; then
     break
   fi
-  echo "[$DATABASE] apply $migration"
-  "${PSQL[@]}" --single-transaction -f "$migration" >/dev/null
+
+  if [[ "$REPLAY_QUIET" == "1" ]]; then
+    if ! output=$("${PSQL[@]}" --single-transaction -f "$migration" 2>&1); then
+      echo "[$DATABASE] migration failed: $migration" >&2
+      printf '%s\n' "$output" >&2
+      exit 1
+    fi
+  else
+    echo "[$DATABASE] apply $migration"
+    "${PSQL[@]}" --single-transaction -f "$migration" >/dev/null
+  fi
 done
