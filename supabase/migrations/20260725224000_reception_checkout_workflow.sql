@@ -1340,8 +1340,28 @@ BEGIN
     status = 'waiting'
   RETURNING * INTO v_ticket;
 
-  PERFORM public.update_appointment_status_secure(
-    v_a.id, 'waiting', 'Check-in realizado - senha C' || lpad(v_number::TEXT, 3, '0')
+  IF NOT public.can_transition_appointment_status(v_a.status, 'waiting') THEN
+    RAISE EXCEPTION 'Transição inválida: % para waiting', v_a.status;
+  END IF;
+
+  UPDATE public.appointments appointment
+     SET status = 'waiting',
+         notes = 'Check-in realizado - senha C' || lpad(v_number::TEXT, 3, '0'),
+         updated_at = NOW()
+   WHERE appointment.id = v_a.id
+     AND appointment.company_id = v_a.company_id
+     AND appointment.unit_id = v_a.unit_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Agendamento não encontrado no contexto ativo' USING ERRCODE = 'P0002';
+  END IF;
+
+  INSERT INTO public.scheduling_status_history (
+    company_id, appointment_id, from_status, to_status, reason, actor_user_id
+  ) VALUES (
+    v_a.company_id, v_a.id, v_a.status, 'waiting',
+    'Check-in realizado - senha C' || lpad(v_number::TEXT, 3, '0'),
+    v_actor.user_id
   );
 
   INSERT INTO public.reception_checkin_status_history (
