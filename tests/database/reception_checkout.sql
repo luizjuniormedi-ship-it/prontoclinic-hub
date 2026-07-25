@@ -276,6 +276,7 @@ CREATE TEMP TABLE checkout_appointment_before ON COMMIT DROP AS
 SELECT id, to_jsonb(appointment) AS row_data
 FROM public.appointments appointment
 WHERE id = 850052;
+GRANT SELECT ON checkout_appointment_before TO authenticated;
 
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub = '85000000-0000-0000-0000-000000000010';
