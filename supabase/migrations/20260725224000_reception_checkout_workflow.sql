@@ -133,7 +133,7 @@ BEGIN
     v_authorization_number := v_account.authorization_number;
   ELSE
     v_payer_type := CASE WHEN v_a.insurance_company_id IS NULL THEN 'particular' ELSE 'convenio' END;
-    v_gross := COALESCE(v_service.vl_particular, v_service.price, v_a.vl_consulta, 0);
+    v_gross := COALESCE(v_service.price, v_a.vl_consulta, 0);
     v_net := v_gross;
 
     IF v_a.insurance_company_id IS NOT NULL THEN
