@@ -287,7 +287,6 @@ BEGIN
   ) INTO v_cash_session_open;
 
   SELECT COALESCE(
-    NULLIF(v_a.cd_autorizacao, ''),
     (
       SELECT NULLIF(authorization_row.authorization_number, '')
       FROM public.reception_authorizations authorization_row
@@ -417,7 +416,6 @@ BEGIN
   END IF;
 
   SELECT COALESCE(
-    NULLIF(v_a.cd_autorizacao, ''),
     (
       SELECT NULLIF(authorization_row.authorization_number, '')
       FROM public.reception_authorizations authorization_row
