@@ -51,10 +51,12 @@ async function authenticatedFetch(page: Page, path: string, init: RequestInit) {
 
 test.describe('Gate fase 0/1', () => {
   test.describe.configure({ mode: 'serial' });
-  test.skip(
-    ({ browserName }, testInfo) => browserName !== 'chromium' || testInfo.project.name !== 'chromium',
-    'Gate stateful canônico: a fixture compartilhada é consumida uma única vez',
-  );
+  test.beforeEach(({ browserName }, testInfo) => {
+    test.skip(
+      browserName !== 'chromium' || testInfo.project.name !== 'chromium',
+      'Gate stateful canônico: a fixture compartilhada é consumida uma única vez',
+    );
+  });
 
   test('contexto, RLS A/B, recepção, atendimento, prontuário e Axe', async ({ page }) => {
     await page.goto('/login');

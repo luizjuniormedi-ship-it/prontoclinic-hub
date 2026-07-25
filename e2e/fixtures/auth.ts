@@ -49,6 +49,37 @@ export const test = base.extend<{
       await page.getByRole('textbox', { name: 'Senha' }).fill(creds.password);
       await page.getByRole('button', { name: /entrar/i }).click();
       await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
+
+      const contextTrigger = page.getByRole('button', {
+        name: 'Selecionar empresa, unidade e perfil',
+      });
+      const selectionRequired = page.getByRole('heading', {
+        name: 'Selecione seu contexto de acesso',
+      });
+      const breadcrumb = page.getByRole('navigation', {
+        name: 'Localização da página',
+      });
+
+      await expect(contextTrigger).toBeEnabled({ timeout: 15000 });
+      await expect.poll(async () => (
+        await selectionRequired.isVisible().catch(() => false)
+        || await breadcrumb.isVisible().catch(() => false)
+      ), {
+        message: 'A aplicação deve ativar um contexto ou solicitar sua seleção',
+        timeout: 15000,
+      }).toBe(true);
+
+      if (await selectionRequired.isVisible()) {
+        await contextTrigger.click();
+        const authorizedOptions = page.getByRole('menuitem').filter({
+          hasNotText: 'Nenhum vínculo autorizado',
+        });
+        await expect(authorizedOptions.first()).toBeVisible();
+        await authorizedOptions.first().click();
+      }
+
+      await expect(selectionRequired).toBeHidden();
+      await expect(breadcrumb).toBeVisible({ timeout: 15000 });
     });
   }
 });

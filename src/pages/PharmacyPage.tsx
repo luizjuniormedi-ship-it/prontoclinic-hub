@@ -1,14 +1,13 @@
 /**
  * PharmacyPage — Página wrapper do módulo Farmácia/Materiais
  *
- * Renderiza <PharmacyManager /> dentro do AppLayout.
+ * Renderiza <PharmacyManager /> dentro do layout fornecido pela rota.
  * - Lazy-loaded via React.lazy (App.tsx)
  * - Suspense fallback com loading spinner
  * - PageHeader com título e descrição
  */
 
 import { lazy, Suspense } from "react";
-import { AppLayout } from "@/components/AppLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Pill } from "lucide-react";
@@ -32,7 +31,7 @@ function ManagerFallback() {
 
 export default function PharmacyPage() {
   return (
-    <AppLayout>
+    <>
       <PageHeader
         title="Farmácia e Materiais"
         description="Catálogo, estoque, lotes, dispensação e alertas (Portaria 344/98)"
@@ -40,6 +39,6 @@ export default function PharmacyPage() {
       <Suspense fallback={<ManagerFallback />}>
         <PharmacyManager />
       </Suspense>
-    </AppLayout>
+    </>
   );
 }

@@ -5,7 +5,6 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { AppLayout } from "@/components/AppLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, ErrorState } from "@/components/StateViews";
 import { AlertasPanel } from "@/components/bi/AlertasPanel";
@@ -56,24 +55,22 @@ export default function BiAlertasPage() {
   };
 
   return (
-    <AppLayout>
-      <div className="space-y-6 animate-fade-in">
-        <PageHeader
-          title="Alertas de Performance"
-          description="Histórico completo de notificações de violação de metas."
+    <div className="space-y-6 animate-fade-in">
+      <PageHeader
+        title="Alertas de Performance"
+        description="Histórico completo de notificações de violação de metas."
+      />
+      {loading ? (
+        <LoadingState message="Carregando alertas..." />
+      ) : error ? (
+        <ErrorState message={error} onRetry={carregar} />
+      ) : (
+        <AlertasPanel
+          alertas={alertas}
+          onResolver={handleResolver}
+          onRecarregar={carregar}
         />
-        {loading ? (
-          <LoadingState message="Carregando alertas..." />
-        ) : error ? (
-          <ErrorState message={error} onRetry={carregar} />
-        ) : (
-          <AlertasPanel
-            alertas={alertas}
-            onResolver={handleResolver}
-            onRecarregar={carregar}
-          />
-        )}
-      </div>
-    </AppLayout>
+      )}
+    </div>
   );
 }
