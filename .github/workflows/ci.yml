@@ -99,6 +99,14 @@ jobs:
               -f "supabase/migrations/$migration" >/dev/null
           done
 
+          # As migrations de contexto anteriores redefinem RPCs que ganharam
+          # contratos financeiros nas migrations mais recentes. Reaplicar o
+          # workflow final garante que o banco usado pelo E2E represente o
+          # estado convergido, sem restaurar uma assinatura legada.
+          psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
+            -d migrations_first --single-transaction \
+            -f supabase/migrations/20260725224000_reception_checkout_workflow.sql >/dev/null
+
       - name: Reject unknown legacy authorization policies during upgrade
         env:
           PGPASSWORD: postgres
