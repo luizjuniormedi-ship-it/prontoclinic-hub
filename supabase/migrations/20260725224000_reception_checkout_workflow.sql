@@ -14,7 +14,8 @@ DECLARE
   v_role TEXT;
 BEGIN
   IF auth.uid() IS NULL THEN
-    RETURN;
+    RAISE EXCEPTION 'Usuário autenticado é obrigatório para operar o checkout da recepção'
+      USING ERRCODE = '42501';
   END IF;
 
   v_role := public.active_role_name();
@@ -64,6 +65,77 @@ BEGIN
   RETURN v_appointment;
 END;
 $$;
+
+-- O check-in da recepção precisa avançar o agendamento para a sala de espera,
+-- mas não deve conceder ao perfil de recepção edição ampla da Agenda. O trigger
+-- aceita somente a transição operacional abaixo e preserva todas as demais
+-- verificações de tenant, unidade e permissão.
+CREATE OR REPLACE FUNCTION public.enforce_clinical_unit_company()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+SET row_security = off
+AS $
+DECLARE
+  v_module TEXT := TG_TABLE_NAME;
+  v_alt_module TEXT := CASE TG_TABLE_NAME
+    WHEN 'patients' THEN 'pacientes'
+    WHEN 'appointments' THEN 'agenda'
+    WHEN 'medical_records' THEN 'prontuario'
+  END;
+  v_action TEXT := CASE TG_OP
+    WHEN 'INSERT' THEN 'create'
+    WHEN 'UPDATE' THEN 'edit'
+  END;
+  v_reception_checkin_transition BOOLEAN := FALSE;
+BEGIN
+  IF TG_OP = 'INSERT' AND auth.uid() IS NOT NULL THEN
+    NEW.company_id := COALESCE(NEW.company_id, public.active_company_id());
+    NEW.unit_id := COALESCE(NEW.unit_id, public.active_unit_id());
+  END IF;
+
+  IF NEW.company_id IS NULL OR NEW.unit_id IS NULL OR NOT EXISTS (
+    SELECT 1 FROM public.units u
+    WHERE u.id = NEW.unit_id
+      AND u.company_id = NEW.company_id
+      AND u.lg_ativo = TRUE
+  ) THEN
+    RAISE EXCEPTION 'Empresa e unidade clínica devem ser válidas e consistentes'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF TG_TABLE_NAME = 'appointments' AND TG_OP = 'UPDATE' THEN
+    v_reception_checkin_transition :=
+      NEW.company_id = public.active_company_id()
+      AND NEW.unit_id = public.active_unit_id()
+      AND COALESCE(public.can_access('recepcao', 'create'), FALSE)
+      AND to_jsonb(OLD)->>'status' IN ('scheduled', 'confirmed')
+      AND to_jsonb(NEW)->>'status' = 'waiting'
+      AND (
+        to_jsonb(NEW) - ARRAY['status', 'notes', 'updated_at']::TEXT[]
+        = to_jsonb(OLD) - ARRAY['status', 'notes', 'updated_at']::TEXT[]
+      );
+  END IF;
+
+  IF auth.uid() IS NOT NULL AND (
+    NEW.company_id IS DISTINCT FROM public.active_company_id()
+    OR NEW.unit_id IS DISTINCT FROM public.active_unit_id()
+    OR NOT (
+      public.can_access(v_module, v_action)
+      OR public.can_access(v_alt_module, v_action)
+      OR v_reception_checkin_transition
+    )
+  ) THEN
+    RAISE EXCEPTION 'Escrita clínica fora do contexto ativo ou sem permissão'
+      USING ERRCODE = '42501';
+  END IF;
+
+  RETURN NEW;
+END;
+$;
+
+REVOKE ALL ON FUNCTION public.enforce_clinical_unit_company() FROM PUBLIC, anon;
 
 CREATE OR REPLACE FUNCTION public.get_reception_checkout_summary(p_appointment_id BIGINT)
 RETURNS JSONB

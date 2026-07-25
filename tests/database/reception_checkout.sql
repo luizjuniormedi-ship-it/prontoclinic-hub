@@ -267,6 +267,13 @@ SELECT pg_temp.assert_true(
 
 SELECT public.perform_reception_checkin_secure(850052, 'normal', NULL);
 SELECT pg_temp.assert_true(
+  (SELECT status = 'waiting'
+     AND notes LIKE 'Check-in realizado - senha C%'
+   FROM public.appointments
+   WHERE id = 850052),
+  'check-in deve aplicar somente a transição operacional scheduled/confirmed para waiting'
+);
+SELECT pg_temp.assert_true(
   EXISTS (
     SELECT 1 FROM public.reception_checkins checkin
     JOIN public.billing_accounts account ON account.id = checkin.billing_account_id
