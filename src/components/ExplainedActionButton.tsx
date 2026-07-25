@@ -21,18 +21,16 @@ type Confirmation = {
   cancelLabel?: string;
 };
 
-export type ExplainedActionButtonProps = {
+export type ExplainedActionButtonProps = Omit<ButtonProps, "children" | "onClick"> & {
   label: string;
   description: string;
   icon?: ComponentType<{ className?: string }>;
   allowed?: boolean;
-  disabled?: boolean;
-  disabledReason?: string;
   loading?: boolean;
+  loadingLabel?: string;
+  disabledReason?: string;
+  tooltipSide?: "top" | "right" | "bottom" | "left";
   confirmation?: Confirmation;
-  variant?: ButtonProps["variant"];
-  size?: ButtonProps["size"];
-  className?: string;
   labelClassName?: string;
   onClick: () => void | Promise<void>;
 };
@@ -48,22 +46,25 @@ export function ExplainedActionButton({
   icon: Icon,
   allowed = true,
   disabled = false,
-  disabledReason,
   loading = false,
+  loadingLabel = "Processando...",
+  disabledReason,
+  tooltipSide = "top",
   confirmation,
   variant = "default",
   size = "default",
+  type = "button",
   className,
   labelClassName,
   onClick,
+  ...buttonProps
 }: ExplainedActionButtonProps) {
   const [confirmationOpen, setConfirmationOpen] = useState(false);
   const descriptionId = useId();
   const disabledReasonId = useId();
   const unavailable = disabled || loading;
-  const accessibleLabel = unavailable && disabledReason
-    ? `${label} indisponível. ${disabledReason}`
-    : label;
+  const explanation = disabled && disabledReason ? disabledReason : description;
+  const accessibleLabel = `${label}. ${explanation}`;
 
   if (!allowed) return null;
 
@@ -76,47 +77,56 @@ export function ExplainedActionButton({
     void onClick();
   };
 
+  const button = (
+    <Button
+      {...buttonProps}
+      type={type}
+      variant={variant}
+      size={size}
+      disabled={unavailable}
+      aria-label={accessibleLabel}
+      aria-describedby={disabled && disabledReason ? disabledReasonId : descriptionId}
+      aria-busy={loading}
+      className={cn("max-w-full", className)}
+      onClick={execute}
+    >
+      {loading ? (
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+      ) : Icon ? (
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      ) : null}
+      <span className={cn("truncate", labelClassName)}>
+        {loading ? loadingLabel : label}
+      </span>
+    </Button>
+  );
+
   return (
     <>
       <span className="inline-flex max-w-full flex-col items-start gap-1">
         <Tooltip delayDuration={400}>
           <TooltipTrigger asChild>
-            <span
-              tabIndex={unavailable ? 0 : undefined}
-              aria-label={unavailable ? accessibleLabel : undefined}
-              aria-describedby={unavailable && disabledReason ? disabledReasonId : descriptionId}
-              className="inline-flex max-w-full"
-            >
-              <Button
-                type="button"
-                variant={variant}
-                size={size}
-                disabled={unavailable}
+            {unavailable ? (
+              <span
+                className="inline-flex max-w-full"
+                tabIndex={0}
+                role="group"
                 aria-label={accessibleLabel}
-                aria-describedby={unavailable && disabledReason ? disabledReasonId : descriptionId}
-                aria-busy={loading}
-                className={cn("max-w-full", className)}
-                onClick={execute}
+                aria-describedby={disabled && disabledReason ? disabledReasonId : descriptionId}
               >
-                {loading ? (
-                  <Loader2 className="animate-spin" aria-hidden="true" />
-                ) : Icon ? (
-                  <Icon aria-hidden="true" />
-                ) : null}
-                <span className={cn("truncate", labelClassName)}>{loading ? "Processando..." : label}</span>
-              </Button>
-            </span>
+                {button}
+              </span>
+            ) : button}
           </TooltipTrigger>
-          <TooltipContent className="max-w-xs" sideOffset={8}>
-            <p className="font-medium">{unavailable && disabledReason ? `${label} indisponível` : label}</p>
-            <p className="text-xs text-muted-foreground">
-              {unavailable && disabledReason ? disabledReason : description}
+          <TooltipContent id={descriptionId} className="max-w-xs" side={tooltipSide} sideOffset={8}>
+            <p className="font-medium">
+              {disabled && disabledReason ? `${label} indisponível` : label}
             </p>
+            <p className="text-xs text-muted-foreground">{explanation}</p>
           </TooltipContent>
         </Tooltip>
 
-        <span id={descriptionId} className="sr-only">{description}</span>
-        {unavailable && disabledReason && (
+        {disabled && disabledReason && (
           <span id={disabledReasonId} className="max-w-xs text-xs text-muted-foreground">
             {disabledReason}
           </span>

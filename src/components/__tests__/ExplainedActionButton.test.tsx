@@ -22,7 +22,9 @@ function renderAction(props: Partial<ComponentProps<typeof ExplainedActionButton
 describe("ExplainedActionButton", () => {
   it("executes an available action with an accessible description", () => {
     const onClick = renderAction();
-    const button = screen.getByRole("button", { name: "Concluir check-in" });
+    const button = screen.getByRole("button", {
+      name: "Concluir check-in. Finaliza a validação administrativa e encaminha o paciente.",
+    });
     expect(button).toHaveAttribute("aria-describedby");
     fireEvent.click(button);
     expect(onClick).toHaveBeenCalledTimes(1);
@@ -48,7 +50,9 @@ describe("ExplainedActionButton", () => {
       },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Estornar pagamento" }));
+    fireEvent.click(screen.getByRole("button", {
+      name: /^Estornar pagamento\./,
+    }));
     expect(screen.getByRole("alertdialog")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Estornar pagamento" }));
     expect(onClick).toHaveBeenCalledTimes(1);

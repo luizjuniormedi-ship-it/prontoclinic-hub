@@ -109,7 +109,7 @@ test.describe('Gate fase 0/1', () => {
     await expect(page.getByRole('heading', { name: 'Recepção do dia', level: 1 })).toBeVisible();
     await expect(page.getByText('Paciente E2E A')).toBeVisible();
     await expect(page.getByText('Paciente E2E B')).toBeHidden();
-    const patientA = page.getByText('Paciente E2E A').locator('xpath=ancestor::*[contains(@class,"rounded-lg") or contains(@class,"border")][1]');
+    const patientA = page.getByRole('group', { name: 'Agendamento de Paciente E2E A' });
     await patientA.getByRole('button', { name: /^Fazer check-in\./ }).click();
     await expect(page.getByRole('dialog', { name: 'Jornada do check-in' })).toBeVisible();
     await expect(page.getByText('Preparar cobrança')).toBeVisible();
@@ -121,7 +121,7 @@ test.describe('Gate fase 0/1', () => {
     await expect(page.getByRole('heading', { name: 'Recepção do dia', level: 1 })).toBeVisible();
     await assertAccessible(page, 'recepção após check-in');
 
-    const waitingA = page.getByText('Paciente E2E A').locator('xpath=ancestor::*[contains(@class,"rounded-lg") or contains(@class,"border")][1]');
+    const waitingA = page.getByRole('group', { name: 'Agendamento de Paciente E2E A' });
     await waitingA.getByRole('button', { name: /^Abrir atendimento\./ }).click();
     await expect(page).toHaveURL(/\/attendance\/91001/);
     await expect(page.getByRole('heading', { name: 'Atendimento' })).toBeVisible();

@@ -425,6 +425,8 @@ export default function ReceptionPage() {
     return (
       <Card
         key={appointment.id}
+        role="group"
+        aria-label={`Agendamento de ${appointment.patientName}`}
         className={`transition-shadow hover:shadow-md ${late ? "border-l-4 border-l-destructive" : appointment.status === "waiting" ? "border-l-4 border-l-warning" : appointment.status === "in_progress" ? "border-l-4 border-l-success" : ""}`}
       >
         <CardContent className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">

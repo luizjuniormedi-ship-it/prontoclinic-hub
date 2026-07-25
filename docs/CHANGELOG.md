@@ -25,6 +25,9 @@
 
 ### Corrigido
 
+- Implementações concorrentes de `ExplainedActionButton` consolidadas em um único contrato.
+- Cartões da Recepção identificados semanticamente, removendo XPath dependente de classes no E2E.
+
 - Rota privada sem representação no catálogo.
 - Contador fictício de notificações.
 - Launcher sem título e descrição acessíveis.
