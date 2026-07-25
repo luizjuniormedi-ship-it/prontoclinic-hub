@@ -1,0 +1,29 @@
+name: Apply DB test context patch
+
+on:
+  push:
+    branches: [ux/sidebar-navigation-refactor]
+    paths:
+      - scripts/apply-db-test-context-patch.mjs
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ux/sidebar-navigation-refactor
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/apply-db-test-context-patch.mjs
+      - run: |
+          git config user.name "ProntoMedic CI"
+          git config user.email "dev@prontomedic.com.br"
+          git rm scripts/apply-db-test-context-patch.mjs .github/workflows/apply-db-test-context-patch.yml
+          git add tests/database/reception_checkout.sql
+          git commit -m "fix(test): clear JWT context between checkout scenarios"
+          git push origin HEAD:ux/sidebar-navigation-refactor
