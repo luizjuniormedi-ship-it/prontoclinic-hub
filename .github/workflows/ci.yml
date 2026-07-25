@@ -200,8 +200,8 @@ jobs:
       - name: Install Playwright
         run: npx playwright install --with-deps chromium
 
-      - name: Run canonical phase 0/1 E2E gate
-        run: npx playwright test e2e/gate-phase01.spec.ts --project=chromium --workers=1
+      - name: Run canonical and role navigation E2E gates
+        run: npx playwright test e2e/gate-phase01.spec.ts e2e/navigation-by-role.spec.ts --project=chromium --workers=1
         env:
           CI: true
           E2E_BASE_URL: http://localhost:4173

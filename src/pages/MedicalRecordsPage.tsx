@@ -4,6 +4,7 @@ import { Search, Users, User, AlertTriangle, FileText } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState, LoadingState, ErrorState } from "@/components/StateViews";
 import { supabase } from "@/lib/supabase";
@@ -20,6 +21,7 @@ export default function MedicalRecordsPage() {
   const debouncedSearch = useDebounce(search, 300);
   const [patients, setPatients] = useState<PatientRow[]>([]);
   const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
+  const [professionalsWarning, setProfessionalsWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPatient, setSelectedPatient] = useState<PatientRow | null>(null);
@@ -31,7 +33,12 @@ export default function MedicalRecordsPage() {
   useEffect(() => {
     professionalsLookup.getAll()
       .then(setProfessionals)
-      .catch((err) => setError((err as Error).message))
+      .catch(() => {
+        setProfessionals([]);
+        setProfessionalsWarning(
+          "Os nomes dos profissionais não puderam ser carregados. A busca de prontuários continua disponível.",
+        );
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -138,6 +145,12 @@ export default function MedicalRecordsPage() {
   return (
     <div className="space-y-6 animate-fade-in">
       <PageHeader title="Prontuário Eletrônico" description="Selecione um paciente para acessar o prontuário" />
+      {professionalsWarning && (
+        <Alert>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>{professionalsWarning}</AlertDescription>
+        </Alert>
+      )}
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input placeholder="Buscar por nome..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
