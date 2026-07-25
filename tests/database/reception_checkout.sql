@@ -234,10 +234,21 @@ INSERT INTO public.appointments (
   TIME '10:00', TIME '10:30', 'scheduled', 'Checkout convênio'
 );
 
+CREATE TEMP TABLE checkout_appointment_before ON COMMIT DROP AS
+SELECT id, to_jsonb(appointment) AS row_data
+FROM public.appointments appointment
+WHERE id = 850052;
+
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub = '85000000-0000-0000-0000-000000000010';
 SET LOCAL request.jwt.claim.aal = 'aal2';
 SET LOCAL request.jwt.claims = '{"sub":"85000000-0000-0000-0000-000000000010","role":"authenticated","aal":"aal2","session_id":"85000000-0000-0000-0000-000000000099"}';
+
+SELECT pg_temp.assert_true(
+  public.can_access('recepcao', 'create')
+  AND NOT public.can_access('agenda', 'edit'),
+  'fixture deve representar recepção sem edição ampla da agenda'
+);
 
 SELECT public.prepare_reception_checkout_secure(
   850052, 'convenio', 200, 0, 20, 180,
@@ -267,11 +278,36 @@ SELECT pg_temp.assert_true(
 
 SELECT public.perform_reception_checkin_secure(850052, 'normal', NULL);
 SELECT pg_temp.assert_true(
-  (SELECT status = 'waiting'
-     AND notes LIKE 'Check-in realizado - senha C%'
-   FROM public.appointments
-   WHERE id = 850052),
-  'check-in deve aplicar somente a transição operacional scheduled/confirmed para waiting'
+  EXISTS (
+    SELECT 1
+    FROM public.appointments appointment
+    JOIN checkout_appointment_before before_row USING (id)
+    WHERE appointment.id = 850052
+      AND appointment.status = 'waiting'
+      AND appointment.notes ~ '^Check-in realizado - senha C[0-9]{3}
+SELECT pg_temp.assert_true(
+  EXISTS (
+    SELECT 1 FROM public.reception_checkins checkin
+    JOIN public.billing_accounts account ON account.id = checkin.billing_account_id
+    JOIN public.reception_tiss_guides guide ON guide.id = checkin.tiss_guide_id
+    WHERE checkin.appointment_id = 850052
+      AND checkin.payer_type = 'convenio'
+      AND checkin.has_payment_pending
+      AND checkin.has_tiss_guide
+      AND guide.status = 'signed'
+  ),
+  'check-in por convênio deve preservar vínculos da conta, guia e contas a receber'
+);
+
+RESET ROLE;
+ROLLBACK;
+
+      AND (
+        to_jsonb(appointment) - ARRAY['status', 'notes', 'updated_at']::TEXT[]
+        = before_row.row_data - ARRAY['status', 'notes', 'updated_at']::TEXT[]
+      )
+  ),
+  'check-in deve alterar somente status, notes e updated_at na transição para waiting'
 );
 SELECT pg_temp.assert_true(
   EXISTS (

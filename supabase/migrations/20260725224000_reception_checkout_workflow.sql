@@ -76,7 +76,7 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 SET row_security = off
-AS $
+AS $reception_guard$
 DECLARE
   v_module TEXT := TG_TABLE_NAME;
   v_alt_module TEXT := CASE TG_TABLE_NAME
@@ -112,6 +112,30 @@ BEGIN
       AND COALESCE(public.can_access('recepcao', 'create'), FALSE)
       AND to_jsonb(OLD)->>'status' IN ('scheduled', 'confirmed')
       AND to_jsonb(NEW)->>'status' = 'waiting'
+      AND COALESCE(to_jsonb(NEW)->>'notes', '') ~ '^Check-in realizado - senha C[0-9]{3}
+        = to_jsonb(OLD) - ARRAY['status', 'notes', 'updated_at']::TEXT[]
+      );
+  END IF;
+
+  IF auth.uid() IS NOT NULL AND (
+    NEW.company_id IS DISTINCT FROM public.active_company_id()
+    OR NEW.unit_id IS DISTINCT FROM public.active_unit_id()
+    OR NOT (
+      public.can_access(v_module, v_action)
+      OR public.can_access(v_alt_module, v_action)
+      OR v_reception_checkin_transition
+    )
+  ) THEN
+    RAISE EXCEPTION 'Escrita clínica fora do contexto ativo ou sem permissão'
+      USING ERRCODE = '42501';
+  END IF;
+
+  RETURN NEW;
+END;
+$reception_guard$;
+
+
+      AND (to_jsonb(NEW)->>'updated_at')::TIMESTAMPTZ = NOW()
       AND (
         to_jsonb(NEW) - ARRAY['status', 'notes', 'updated_at']::TEXT[]
         = to_jsonb(OLD) - ARRAY['status', 'notes', 'updated_at']::TEXT[]
@@ -133,7 +157,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$;
+$reception_guard$;
 
 REVOKE ALL ON FUNCTION public.enforce_clinical_unit_company() FROM PUBLIC, anon;
 
