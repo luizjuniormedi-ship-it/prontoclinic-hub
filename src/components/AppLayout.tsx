@@ -12,6 +12,7 @@ import { initializeAccessContext } from "@/services/accessContextBootstrap";
 import { getNavigationItemForPath } from "@/config/navigation";
 import { useActiveAccessRole } from "@/hooks/useActiveAccessRole";
 import { PageBreadcrumb } from "@/components/PageHeader";
+import { useQueryClient } from "@tanstack/react-query";
 
 type ContextStatus = "loading" | "ready" | "selection-required" | "error";
 
@@ -21,6 +22,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const { message, announce } = useLiveAnnounce();
   const [contextStatus, setContextStatus] = useState<ContextStatus>("loading");
+  const queryClient = useQueryClient();
   useApplicationSession(undefined, contextStatus === "ready");
 
   useEffect(() => {
@@ -30,9 +32,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
     }
 
     let active = true;
-    const onContextChanging = () => active && setContextStatus("loading");
+    const onContextChanging = () => {
+      if (!active) return;
+      queryClient.clear();
+      setContextStatus("loading");
+    };
     const onContextChanged = () => active && setContextStatus("ready");
-    const onContextChangeFailed = () => active && setContextStatus("ready");
+    const onContextChangeFailed = () => active && setContextStatus("error");
     window.addEventListener("prontomedic:access-context-changing", onContextChanging);
     window.addEventListener("prontomedic:access-context-changed", onContextChanged);
     window.addEventListener("prontomedic:access-context-change-failed", onContextChangeFailed);
@@ -50,7 +56,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       window.removeEventListener("prontomedic:access-context-changed", onContextChanged);
       window.removeEventListener("prontomedic:access-context-change-failed", onContextChangeFailed);
     };
-  }, [isAuthenticated, isLoading]);
+  }, [isAuthenticated, isLoading, queryClient]);
 
   useKeyboardShortcuts(activeRoleName);
   const currentPage = getNavigationItemForPath(location.pathname)?.title ?? "Página";
@@ -96,7 +102,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
                     <p className="text-sm text-muted-foreground">
                       {contextStatus === "selection-required"
                         ? "Escolha a empresa, unidade e perfil no seletor do cabeçalho para continuar."
-                        : "Não foi possível validar a empresa, unidade e perfil desta sessão."}
+                        : "Não foi possível validar a empresa, unidade e perfil desta sessão. Recarregue a página para recuperar o último contexto autorizado."}
                     </p>
                   </div>
                 )}

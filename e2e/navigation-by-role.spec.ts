@@ -30,8 +30,11 @@ function escapeRegExp(value: string) {
 }
 
 test.describe('navegação real por perfil', () => {
-  test.beforeEach(({ browserName }) => {
-    test.skip(browserName !== 'chromium', 'Matriz de perfis executada uma vez no Chromium.');
+  test.beforeEach(({ browserName }, testInfo) => {
+    test.skip(
+      browserName !== 'chromium' || testInfo.project.name !== 'chromium',
+      'Matriz de perfis executada uma vez no Chromium.',
+    );
   });
 
   for (const scenario of scenarios) {
@@ -74,15 +77,20 @@ test.describe('navegação real por perfil', () => {
 
   test('administrador alcança todas as telas catalogadas com breadcrumb', async ({ page, loginAs }) => {
     test.setTimeout(300_000);
+    const pageErrors: string[] = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
     await loginAs('admin');
 
     for (const item of getAccessibleNavigation('admin')) {
       await page.goto(item.url);
+      await expect(page.getByTestId('lazy-route-loading')).toBeHidden();
+      await expect(page.getByRole('heading', { name: /erro de render/i })).toHaveCount(0);
       await expect(
         page.getByRole('navigation', { name: 'Localização da página' }),
         `breadcrumb ausente em ${item.url}`,
       ).toBeVisible();
       await expect(page.getByText(item.title, { exact: true }).first()).toBeVisible();
+      expect(pageErrors, `erro de runtime em ${item.url}`).toEqual([]);
     }
   });
 

@@ -2,14 +2,19 @@
 
 ## Cabeçalho de página
 
-Toda tela privada deve usar `PageHeader` com:
+Toda tela privada recebe do `AppLayout` o breadcrumb
+`Área de trabalho > Tela`. A página deve usar `PageHeader` com:
 
-1. breadcrumb `Área de trabalho > Tela`;
-2. título único em `h1`;
-3. descrição curta e operacional;
-4. ação principal, quando houver;
-5. ações secundárias agrupadas;
-6. ações raras ou críticas em `Mais ações`.
+1. título único em `h1`;
+2. descrição curta e operacional;
+3. ação principal, quando houver;
+4. ações secundárias agrupadas;
+5. ações raras ou críticas em `Mais ações`.
+
+O breadcrumb não deve ser repetido dentro da página. Rotas contextuais usam a
+tela proprietária do catálogo como referência; nomes de pacientes e outras
+entidades permanecem no cabeçalho ou no conteúdo clínico, sem substituir a
+localização funcional.
 
 Listas e processos devem implementar estados de carregamento, vazio, erro e
 sucesso. Estado, histórico e ajuda contextual devem aparecer quando fizerem

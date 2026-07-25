@@ -52,7 +52,7 @@ async function authenticatedFetch(page: Page, path: string, init: RequestInit) {
 test.describe('Gate fase 0/1', () => {
   test.describe.configure({ mode: 'serial' });
   test.skip(
-    ({ browserName }) => browserName !== 'chromium',
+    ({ browserName }, testInfo) => browserName !== 'chromium' || testInfo.project.name !== 'chromium',
     'Gate stateful canônico: a fixture compartilhada é consumida uma única vez',
   );
 
