@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState } from "@/components/StateViews";
-import { billingAccountsService, BILLING_STATUS_LABELS, type BillingAccount, type PendingIssue, type Competency } from "@/services/billingAccountsService";
+import { billingAccountsService, BILLING_STATUS_LABELS, getBillingFinancialIssues, type BillingAccount, type PendingIssue, type Competency } from "@/services/billingAccountsService";
 import { toast } from "@/hooks/use-toast";
 import { useConfirm } from "@/hooks/useConfirm";
 import { formatDate } from "@/utils/formatters";
@@ -72,6 +72,11 @@ export default function BillingAccountsPage() {
   const recheckPending = async (a: BillingAccount) => {
     setBusy(true);
     try {
+      const financialIssues = getBillingFinancialIssues(a);
+      if (financialIssues.length > 0) {
+        toast({ title: "Conta com inconsistência financeira", description: financialIssues.join(" "), variant: "destructive" });
+        return;
+      }
       const n = await billingAccountsService.checkPending(a.id);
       toast({ title: "Glosa preventiva executada", description: n > 0 ? `${n} pendência(s) detectada(s)` : "Nenhuma pendência — pronta para envio" });
       if (detail) setIssues(await billingAccountsService.pendingIssues(a.id));
@@ -139,7 +144,14 @@ export default function BillingAccountsPage() {
               <SelectTrigger className="w-[140px]"><SelectValue placeholder="Tipo" /></SelectTrigger>
               <SelectContent><SelectItem value="all">Todos</SelectItem><SelectItem value="convenio">Convênio</SelectItem><SelectItem value="particular">Particular</SelectItem></SelectContent>
             </Select>
-            <Button variant={pendingOnly ? "default" : "outline"} onClick={() => setPendingOnly(!pendingOnly)} className="gap-1"><AlertTriangle className="h-4 w-4" />Só pendências</Button>
+            <Button
+              variant={pendingOnly ? "default" : "outline"}
+              onClick={() => setPendingOnly(!pendingOnly)}
+              aria-pressed={pendingOnly}
+              className="gap-1"
+            >
+              <AlertTriangle className="h-4 w-4" />Só pendências
+            </Button>
           </div>
 
           {filtered.length === 0 ? <EmptyState icon={Receipt} title="Nenhuma conta encontrada" /> : (
@@ -151,9 +163,9 @@ export default function BillingAccountsPage() {
                 </TableRow></TableHeader>
                 <TableBody>
                   {filtered.map((a) => (
-                    <TableRow key={a.id} className={a.has_pending_issues ? "bg-warning/5" : ""}>
+                    <TableRow key={a.id} className={a.has_pending_issues || getBillingFinancialIssues(a).length > 0 ? "bg-warning/5" : ""}>
                       <TableCell className="font-medium text-sm">
-                        {a.has_pending_issues && <AlertTriangle className="h-3 w-3 text-warning inline mr-1" />}
+                        {(a.has_pending_issues || getBillingFinancialIssues(a).length > 0) && <AlertTriangle className="h-3 w-3 text-warning inline mr-1" />}
                         {a.patient_name || "—"}
                       </TableCell>
                       <TableCell className="text-xs">{a.billing_type}</TableCell>
@@ -254,10 +266,16 @@ export default function BillingAccountsPage() {
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">Pendências (glosa preventiva)</Label>
-                {issues.length === 0 ? (
+                {issues.length === 0 && getBillingFinancialIssues(detail).length === 0 ? (
                   <div className="rounded bg-success/10 p-2 text-xs flex items-center gap-2 text-success mt-1"><ShieldCheck className="h-4 w-4" />Sem pendências — conta pronta para envio</div>
                 ) : (
                   <div className="space-y-1 mt-1">
+                    {getBillingFinancialIssues(detail).map((message) => (
+                      <div key={message} className="rounded bg-destructive/10 p-2 text-xs flex items-center gap-2 text-destructive">
+                        <AlertTriangle className="h-4 w-4 shrink-0" />
+                        <span>{message}</span>
+                      </div>
+                    ))}
                     {issues.map((i) => (
                       <div key={i.id} className="rounded bg-warning/10 p-2 text-xs flex items-center justify-between gap-2">
                         <span className="text-warning">{i.issue_label}</span>

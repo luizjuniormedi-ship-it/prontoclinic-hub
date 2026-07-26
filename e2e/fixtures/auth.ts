@@ -12,6 +12,8 @@ export type UserRole =
   | 'diagnostics'
   | 'pharmacy'
   | 'financial'
+  | 'billing'
+  | 'callCenter'
   | 'dpo'
   | 'administrative';
 
@@ -40,6 +42,8 @@ export const test = base.extend<{
         diagnostics: { email: 'diagnostico@prontomedic.test', password: E2E_PASSWORD },
         pharmacy: { email: 'farmacia@prontomedic.test', password: E2E_PASSWORD },
         financial: { email: 'financeiro@prontomedic.test', password: E2E_PASSWORD },
+        billing: { email: 'faturamento@prontomedic.test', password: E2E_PASSWORD },
+        callCenter: { email: 'callcenter@prontomedic.test', password: E2E_PASSWORD },
         dpo: { email: 'dpo@prontomedic.test', password: E2E_PASSWORD },
         administrative: { email: 'administrativo@prontomedic.test', password: E2E_PASSWORD }
       }[role];

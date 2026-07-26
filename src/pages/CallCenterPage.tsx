@@ -16,6 +16,7 @@ import { patientsService } from "@/services/patientsService";
 import { Patient } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 import { friendlyError } from "@/utils/friendlyError";
+import { matchesCallCenterContactSearch } from "@/utils/callCenterSearch";
 
 const resultLabels: Record<CallCenterResult, string> = {
   agendado: "Agendado",
@@ -87,12 +88,7 @@ export default function CallCenterPage() {
   useEffect(() => { void reload(); }, []);
 
   const filtered = contacts.filter((r) => {
-    const q = search.trim().toLowerCase();
-    const matchSearch = !q ||
-      (r.patient_name || "").toLowerCase().includes(q) ||
-      (r.patient_cpf || "").includes(q.replace(/\D/g, "")) ||
-      (r.patient_phone || "").includes(q.replace(/\D/g, "")) ||
-      r.contact_reason.toLowerCase().includes(q);
+    const matchSearch = matchesCallCenterContactSearch(r, search);
     const matchResult = resultFilter === "all" || r.result === resultFilter;
     return matchSearch && matchResult;
   });
@@ -143,7 +139,7 @@ export default function CallCenterPage() {
       <div className="flex gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[220px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Buscar por paciente, CPF, telefone ou motivo..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Input aria-label="Buscar contatos" placeholder="Buscar por paciente, CPF, telefone ou motivo..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <Select value={resultFilter} onValueChange={setResultFilter}>
           <SelectTrigger className="w-[180px]"><SelectValue placeholder="Resultado" /></SelectTrigger>

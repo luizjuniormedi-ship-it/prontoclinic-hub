@@ -1,6 +1,6 @@
 import { AlertTriangle, CheckCircle2, CircleDashed, UserRoundCheck } from "lucide-react";
 import { Appointment } from "@/types";
-import type { CheckinReadiness } from "@/services/receptionService";
+import type { CheckinIssue, CheckinReadiness } from "@/services/receptionService";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -58,7 +58,17 @@ const statusStyles: Record<ReceptionJourneyStep["status"], string> = {
   pending: "border-border bg-muted/30 text-muted-foreground",
 };
 
-const financialIssueTypes = new Set(["billing", "payment", "tiss_guide"]);
+const financialIssueTypes = new Set([
+  "billing",
+  "billing_not_prepared",
+  "payment",
+  "payment_pending",
+  "cash_session_required",
+  "tiss_guide",
+  "tiss_guide_missing",
+  "tiss_guide_invalid",
+  "tiss_signature_missing",
+]);
 
 function StepIcon({ status }: { status: ReceptionJourneyStep["status"] }) {
   if (status === "complete") return <CheckCircle2 className="h-4 w-4" aria-hidden="true" />;
@@ -70,8 +80,12 @@ function issueActionLabel(type: string): string {
   if (["registration", "document", "documents", "insurance_card", "insurance", "payer"].includes(type)) {
     return "Corrigir cadastro";
   }
-  if (type === "tiss_guide") return "Abrir guia";
-  if (["billing", "payment"].includes(type)) return "Abrir cobrança";
+  if (["tiss_guide", "tiss_guide_missing", "tiss_guide_invalid", "tiss_signature_missing"].includes(type)) {
+    return "Abrir guia";
+  }
+  if (["billing", "billing_not_prepared", "payment", "payment_pending", "cash_session_required"].includes(type)) {
+    return "Abrir cobrança";
+  }
   return "Resolver pendência";
 }
 
@@ -101,16 +115,20 @@ export function ReceptionCheckinDialog({
   else if (requiresException && !canReleaseException) disabledReason = "Existem pendências bloqueantes e seu perfil não pode liberar por exceção.";
   else if (missingExceptionReason) disabledReason = "Informe a justificativa e o risco assumido para liberar por exceção.";
 
-  const handleIssueAction = (type: string) => {
-    if (["registration", "document", "documents", "insurance_card", "insurance", "payer"].includes(type)) {
+  const handleIssueAction = (issue: CheckinIssue) => {
+    if (
+      issue.step === "registration"
+      || issue.step === "payer"
+      || ["registration", "document", "documents", "insurance_card", "insurance", "payer"].includes(issue.type)
+    ) {
       onOpenPatient();
       return;
     }
-    if (financialIssueTypes.has(type)) {
+    if (issue.step === "billing" || issue.step === "tiss" || financialIssueTypes.has(issue.type)) {
       document.getElementById("reception-financial-title")?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
-    onResolveIssue(type);
+    onResolveIssue(issue.type);
   };
 
   return (
@@ -163,16 +181,42 @@ export function ReceptionCheckinDialog({
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-semibold">{index + 1}. {step.label}</p>
                       <p className="mt-1 text-[11px] leading-relaxed text-foreground/70">{step.description}</p>
-                      {step.issue && (
-                        <Button
-                          type="button"
-                          variant="link"
-                          className="mt-1 h-auto p-0 text-xs"
-                          onClick={() => handleIssueAction(step.issue!.type)}
-                          aria-label={`${issueActionLabel(step.issue.type)}. ${step.issue.description}`}
-                        >
-                          {issueActionLabel(step.issue.type)}
-                        </Button>
+                      {step.issues.length > 0 && (
+                        <div className="mt-2 space-y-2" role="list" aria-label={`Pendências de ${step.label}`}>
+                          {step.issues.map((issue, issueIndex) => (
+                            <div
+                              key={`${issue.type}-${issueIndex}`}
+                              className="rounded border border-current/20 bg-background/70 p-2 text-foreground"
+                              role="listitem"
+                            >
+                              <p className="text-[11px] leading-relaxed">{issue.description}</p>
+                              {issue.impact && (
+                                <p className="mt-1 text-[10px] text-muted-foreground">
+                                  Impacto: {issue.impact}
+                                </p>
+                              )}
+                              {issue.owner && (
+                                <p className="mt-1 text-[10px] text-muted-foreground">
+                                  Responsável: {issue.owner}
+                                </p>
+                              )}
+                              {issue.resolution_action && (
+                                <p className="mt-1 text-[10px] text-muted-foreground">
+                                  Ação recomendada: {issue.resolution_action}
+                                </p>
+                              )}
+                              <Button
+                                type="button"
+                                variant="link"
+                                className="mt-1 h-auto p-0 text-xs"
+                                onClick={() => handleIssueAction(issue)}
+                                aria-label={`${issueActionLabel(issue.type)}. ${issue.description}`}
+                              >
+                                {issueActionLabel(issue.type)}
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
                   </div>

@@ -64,6 +64,18 @@ export const BILLING_STATUS_LABELS: Partial<Record<BillingStatus, string>> = {
   inadimplente: "Inadimplente", reaberta: "Reaberta",
 };
 
+export function getBillingFinancialIssues(account: BillingAccount): string[] {
+  const gross = Number(account.total_gross_amount);
+  const net = Number(account.total_net_amount);
+  const issues: string[] = [];
+  if (!Number.isFinite(gross) || gross <= 0) issues.push("Valor bruto deve ser maior que zero.");
+  if (!Number.isFinite(net) || net < 0) issues.push("Valor líquido não pode ser negativo.");
+  if (Number.isFinite(gross) && Number.isFinite(net) && net > gross) {
+    issues.push("Valor líquido não pode superar o valor bruto.");
+  }
+  return issues;
+}
+
 export const billingAccountsService = {
   async list(filters?: { status?: string; billing_type?: string; competence?: string; onlyPending?: boolean }): Promise<BillingAccount[]> {
     let q = supabase.from("billing_accounts").select("*").is("deleted_at", null)
@@ -135,8 +147,8 @@ export const billingAccountsService = {
     return {
       total: all.length,
       abertas: all.filter((a) => a.status === "aberta").length,
-      prontas: all.filter((a) => a.status === "aberta" && !a.has_pending_issues).length,
-      comPendencia: all.filter((a) => a.has_pending_issues).length,
+      prontas: all.filter((a) => a.status === "aberta" && !a.has_pending_issues && getBillingFinancialIssues(a).length === 0).length,
+      comPendencia: all.filter((a) => a.has_pending_issues || getBillingFinancialIssues(a).length > 0).length,
       enviadas: all.filter((a) => a.status === "enviada").length,
       pagas: all.filter((a) => ["paga", "parcialmente_paga", "particular_paga"].includes(a.status)).length,
     };

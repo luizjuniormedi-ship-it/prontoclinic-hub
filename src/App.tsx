@@ -1,12 +1,15 @@
 import { lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConfirmProvider } from "@/hooks/useConfirm";
 import { AuthProvider } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/AppLayout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { useAuth } from "@/hooks/useAuth";
+import { useActiveAccessRole } from "@/hooks/useActiveAccessRole";
+import { normalizeRoleName } from "@/config/routePermissions";
 
 // Public pages — eager import for fast FCP/TTI on login + pre-cadastro
 import LoginPage from "@/pages/LoginPage";
@@ -20,6 +23,15 @@ import NotFound from "@/pages/NotFound";
 
 // Authenticated pages — lazy loaded (code-split per route)
 const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
+
+function RoleAwareHome() {
+  const { user } = useAuth();
+  const roleName = useActiveAccessRole(user?.role_name);
+  if (normalizeRoleName(roleName) === "paciente") {
+    return <Navigate to="/meus-agendamentos" replace />;
+  }
+  return <LazyRoute><DashboardPage /></LazyRoute>;
+}
 
 // Patients
 const PatientsPage = lazy(() => import("@/pages/PatientsPage"));
@@ -181,7 +193,7 @@ const App = () => (
             <Route path="/confirmar-email" element={<ConfirmarEmailPage />} />
 
             {/* Authenticated — lazy */}
-            <Route path="/" element={<AppLayout><ProtectedRoute path="/"><LazyRoute><DashboardPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/" element={<AppLayout><ProtectedRoute path="/"><RoleAwareHome /></ProtectedRoute></AppLayout>} />
 
             {/* Patients */}
             <Route path="/patients" element={<AppLayout><ProtectedRoute path="/patients"><LazyRoute><PatientsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
@@ -249,9 +261,9 @@ const App = () => (
             <Route path="/pharmacy" element={<AppLayout><ProtectedRoute path="/pharmacy"><LazyRoute><PharmacyPage /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* Nursing / Triage */}
-            <Route path="/nursing/triage" element={<AppLayout><ProtectedRoute path="/nursing"><LazyRoute><NursingTriagePage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/nursing/queue" element={<AppLayout><ProtectedRoute path="/nursing"><LazyRoute><NursingTriagePage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/nursing/care" element={<AppLayout><ProtectedRoute path="/nursing"><LazyRoute><NursingCarePage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/nursing/triage" element={<AppLayout><ProtectedRoute path="/nursing/triage"><LazyRoute><NursingTriagePage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/nursing/queue" element={<AppLayout><ProtectedRoute path="/nursing/queue"><LazyRoute><NursingTriagePage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/nursing/care" element={<AppLayout><ProtectedRoute path="/nursing/care"><LazyRoute><NursingCarePage /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* BI / Indicadores */}
             <Route path="/bi" element={<AppLayout><ProtectedRoute path="/bi"><LazyRoute><BiDashboardPage /></LazyRoute></ProtectedRoute></AppLayout>} />

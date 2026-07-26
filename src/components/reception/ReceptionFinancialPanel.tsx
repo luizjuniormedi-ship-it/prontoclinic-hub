@@ -23,6 +23,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { ExplainedActionButton } from "@/components/actions/ExplainedActionButton";
 import {
+  isReceptionGuideValid,
   receptionCheckoutService,
   type CollectionPolicy,
   type ReceptionCheckoutSummary,
@@ -110,6 +111,7 @@ export function ReceptionFinancialPanel({
   const [paymentNotes, setPaymentNotes] = useState("");
   const [openingBalance, setOpeningBalance] = useState("0");
   const [paymentAttemptKey, setPaymentAttemptKey] = useState("");
+  const [guideValidationErrors, setGuideValidationErrors] = useState<string[]>([]);
 
   useEffect(() => {
     if (!summary) return;
@@ -121,6 +123,7 @@ export function ReceptionFinancialPanel({
     setInsuranceAmount(String(summary.insurance_responsibility_amount));
     setPaymentAmount(String(summary.patient_pending_amount));
     setGuideType(summary.guide?.type || summary.suggested_guide_type || "consulta");
+    setGuideValidationErrors(summary.guide?.validation_errors ?? []);
     const firstVersion = summary.active_tiss_versions[0];
     setTissVersionId(summary.guide ? "" : firstVersion ? String(firstVersion.id) : "");
     if (!summary.prepared) setEditing(true);
@@ -128,10 +131,14 @@ export function ReceptionFinancialPanel({
 
   const gross = Number(grossAmount) || 0;
   const discount = Number(discountAmount) || 0;
-  const net = Math.max(gross - discount, 0);
+  const amountsValid = gross >= 0 && discount >= 0 && discount <= gross;
+  const net = amountsValid ? gross - discount : 0;
   const patientResponsibility = Number(patientAmount) || 0;
   const insuranceResponsibility = Number(insuranceAmount) || 0;
-  const responsibilitiesValid = Math.abs((patientResponsibility + insuranceResponsibility) - net) <= 0.01;
+  const responsibilitiesValid = amountsValid
+    && patientResponsibility >= 0
+    && insuranceResponsibility >= 0
+    && Math.abs((patientResponsibility + insuranceResponsibility) - net) <= 0.01;
   const paymentNeedsReference = paymentMethod !== "dinheiro";
   const paymentValue = Number(paymentAmount) || 0;
   const openingValue = Number(openingBalance) || 0;
@@ -156,8 +163,8 @@ export function ReceptionFinancialPanel({
     try {
       setBusyAction(action);
       await operation();
-      toast({ title: success });
       await onChanged();
+      toast({ title: success });
       return true;
     } catch (error) {
       toast({
@@ -193,7 +200,7 @@ export function ReceptionFinancialPanel({
   };
 
   const prepareCheckout = async () => {
-    await run("prepare", () => receptionCheckoutService.prepare({
+    const succeeded = await run("prepare", () => receptionCheckoutService.prepare({
       appointmentId,
       payerType,
       grossAmount: gross,
@@ -204,7 +211,7 @@ export function ReceptionFinancialPanel({
       dueDate: collectionPolicy === "accounts_receivable" ? dueDate : undefined,
       notes: checkoutNotes,
     }), "Cobrança preparada e enviada aos módulos responsáveis");
-    setEditing(false);
+    if (succeeded) setEditing(false);
   };
 
   const registerPayment = async () => {
@@ -225,6 +232,39 @@ export function ReceptionFinancialPanel({
       setPaymentAttemptKey("");
       setPaymentReference("");
       setPaymentNotes("");
+    }
+  };
+
+  const validateGuide = async () => {
+    if (!summary?.guide) return;
+
+    try {
+      setBusyAction("guide-validate");
+      const nextSummary = await receptionCheckoutService.validateGuide(summary.guide.id);
+      const validationErrors = nextSummary.guide?.validation_errors ?? [];
+      setGuideValidationErrors(validationErrors);
+      await onChanged();
+
+      if (!isReceptionGuideValid(nextSummary)) {
+        toast({
+          title: "Guia TISS com pendências",
+          description: validationErrors.length > 0
+            ? validationErrors.join(" ")
+            : "A validação não confirmou uma guia válida para assinatura ou faturamento.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      toast({ title: "Guia TISS validada sem pendências" });
+    } catch (error) {
+      toast({
+        title: "Não foi possível validar a guia TISS",
+        description: (error as Error).message,
+        variant: "destructive",
+      });
+    } finally {
+      setBusyAction(null);
     }
   };
 
@@ -288,8 +328,13 @@ export function ReceptionFinancialPanel({
               <MoneyInput id="reception-insurance-amount" label="Responsabilidade do convênio" value={insuranceAmount} onChange={setInsuranceAmount} />
             </div>
 
-            <div className={`rounded-md border p-3 text-xs ${responsibilitiesValid ? "border-success/30 bg-success/5" : "border-destructive/30 bg-destructive/5"}`}>
+            <div className={`rounded-md border p-3 text-xs ${amountsValid && responsibilitiesValid ? "border-success/30 bg-success/5" : "border-destructive/30 bg-destructive/5"}`}>
               Valor líquido: <strong>{money(net)}</strong> · Paciente + convênio: <strong>{money(patientResponsibility + insuranceResponsibility)}</strong>
+              {!amountsValid && (
+                <p className="mt-1 text-destructive">
+                  O desconto deve ser maior ou igual a zero e não pode superar o valor bruto.
+                </p>
+              )}
               {!responsibilitiesValid && <p className="mt-1 text-destructive">A soma das responsabilidades deve ser igual ao valor líquido.</p>}
             </div>
 
@@ -326,8 +371,14 @@ export function ReceptionFinancialPanel({
                 icon={ReceiptText}
                 loading={busyAction === "prepare"}
                 loadingLabel="Preparando..."
-                disabled={!responsibilitiesValid || net < 0 || Boolean(busyAction)}
-                disabledReason={!responsibilitiesValid ? "Corrija a divisão entre paciente e convênio antes de continuar." : undefined}
+                disabled={!amountsValid || !responsibilitiesValid || Boolean(busyAction)}
+                disabledReason={
+                  !amountsValid
+                    ? "O desconto não pode superar o valor bruto."
+                    : !responsibilitiesValid
+                      ? "Corrija a divisão entre paciente e convênio antes de continuar."
+                      : undefined
+                }
                 onClick={() => void prepareCheckout()}
               />
             </div>
@@ -434,6 +485,22 @@ export function ReceptionFinancialPanel({
                   <SummaryValue label="Versão" value={summary.guide.version} />
                   <SummaryValue label="Status" value={summary.guide.status.replace(/_/g, " ")} />
                 </div>
+                {guideValidationErrors.length > 0 && (
+                  <div
+                    className="rounded-md border border-destructive/30 bg-destructive/5 p-3"
+                    role="alert"
+                    aria-label="Pendências da validação TISS"
+                  >
+                    <p className="text-xs font-semibold text-destructive">
+                      A guia ainda não está válida:
+                    </p>
+                    <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-destructive">
+                      {guideValidationErrors.map((validationError, index) => (
+                        <li key={`${validationError}-${index}`}>{validationError}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 <div className="flex flex-wrap justify-end gap-2 border-t pt-3">
                   {summary.guide.status === "generated" && (
                     <ExplainedActionButton
@@ -442,41 +509,40 @@ export function ReceptionFinancialPanel({
                       icon={FileCheck2}
                       loading={busyAction === "guide-validate"}
                       disabled={Boolean(busyAction)}
-                      onClick={() => void run(
-                        "guide-validate",
-                        () => receptionCheckoutService.validateGuide(summary.guide!.id),
-                        "Guia validada sem pendências",
-                      )}
+                      onClick={() => void validateGuide()}
                     />
                   )}
                   {summary.guide.status === "validated" && guideNeedsSignature && (
                     <>
+                      <p className="w-full text-xs text-muted-foreground">
+                        Este registro informa apenas o método declarado. Nenhuma imagem, biometria ou artefato de assinatura é capturado por esta tela.
+                      </p>
                       <Select value={signatureMethod} onValueChange={setSignatureMethod}>
                         <SelectTrigger className="w-[180px]" aria-label="Método de assinatura"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="tablet">Assinatura no tablet</SelectItem>
-                          <SelectItem value="digital">Assinatura digital</SelectItem>
-                          <SelectItem value="physical">Guia física assinada</SelectItem>
-                          <SelectItem value="biometric">Assinatura biométrica</SelectItem>
+                          <SelectItem value="tablet">Método informado: tablet</SelectItem>
+                          <SelectItem value="digital">Método informado: digital</SelectItem>
+                          <SelectItem value="physical">Método informado: guia física</SelectItem>
+                          <SelectItem value="biometric">Método informado: biometria</SelectItem>
                         </SelectContent>
                       </Select>
                       <ExplainedActionButton
-                        label="Registrar assinatura"
-                        description="Registra o método, o usuário e o momento da assinatura sem apagar a versão da guia."
+                        label="Registrar método da assinatura"
+                        description="Registra somente o método informado, o usuário e o momento. Esta ação não captura nem armazena o artefato da assinatura."
                         icon={CheckCircle2}
                         loading={busyAction === "guide-sign"}
                         disabled={Boolean(busyAction)}
                         onClick={() => void run(
                           "guide-sign",
                           () => receptionCheckoutService.signGuide(summary.guide!.id, signatureMethod),
-                          "Assinatura da guia registrada",
+                          "Método da assinatura registrado",
                         )}
                       />
                     </>
                   )}
                   {summary.guide.status === "signed" && (
                     <Badge variant="secondary" className="gap-1">
-                      <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />Guia assinada
+                      <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />Método de assinatura registrado
                     </Badge>
                   )}
                 </div>
@@ -540,131 +606,10 @@ export function ReceptionFinancialPanel({
                   )}
                   {paymentNeedsReference && (
                     <div className="space-y-2">
-                      <Label htmlFor="reception-payment-reference">Comprovante, NSU ou referência</Label>
-                      <Input
-                        id="reception-payment-reference"
-                        value={paymentReference}
-                        onChange={(event) => setPaymentReference(event.target.value)}
-                        placeholder="Obrigatório para esta forma"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="reception-payment-notes">Observação do pagamento</Label>
-                  <Input
-                    id="reception-payment-notes"
-                    value={paymentNotes}
-                    onChange={(event) => setPaymentNotes(event.target.value)}
-                    placeholder="Opcional"
-                  />
-                </div>
-
-                {paymentMethod === "dinheiro" && !summary.cash_session_open && (
-                  <div className="flex flex-col gap-2 rounded-md border border-warning/30 bg-warning/5 p-3 sm:flex-row sm:items-end sm:justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Caixa fechado</p>
-                      <p className="text-xs text-muted-foreground">Abra o caixa para registrar dinheiro e incluir o valor no fechamento do operador.</p>
-                    </div>
-                    <div className="flex items-end gap-2">
-                      <MoneyInput id="reception-opening-balance" label="Saldo inicial" value={openingBalance} onChange={setOpeningBalance} compact />
-                      <ExplainedActionButton
-                        label="Abrir caixa"
-                        description="Abre o caixa desta unidade e operador para registrar recebimentos em dinheiro."
-                        icon={Landmark}
-                        size="sm"
-                        loading={busyAction === "cash-open"}
-                        disabled={openingValue < 0 || Boolean(busyAction)}
-                        onClick={() => void run(
-                          "cash-open",
-                          () => receptionCheckoutService.openCashSession(openingValue, "Abertura pela Recepção"),
-                          "Caixa aberto para recebimentos",
-                        )}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex justify-end">
-                  <ExplainedActionButton
-                    label="Registrar pagamento"
-                    description="Vincula o pagamento ao título; dinheiro movimenta o caixa e cartão cria recebíveis da adquirente."
-                    icon={paymentMethod === "dinheiro" ? Banknote : CreditCard}
-                    loading={busyAction === "payment"}
-                    loadingLabel="Registrando..."
-                    disabled={
-                      paymentValue <= 0
-                      || paymentValue > summary.patient_pending_amount + 0.01
-                      || (paymentNeedsReference && !paymentReference.trim())
-                      || (paymentMethod === "dinheiro" && !summary.cash_session_open)
-                      || Boolean(busyAction)
-                    }
-                    disabledReason={
-                      paymentValue <= 0
-                        ? "Informe um valor maior que zero."
-                        : paymentValue > summary.patient_pending_amount + 0.01
-                          ? "O valor não pode superar o saldo do paciente."
-                          : paymentNeedsReference && !paymentReference.trim()
-                            ? "Informe o comprovante, NSU ou referência externa."
-                            : paymentMethod === "dinheiro" && !summary.cash_session_open
-                              ? "Abra o caixa antes de receber em dinheiro."
-                              : undefined
-                    }
-                    onClick={() => void registerPayment()}
-                  />
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      )}
-    </section>
-  );
-}
-
-function MoneyInput({
-  id,
-  label,
-  value,
-  onChange,
-  compact = false,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  compact?: boolean;
-}) {
-  return (
-    <div className={`space-y-2 ${compact ? "w-32" : ""}`}>
-      <Label htmlFor={id}>{label}</Label>
-      <Input
-        id={id}
-        type="number"
-        inputMode="decimal"
-        min="0"
-        step="0.01"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </div>
-  );
-}
-
-function SummaryValue({
-  label,
-  value,
-  emphasize = false,
-}: {
-  label: string;
-  value: string;
-  emphasize?: boolean;
-}) {
-  return (
-    <div>
-      <p className="text-[11px] text-muted-foreground">{label}</p>
-      <p className={`text-sm font-semibold ${emphasize ? "text-destructive" : ""}`}>{value}</p>
+                      <Label htmlFor="rg~��h��춻�q�^vutton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

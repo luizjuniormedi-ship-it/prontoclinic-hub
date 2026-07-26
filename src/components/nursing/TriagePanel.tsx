@@ -17,7 +17,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
 import { friendlyError } from "@/utils/friendlyError";
 import {
-  HeartPulse,
   Plus,
   Bell,
   ArrowRight,
@@ -170,16 +169,7 @@ export function TriagePanel({ companyId }: TriagePanelProps): JSX.Element {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <HeartPulse className="h-6 w-6 text-primary" />
-            Triagem de Enfermagem
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Classificação Manchester + NEWS2 — {fila.length} paciente(s) aguardando
-          </p>
-        </div>
+      <div className="flex items-center justify-end">
         <Button onClick={() => setShowForm((v) => !v)}>
           <Plus className="h-4 w-4 mr-2" />
           {showForm ? "Fechar formulário" : "Nova Triagem"}

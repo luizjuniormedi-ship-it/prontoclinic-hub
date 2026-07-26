@@ -95,7 +95,16 @@ function nullableNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function normalizeSummary(value: unknown): ReceptionCheckoutSummary {
+function booleanValue(value: unknown): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value === 1;
+  if (typeof value === "string") {
+    return ["true", "t", "1", "yes", "sim"].includes(value.trim().toLowerCase());
+  }
+  return false;
+}
+
+export function normalizeReceptionCheckoutSummary(value: unknown): ReceptionCheckoutSummary {
   const row = (value ?? {}) as Record<string, unknown>;
   const guide = row.guide && typeof row.guide === "object"
     ? row.guide as Record<string, unknown>
@@ -111,7 +120,7 @@ function normalizeSummary(value: unknown): ReceptionCheckoutSummary {
     company_id: String(row.company_id ?? ""),
     unit_id: nullableNumber(row.unit_id),
     account_id: nullableNumber(row.account_id),
-    prepared: Boolean(row.prepared),
+    prepared: booleanValue(row.prepared),
     payer_type: (row.payer_type || "particular") as ReceptionPayerType,
     collection_policy: (row.collection_policy || "before_checkin") as CollectionPolicy,
     insurance_id: nullableNumber(row.insurance_id),
@@ -127,8 +136,8 @@ function normalizeSummary(value: unknown): ReceptionCheckoutSummary {
     patient_paid_amount: numberValue(row.patient_paid_amount),
     patient_pending_amount: numberValue(row.patient_pending_amount),
     authorization_number: row.authorization_number ? String(row.authorization_number) : null,
-    requires_tiss_guide: Boolean(row.requires_tiss_guide),
-    requires_tiss_signature: Boolean(row.requires_tiss_signature),
+    requires_tiss_guide: booleanValue(row.requires_tiss_guide),
+    requires_tiss_signature: booleanValue(row.requires_tiss_signature),
     suggested_guide_type: (row.suggested_guide_type || "consulta") as ReceptionGuideType,
     guide: guide ? {
       id: numberValue(guide.id),
@@ -136,7 +145,7 @@ function normalizeSummary(value: unknown): ReceptionCheckoutSummary {
       type: (guide.type || "consulta") as ReceptionGuideType,
       status: (guide.status || "generated") as ReceptionGuideSummary["status"],
       version: String(guide.version || ""),
-      requires_signature: Boolean(guide.requires_signature),
+      requires_signature: booleanValue(guide.requires_signature),
       patient_signed_at: guide.patient_signed_at ? String(guide.patient_signed_at) : null,
       validation_errors: Array.isArray(guide.validation_errors)
         ? guide.validation_errors.map(String)
@@ -152,7 +161,7 @@ function normalizeSummary(value: unknown): ReceptionCheckoutSummary {
         effective_until: version.effective_until ? String(version.effective_until) : null,
       };
     }),
-    cash_session_open: Boolean(row.cash_session_open),
+    cash_session_open: booleanValue(row.cash_session_open),
     receivable: receivable ? {
       id: numberValue(receivable.id),
       status: String(receivable.status || "open"),
@@ -162,10 +171,19 @@ function normalizeSummary(value: unknown): ReceptionCheckoutSummary {
   };
 }
 
+export function isReceptionGuideValid(summary: ReceptionCheckoutSummary): boolean {
+  const guide = summary.guide;
+  return Boolean(
+    guide
+    && ["validated", "signed"].includes(guide.status)
+    && guide.validation_errors.length === 0,
+  );
+}
+
 async function rpcSummary(functionName: string, parameters: Record<string, unknown>): Promise<ReceptionCheckoutSummary> {
   const { data, error } = await supabase.rpc(functionName, parameters);
   if (error) throw new Error(error.message);
-  return normalizeSummary(data);
+  return normalizeReceptionCheckoutSummary(data);
 }
 
 export const receptionCheckoutService = {

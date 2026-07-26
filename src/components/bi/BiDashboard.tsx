@@ -234,7 +234,7 @@ export function BiDashboard() {
         actions={
           <div className="flex flex-wrap gap-2">
             <Select value={periodo} onValueChange={setPeriodo}>
-              <SelectTrigger className="h-9 w-[130px]">
+              <SelectTrigger className="h-9 w-[130px]" aria-label="Período do dashboard">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

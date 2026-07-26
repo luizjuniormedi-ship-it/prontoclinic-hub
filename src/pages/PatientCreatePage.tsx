@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
-import { PatientForm, PatientFormData } from "@/components/patients/PatientForm";
+import {
+  PatientForm,
+  PatientFormData,
+  normalizePatientBirthDate,
+  patientBirthDateError,
+} from "@/components/patients/PatientForm";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -20,6 +25,7 @@ export default function PatientCreatePage() {
   const handleSubmit = async (data: PatientFormData) => {
     setValidationError(null);
     setDuplicate(null);
+    const normalizedBirthDate = normalizePatientBirthDate(data.birth_date);
 
     if (!data.full_name.trim() || data.full_name.trim().length < 2) {
       setValidationError("Nome completo é obrigatório (mínimo 2 caracteres)."); return;
@@ -28,8 +34,9 @@ export default function PatientCreatePage() {
     if (!cleanCpf || cleanCpf.length !== 11) {
       setValidationError("CPF deve conter 11 dígitos."); return;
     }
-    if (!data.birth_date) {
-      setValidationError("Data de nascimento é obrigatória."); return;
+    const birthDateError = patientBirthDateError(data.birth_date);
+    if (birthDateError || !normalizedBirthDate) {
+      setValidationError(birthDateError || "Data de nascimento inválida."); return;
     }
     if (!data.phone.replace(/\D/g, "")) {
       setValidationError("Telefone principal é obrigatório."); return;
@@ -47,7 +54,7 @@ export default function PatientCreatePage() {
     const { data: similar } = await supabase
       .from("patients").select("id, full_name, cpf")
       .ilike("full_name", `%${data.full_name.trim().split(" ")[0]}%`)
-      .eq("birth_date", data.birth_date).limit(1);
+      .eq("birth_date", normalizedBirthDate).limit(1);
     if (similar && similar.length > 0) {
       setDuplicate(similar[0]);
     }
@@ -57,7 +64,7 @@ export default function PatientCreatePage() {
       const row: Record<string, any> = {
         full_name: data.full_name.trim(),
         cpf: cleanCpf,
-        birth_date: data.birth_date,
+        birth_date: normalizedBirthDate,
         sex: data.sex,
         phone: data.phone.replace(/\D/g, ""),
         email: data.email.trim() || null,

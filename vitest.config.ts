@@ -10,7 +10,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    setupFiles: [path.resolve(projectRoot, 'src/test/setup.ts')],
+    setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**'],
     coverage: {
@@ -63,6 +63,7 @@ export default defineConfig({
     }
   },
   resolve: {
+    preserveSymlinks: true,
     alias: {
       '@': path.resolve(projectRoot, './src')
     }

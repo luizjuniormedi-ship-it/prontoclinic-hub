@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { financialService, DbFinancialTransaction } from "@/services/financialService";
 import { billingsService } from "@/services/financialService";
 import { professionalsLookup, DbProfessional } from "@/services/appointmentsService";
+import { patientsService } from "@/services/patientsService";
 import { Patient } from "@/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -49,6 +50,10 @@ export default function FinancialPage() {
   const [newMethod, setNewMethod] = useState("pix");
   const [newDueDate, setNewDueDate] = useState(new Date().toISOString().split("T")[0]);
   const [newNotes, setNewNotes] = useState("");
+  const [newPatientSearch, setNewPatientSearch] = useState("");
+  const [newPatientResults, setNewPatientResults] = useState<Patient[]>([]);
+  const [newPatientSearchLoading, setNewPatientSearchLoading] = useState(false);
+  const [newPatientSearchError, setNewPatientSearchError] = useState<string | null>(null);
 
   const loadAll = useCallback(async () => {
     try {
@@ -79,6 +84,43 @@ export default function FinancialPage() {
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  useEffect(() => {
+    if (!newOpen) return;
+    const term = newPatientSearch.trim();
+    if (term.length < 2) {
+      setNewPatientResults([]);
+      setNewPatientSearchLoading(false);
+      setNewPatientSearchError(null);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        setNewPatientSearchLoading(true);
+        setNewPatientSearchError(null);
+        const result = await patientsService.search(term);
+        if (!cancelled) setNewPatientResults(result);
+      } catch (searchError) {
+        if (!cancelled) {
+          setNewPatientResults([]);
+          setNewPatientSearchError(
+            searchError instanceof Error
+              ? searchError.message
+              : "Não foi possível buscar os pacientes da empresa.",
+          );
+        }
+      } finally {
+        if (!cancelled) setNewPatientSearchLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [newOpen, newPatientSearch]);
 
   const getPatientName = (id: string | null, fallback?: string | null) => fallback || patients.find((p) => p.id === id)?.name || "—";
   const getProfName = (id: string | null) => professionals.find((p) => p.id === id)?.full_name || "—";
@@ -129,6 +171,8 @@ export default function FinancialPage() {
       toast({ title: "Cobrança criada!" });
       setNewOpen(false);
       setNewPatientId("");
+      setNewPatientSearch("");
+      setNewPatientResults([]);
       setNewAmount("");
       setNewNotes("");
       loadAll();
@@ -266,12 +310,44 @@ export default function FinancialPage() {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Paciente *</Label>
+              <Input
+                aria-label="Buscar paciente da empresa"
+                placeholder="Digite nome, CPF, telefone ou e-mail..."
+                value={newPatientSearch}
+                onChange={(event) => {
+                  setNewPatientSearch(event.target.value);
+                  setNewPatientId("");
+                }}
+              />
               <Select value={newPatientId} onValueChange={setNewPatientId}>
-                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectTrigger
+                  aria-label="Selecionar paciente da empresa"
+                  disabled={newPatientSearch.trim().length < 2 || newPatientSearchLoading || Boolean(newPatientSearchError)}
+                >
+                  <SelectValue
+                    placeholder={
+                      newPatientSearchLoading
+                        ? "Buscando..."
+                        : newPatientSearch.trim().length < 2
+                          ? "Digite ao menos 2 caracteres"
+                          : "Selecione o paciente"
+                    }
+                  />
+                </SelectTrigger>
                 <SelectContent>
-                  {patients.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                  {newPatientResults.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}{p.cpf ? ` — ${p.cpf}` : ""}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
+              {!newPatientSearchLoading && newPatientSearch.trim().length >= 2 && newPatientResults.length === 0 && !newPatientSearchError && (
+                <p className="text-xs text-muted-foreground">Nenhum paciente encontrado na empresa ativa.</p>
+              )}
+              {newPatientSearchError && (
+                <p className="text-xs text-destructive" role="alert">{newPatientSearchError}</p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2"><Label>Valor *</Label><Input type="number" placeholder="0.00" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} /></div>

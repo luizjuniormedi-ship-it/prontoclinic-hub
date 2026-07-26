@@ -282,6 +282,38 @@ describe("appointmentsService — update", () => {
   });
 });
 
+describe("appointmentsService — portal do paciente", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("confirma somente pela RPC self-service", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: makeAppointment({ id: "91001", status: "confirmed" }),
+      error: null,
+    });
+
+    const result = await appointmentsService.updateMyStatus("91001", "confirmed");
+
+    expect(result.status).toBe("confirmed");
+    expect(supabase.rpc).toHaveBeenCalledWith("update_my_appointment_status_secure", {
+      p_appointment_id: 91001,
+      p_target_status: "confirmed",
+      p_reason: null,
+    });
+  });
+
+  it("propaga a recusa da RPC sem fazer update generico", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: null,
+      error: { message: "Agendamento nao pertence ao paciente autenticado" },
+    });
+
+    await expect(
+      appointmentsService.updateMyStatus("91002", "cancelled", "Nao poderei comparecer"),
+    ).rejects.toThrow(/nao pertence ao paciente/);
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+});
+
 describe("appointmentsService — updateStatus", () => {
   beforeEach(() => vi.clearAllMocks());
 

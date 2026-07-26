@@ -174,7 +174,8 @@ SELECT pg_temp.assert_true(
     SELECT 1 FROM jsonb_array_elements(
       public.get_reception_checkin_readiness(850050)->'issues'
     ) issue
-    WHERE issue->>'type' = 'payment' AND issue->>'severity' = 'blocking'
+    WHERE issue->>'type' = 'payment_pending'
+      AND issue->>'severity' = 'blocking'
   ),
   'pagamento before_checkin pendente precisa bloquear o check-in'
 );
@@ -278,6 +279,12 @@ FROM public.appointments appointment
 WHERE id = 850052;
 GRANT SELECT ON checkout_appointment_before TO authenticated;
 
+CREATE TEMP TABLE checkout_checkin_results (
+  attempt INTEGER PRIMARY KEY,
+  result JSONB NOT NULL
+) ON COMMIT DROP;
+GRANT SELECT, INSERT ON checkout_checkin_results TO authenticated;
+
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub = '85000000-0000-0000-0000-000000000010';
 SET LOCAL request.jwt.claim.aal = 'aal2';
@@ -292,6 +299,22 @@ SELECT pg_temp.assert_true(
 SELECT public.prepare_reception_checkout_secure(
   850052, 'convenio', 200, 0, 20, 180,
   'accounts_receivable', CURRENT_DATE + 30, 'Coparticipação a receber'
+);
+SELECT pg_temp.assert_true(
+  EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(
+      public.get_reception_checkin_readiness(850052)->'issues'
+    ) issue
+    WHERE issue->>'type' = 'tiss_guide_missing'
+      AND issue->>'severity' = 'blocking'
+      AND issue->>'step' = 'tiss'
+      AND issue->>'resolution_action' = 'generate_tiss_guide'
+      AND issue->>'owner' = 'reception'
+      AND (issue->>'blocking')::BOOLEAN
+      AND issue->>'impact' = 'checkin_blocked'
+  ),
+  'readiness deve orientar de forma estruturada a geração da guia TISS'
 );
 SELECT public.generate_reception_tiss_guide_secure(850052, 'consulta', NULL, NULL);
 SELECT public.validate_reception_tiss_guide_secure(
@@ -309,13 +332,36 @@ SELECT pg_temp.assert_true(
     SELECT 1 FROM jsonb_array_elements(
       public.get_reception_checkin_readiness(850052)->'issues'
     ) issue
-    WHERE issue->>'type' = 'payment' AND issue->>'severity' = 'warning'
+    WHERE issue->>'type' = 'payment_pending'
+      AND issue->>'severity' = 'warning'
   )
   AND (public.get_reception_checkin_readiness(850052)->>'ready')::BOOLEAN,
   'guia assinada e saldo enviado ao contas a receber devem permitir check-in com warning'
 );
 
-SELECT public.perform_reception_checkin_secure(850052, 'normal', NULL);
+DO $$
+BEGIN
+  BEGIN
+    PERFORM public.update_appointment_status_secure(
+      850052, 'waiting', 'Check-in realizado - senha C999'
+    );
+    RAISE EXCEPTION
+      'recepção conseguiu avançar agenda sem check-in e ticket íntegros';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+END;
+$$;
+
+SELECT pg_temp.assert_true(
+  (SELECT count(*) FROM public.scheduling_status_history
+   WHERE appointment_id = 850052) = 0,
+  'tentativa negada não pode gerar histórico de status'
+);
+
+INSERT INTO checkout_checkin_results (attempt, result)
+SELECT 1, public.perform_reception_checkin_secure(850052, 'normal', NULL);
+INSERT INTO checkout_checkin_results (attempt, result)
+SELECT 2, public.perform_reception_checkin_secure(850052, 'normal', NULL);
 RESET ROLE;
 
 SELECT pg_temp.assert_true(
@@ -345,6 +391,36 @@ SELECT pg_temp.assert_true(
       AND guide.status = 'signed'
   ),
   'check-in por convênio deve preservar vínculos da conta, guia e contas a receber'
+);
+SELECT pg_temp.assert_true(
+  (
+    SELECT first.result->>'checkin_id' = retry.result->>'checkin_id'
+       AND first.result->>'ticket_id' = retry.result->>'ticket_id'
+       AND first.result->>'ticket' = retry.result->>'ticket'
+       AND NOT (first.result->>'idempotent_replay')::BOOLEAN
+       AND (retry.result->>'idempotent_replay')::BOOLEAN
+    FROM checkout_checkin_results first
+    CROSS JOIN checkout_checkin_results retry
+    WHERE first.attempt = 1 AND retry.attempt = 2
+  ),
+  'retry do check-in deve devolver o mesmo check-in e a mesma senha'
+);
+SELECT pg_temp.assert_true(
+  (SELECT count(*) FROM public.reception_checkins
+   WHERE appointment_id = 850052) = 1
+  AND (SELECT count(*) FROM public.reception_queue_tickets
+       WHERE appointment_id = 850052
+         AND company_id = '85000000-0000-0000-0000-000000000001'
+         AND unit_id = 850001) = 1
+  AND (SELECT count(*) FROM public.scheduling_status_history
+       WHERE appointment_id = 850052
+         AND from_status = 'scheduled'
+         AND to_status = 'waiting') = 1
+  AND (SELECT count(*) FROM public.reception_checkin_status_history history
+       JOIN public.reception_checkins checkin ON checkin.id = history.checkin_id
+       WHERE checkin.appointment_id = 850052
+         AND history.to_status = 'checked_in') = 1,
+  'check-in idempotente não pode duplicar registros, senha ou históricos'
 );
 
 ROLLBACK;

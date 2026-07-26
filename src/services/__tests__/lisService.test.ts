@@ -8,7 +8,14 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { classificar, parseHL7, pedido } from "@/services/lisService";
+import {
+  classificar,
+  formatLabCurrency,
+  mapExameCatalogo,
+  normalizeLabNumeric,
+  parseHL7,
+  pedido,
+} from "@/services/lisService";
 
 vi.mock("@/lib/supabase", () => {
   const chain = {
@@ -80,6 +87,50 @@ describe("lisService — classificar()", () => {
   it("respeita apenas máximo (sem mínimo)", () => {
     expect(classificar(120, null, 99)).toBe("ALTO");
     expect(classificar(80, null, 99)).toBe("NORMAL");
+  });
+});
+
+describe("lisService — catálogo numérico", () => {
+  it.each([
+    ["0.01", 0.01],
+    [0.01, 0.01],
+    [0, 0],
+    [null, null],
+    [undefined, null],
+    ["", null],
+    ["valor-inválido", null],
+  ])("normaliza %p sem lançar erro", (raw, expected) => {
+    expect(normalizeLabNumeric(raw)).toBe(expected);
+  });
+
+  it("normaliza campos numéricos retornados como texto pelo PostgREST", () => {
+    const mapped = mapExameCatalogo({
+      id: "25",
+      company_id: "00000000-0000-0000-0000-000000000001",
+      ds_exame: "Exame sintético",
+      ds_sigla: "QA25",
+      nr_prazo_dias: "3",
+      vl_particular: "12.34",
+      vl_convenio: "9.87",
+      lg_ativo: true,
+      cd_origem_sigh: null,
+      created_at: "2026-07-25T00:00:00Z",
+      updated_at: "2026-07-25T00:00:00Z",
+    });
+
+    expect(mapped).toMatchObject({
+      id: 25,
+      nr_prazo_dias: 3,
+      vl_particular: 12.34,
+      vl_convenio: 9.87,
+    });
+  });
+
+  it("formata número, texto, zero e valor inválido sem quebrar a tela", () => {
+    expect(formatLabCurrency("12.34")).toBe("R$ 12,34");
+    expect(formatLabCurrency(0)).toBe("R$ 0,00");
+    expect(formatLabCurrency(null)).toBe("—");
+    expect(formatLabCurrency("inválido")).toBe("—");
   });
 });
 

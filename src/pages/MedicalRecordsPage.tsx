@@ -163,22 +163,29 @@ export default function MedicalRecordsPage() {
           {filtered.map((p) => {
             const age = p.birth_date ? calculateAge(p.birth_date) : null;
             return (
-              <Card key={p.id} className="cursor-pointer hover:shadow-md hover:border-primary/30 transition-all" onClick={() => handleSelectPatient(p)}>
-                <CardContent className="p-4 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0"><User className="h-4 w-4 text-primary" /></div>
-                    <div>
-                      <p className="font-medium text-sm">{p.full_name}</p>
-                      <p className="text-xs text-muted-foreground">{age != null ? `${age}a • ` : ""}{p.sex === "M" ? "Masc." : p.sex === "F" ? "Fem." : "Outro"} • {p.insurance_plan_id || "Particular"}</p>
+              <Card key={p.id} className="hover:shadow-md hover:border-primary/30 transition-all">
+                <button
+                  type="button"
+                  className="block w-full rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  onClick={() => handleSelectPatient(p)}
+                  aria-label={`Abrir prontuário de ${p.full_name}`}
+                >
+                  <CardContent className="p-4 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0"><User className="h-4 w-4 text-primary" /></div>
+                      <div>
+                        <p className="font-medium text-sm">{p.full_name}</p>
+                        <p className="text-xs text-muted-foreground">{age != null ? `${age}a • ` : ""}{p.sex === "M" ? "Masc." : p.sex === "F" ? "Fem." : "Outro"} • {p.insurance_plan_id || "Particular"}</p>
+                      </div>
                     </div>
-                  </div>
-                  {p.allergies && (
-                    <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-destructive/10 w-fit">
-                      <AlertTriangle className="h-2.5 w-2.5 text-destructive" />
-                      <span className="text-[10px] text-destructive font-medium">{p.allergies}</span>
-                    </div>
-                  )}
-                </CardContent>
+                    {p.allergies && (
+                      <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-destructive/10 w-fit">
+                        <AlertTriangle className="h-2.5 w-2.5 text-destructive" />
+                        <span className="text-[10px] text-destructive font-medium">{p.allergies}</span>
+                      </div>
+                    )}
+                  </CardContent>
+                </button>
               </Card>
             );
           })}

@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { supabase } from "@/lib/supabase";
-import { receptionCheckoutService } from "@/services/receptionCheckoutService";
+import {
+  isReceptionGuideValid,
+  normalizeReceptionCheckoutSummary,
+  receptionCheckoutService,
+} from "@/services/receptionCheckoutService";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -139,5 +143,49 @@ describe("receptionCheckoutService", () => {
       paymentMethod: "dinheiro",
       idempotencyKey: "cash-101",
     })).rejects.toThrow("Abra o caixa antes de receber em dinheiro");
+  });
+
+  it("não interpreta strings false como booleanos verdadeiros", () => {
+    const result = normalizeReceptionCheckoutSummary({
+      prepared: "false",
+      requires_tiss_guide: "false",
+      requires_tiss_signature: "0",
+      cash_session_open: "no",
+      guide: {
+        requires_signature: "false",
+        validation_errors: [],
+      },
+    });
+
+    expect(result.prepared).toBe(false);
+    expect(result.requires_tiss_guide).toBe(false);
+    expect(result.requires_tiss_signature).toBe(false);
+    expect(result.cash_session_open).toBe(false);
+    expect(result.guide?.requires_signature).toBe(false);
+  });
+
+  it("só considera a guia válida com status confirmado e sem erros", () => {
+    const valid = normalizeReceptionCheckoutSummary({
+      guide: {
+        status: "validated",
+        validation_errors: [],
+      },
+    });
+    const invalidStatus = normalizeReceptionCheckoutSummary({
+      guide: {
+        status: "generated",
+        validation_errors: [],
+      },
+    });
+    const invalidErrors = normalizeReceptionCheckoutSummary({
+      guide: {
+        status: "validated",
+        validation_errors: ["Código do procedimento obrigatório"],
+      },
+    });
+
+    expect(isReceptionGuideValid(valid)).toBe(true);
+    expect(isReceptionGuideValid(invalidStatus)).toBe(false);
+    expect(isReceptionGuideValid(invalidErrors)).toBe(false);
   });
 });

@@ -15,6 +15,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/services/receptionCheckoutService", () => ({
+  isReceptionGuideValid: (value: ReceptionCheckoutSummary) => Boolean(
+    value.guide
+    && ["validated", "signed"].includes(value.guide.status)
+    && value.guide.validation_errors.length === 0,
+  ),
   receptionCheckoutService: {
     prepare: mocks.prepare,
     openCashSession: mocks.openCashSession,
@@ -85,6 +90,8 @@ beforeEach(() => {
   mocks.prepare.mockResolvedValue(summary({ prepared: true, account_id: 10 }));
   mocks.openCashSession.mockResolvedValue(undefined);
   mocks.generateGuide.mockResolvedValue(summary());
+  mocks.validateGuide.mockResolvedValue(summary());
+  mocks.signGuide.mockResolvedValue(summary());
 });
 
 describe("ReceptionFinancialPanel", () => {
@@ -139,5 +146,174 @@ describe("ReceptionFinancialPanel", () => {
       "",
     ));
     expect(onChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("mantém a edição aberta quando a preparação falha", async () => {
+    mocks.prepare.mockRejectedValueOnce(new Error("Falha ao preparar cobrança"));
+    const { onChanged } = renderPanel(summary());
+
+    fireEvent.click(screen.getByRole("button", { name: /^Preparar cobrança\./ }));
+
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Não foi possível concluir a ação",
+      variant: "destructive",
+    })));
+    expect(onChanged).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /^Preparar cobrança\./ })).toBeInTheDocument();
+    expect(mocks.toast).not.toHaveBeenCalledWith(expect.objectContaining({
+      title: "Cobrança preparada e enviada aos módulos responsáveis",
+    }));
+  });
+
+  it("não anuncia sucesso quando a releitura autoritativa falha", async () => {
+    const onChanged = vi.fn().mockRejectedValue(new Error("Readiness indisponível"));
+    renderPanel(summary(), onChanged);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Preparar cobrança\./ }));
+
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Não foi possível concluir a ação",
+      description: "Readiness indisponível",
+      variant: "destructive",
+    })));
+    expect(mocks.prepare).toHaveBeenCalledTimes(1);
+    expect(mocks.toast).not.toHaveBeenCalledWith(expect.objectContaining({
+      title: "Cobrança preparada e enviada aos módulos responsáveis",
+    }));
+    expect(screen.getByRole("button", { name: /^Preparar cobrança\./ })).toBeInTheDocument();
+  });
+
+  it("impede desconto maior que o valor bruto", () => {
+    renderPanel(summary());
+
+    fireEvent.change(screen.getByLabelText("Desconto"), { target: { value: "150" } });
+
+    expect(screen.getByText("O desconto deve ser maior ou igual a zero e não pode superar o valor bruto.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Preparar cobrança/ })).toBeDisabled();
+  });
+
+  it("exibe todos os erros de validação retornados na guia", () => {
+    renderPanel(summary({
+      prepared: true,
+      account_id: 10,
+      payer_type: "convenio",
+      requires_tiss_guide: true,
+      guide: {
+        id: 77,
+        number: "GUIA-77",
+        type: "consulta",
+        status: "generated",
+        version: "04.03.00",
+        requires_signature: true,
+        patient_signed_at: null,
+        validation_errors: [
+          "Código do procedimento obrigatório",
+          "Número da carteirinha inválido",
+        ],
+      },
+    }));
+
+    expect(screen.getByText("Código do procedimento obrigatório")).toBeInTheDocument();
+    expect(screen.getByText("Número da carteirinha inválido")).toBeInTheDocument();
+  });
+
+  it("não anuncia validação TISS quando o retorno contém pendências", async () => {
+    const current = summary({
+      prepared: true,
+      account_id: 10,
+      payer_type: "convenio",
+      requires_tiss_guide: true,
+      guide: {
+        id: 77,
+        number: "GUIA-77",
+        type: "consulta",
+        status: "generated",
+        version: "04.03.00",
+        requires_signature: true,
+        patient_signed_at: null,
+        validation_errors: [],
+      },
+    });
+    mocks.validateGuide.mockResolvedValueOnce(summary({
+      ...current,
+      guide: {
+        ...current.guide!,
+        status: "generated",
+        validation_errors: ["Número da carteirinha inválido"],
+      },
+    }));
+    const { onChanged } = renderPanel(current);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Validar guia\./ }));
+
+    await waitFor(() => expect(screen.getByText("Número da carteirinha inválido")).toBeInTheDocument());
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Guia TISS com pendências",
+      variant: "destructive",
+    }));
+    expect(mocks.toast).not.toHaveBeenCalledWith(expect.objectContaining({
+      title: "Guia TISS validada sem pendências",
+    }));
+  });
+
+  it("anuncia validação TISS somente após retorno válido e releitura", async () => {
+    const current = summary({
+      prepared: true,
+      account_id: 10,
+      payer_type: "convenio",
+      requires_tiss_guide: true,
+      guide: {
+        id: 77,
+        number: "GUIA-77",
+        type: "consulta",
+        status: "generated",
+        version: "04.03.00",
+        requires_signature: true,
+        patient_signed_at: null,
+        validation_errors: [],
+      },
+    });
+    mocks.validateGuide.mockResolvedValueOnce(summary({
+      ...current,
+      guide: {
+        ...current.guide!,
+        status: "validated",
+        validation_errors: [],
+      },
+    }));
+    const { onChanged } = renderPanel(current);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Validar guia\./ }));
+
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith({
+      title: "Guia TISS validada sem pendências",
+    }));
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(onChanged.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.toast.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("deixa explícito que registra método sem capturar artefato de assinatura", () => {
+    renderPanel(summary({
+      prepared: true,
+      account_id: 10,
+      payer_type: "convenio",
+      requires_tiss_guide: true,
+      guide: {
+        id: 77,
+        number: "GUIA-77",
+        type: "consulta",
+        status: "validated",
+        version: "04.03.00",
+        requires_signature: true,
+        patient_signed_at: null,
+        validation_errors: [],
+      },
+    }));
+
+    expect(screen.getByText(/Nenhuma imagem, biometria ou artefato de assinatura é capturado/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Registrar método da assinatura\./ })).toBeInTheDocument();
   });
 });

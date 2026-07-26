@@ -55,6 +55,37 @@ describe("local auth server security invariants", () => {
     expect(source).toContain("queryAsAuthenticated(payload, query, values)");
   });
 
+  it("autoriza pelo contexto ativo da sessao e isola o cache por empresa e papel", () => {
+    expect(source).toContain("async function getAuthorizationContext(payload)");
+    expect(source).toContain("ctx.session_id = $2::uuid");
+    expect(source).toContain("app_session.gotrue_session_id = ctx.session_id");
+    expect(source).toContain("app_session.idle_expires_at > now()");
+    expect(source).toContain("const cacheKey = `${profile.company_id}:${profile.role_id}`");
+    expect(source).toContain("WHERE rp.company_id = $1");
+    expect(source).toContain("AND rp.role_id = $2");
+    expect(source).not.toContain("async function loadRolePerms(role)");
+  });
+
+  it("limita o bootstrap às RPCs de contexto e exige contexto ativo no self-service", () => {
+    expect(source).toContain("list_authorized_access_contexts: { scope: 'bootstrap' }");
+    expect(source).toContain("activate_application_context: { scope: 'bootstrap' }");
+    expect(source).toContain("update_my_appointment_status_secure: { scope: 'self' }");
+    expect(source).toContain("required?.scope === 'bootstrap'");
+    expect(source).not.toContain("required?.scope === 'self'\n        ? await getUserProfile");
+  });
+
+  it("preserva o catalogo de profissionais para leitura autenticada", () => {
+    expect(source).toMatch(/REFERENCE_TABLES[\s\S]*'professionals'/);
+    expect(source).toContain("if (REFERENCE_TABLES.has(t)) return null");
+    expect(source.indexOf("if (REFERENCE_TABLES.has(t)) return null"))
+      .toBeLessThan(source.indexOf("for (const [re, mod] of map)"));
+  });
+
+  it("autoriza a manutencao administrativa de permissoes e invalida o cache", () => {
+    expect(source).toContain("upsert_role_permission: { module: 'admin', action: 'can_edit' }");
+    expect(source).toContain("if (fnName === 'upsert_role_permission') permCache.clear()");
+  });
+
   it("nao concede bypass total a cargos administrativos secundarios", () => {
     expect(source).toContain("if (role === 'admin') return { ok: true };");
     expect(source).not.toContain("role === 'admin' || role === 'adm_medicos'");

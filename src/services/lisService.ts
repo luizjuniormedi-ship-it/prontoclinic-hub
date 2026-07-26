@@ -81,6 +81,31 @@ export interface ExameCatalogo {
   updated_at: string;
 }
 
+export function normalizeLabNumeric(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const normalized = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(normalized) ? normalized : null;
+}
+
+export function formatLabCurrency(value: unknown): string {
+  const normalized = normalizeLabNumeric(value);
+  return normalized === null
+    ? "—"
+    : `R$ ${normalized.toFixed(2).replace(".", ",")}`;
+}
+
+export function mapExameCatalogo(row: Record<string, unknown>): ExameCatalogo {
+  return {
+    ...(row as unknown as ExameCatalogo),
+    id: normalizeLabNumeric(row.id) ?? 0,
+    nr_prazo_dias: normalizeLabNumeric(row.nr_prazo_dias) ?? 0,
+    vl_particular: normalizeLabNumeric(row.vl_particular),
+    vl_convenio: normalizeLabNumeric(row.vl_convenio),
+    cd_origem_sigh: normalizeLabNumeric(row.cd_origem_sigh),
+    lg_ativo: row.lg_ativo === true || row.lg_ativo === "true",
+  };
+}
+
 export interface ValorReferencia {
   id: number;
   cd_exame: number;
@@ -361,7 +386,7 @@ export const catalogo = {
 
     const { data, error } = await q;
     if (error) throw error;
-    return (data || []) as ExameCatalogo[];
+    return (data || []).map((row) => mapExameCatalogo(row as Record<string, unknown>));
   },
 
   async getById(id: number): Promise<ExameCatalogo | null> {
@@ -371,7 +396,7 @@ export const catalogo = {
       .eq("id", id)
       .maybeSingle();
     if (error) throw error;
-    return (data as ExameCatalogo) ?? null;
+    return data ? mapExameCatalogo(data as Record<string, unknown>) : null;
   },
 
   async create(input: Omit<ExameCatalogo, "id" | "created_at" | "updated_at">): Promise<ExameCatalogo> {
@@ -381,7 +406,7 @@ export const catalogo = {
       .select()
       .single();
     if (error) throw error;
-    return data as ExameCatalogo;
+    return mapExameCatalogo(data as Record<string, unknown>);
   },
 
   async update(id: number, patch: Partial<ExameCatalogo>): Promise<ExameCatalogo> {
@@ -392,7 +417,7 @@ export const catalogo = {
       .select()
       .single();
     if (error) throw error;
-    return data as ExameCatalogo;
+    return mapExameCatalogo(data as Record<string, unknown>);
   },
 
   async inactivate(id: number): Promise<void> {

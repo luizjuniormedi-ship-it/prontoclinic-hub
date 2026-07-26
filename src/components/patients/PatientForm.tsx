@@ -37,6 +37,37 @@ const emptyForm: PatientFormData = {
   allergies: "", clinical_alerts: "", admin_notes: "", clinical_notes: "",
 };
 
+export function normalizePatientBirthDate(value: string): string {
+  const candidate = value.trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(candidate);
+  if (!match) return "";
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    year < 1900
+    || parsed.getUTCFullYear() !== year
+    || parsed.getUTCMonth() !== month - 1
+    || parsed.getUTCDate() !== day
+  ) {
+    return "";
+  }
+  return candidate;
+}
+
+export function patientBirthDateError(value: string, today = new Date()): string | null {
+  if (!value.trim()) return "Data de nascimento é obrigatória.";
+  const normalized = normalizePatientBirthDate(value);
+  if (!normalized) return "Informe uma data de nascimento válida.";
+  const todayKey = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, "0"),
+    String(today.getDate()).padStart(2, "0"),
+  ].join("-");
+  return normalized > todayKey ? "Data de nascimento não pode estar no futuro." : null;
+}
+
 interface Props {
   initialData?: Partial<PatientFormData>;
   onSubmit: (data: PatientFormData) => Promise<void>;
@@ -57,6 +88,9 @@ function validateField(field: keyof PatientFormData, value: string): string | nu
   if (field === "cpf") {
     const digits = value.replace(/\D/g, "");
     if (digits && digits.length !== 11) return "CPF deve ter 11 dígitos.";
+  }
+  if (field === "birth_date") {
+    return patientBirthDateError(value);
   }
   if (field === "phone") {
     const digits = value.replace(/\D/g, "");
@@ -105,10 +139,14 @@ export function PatientForm({ initialData, onSubmit, onCancel, saving, validatio
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const submission: PatientFormData = {
+      ...form,
+      birth_date: normalizePatientBirthDate(form.birth_date),
+    };
     // Validate everything before submit
     const next: typeof errors = {};
-    (Object.keys(form) as (keyof PatientFormData)[]).forEach((k) => {
-      const msg = validateField(k, form[k]);
+    (Object.keys(submission) as (keyof PatientFormData)[]).forEach((k) => {
+      const msg = validateField(k, submission[k]);
       if (msg) next[k] = msg;
     });
     setErrors(next);
@@ -116,7 +154,7 @@ export function PatientForm({ initialData, onSubmit, onCancel, saving, validatio
       Object.keys(form).reduce((acc, k) => ({ ...acc, [k]: true }), {} as typeof touched)
     );
     if (Object.values(next).some(Boolean)) return;
-    await onSubmit(form);
+    await onSubmit(submission);
   };
 
   // Helper to render an input field with label + error wiring
@@ -216,6 +254,8 @@ export function PatientForm({ initialData, onSubmit, onCancel, saving, validatio
               required
               value={form.birth_date}
               onChange={(e) => set("birth_date", e.target.value)}
+              onBlur={() => onBlurField("birth_date")}
+              min="1900-01-01"
               max={new Date().toISOString().split("T")[0]}
               aria-required="true"
               aria-invalid={!!errors.birth_date}

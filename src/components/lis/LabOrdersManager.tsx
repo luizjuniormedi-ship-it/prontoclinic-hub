@@ -69,6 +69,7 @@ import { LabResultForm } from "./LabResultForm";
 import { CriticalAlertsBanner } from "./CriticalAlertsBanner";
 import {
   catalogo,
+  formatLabCurrency,
   pedido as pedidoService,
   alerta as alertaService,
   LAB_CATEGORIAS,
@@ -466,7 +467,7 @@ export function LabOrdersManager() {
                         <TableCell className="font-mono text-xs">{c.cd_loinc ?? "—"}</TableCell>
                         <TableCell>{c.nr_prazo_dias}d</TableCell>
                         <TableCell>
-                          {c.vl_particular ? `R$ ${c.vl_particular.toFixed(2)}` : "—"}
+                          {formatLabCurrency(c.vl_particular)}
                         </TableCell>
                         <TableCell className="text-right">
                           <Button
