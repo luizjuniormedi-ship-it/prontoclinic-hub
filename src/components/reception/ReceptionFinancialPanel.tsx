@@ -606,10 +606,131 @@ export function ReceptionFinancialPanel({
                   )}
                   {paymentNeedsReference && (
                     <div className="space-y-2">
-                      <Label htmlFor="rg~��h��춻�q�^vutton>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                      <Label htmlFor="reception-payment-reference">Comprovante, NSU ou referência</Label>
+                      <Input
+                        id="reception-payment-reference"
+                        value={paymentReference}
+                        onChange={(event) => setPaymentReference(event.target.value)}
+                        placeholder="Obrigatório para esta forma"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="reception-payment-notes">Observação do pagamento</Label>
+                  <Input
+                    id="reception-payment-notes"
+                    value={paymentNotes}
+                    onChange={(event) => setPaymentNotes(event.target.value)}
+                    placeholder="Opcional"
+                  />
+                </div>
+
+                {paymentMethod === "dinheiro" && !summary.cash_session_open && (
+                  <div className="flex flex-col gap-2 rounded-md border border-warning/30 bg-warning/5 p-3 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Caixa fechado</p>
+                      <p className="text-xs text-muted-foreground">Abra o caixa para registrar dinheiro e incluir o valor no fechamento do operador.</p>
+                    </div>
+                    <div className="flex items-end gap-2">
+                      <MoneyInput id="reception-opening-balance" label="Saldo inicial" value={openingBalance} onChange={setOpeningBalance} compact />
+                      <ExplainedActionButton
+                        label="Abrir caixa"
+                        description="Abre o caixa desta unidade e operador para registrar recebimentos em dinheiro."
+                        icon={Landmark}
+                        size="sm"
+                        loading={busyAction === "cash-open"}
+                        disabled={openingValue < 0 || Boolean(busyAction)}
+                        onClick={() => void run(
+                          "cash-open",
+                          () => receptionCheckoutService.openCashSession(openingValue, "Abertura pela Recepção"),
+                          "Caixa aberto para recebimentos",
+                        )}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end">
+                  <ExplainedActionButton
+                    label="Registrar pagamento"
+                    description="Vincula o pagamento ao título; dinheiro movimenta o caixa e cartão cria recebíveis da adquirente."
+                    icon={paymentMethod === "dinheiro" ? Banknote : CreditCard}
+                    loading={busyAction === "payment"}
+                    loadingLabel="Registrando..."
+                    disabled={
+                      paymentValue <= 0
+                      || paymentValue > summary.patient_pending_amount + 0.01
+                      || (paymentNeedsReference && !paymentReference.trim())
+                      || (paymentMethod === "dinheiro" && !summary.cash_session_open)
+                      || Boolean(busyAction)
+                    }
+                    disabledReason={
+                      paymentValue <= 0
+                        ? "Informe um valor maior que zero."
+                        : paymentValue > summary.patient_pending_amount + 0.01
+                          ? "O valor não pode superar o saldo do paciente."
+                          : paymentNeedsReference && !paymentReference.trim()
+                            ? "Informe o comprovante, NSU ou referência externa."
+                            : paymentMethod === "dinheiro" && !summary.cash_session_open
+                              ? "Abra o caixa antes de receber em dinheiro."
+                              : undefined
+                    }
+                    onClick={() => void registerPayment()}
+                  />
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </section>
+  );
+}
+
+function MoneyInput({
+  id,
+  label,
+  value,
+  onChange,
+  compact = false,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className={`space-y-2 ${compact ? "w-32" : ""}`}>
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        id={id}
+        type="number"
+        inputMode="decimal"
+        min="0"
+        step="0.01"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
+  );
+}
+
+function SummaryValue({
+  label,
+  value,
+  emphasize = false,
+}: {
+  label: string;
+  value: string;
+  emphasize?: boolean;
+}) {
+  return (
+    <div>
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className={`text-sm font-semibold ${emphasize ? "text-destructive" : ""}`}>{value}</p>
     </div>
   );
 }
