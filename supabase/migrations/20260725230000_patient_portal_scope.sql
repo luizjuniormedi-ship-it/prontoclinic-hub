@@ -108,6 +108,12 @@ BEGIN
       USING ERRCODE = '23514';
   END IF;
 
+  PERFORM set_config(
+    'app.patient_self_service_appointment_id',
+    v_appointment.id::TEXT,
+    TRUE
+  );
+
   UPDATE public.appointments
   SET status = v_target,
       tp_status = CASE v_target WHEN 'confirmed' THEN 'confirmado' ELSE 'cancelado' END,
@@ -121,6 +127,8 @@ BEGIN
   WHERE id = v_appointment.id
   RETURNING * INTO v_appointment;
 
+  PERFORM set_config('app.patient_self_service_appointment_id', '', TRUE);
+
   RETURN to_jsonb(v_appointment);
 END;
 $$;
@@ -129,4 +137,3 @@ REVOKE ALL ON FUNCTION public.update_my_appointment_status_secure(BIGINT, TEXT, 
   FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.update_my_appointment_status_secure(BIGINT, TEXT, TEXT)
   TO authenticated;
-

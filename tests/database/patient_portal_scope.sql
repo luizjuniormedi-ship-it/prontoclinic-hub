@@ -118,8 +118,31 @@ SELECT pg_temp.assert_true(
 
 SELECT public.update_my_appointment_status_secure(850030, 'confirmed', NULL);
 SELECT pg_temp.assert_true(
-  (SELECT status = 'confirmed' FROM public.appointments WHERE id = 850030),
+  (SELECT status = 'confirmed' FROM public.appointments WHERE id = 850030)
+  AND COALESCE(
+    current_setting('app.patient_self_service_appointment_id', TRUE),
+    ''
+  ) = '',
   'paciente precisa confirmar o proprio agendamento'
+);
+
+DO $$
+BEGIN
+  BEGIN
+    UPDATE public.appointments
+    SET status = 'cancelled',
+        tp_status = 'cancelado',
+        lg_confirmado = FALSE,
+        updated_at = now()
+    WHERE id = 850030;
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+END;
+$$;
+
+SELECT pg_temp.assert_true(
+  (SELECT status = 'confirmed' FROM public.appointments WHERE id = 850030),
+  'paciente nao pode contornar o RPC com UPDATE direto'
 );
 
 DO $$

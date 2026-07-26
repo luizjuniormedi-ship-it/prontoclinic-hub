@@ -135,6 +135,7 @@ DECLARE
     WHEN 'UPDATE' THEN 'edit'
   END;
   v_reception_checkin_transition BOOLEAN := FALSE;
+  v_patient_self_service_transition BOOLEAN := FALSE;
 BEGIN
   IF TG_OP = 'INSERT' AND auth.uid() IS NOT NULL THEN
     NEW.company_id := COALESCE(NEW.company_id, public.active_company_id());
@@ -177,6 +178,36 @@ BEGIN
         to_jsonb(NEW) - ARRAY['status', 'notes', 'updated_at']::TEXT[]
         = to_jsonb(OLD) - ARRAY['status', 'notes', 'updated_at']::TEXT[]
       );
+
+    v_patient_self_service_transition :=
+      current_setting(
+        'app.patient_self_service_appointment_id',
+        TRUE
+      ) = OLD.id::TEXT
+      AND NEW.company_id = public.active_company_id()
+      AND NEW.unit_id = public.active_unit_id()
+      AND EXISTS (
+        SELECT 1
+        FROM public.patients patient
+        WHERE patient.id = OLD.patient_id
+          AND patient.user_id = auth.uid()
+          AND patient.company_id = OLD.company_id
+          AND patient.unit_id = OLD.unit_id
+      )
+      AND lower(COALESCE(to_jsonb(OLD)->>'status', '')) IN (
+        'scheduled', 'agendado', 'confirmed', 'confirmado'
+      )
+      AND lower(COALESCE(to_jsonb(NEW)->>'status', '')) IN (
+        'confirmed', 'cancelled'
+      )
+      AND (
+        to_jsonb(NEW) - ARRAY[
+          'status', 'tp_status', 'lg_confirmado', 'notes', 'updated_at'
+        ]::TEXT[]
+        = to_jsonb(OLD) - ARRAY[
+          'status', 'tp_status', 'lg_confirmado', 'notes', 'updated_at'
+        ]::TEXT[]
+      );
   END IF;
 
   IF auth.uid() IS NOT NULL AND (
@@ -186,6 +217,7 @@ BEGIN
       public.can_access(v_module, v_action)
       OR public.can_access(v_alt_module, v_action)
       OR v_reception_checkin_transition
+      OR v_patient_self_service_transition
     )
   ) THEN
     RAISE EXCEPTION 'Escrita clínica fora do contexto ativo ou sem permissão'
