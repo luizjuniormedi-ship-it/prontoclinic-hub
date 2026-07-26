@@ -4,6 +4,10 @@ import path from "node:path";
 import { componentTagger } from "lovable-tagger";
 
 const configDir = process.cwd();
+const frameProtectionHeaders = {
+  "Content-Security-Policy": "frame-ancestors 'none'",
+  "X-Frame-Options": "DENY",
+};
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -14,11 +18,13 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: false,
     },
+    headers: frameProtectionHeaders,
   },
   preview: {
     // Permite que o app seja embedado em tunnels (localtunnel, ngrok, etc.)
     // Necessário para deploy via localtunnel.loca.lt
     allowedHosts: true,
+    headers: frameProtectionHeaders,
   },
   plugins: [
     react(),

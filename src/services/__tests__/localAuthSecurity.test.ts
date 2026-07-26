@@ -125,6 +125,19 @@ describe("local auth server security invariants", () => {
     expect(source).toContain("if (fnName === 'upsert_role_permission') permCache.clear()");
   });
 
+  it("preserva as colunas das RPCs que retornam tabela sem inferencia dinamica", () => {
+    expect(source).toContain("const TABLE_RETURNING_RPCS = new Set([");
+    expect(source).toContain("'list_company_users_admin'");
+    expect(source).toContain('`SELECT * FROM public."${fnName}"(${namedArgs})`');
+    expect(source).toContain("const val = returnsRows");
+    expect(source).toContain("? result.rows");
+  });
+
+  it("aceita somente o wildcard SQL literal em selects REST", () => {
+    expect(source).toContain("if (col !== '*' && !isIdentifier(col))");
+    expect(source).toContain("col === '*' ? '*' : quoteIdent(col)");
+  });
+
   it("nao concede bypass total a cargos administrativos secundarios", () => {
     expect(source).toContain("if (role === 'admin') return { ok: true };");
     expect(source).not.toContain("role === 'admin' || role === 'adm_medicos'");

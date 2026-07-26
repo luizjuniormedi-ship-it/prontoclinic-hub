@@ -473,6 +473,8 @@ DO $$
 DECLARE
   v_patient_contexts INTEGER;
   v_linked_patients INTEGER;
+  v_admin_contexts INTEGER;
+  v_admin_profiles INTEGER;
 BEGIN
   SELECT count(*)
   INTO v_patient_contexts
@@ -495,11 +497,38 @@ BEGIN
     AND p.unit_id = 91001
     AND p.lg_ativo IS TRUE;
 
-  IF v_patient_contexts <> 1 OR v_linked_patients <> 1 THEN
+  SELECT count(*)
+  INTO v_admin_contexts
+  FROM public.memberships m
+  JOIN public.membership_roles mr ON mr.membership_id = m.id
+  JOIN public.roles r ON r.id = mr.role_id
+  JOIN public.membership_units mu ON mu.membership_id = m.id
+  WHERE m.user_id = 'eeeeeeee-0000-4000-8000-000000000001'
+    AND m.company_id = 'eeeeeeee-1000-4000-8000-000000000001'
+    AND m.status = 'active'
+    AND r.name = 'admin'
+    AND r.lg_ativo IS TRUE
+    AND mu.unit_id IN (91001, 91002);
+
+  SELECT count(*)
+  INTO v_admin_profiles
+  FROM public.user_profiles profile
+  WHERE profile.id = 'eeeeeeee-0000-4000-8000-000000000001'
+    AND profile.company_id = 'eeeeeeee-1000-4000-8000-000000000001'
+    AND profile.email = 'admin@prontomedic.test'
+    AND profile.role_name = 'admin'
+    AND profile.lg_ativo IS TRUE;
+
+  IF v_patient_contexts <> 1
+     OR v_linked_patients <> 1
+     OR v_admin_contexts <> 2
+     OR v_admin_profiles <> 1 THEN
     RAISE EXCEPTION
-      'Fixture paciente inconsistente: contextos=%, vinculos=%',
+      'Fixtures E2E inconsistentes: paciente_contextos=%, paciente_vinculos=%, admin_contextos=%, admin_perfis=%',
       v_patient_contexts,
-      v_linked_patients;
+      v_linked_patients,
+      v_admin_contexts,
+      v_admin_profiles;
   END IF;
 END;
 $$;

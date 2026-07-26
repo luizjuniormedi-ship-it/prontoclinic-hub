@@ -437,7 +437,7 @@ function AppointmentCard({
                 {appt.unit_id && (
                   <span className="flex items-center gap-1">
                     <MapPin className="h-3 w-3" />
-                    Unidade {appt.unit_id.slice(0, 6)}
+                    Unidade {String(appt.unit_id).slice(0, 6)}
                   </span>
                 )}
               </div>

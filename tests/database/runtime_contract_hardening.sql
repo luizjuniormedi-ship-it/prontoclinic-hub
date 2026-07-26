@@ -129,4 +129,103 @@ SELECT pg_temp.assert_true(
   'runtime autenticado precisa dos grants minimos protegidos por RLS'
 );
 
+SELECT pg_temp.assert_true(
+  (
+    SELECT relrowsecurity AND relforcerowsecurity
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname = 'payment_sources'
+  )
+  AND (
+    SELECT relrowsecurity AND relforcerowsecurity
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname = 'billings'
+  ),
+  'bases das views de BI precisam de RLS forcada'
+);
+
+SELECT pg_temp.assert_true(
+  has_table_privilege('authenticated', 'public.payment_sources', 'SELECT')
+  AND has_table_privilege('authenticated', 'public.billings', 'SELECT')
+  AND NOT has_table_privilege('anon', 'public.payment_sources', 'SELECT')
+  AND NOT has_table_privilege('anon', 'public.billings', 'SELECT'),
+  'views de BI precisam somente dos grants autenticados protegidos por RLS'
+);
+
+SELECT pg_temp.assert_true(
+  (
+    SELECT count(*) = 4
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'payment_sources'
+      AND policyname IN (
+        'payment_sources_context_select',
+        'payment_sources_context_insert',
+        'payment_sources_context_update',
+        'payment_sources_context_delete'
+      )
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'billings'
+      AND policyname = 'billings_context_select'
+  ),
+  'bases de BI precisam de policies por contexto ativo'
+);
+
+SELECT pg_temp.assert_true(
+  NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename IN (
+        'payment_sources',
+        'billings',
+        'exames_lab_pedido',
+        'exames_lab_pedido_itens',
+        'exames_lab_alerta_critico'
+      )
+      AND (
+        COALESCE(qual, '') ~* '(^|[^a-z])true([^a-z]|$)'
+        OR COALESCE(with_check, '') ~* '(^|[^a-z])true([^a-z]|$)'
+      )
+  ),
+  'contratos runtime nao podem manter USING(true) ou WITH CHECK(true)'
+);
+
+SELECT pg_temp.assert_true(
+  (
+    SELECT bool_and(relrowsecurity AND relforcerowsecurity)
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname IN (
+        'exames_lab_pedido',
+        'exames_lab_pedido_itens',
+        'exames_lab_alerta_critico'
+      )
+  )
+  AND has_table_privilege('authenticated', 'public.exames_lab_pedido', 'SELECT')
+  AND has_table_privilege('authenticated', 'public.exames_lab_pedido_itens', 'SELECT')
+  AND has_table_privilege('authenticated', 'public.exames_lab_alerta_critico', 'SELECT'),
+  'RPCs invoker de laboratorio precisam de RLS forcada e grants autenticados'
+);
+
+SELECT pg_temp.assert_true(
+  (
+    SELECT NOT p.prosecdef
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'fn_gerar_alerta_critico'
+      AND pg_get_function_identity_arguments(p.oid) = ''
+  ),
+  'trigger de alerta critico deve exercer RLS como SECURITY INVOKER'
+);
+
 ROLLBACK;

@@ -314,6 +314,12 @@ const RPC_PERMISSIONS = {
   update_reception_eligibility_secure: { module: 'recepcao', action: 'can_edit' },
 };
 
+// PostgreSQL table-returning functions must be selected as rows. Keep this
+// allowlist explicit so arbitrary RPCs cannot change the response contract.
+const TABLE_RETURNING_RPCS = new Set([
+  'list_company_users_admin',
+]);
+
 async function authorizeRpc(profile, functionName, payload) {
   const required = RPC_PERMISSIONS[functionName];
   if (!required) return { ok: false, reason: `RPC '${functionName}' nao autorizada` };
@@ -666,14 +672,20 @@ const server = createServer(async (req, res) => {
           ],
         );
         await client.query('SET LOCAL ROLE authenticated');
-        const result = await client.query(`SELECT public."${fnName}"(${namedArgs}) AS result`, vals);
+        const returnsRows = TABLE_RETURNING_RPCS.has(fnName);
+        const sql = returnsRows
+          ? `SELECT * FROM public."${fnName}"(${namedArgs})`
+          : `SELECT public."${fnName}"(${namedArgs}) AS result`;
+        const result = await client.query(sql, vals);
         await client.query('COMMIT');
         if (fnName === 'upsert_role_permission') permCache.clear();
-        const val = result.rows.length === 0
-          ? []
-          : result.rows.length > 1
-            ? result.rows.map((row) => row.result)
-            : result.rows[0].result;
+        const val = returnsRows
+          ? result.rows
+          : result.rows.length === 0
+            ? []
+            : result.rows.length > 1
+              ? result.rows.map((row) => row.result)
+              : result.rows[0].result;
         return json(res, val);
       } catch (e) {
         await client.query('ROLLBACK');
@@ -717,11 +729,11 @@ const server = createServer(async (req, res) => {
           // SEGURANÃ‡A: cada coluna DEVE ser um identificador SQL simples (anti SQL-injection).
           // Rejeita subqueries, parÃªnteses, espaÃ§os, aspas, operadores â€” bloqueia select=id,(SELECT ...).
           for (const col of rawCols) {
-            if (!isIdentifier(col)) {
+            if (col !== '*' && !isIdentifier(col)) {
               return json(res, { error: 'bad_request', message: `coluna invÃ¡lida no select: ${col}` }, 400);
             }
           }
-          const safe = rawCols.map(quoteIdent).join(', ');
+          const safe = rawCols.map((col) => col === '*' ? '*' : quoteIdent(col)).join(', ');
           columns = safe || '*';
         }
 

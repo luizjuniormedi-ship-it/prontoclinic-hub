@@ -42,7 +42,9 @@ jobs:
             psql -v ON_ERROR_STOP=1 -d prontomedic_contracts -f tests/database/sessions_and_secure_drafts.sql
             psql -v ON_ERROR_STOP=1 -d prontomedic_contracts -f tests/database/auth_admin_provisioning.sql
             psql -v ON_ERROR_STOP=1 -d prontomedic_contracts -f tests/database/operational_rls.sql
+            psql -v ON_ERROR_STOP=1 -d prontomedic_contracts -f tests/database/patient_portal_scope.sql
             psql -v ON_ERROR_STOP=1 -d prontomedic_contracts -f tests/database/reception_checkout.sql
+            psql -v ON_ERROR_STOP=1 -d prontomedic_contracts -f tests/database/runtime_contract_hardening.sql
           } 2>&1 | tee database-contracts.log
 
       - name: Upload database diagnostics

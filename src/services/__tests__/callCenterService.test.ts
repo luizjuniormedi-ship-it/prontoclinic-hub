@@ -18,6 +18,7 @@ function chainWith(result: unknown) {
     insert: vi.fn().mockReturnThis(),
     update: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
+    in: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue(result),
@@ -29,7 +30,7 @@ function chainWith(result: unknown) {
 describe("callCenterService", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("lista contatos com dados do paciente embutidos", async () => {
+  it("lista contatos e carrega os pacientes em consulta isolada", async () => {
     const rows = [{
       id: 1,
       patient_id: 10,
@@ -37,17 +38,37 @@ describe("callCenterService", () => {
       direction: "inbound",
       contact_reason: "Marcação",
       result: "agendado",
-      patients: { full_name: "Maria Souza", cpf: "123", phone: "21999999999" },
     }];
-    const chain = chainWith({ data: rows, error: null });
-    chain.limit.mockResolvedValue({ data: rows, error: null });
-    (supabase.from as any).mockReturnValue(chain);
+    const contactsChain = chainWith({ data: rows, error: null });
+    contactsChain.limit.mockResolvedValue({ data: rows, error: null });
+    const patientsChain = chainWith({ data: [], error: null });
+    patientsChain.in.mockResolvedValue({
+      data: [{ id: 10, full_name: "Maria Souza", cpf: "123", phone: "21999999999" }],
+      error: null,
+    });
+    (supabase.from as any)
+      .mockReturnValueOnce(contactsChain)
+      .mockReturnValueOnce(patientsChain);
 
     const result = await callCenterService.listContacts();
 
     expect(supabase.from).toHaveBeenCalledWith("scheduling_contact_logs");
+    expect(contactsChain.select).toHaveBeenCalledWith("*");
+    expect(patientsChain.in).toHaveBeenCalledWith("id", [10]);
     expect(result[0].patient_name).toBe("Maria Souza");
     expect(result[0].patient_phone).toBe("21999999999");
+  });
+
+  it("não consulta pacientes quando os contatos não têm paciente associado", async () => {
+    const rows = [{ id: 2, patient_id: null, contact_reason: "Informação" }];
+    const contactsChain = chainWith({ data: rows, error: null });
+    contactsChain.limit.mockResolvedValue({ data: rows, error: null });
+    (supabase.from as any).mockReturnValue(contactsChain);
+
+    const result = await callCenterService.listContacts();
+
+    expect(supabase.from).toHaveBeenCalledTimes(1);
+    expect(result[0].patient_name).toBeNull();
   });
 
   it("cria contato e tarefa quando proxima acao é informada", async () => {

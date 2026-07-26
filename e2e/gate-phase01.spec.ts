@@ -70,6 +70,14 @@ test.describe('Gate fase 0/1', () => {
     const beforeReload = await page.evaluate(() => JSON.parse(sessionStorage.getItem('prontomedic-application-session') || 'null'));
     expect(beforeReload?.session_id).toBeTruthy();
     await page.reload();
+    const restoredContextTrigger = page.getByRole('button', {
+      name: 'Selecionar empresa, unidade e perfil',
+    });
+    await expect(restoredContextTrigger).toBeEnabled({ timeout: 15_000 });
+    await expect(restoredContextTrigger).toContainText('Unidade E2E A');
+    await expect(
+      page.getByRole('navigation', { name: 'Localização da página' }),
+    ).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('Selecione seu contexto de acesso')).toBeHidden();
     await expect.poll(
       () => page.evaluate(() => {
