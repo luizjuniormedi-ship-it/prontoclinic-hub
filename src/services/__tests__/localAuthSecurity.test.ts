@@ -60,8 +60,10 @@ describe("local auth server security invariants", () => {
   it("autoriza pelo contexto ativo da sessao e isola o cache por empresa e papel", () => {
     expect(source).toContain("async function getAuthorizationContext(payload)");
     expect(source).toContain("ctx.session_id = $2::uuid");
-    expect(source).toContain("app_session.gotrue_session_id = ctx.session_id");
-    expect(source).toContain("app_session.idle_expires_at > now()");
+    expect(source).toContain("public.active_company_id() AS company_id");
+    expect(source).toContain("public.current_application_session_is_active()");
+    expect(source).not.toContain("JOIN public.application_sessions app_session");
+    expect(source).not.toContain("JOIN public.application_devices device");
     expect(source).toContain("const cacheKey = `${profile.company_id}:${profile.role_id}`");
     expect(source).toContain("WHERE rp.company_id = $1");
     expect(source).toContain("AND rp.role_id = $2");
@@ -109,4 +111,3 @@ describe("local auth server security invariants", () => {
     expect(source).not.toContain("role === 'admin' || role === 'diretoria'");
   });
 });
-

@@ -155,50 +155,19 @@ async function getAuthorizationContext(payload) {
        up.email,
        ctx.role_id,
        lower(r.name) AS role_name,
-       m.company_id,
+       public.active_company_id() AS company_id,
        ctx.unit_id,
        up.lg_ativo
      FROM public.user_access_context ctx
      JOIN public.user_profiles up
        ON up.id = ctx.user_id
       AND up.lg_ativo IS TRUE
-     JOIN public.memberships m
-       ON m.id = ctx.membership_id
-      AND m.user_id = ctx.user_id
-      AND m.status = 'active'
-     JOIN public.membership_roles mr
-       ON mr.membership_id = ctx.membership_id
-      AND mr.role_id = ctx.role_id
      JOIN public.roles r
        ON r.id = ctx.role_id
       AND r.lg_ativo IS TRUE
-     JOIN public.companies c
-       ON c.id = m.company_id
-      AND c.lg_ativo IS TRUE
-     JOIN public.application_sessions app_session
-       ON app_session.user_id = ctx.user_id
-      AND app_session.gotrue_session_id = ctx.session_id
-      AND app_session.company_id = m.company_id
-      AND app_session.unit_id IS NOT DISTINCT FROM ctx.unit_id
-      AND app_session.revoked_at IS NULL
-      AND app_session.idle_expires_at > now()
-      AND app_session.absolute_expires_at > now()
-     JOIN public.application_devices device
-       ON device.id = app_session.device_id
-      AND device.user_id = ctx.user_id
-      AND device.company_id = m.company_id
-      AND device.unit_id IS NOT DISTINCT FROM ctx.unit_id
-      AND device.revoked_at IS NULL
-     LEFT JOIN public.membership_units mu
-       ON mu.membership_id = ctx.membership_id
-      AND mu.unit_id = ctx.unit_id
-     LEFT JOIN public.units u
-       ON u.id = ctx.unit_id
-      AND u.company_id = m.company_id
-      AND u.lg_ativo IS TRUE
      WHERE ctx.user_id = $1
        AND ctx.session_id = $2::uuid
-       AND (ctx.unit_id IS NULL OR (mu.unit_id IS NOT NULL AND u.id IS NOT NULL))
+       AND public.current_application_session_is_active()
      LIMIT 1`,
     [payload.sub, payload.session_id],
   );
@@ -984,4 +953,3 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜`);
   console.log(``);
 });
-
