@@ -714,6 +714,8 @@ REVOKE ALL ON FUNCTION public.get_reception_checkin_readiness(BIGINT)
 REVOKE ALL ON FUNCTION public.perform_reception_checkin_secure(
   BIGINT, TEXT, TEXT
 ) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.get_scheduling_actor()
+  FROM PUBLIC, anon;
 
 DO $$
 BEGIN
@@ -721,6 +723,8 @@ BEGIN
     REVOKE ALL ON FUNCTION public.build_reception_readiness_issue(
       TEXT, TEXT, TEXT, TEXT, TEXT, TEXT
     ) FROM app_prontomedic;
+    GRANT EXECUTE ON FUNCTION public.get_scheduling_actor()
+      TO app_prontomedic;
   END IF;
 END;
 $$;
@@ -733,6 +737,8 @@ GRANT EXECUTE ON FUNCTION public.get_reception_checkin_readiness(BIGINT)
 GRANT EXECUTE ON FUNCTION public.perform_reception_checkin_secure(
   BIGINT, TEXT, TEXT
 ) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_scheduling_actor()
+  TO authenticated;
 
 COMMENT ON FUNCTION public.perform_reception_checkin_secure(
   BIGINT, TEXT, TEXT

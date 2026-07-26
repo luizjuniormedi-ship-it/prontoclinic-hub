@@ -285,6 +285,15 @@ CREATE TEMP TABLE checkout_checkin_results (
 ) ON COMMIT DROP;
 GRANT SELECT, INSERT ON checkout_checkin_results TO authenticated;
 
+SELECT pg_temp.assert_true(
+  has_function_privilege(
+    'authenticated',
+    'public.get_scheduling_actor()',
+    'EXECUTE'
+  ),
+  'policies RLS da agenda exigem acesso autenticado ao contexto do próprio ator'
+);
+
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub = '85000000-0000-0000-0000-000000000010';
 SET LOCAL request.jwt.claim.aal = 'aal2';
