@@ -335,7 +335,7 @@ test.describe("uso real de telas e controles por perfil", () => {
         );
         expect(persistenceResponse.status(), await persistenceResponse.text()).toBe(200);
         expect(await persistenceResponse.json()).toEqual([
-          expect.objectContaining({ id: 91004, status: "confirmed" }),
+          expect.objectContaining({ id: "91004", status: "confirmed" }),
         ]);
 
         const isolationResponse = await page.request.get(
