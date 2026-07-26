@@ -60,7 +60,7 @@ INSERT INTO public.user_profiles (
 )
 SELECT
   '85000000-0000-0000-0000-000000000010',
-  '85000000-0000-0000-0000-00000000010',
+  '85000000-0000-0000-0000-000000000010',
   'checkout@example.test', 'Operador Checkout',
   '85000000-0000-0000-0000-000000000001',
   role.id, role.name, 850001, TRUE, FALSE
@@ -69,15 +69,15 @@ FROM public.roles role WHERE role.name = 'recepcao';
 INSERT INTO public.memberships (id, user_id, company_id, status)
 VALUES (
   '85000000-0000-0000-0000-000000000020',
-  '85000000-0000-0000-0000-000000000101',
+  '85000000-0000-0000-0000-000000000010',
   '85000000-0000-0000-0000-000000000001',
   'active'
 );
 INSERT INTO public.membership_roles (membership_id, role_id)
-SELECT '85000000-0000-0000-0000-00000000020', id
+SELECT '85000000-0000-0000-0000-000000000020', id
 FROM public.roles WHERE name = 'recepcao';
 INSERT INTO public.membership_roles (membership_id, role_id)
-SELECT '85000000-0000-0000-0000-00000000020', id
+SELECT '85000000-0000-0000-0000-000000000020', id
 FROM public.roles
 WHERE name IN ('financeiro', 'faturamento', 'call_center')
 ON CONFLICT DO NOTHING;
