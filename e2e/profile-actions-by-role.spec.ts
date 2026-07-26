@@ -13,7 +13,7 @@ type UsageScenario = {
   profilePattern: RegExp;
   route: string;
   heading: RegExp;
-  control: { role: ControlRole; name: RegExp };
+  control: { role: ControlRole; name: RegExp; withinText?: RegExp };
   interaction: Interaction;
   followUp?: {
     role: ControlRole;
@@ -33,8 +33,12 @@ const scenarios: UsageScenario[] = [
     profilePattern: /admin|administrador/i,
     route: "/admin/users",
     heading: /^usuários do sistema$/i,
-    control: { role: "textbox", name: /buscar usuários/i },
-    interaction: { kind: "fill", value: "usuario inexistente e2e" },
+    control: {
+      role: "button",
+      name: /^editar$/i,
+      withinText: /Admin E2E|admin@prontomedic\.test/i,
+    },
+    interaction: { kind: "click", after: { role: "heading", name: /^editar usuário$/i } },
     deniedRoute: "",
     forbiddenTable: null,
   },
@@ -54,8 +58,8 @@ const scenarios: UsageScenario[] = [
     label: "recepção",
     profilePattern: /recepç[aã]o|recepcao/i,
     route: "/reception",
-    heading: /^recepção$/i,
-    control: { role: "textbox", name: /buscar paciente/i },
+    heading: /^recepção do dia$/i,
+    control: { role: "textbox", name: /buscar pacientes da recepção/i },
     interaction: { kind: "fill", value: "Paciente E2E A" },
     deniedRoute: "/nursing/care",
     forbiddenTable: "medical_records",
@@ -104,7 +108,7 @@ const scenarios: UsageScenario[] = [
     label: "laboratório",
     profilePattern: /laborat[oó]rio/i,
     route: "/lab",
-    heading: /^laboratório$/i,
+    heading: /^laboratório \(lis\)$/i,
     control: { role: "tab", name: /pedidos/i },
     interaction: { kind: "click" },
     deniedRoute: "/admin/users",
@@ -114,10 +118,10 @@ const scenarios: UsageScenario[] = [
     role: "diagnostics",
     label: "diagnóstico",
     profilePattern: /diagn[oó]stico/i,
-    route: "/dicom/orders",
-    heading: /^pedidos de exame de imagem$/i,
-    control: { role: "textbox", name: /buscar pedidos de imagem/i },
-    interaction: { kind: "fill", value: "Paciente E2E A" },
+    route: "/dicom/nodes",
+    heading: /^nós DICOM \/ PACS$/i,
+    control: { role: "button", name: /^novo nó$/i },
+    interaction: { kind: "click", after: { role: "heading", name: /^novo nó DICOM$/i } },
     deniedRoute: "/billing-accounts",
     forbiddenTable: "billing_accounts",
   },
@@ -159,7 +163,7 @@ const scenarios: UsageScenario[] = [
     label: "DPO",
     profilePattern: /dpo/i,
     route: "/admin/lgpd",
-    heading: /^módulo lgpd$/i,
+    heading: /^modulo lgpd$/i,
     control: { role: "tab", name: /consentimentos/i },
     interaction: { kind: "click" },
     deniedRoute: "/patients",
@@ -213,11 +217,24 @@ test.describe("uso real de telas e controles por perfil", () => {
     test(`${scenario.label}: usa controle permitido e bloqueia interface e API proibidas`, async ({ page, loginAs }) => {
       const pageErrors: string[] = [];
       const requestErrors: string[] = [];
+      const consoleErrors: string[] = [];
       let monitorAllowedPhase = true;
       page.on("pageerror", (error) => pageErrors.push(error.message));
       page.on("response", (response) => {
         if (monitorAllowedPhase && response.status() >= 400) {
           requestErrors.push(`${response.status()} ${response.url()}`);
+        }
+      });
+      page.on("requestfailed", (request) => {
+        if (monitorAllowedPhase) {
+          requestErrors.push(
+            `FAILED ${request.method()} ${request.url()} ${request.failure()?.errorText ?? "sem detalhe"}`,
+          );
+        }
+      });
+      page.on("console", (message) => {
+        if (monitorAllowedPhase && message.type() === "error") {
+          consoleErrors.push(message.text());
         }
       });
 
@@ -228,9 +245,21 @@ test.describe("uso real de telas e controles por perfil", () => {
       await expect(heading).toHaveCount(1);
       await expect(heading).toBeVisible();
 
-      const control = page.getByRole(scenario.control.role, { name: scenario.control.name });
-      await expect(control).toHaveCount(1);
+      const controlScope = scenario.control.withinText
+        ? page.getByRole("row").filter({ hasText: scenario.control.withinText })
+        : page;
+      if (scenario.control.withinText) {
+        await expect(controlScope).toHaveCount(1);
+      }
+      const matchingControls = controlScope.getByRole(scenario.control.role, {
+        name: scenario.control.name,
+      });
+      await expect(matchingControls).toHaveCount(1);
+      const control = matchingControls;
       await expect(control).toBeVisible();
+
+      await expect(page.getByRole("button", { name: "Selecionar empresa, unidade e perfil" }))
+        .toContainText(scenario.profilePattern);
 
       if (scenario.interaction.kind === "fill") {
         await control.fill(scenario.interaction.value);
@@ -270,17 +299,41 @@ test.describe("uso real de telas e controles por perfil", () => {
         })).toBeVisible();
       }
 
-      await expect(page.getByRole("button", { name: "Selecionar empresa, unidade e perfil" }))
-        .toContainText(scenario.profilePattern);
-
       if (scenario.role === "patient") {
-        const portalCard = page.getByText(/Fixture portal paciente/i).locator("xpath=ancestor::li");
+        const portalCard = page.getByRole("listitem").filter({ hasText: /Fixture portal paciente/i });
+        await expect(portalCard).toHaveCount(1);
+        const confirmationResponsePromise = page.waitForResponse((response) =>
+          response.url().includes("/rest/v1/rpc/update_my_appointment_status_secure")
+          && response.request().method() === "POST"
+        );
         await portalCard.getByRole("button", { name: /confirmar presença/i }).click();
+        const confirmationResponse = await confirmationResponsePromise;
+        expect(
+          confirmationResponse.ok(),
+          await confirmationResponse.text(),
+        ).toBe(true);
         await expect(page.getByText(/presença confirmada/i)).toBeVisible();
+        await expect(
+          portalCard.getByRole("button", { name: /confirmar presença/i }),
+        ).toHaveCount(0);
 
         const token = await accessTokenFromBrowser(page);
         expect(token, "sessão autenticada precisa expor access token local").toBeTruthy();
         const apiBase = process.env.VITE_SUPABASE_URL ?? "http://127.0.0.1:18000";
+        const persistenceResponse = await page.request.get(
+          `${apiBase}/rest/v1/appointments?id=eq.91004&select=id,status`,
+          {
+            headers: {
+              apikey: process.env.VITE_SUPABASE_ANON_KEY ?? "local-e2e-public-key",
+              authorization: `Bearer ${token}`,
+            },
+          },
+        );
+        expect(persistenceResponse.status(), await persistenceResponse.text()).toBe(200);
+        expect(await persistenceResponse.json()).toEqual([
+          expect.objectContaining({ id: 91004, status: "confirmed" }),
+        ]);
+
         const isolationResponse = await page.request.get(
           `${apiBase}/rest/v1/appointments?id=eq.91003&select=id`,
           {
@@ -295,6 +348,7 @@ test.describe("uso real de telas e controles por perfil", () => {
       }
 
       expect(requestErrors).toEqual([]);
+      expect(consoleErrors).toEqual([]);
       monitorAllowedPhase = false;
 
       if (scenario.deniedRoute) {
@@ -319,3 +373,4 @@ test.describe("uso real de telas e controles por perfil", () => {
     });
   }
 });
+

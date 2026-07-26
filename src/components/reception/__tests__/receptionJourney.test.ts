@@ -174,3 +174,4 @@ describe("reception journey", () => {
     expect(blocking[0].type).toBe("registration");
   });
 });
+

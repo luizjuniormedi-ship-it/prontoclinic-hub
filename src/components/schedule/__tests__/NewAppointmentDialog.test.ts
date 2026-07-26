@@ -61,3 +61,4 @@ describe("NewAppointmentDialog — unidade ativa", () => {
     expect(result.map((item) => item.id)).toEqual(["10"]);
   });
 });
+

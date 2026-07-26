@@ -61,6 +61,7 @@ export default function CallCenterPage() {
   const [tasks, setTasks] = useState<CallCenterTask[]>([]);
   const [confirmations, setConfirmations] = useState<ConfirmationQueueItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshingConfirmationQueue, setRefreshingConfirmationQueue] = useState(false);
   const [search, setSearch] = useState("");
   const [resultFilter, setResultFilter] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -69,7 +70,6 @@ export default function CallCenterPage() {
   const reload = async () => {
     try {
       setLoading(true);
-      await callCenterService.refreshConfirmationQueue(3);
       const [contactRows, taskRows, confirmationRows] = await Promise.all([
         callCenterService.listContacts(),
         callCenterService.listTasks("pending"),
@@ -86,6 +86,19 @@ export default function CallCenterPage() {
   };
 
   useEffect(() => { void reload(); }, []);
+
+  const handleRefreshConfirmationQueue = async () => {
+    try {
+      setRefreshingConfirmationQueue(true);
+      await callCenterService.refreshConfirmationQueue(3);
+      await reload();
+      toast({ title: "Fila de confirmação atualizada" });
+    } catch (error) {
+      toast({ title: friendlyError(error, "Atualizar fila de confirmação"), variant: "destructive" });
+    } finally {
+      setRefreshingConfirmationQueue(false);
+    }
+  };
 
   const filtered = contacts.filter((r) => {
     const matchSearch = matchesCallCenterContactSearch(r, search);
@@ -118,7 +131,18 @@ export default function CallCenterPage() {
   return (
     <div className="space-y-6 animate-fade-in">
       <PageHeader title="Call Center" description="Contatos, retornos e tarefas operacionais" actions={
-        <Button onClick={() => setDialogOpen(true)}><Plus className="mr-2 h-4 w-4" />Novo Contato</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() => void handleRefreshConfirmationQueue()}
+            disabled={refreshingConfirmationQueue}
+            aria-busy={refreshingConfirmationQueue}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${refreshingConfirmationQueue ? "animate-spin" : ""}`} />
+            {refreshingConfirmationQueue ? "Atualizando fila..." : "Atualizar fila de confirmação"}
+          </Button>
+          <Button onClick={() => setDialogOpen(true)}><Plus className="mr-2 h-4 w-4" />Novo Contato</Button>
+        </div>
       } />
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
@@ -334,3 +358,4 @@ function NewContactDialog({ open, onOpenChange, onCreated }: NewContactDialogPro
     </Dialog>
   );
 }
+

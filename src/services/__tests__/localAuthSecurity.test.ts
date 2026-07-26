@@ -19,7 +19,9 @@ describe("local auth server security invariants", () => {
   it("delega o escopo de empresa e unidade ao RLS em todas as consultas REST", () => {
     expect(source).not.toContain("requiredCompanyScope(profile, table)");
     expect(source).toContain("SET LOCAL ROLE authenticated");
-    expect(source).toContain("queryAsAuthenticated(payload, query, values)");
+    expect(source).toContain("queryAsAuthenticated(payload, query, values, profile)");
+    expect(source).toContain("set_config('app.current_company_id'");
+    expect(source).toContain("set_config('app.current_unit_id'");
     expect(source).toContain("`INSERT INTO public.\"${table}\"");
     expect(source).toContain("`UPDATE public.\"${table}\"");
   });
@@ -52,7 +54,7 @@ describe("local auth server security invariants", () => {
 
   it("executa consultas REST sob o papel authenticated para exercer RLS real", () => {
     expect(source).toContain("SET LOCAL ROLE authenticated");
-    expect(source).toContain("queryAsAuthenticated(payload, query, values)");
+    expect(source).toContain("queryAsAuthenticated(payload, query, values, profile)");
   });
 
   it("autoriza pelo contexto ativo da sessao e isola o cache por empresa e papel", () => {
@@ -74,11 +76,26 @@ describe("local auth server security invariants", () => {
     expect(source).not.toContain("required?.scope === 'self'\n        ? await getUserProfile");
   });
 
-  it("preserva o catalogo de profissionais para leitura autenticada", () => {
+  it("preserva catalogos seguros sem expor a matriz bruta de autorizacao", () => {
     expect(source).toMatch(/REFERENCE_TABLES[\s\S]*'professionals'/);
+    expect(source).toMatch(/REFERENCE_TABLES[\s\S]*'roles'/);
+    const referenceBlock = source.match(/const REFERENCE_TABLES = new Set\(\[([\s\S]*?)\]\);/)?.[1] ?? "";
+    expect(referenceBlock).not.toContain("'role_permissions'");
     expect(source).toContain("if (REFERENCE_TABLES.has(t)) return null");
     expect(source.indexOf("if (REFERENCE_TABLES.has(t)) return null"))
       .toBeLessThan(source.indexOf("for (const [re, mod] of map)"));
+  });
+
+  it("permite ao call center atualizar a fila sem conceder edicao ampla da agenda", () => {
+    expect(source).toContain(
+      "refresh_confirmation_queue_secure: { module: 'agenda', action: 'can_create' }",
+    );
+    expect(source).not.toContain(
+      "refresh_confirmation_queue_secure: { module: 'agenda', action: 'can_edit' }",
+    );
+    expect(source).toContain(
+      "record_confirmation_attempt_secure: { module: 'agenda', action: 'can_create' }",
+    );
   });
 
   it("autoriza a manutencao administrativa de permissoes e invalida o cache", () => {
@@ -92,3 +109,4 @@ describe("local auth server security invariants", () => {
     expect(source).not.toContain("role === 'admin' || role === 'diretoria'");
   });
 });
+

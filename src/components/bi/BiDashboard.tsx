@@ -455,3 +455,4 @@ function SerieTemporalCard({ titulo, descricao, dados, cor, tickFormatterY }: Se
 }
 
 // Hook de estado local para o período (encapsulado aqui)
+

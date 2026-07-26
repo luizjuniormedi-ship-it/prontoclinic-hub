@@ -495,3 +495,4 @@ describe("servicesCatalogLookup — getAll", () => {
     expect(supabase.from).toHaveBeenCalledWith("services_catalog");
   });
 });
+

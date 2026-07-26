@@ -43,13 +43,34 @@ const pool = new Pool({
   database: PGDATABASE,
 });
 
-async function queryAsAuthenticated(payload, text, values = []) {
+function tenantClaims(payload, accessContext) {
+  if (!accessContext) return payload;
+  return {
+    ...payload,
+    company_id: accessContext.company_id,
+    unit_id: accessContext.unit_id,
+    role_id: accessContext.role_id,
+    role_name: accessContext.role_name,
+  };
+}
+
+async function queryAsAuthenticated(payload, text, values = [], accessContext = null) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const claims = tenantClaims(payload, accessContext);
     await client.query(
-      `SELECT set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claims', $2, true)`,
-      [payload.sub, JSON.stringify(payload)],
+      `SELECT
+         set_config('request.jwt.claim.sub', $1, true),
+         set_config('request.jwt.claims', $2, true),
+         set_config('app.current_company_id', COALESCE($3, ''), true),
+         set_config('app.current_unit_id', COALESCE($4, ''), true)`,
+      [
+        payload.sub,
+        JSON.stringify(claims),
+        accessContext?.company_id?.toString() || '',
+        accessContext?.unit_id?.toString() || '',
+      ],
     );
     await client.query('SET LOCAL ROLE authenticated');
     const result = await client.query(text, values);
@@ -114,18 +135,20 @@ async function verifyPassword(email, password) {
   return user;
 }
 
-async function getUserProfile(userId) {
-  const res = await pool.query(
+async function getUserProfile(payload) {
+  const res = await queryAsAuthenticated(
+    payload,
     `SELECT id, full_name, email, role_name, company_id, primary_unit_id, lg_ativo
      FROM public.user_profiles WHERE id = $1`,
-    [userId]
+    [payload.sub],
   );
   return res.rows[0] || null;
 }
 
 async function getAuthorizationContext(payload) {
   if (!payload?.sub || !payload?.session_id) return null;
-  const res = await pool.query(
+  const res = await queryAsAuthenticated(
+    payload,
     `SELECT
        up.id,
        up.full_name,
@@ -189,7 +212,7 @@ async function getAuthorizationContext(payload) {
 const REFERENCE_TABLES = new Set([
   'bairros', 'cbos', 'cids', 'cid', 'municipios', 'profissoes',
   'countries', 'states', 'racas', 'etnias', 'nacionalidades',
-  'professionals',
+  'professionals', 'roles',
 ]);
 
 function tableToModule(table) {
@@ -240,15 +263,17 @@ const quoteIdent = (value) => `"${value}"`;
 
 // Cache isolado por empresa e papel ativo. Nunca compartilhar permissões entre tenants.
 const permCache = new Map();
-async function loadRolePerms(profile) {
+async function loadRolePerms(profile, payload) {
   const cacheKey = `${profile.company_id}:${profile.role_id}`;
   if (permCache.has(cacheKey)) return permCache.get(cacheKey);
-  const r = await pool.query(
+  const r = await queryAsAuthenticated(
+    payload,
     `SELECT rp.module, rp.can_view, rp.can_create, rp.can_edit, rp.can_delete
        FROM public.role_permissions rp
       WHERE rp.company_id = $1
         AND rp.role_id = $2`,
     [profile.company_id, profile.role_id],
+    profile,
   );
   const m = {};
   for (const row of r.rows) m[row.module] = row;
@@ -257,7 +282,7 @@ async function loadRolePerms(profile) {
 }
 
 /** Retorna {ok:true} ou {ok:false, reason}. Somente admin tem bypass total. */
-async function authorize(profile, table, method) {
+async function authorize(profile, table, method, payload) {
   if (!profile) return { ok: false, reason: 'sem perfil' };
   if (!profile.lg_ativo) return { ok: false, reason: 'usuÃ¡rio inativo' };
   const role = (profile.role_name || '').toLowerCase();
@@ -270,7 +295,7 @@ async function authorize(profile, table, method) {
     // tabelas de referÃªncia: leitura liberada, escrita sÃ³ admin (jÃ¡ retornou acima)
     return METHOD_TO_ACTION[method] === 'can_view' ? { ok: true } : { ok: false, reason: 'escrita em tabela de referÃªncia exige admin' };
   }
-  const perms = await loadRolePerms(profile);
+  const perms = await loadRolePerms(profile, payload);
   const rule = perms[module];
   if (!rule) return { ok: false, reason: `role '${role}' sem acesso ao mÃ³dulo '${module}'` };
   const action = METHOD_TO_ACTION[method] || 'can_view';
@@ -298,8 +323,8 @@ const RPC_PERMISSIONS = {
   get_professional_available_slots: { module: 'agenda', action: 'can_view' },
   get_scheduling_requirements: { module: 'agenda', action: 'can_view' },
   create_appointment_with_requirements_secure: { module: 'agenda', action: 'can_create' },
-  refresh_confirmation_queue_secure: { module: 'agenda', action: 'can_edit' },
-  record_confirmation_attempt_secure: { module: 'agenda', action: 'can_edit' },
+  refresh_confirmation_queue_secure: { module: 'agenda', action: 'can_create' },
+  record_confirmation_attempt_secure: { module: 'agenda', action: 'can_create' },
   mark_overdue_appointments_no_show_secure: { module: 'agenda', action: 'can_edit' },
   update_my_appointment_status_secure: { scope: 'self' },
   get_reception_checkin_readiness: { module: 'recepcao', action: 'can_view' },
@@ -317,7 +342,7 @@ const RPC_PERMISSIONS = {
   update_reception_eligibility_secure: { module: 'recepcao', action: 'can_edit' },
 };
 
-async function authorizeRpc(profile, functionName) {
+async function authorizeRpc(profile, functionName, payload) {
   const required = RPC_PERMISSIONS[functionName];
   if (!required) return { ok: false, reason: `RPC '${functionName}' nao autorizada` };
   if (!profile || !profile.lg_ativo) return { ok: false, reason: 'usuario invalido/inativo' };
@@ -328,7 +353,7 @@ async function authorizeRpc(profile, functionName) {
     return { ok: true };
   }
 
-  const permissions = await loadRolePerms(profile);
+  const permissions = await loadRolePerms(profile, payload);
   const rule = permissions[required.module];
   if (!rule?.[required.action]) {
     return { ok: false, reason: `role '${role}' nao pode '${required.action}' em '${required.module}'` };
@@ -438,12 +463,14 @@ const server = createServer(async (req, res) => {
     // valida nome de tabela (anti-injection) e permissÃ£o
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(table)) { res.writeHead(400); res.end(); return; }
     const hProfile = await getAuthorizationContext(hPayload);
-    const hDecision = await authorize(hProfile, table, 'GET');
+    const hDecision = await authorize(hProfile, table, 'GET', hPayload);
     if (!hDecision.ok) { res.writeHead(403); res.end(); return; }
     try {
       const countResult = await queryAsAuthenticated(
         hPayload,
         `SELECT count(*) FROM public."${table}"`,
+        [],
+        hProfile,
       );
       const total = countResult.rows[0].count;
       res.writeHead(200, { 'content-range': `0-0/${total}` });
@@ -477,10 +504,7 @@ const server = createServer(async (req, res) => {
           return json(res, { error: 'invalid refresh token', error_description: 'Token expired or revoked' }, 401);
         }
         const userRes = await client.query(
-          `SELECT u.*
-             FROM auth.users u
-             JOIN public.user_profiles p ON p.id = u.id
-            WHERE u.id = $1 AND p.lg_ativo IS TRUE`,
+          'SELECT u.* FROM auth.users u WHERE u.id = $1',
           [rt.rows[0].user_id],
         );
         if (userRes.rows.length === 0) {
@@ -490,7 +514,13 @@ const server = createServer(async (req, res) => {
         const u = userRes.rows[0];
         const now = Math.floor(Date.now() / 1000);
         const sessionId = rt.rows[0].session_id || randomUUID();
-        const accessToken = signJwt({ sub: u.id, email: u.email, role: 'authenticated', aud: 'authenticated', aal: 'aal2', session_id: sessionId, iat: now, exp: now + 3600, app_metadata: u.raw_app_meta_data, user_metadata: u.raw_user_meta_data });
+        const accessPayload = { sub: u.id, email: u.email, role: 'authenticated', aud: 'authenticated', aal: 'aal2', session_id: sessionId, iat: now, exp: now + 3600, app_metadata: u.raw_app_meta_data, user_metadata: u.raw_user_meta_data };
+        const profile = await getUserProfile(accessPayload);
+        if (!profile?.lg_ativo) {
+          await client.query('ROLLBACK');
+          return json(res, { error: 'invalid refresh token', error_description: 'User inactive or missing' }, 401);
+        }
+        const accessToken = signJwt(accessPayload);
         const newRefreshToken = randomUUID();
         await client.query(
           'INSERT INTO auth.refresh_tokens (token, user_id, parent, session_id) VALUES ($1, $2, $3, $4)',
@@ -527,7 +557,7 @@ const server = createServer(async (req, res) => {
       loginAttempts.delete(attemptKey);
       const now = Math.floor(Date.now() / 1000);
       const sessionId = randomUUID();
-      const accessToken = signJwt({
+      const accessPayload = {
         sub: user.id,
         email: user.email,
         role: 'authenticated',
@@ -538,7 +568,13 @@ const server = createServer(async (req, res) => {
         exp: now + 3600,
         app_metadata: user.raw_app_meta_data,
         user_metadata: user.raw_user_meta_data,
-      });
+      };
+      const profile = await getUserProfile(accessPayload);
+      if (!profile?.lg_ativo) {
+        recordLoginFailure(attemptKey);
+        return json(res, { error: 'invalid_grant', error_description: 'Invalid login credentials' }, 400);
+      }
+      const accessToken = signJwt(accessPayload);
       const refreshToken = randomUUID();
       // Save refresh token
       await pool.query(
@@ -569,13 +605,12 @@ const server = createServer(async (req, res) => {
       const payload = verifyJwt(auth);
       if (!payload) return json(res, { error: 'unauthorized' }, 401);
       const userRes = await pool.query(
-        `SELECT u.*
-           FROM auth.users u
-           JOIN public.user_profiles p ON p.id = u.id
-          WHERE u.id = $1 AND p.lg_ativo IS TRUE`,
+        'SELECT u.* FROM auth.users u WHERE u.id = $1',
         [payload.sub],
       );
       if (userRes.rows.length === 0) return json(res, { error: 'user not found' }, 404);
+      const profile = await getUserProfile(payload);
+      if (!profile?.lg_ativo) return json(res, { error: 'user not found' }, 404);
       const u = userRes.rows[0];
       return json(res, {
         id: u.id, aud: u.aud, role: u.role, email: u.email,
@@ -618,12 +653,12 @@ const server = createServer(async (req, res) => {
       }
       const required = RPC_PERMISSIONS[fnName];
       const profile = required?.scope === 'bootstrap'
-        ? await getUserProfile(payload.sub)
+        ? await getUserProfile(payload)
         : await getAuthorizationContext(payload);
       if (!profile || !profile.lg_ativo) {
         return json(res, { error: 'forbidden', message: 'contexto de acesso ativo obrigatorio' }, 403);
       }
-      const rpcDecision = await authorizeRpc(profile, fnName);
+      const rpcDecision = await authorizeRpc(profile, fnName, payload);
       if (!rpcDecision.ok) {
         return json(res, { error: 'forbidden', message: rpcDecision.reason }, 403);
       }
@@ -640,9 +675,19 @@ const server = createServer(async (req, res) => {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
+        const claims = tenantClaims(payload, profile);
         await client.query(
-          `SELECT set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claims', $2, true)`,
-          [payload.sub, JSON.stringify(payload)],
+          `SELECT
+             set_config('request.jwt.claim.sub', $1, true),
+             set_config('request.jwt.claims', $2, true),
+             set_config('app.current_company_id', COALESCE($3, ''), true),
+             set_config('app.current_unit_id', COALESCE($4, ''), true)`,
+          [
+            payload.sub,
+            JSON.stringify(claims),
+            profile.company_id?.toString() || '',
+            profile.unit_id?.toString() || '',
+          ],
         );
         await client.query('SET LOCAL ROLE authenticated');
         const result = await client.query(`SELECT public."${fnName}"(${namedArgs}) AS result`, vals);
@@ -680,9 +725,9 @@ const server = createServer(async (req, res) => {
         table === 'user_profiles' &&
         url.searchParams.get('id') === `eq.${payload.sub}`;
       const profile = isSelfProfileRead
-        ? await getUserProfile(payload.sub)
+        ? await getUserProfile(payload)
         : await getAuthorizationContext(payload);
-      const decision = isSelfProfileRead ? { ok: true } : await authorize(profile, table, req.method);
+      const decision = isSelfProfileRead ? { ok: true } : await authorize(profile, table, req.method, payload);
       if (!decision.ok) return json(res, { error: 'forbidden', message: decision.reason }, 403);
       if (req.method === 'GET') {
         // Parse select columns (strip embedded relations like "payment_source:payment_sources(name,type)")
@@ -836,14 +881,14 @@ const server = createServer(async (req, res) => {
         }
 
         try {
-          const result = await queryAsAuthenticated(payload, query, values);
+          const result = await queryAsAuthenticated(payload, query, values, profile);
 
           // Count total if Prefer: count=exact
           const prefer = req.headers.prefer || '';
           let totalCount = result.rows.length;
           if (prefer.includes('count=exact')) {
             const countQuery = `SELECT COUNT(*) FROM public."${table}"` + (conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '');
-            const countResult = await queryAsAuthenticated(payload, countQuery, values);
+            const countResult = await queryAsAuthenticated(payload, countQuery, values, profile);
             totalCount = parseInt(countResult.rows[0].count);
           }
 
@@ -877,7 +922,8 @@ const server = createServer(async (req, res) => {
         try {
           const result = await queryAsAuthenticated(payload,
             `INSERT INTO public."${table}" (${columns}) VALUES (${placeholders}) RETURNING *`,
-            vals
+            vals,
+            profile,
           );
           if (table === 'role_permissions' || table === 'roles') permCache.clear();
           const prefer = req.headers.prefer || '';
@@ -908,7 +954,8 @@ const server = createServer(async (req, res) => {
         try {
           const result = await queryAsAuthenticated(payload,
             `UPDATE public."${table}" SET ${setClause} WHERE id = $${keys.length + 1} RETURNING *`,
-            [...vals, id]
+            [...vals, id],
+            profile,
           );
           if (table === 'role_permissions' || table === 'roles') permCache.clear();
           return json(res, result.rows[0] || {});
@@ -937,3 +984,4 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜`);
   console.log(``);
 });
+

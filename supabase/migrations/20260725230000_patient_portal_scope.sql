@@ -137,3 +137,4 @@ REVOKE ALL ON FUNCTION public.update_my_appointment_status_secure(BIGINT, TEXT, 
   FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.update_my_appointment_status_secure(BIGINT, TEXT, TEXT)
   TO authenticated;
+

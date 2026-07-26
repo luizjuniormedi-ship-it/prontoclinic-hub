@@ -103,12 +103,30 @@ jobs:
           done
 
           # As migrations de contexto anteriores redefinem RPCs que ganharam
-          # contratos financeiros nas migrations mais recentes. Reaplicar o
-          # workflow final garante que o banco usado pelo E2E represente o
-          # estado convergido, sem restaurar uma assinatura legada.
-          psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
-            -d migrations_first --single-transaction \
-            -f supabase/migrations/20260725224000_reception_checkout_workflow.sql >/dev/null
+          # contratos nas migrations mais recentes. Reaplique toda a cauda na
+          # ordem oficial para provar convergência sem restaurar uma RPC legada.
+          for migration in \
+            20260725224000_reception_checkout_workflow.sql \
+            20260725230000_patient_portal_scope.sql \
+            20260725231000_reception_profile_hardening.sql; do
+            psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
+              -d migrations_first --single-transaction \
+              -f "supabase/migrations/$migration" >/dev/null
+          done
+
+          # O retry também precisa preservar os contratos, não apenas concluir
+          # sem erro sintático.
+          for contract in \
+            auth_foundation.sql \
+            access_context_foundation.sql \
+            sessions_and_secure_drafts.sql \
+            auth_admin_provisioning.sql \
+            operational_rls.sql \
+            patient_portal_scope.sql \
+            reception_checkout.sql; do
+            psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
+              -d migrations_first -f "tests/database/$contract" >/dev/null
+          done
 
       - name: Reject unknown legacy authorization policies during upgrade
         env:
@@ -199,14 +217,19 @@ jobs:
           psql -v ON_ERROR_STOP=1 -v "e2e_password=$E2E_PASSWORD" \
             -h localhost -p 54322 -U postgres -d migrations_first \
             -f scripts/seed-e2e-users.sql >/dev/null
+          test "$(psql -At -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
+            -d migrations_first -c "SELECT rolsuper::int || rolbypassrls::int FROM pg_roles WHERE rolname = 'app_prontomedic'")" = "00"
+          PGPASSWORD=local-e2e-app-password psql -v ON_ERROR_STOP=1 \
+            -h localhost -p 54322 -U app_prontomedic -d migrations_first \
+            -c 'SELECT current_user' >/dev/null
           echo "LOCAL_E2E_JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
 
       - name: Start deterministic local E2E backend
         env:
           PGHOST: localhost
           PGPORT: 54322
-          PGUSER: postgres
-          PGPASSWORD: postgres
+          PGUSER: app_prontomedic
+          PGPASSWORD: local-e2e-app-password
           PGDATABASE: migrations_first
           JWT_SECRET: ${{ env.LOCAL_E2E_JWT_SECRET }}
           LOCAL_AUTH_MODE: test
@@ -260,3 +283,4 @@ jobs:
           name: playwright-results
           path: test-results/results.json
           retention-days: 30
+

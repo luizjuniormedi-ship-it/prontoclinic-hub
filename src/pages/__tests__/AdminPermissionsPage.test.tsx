@@ -76,3 +76,4 @@ describe("AdminPermissionsPage — estados de carregamento", () => {
     expect(await screen.findByText("Nenhum perfil disponível")).toBeVisible();
   });
 });
+

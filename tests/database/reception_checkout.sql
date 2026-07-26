@@ -43,7 +43,9 @@ SELECT pg_temp.assert_true(
 );
 
 INSERT INTO public.companies (id, name, lg_ativo)
-VALUES ('85000000-0000-0000-0000-000000000001', 'Checkout E2E', TRUE);
+VALUES
+  ('85000000-0000-0000-0000-000000000001', 'Checkout E2E', TRUE),
+  ('85000000-0000-0000-0000-000000000002', 'Checkout Isolamento E2E', TRUE);
 
 INSERT INTO public.units (id, company_id, cd_codigo, ds_nome, lg_ativo) VALUES
   (850001, '85000000-0000-0000-0000-000000000001', 'CHK1', 'Checkout Unidade A', TRUE),
@@ -74,6 +76,11 @@ VALUES (
 INSERT INTO public.membership_roles (membership_id, role_id)
 SELECT '85000000-0000-0000-0000-000000000020', id
 FROM public.roles WHERE name = 'recepcao';
+INSERT INTO public.membership_roles (membership_id, role_id)
+SELECT '85000000-0000-0000-0000-000000000020', id
+FROM public.roles
+WHERE name IN ('financeiro', 'faturamento', 'call_center')
+ON CONFLICT DO NOTHING;
 INSERT INTO public.membership_units (membership_id, unit_id) VALUES
   ('85000000-0000-0000-0000-000000000020', 850001),
   ('85000000-0000-0000-0000-000000000020', 850002);
@@ -116,6 +123,11 @@ WHERE company_id = '85000000-0000-0000-0000-000000000001'
   AND role_id = (SELECT id FROM public.roles WHERE name = 'recepcao')
   AND lower(module) IN ('agenda', 'appointments');
 
+INSERT INTO public.services_catalog (company_id, code, name, price, lg_ativo)
+VALUES
+  ('85000000-0000-0000-0000-000000000001', 'CHK-SVC-A', 'Serviço empresa ativa', 10, TRUE),
+  ('85000000-0000-0000-0000-000000000002', 'CHK-SVC-B', 'Serviço empresa isolada', 20, TRUE);
+
 INSERT INTO public.professionals (id, company_id, full_name, lg_ativo)
 VALUES (850010, '85000000-0000-0000-0000-000000000001', 'Profissional Checkout', TRUE);
 
@@ -145,6 +157,61 @@ SELECT public.activate_application_context(
   850001,
   '85000000-0000-0000-0000-000000000090',
   'Teste checkout', 'test', 'psql'
+);
+
+SELECT pg_temp.assert_true(
+  (SELECT count(*) FROM public.services_catalog) = 1
+  AND EXISTS (
+    SELECT 1
+    FROM public.services_catalog
+    WHERE company_id = '85000000-0000-0000-0000-000000000001'
+      AND code = 'CHK-SVC-A'
+  ),
+  'RLS do catálogo deve ocultar serviços de outra empresa'
+);
+
+DO $forbidden_checkin_roles$
+DECLARE
+  v_role RECORD;
+BEGIN
+  FOR v_role IN
+    SELECT id, name
+    FROM public.roles
+    WHERE name IN ('financeiro', 'faturamento', 'call_center')
+    ORDER BY name
+  LOOP
+    PERFORM public.activate_application_context(
+      '85000000-0000-0000-0000-000000000020',
+      v_role.id,
+      850001,
+      '85000000-0000-0000-0000-000000000090',
+      'Teste negativo de check-in', 'test', 'psql'
+    );
+    BEGIN
+      PERFORM public.perform_reception_checkin_secure(850050, 'normal', NULL);
+      RAISE EXCEPTION 'Perfil % realizou check-in indevido', v_role.name;
+    EXCEPTION
+      WHEN insufficient_privilege THEN NULL;
+    END;
+  END LOOP;
+
+  PERFORM public.activate_application_context(
+    '85000000-0000-0000-0000-000000000020',
+    (SELECT id FROM public.roles WHERE name = 'recepcao'),
+    850001,
+    '85000000-0000-0000-0000-000000000090',
+    'Retorno ao perfil de recepção', 'test', 'psql'
+  );
+END;
+$forbidden_checkin_roles$;
+
+SELECT pg_temp.assert_true(
+  NOT EXISTS (
+    SELECT 1
+    FROM public.reception_checkins
+    WHERE appointment_id = 850050
+  ),
+  'perfis Financeiro, Faturamento e Call Center não podem gerar check-in'
 );
 
 SELECT pg_temp.assert_true(
@@ -433,3 +500,4 @@ SELECT pg_temp.assert_true(
 );
 
 ROLLBACK;
+

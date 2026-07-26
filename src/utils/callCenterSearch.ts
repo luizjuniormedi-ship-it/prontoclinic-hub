@@ -17,3 +17,4 @@ export function matchesCallCenterContactSearch(
     || (queryDigits.length > 0 && onlyDigits(contact.patient_phone).includes(queryDigits))
     || contact.contact_reason.toLowerCase().includes(normalizedQuery);
 }
+

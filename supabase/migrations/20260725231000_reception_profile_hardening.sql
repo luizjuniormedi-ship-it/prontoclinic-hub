@@ -13,9 +13,17 @@ ON CONFLICT (name) DO UPDATE SET
 WITH desired(role_name, module, can_view, can_create, can_edit, can_delete, can_export) AS (
   VALUES
     ('faturamento', 'faturamento', TRUE, TRUE, TRUE, FALSE, TRUE),
+    ('faturamento', 'agenda', TRUE, FALSE, FALSE, FALSE, FALSE),
+    ('faturamento', 'pacientes', TRUE, FALSE, FALSE, FALSE, FALSE),
     ('call_center', 'agenda', TRUE, TRUE, FALSE, FALSE, FALSE),
-    ('call_center', 'recepcao', TRUE, TRUE, TRUE, FALSE, FALSE),
-    ('call_center', 'pacientes', TRUE, TRUE, FALSE, FALSE, FALSE)
+    ('call_center', 'pacientes', TRUE, TRUE, FALSE, FALSE, FALSE),
+    ('enfermagem', 'agenda', TRUE, FALSE, FALSE, FALSE, FALSE),
+    ('enfermagem', 'pacientes', TRUE, FALSE, FALSE, FALSE, FALSE),
+    ('diagnostico', 'agenda', TRUE, FALSE, FALSE, FALSE, FALSE),
+    ('diagnostico', 'pacientes', TRUE, FALSE, FALSE, FALSE, FALSE),
+    ('farmacia', 'pacientes', TRUE, FALSE, FALSE, FALSE, FALSE),
+    ('financeiro', 'agenda', TRUE, FALSE, FALSE, FALSE, FALSE),
+    ('financeiro', 'pacientes', TRUE, FALSE, FALSE, FALSE, FALSE)
 )
 INSERT INTO public.role_permissions (
   company_id, role_id, module,
@@ -37,30 +45,202 @@ ON CONFLICT (company_id, role_id, module) DO UPDATE SET
   can_export = EXCLUDED.can_export,
   updated_at = NOW();
 
-ALTER TABLE public.reception_queue_tickets
-  ADD COLUMN IF NOT EXISTS unit_id INTEGER;
+DELETE FROM public.role_permissions permission
+USING public.roles role_row
+WHERE permission.role_id = role_row.id
+  AND role_row.name IN ('call_center', 'callcenter')
+  AND permission.module = 'recepcao';
 
-UPDATE public.reception_queue_tickets ticket
-SET unit_id = appointment.unit_id
-FROM public.appointments appointment
-WHERE ticket.appointment_id = appointment.id
-  AND ticket.unit_id IS NULL;
-
+-- O papel authenticated só alcança tabelas explicitamente concedidas e ainda
+-- permanece sujeito às policies RLS existentes. Estes catálogos são usados
+-- pelas telas operacionais auditadas e nunca são liberados para anon/PUBLIC.
 DO $$
+DECLARE
+  v_table TEXT;
+  v_patient_sequence TEXT;
 BEGIN
-  IF EXISTS (
-    SELECT 1
-    FROM public.reception_queue_tickets
-    WHERE unit_id IS NULL
+  FOREACH v_table IN ARRAY ARRAY[
+    'insurance_companies',
+    'bi_kpis_diarios',
+    'bi_metas',
+    'bi_alertas',
+    'exames_lab_catalogo',
+    'mnct_classificacao_risco',
+    'triagem_fila',
+    'medicamentos',
+    'services_catalog',
+    'tiss_xml'
+  ] LOOP
+    IF to_regclass(format('public.%I', v_table)) IS NOT NULL THEN
+      EXECUTE format('REVOKE ALL ON public.%I FROM PUBLIC, anon', v_table);
+      EXECUTE format('GRANT SELECT ON public.%I TO authenticated', v_table);
+    END IF;
+  END LOOP;
+
+  v_patient_sequence := pg_get_serial_sequence('public.patients', 'id');
+  IF v_patient_sequence IS NOT NULL THEN
+    EXECUTE format(
+      'GRANT USAGE, SELECT ON SEQUENCE %s TO authenticated',
+      v_patient_sequence
+    );
+  END IF;
+END;
+$$;
+
+-- Grants não substituem autorização. Cada leitura operacional exige contexto
+-- AAL2, empresa ativa e permissão de módulo, inclusive quando migrations
+-- históricas deixaram policies permissivas em paralelo.
+DO $profile_rls$
+DECLARE
+  v_record RECORD;
+  v_company_scope TEXT;
+  v_permission_scope TEXT;
+  v_using TEXT;
+  v_base_policy TEXT;
+  v_guard_policy TEXT;
+BEGIN
+  FOR v_record IN
+    SELECT *
+    FROM (VALUES
+      ('insurance_companies', 'faturamento', 'recepcao', FALSE),
+      ('bi_kpis_diarios', 'bi', NULL, FALSE),
+      ('bi_metas', 'bi', NULL, FALSE),
+      ('bi_alertas', 'bi', NULL, FALSE),
+      ('exames_lab_catalogo', 'laboratorio', NULL, FALSE),
+      ('mnct_classificacao_risco', 'enfermagem', NULL, TRUE),
+      ('triagem_fila', 'enfermagem', NULL, FALSE),
+      ('medicamentos', 'farmacia', NULL, FALSE),
+      ('services_catalog', 'agenda', 'recepcao', FALSE),
+      ('tiss_xml', 'faturamento', 'recepcao', FALSE)
+    ) AS policy_map(table_name, module_name, alternate_module, allow_global)
+  LOOP
+    IF to_regclass(format('public.%I', v_record.table_name)) IS NULL THEN
+      CONTINUE;
+    END IF;
+
+    v_company_scope := CASE
+      WHEN v_record.allow_global THEN
+        '(company_id IS NULL OR company_id = public.active_company_id())'
+      ELSE
+        'company_id = public.active_company_id()'
+    END;
+    v_permission_scope := format(
+      '(lower(COALESCE(public.active_role_name(), '''')) IN (''admin'', ''administrador'', ''superadmin'', ''super_admin'') OR public.can_access(%L, ''view'')%s)',
+      v_record.module_name,
+      CASE
+        WHEN v_record.alternate_module IS NULL THEN ''
+        ELSE format(' OR public.can_access(%L, ''view'')', v_record.alternate_module)
+      END
+    );
+    v_using := format(
+      '(auth.uid() IS NOT NULL AND %s AND %s)',
+      v_company_scope,
+      v_permission_scope
+    );
+    v_base_policy := v_record.table_name || '_profile_hardened_select';
+    v_guard_policy := v_record.table_name || '_profile_hardened_guard';
+
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', v_record.table_name);
+    EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', v_record.table_name);
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', v_base_policy, v_record.table_name);
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', v_guard_policy, v_record.table_name);
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I AS PERMISSIVE FOR SELECT TO authenticated USING (%s)',
+      v_base_policy,
+      v_record.table_name,
+      v_using
+    );
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I AS RESTRICTIVE FOR SELECT TO authenticated USING (%s)',
+      v_guard_policy,
+      v_record.table_name,
+      v_using
+    );
+  END LOOP;
+END;
+$profile_rls$;
+
+-- O Call Center opera a fila de confirmações. O contrato legado autorizava
+-- apenas nomes fixos de papéis e rejeitava o perfil apesar da matriz agenda.
+CREATE OR REPLACE FUNCTION public.assert_scheduling_permission()
+RETURNS VOID
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_actor RECORD;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT * INTO v_actor FROM public.get_scheduling_actor();
+  IF v_actor.user_id IS NULL THEN
+    RAISE EXCEPTION 'Usuario autenticado sem perfil operacional';
+  END IF;
+
+  IF COALESCE(v_actor.role_name, '') NOT IN (
+    'admin', 'administrador', 'recepcao', 'recepção', 'reception',
+    'call_center', 'callcenter', 'gestor', 'medico', 'médico'
   ) THEN
-    RAISE EXCEPTION
-      'RECEPTION_QUEUE_PREFLIGHT: tickets sem unidade; reconciliação manual obrigatória';
+    RAISE EXCEPTION 'Usuario sem permissao para operar agenda';
   END IF;
 END;
 $$;
 
 ALTER TABLE public.reception_queue_tickets
+  ADD COLUMN IF NOT EXISTS unit_id INTEGER;
+
+DO $queue_scope_preflight$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM public.reception_queue_tickets ticket
+    JOIN public.appointments appointment
+      ON appointment.id = ticket.appointment_id
+    WHERE ticket.company_id IS DISTINCT FROM appointment.company_id
+       OR (
+         ticket.unit_id IS NOT NULL
+         AND ticket.unit_id IS DISTINCT FROM appointment.unit_id
+       )
+  ) THEN
+    RAISE EXCEPTION
+      'RECEPTION_QUEUE_PREFLIGHT: ticket diverge da empresa/unidade do agendamento';
+  END IF;
+END;
+$queue_scope_preflight$;
+
+UPDATE public.reception_queue_tickets ticket
+SET unit_id = appointment.unit_id
+FROM public.appointments appointment
+WHERE ticket.appointment_id = appointment.id
+  AND ticket.company_id = appointment.company_id
+  AND ticket.unit_id IS NULL;
+
+DO $queue_unit_preflight$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM public.reception_queue_tickets ticket
+    LEFT JOIN public.units unit_row
+      ON unit_row.id = ticket.unit_id
+     AND unit_row.company_id = ticket.company_id
+    WHERE ticket.unit_id IS NULL
+       OR unit_row.id IS NULL
+  ) THEN
+    RAISE EXCEPTION
+      'RECEPTION_QUEUE_PREFLIGHT: ticket sem unidade válida na própria empresa';
+  END IF;
+END;
+$queue_unit_preflight$;
+
+ALTER TABLE public.reception_queue_tickets
   ALTER COLUMN unit_id SET NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS units_company_id_id_unique_idx
+  ON public.units (company_id, id);
 
 DO $$
 BEGIN
@@ -73,6 +253,22 @@ BEGIN
     ALTER TABLE public.reception_queue_tickets
       ADD CONSTRAINT reception_queue_tickets_unit_id_fkey
       FOREIGN KEY (unit_id) REFERENCES public.units(id);
+  END IF;
+END;
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'public.reception_queue_tickets'::regclass
+      AND conname = 'reception_queue_tickets_company_unit_fkey'
+  ) THEN
+    ALTER TABLE public.reception_queue_tickets
+      ADD CONSTRAINT reception_queue_tickets_company_unit_fkey
+      FOREIGN KEY (company_id, unit_id)
+      REFERENCES public.units(company_id, id);
   END IF;
 END;
 $$;
@@ -111,6 +307,38 @@ BEGIN
     'supervisor','supervisor_recepcao','financeiro','faturamento'
   ) THEN
     RAISE EXCEPTION 'Perfil sem permissão para operar o checkout da recepção'
+      USING ERRCODE = '42501';
+  END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.assert_reception_checkin_permission()
+RETURNS VOID
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+SET row_security = off
+AS $$
+DECLARE
+  v_role TEXT;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Usuário autenticado é obrigatório para realizar check-in'
+      USING ERRCODE = '42501';
+  END IF;
+
+  v_role := public.active_role_name();
+  IF v_role IS NULL THEN
+    RAISE EXCEPTION 'Contexto AAL2 ativo é obrigatório'
+      USING ERRCODE = '42501';
+  END IF;
+
+  IF v_role NOT IN (
+    'admin','administrador','gestor','recepcao','recepção',
+    'supervisor','supervisor_recepcao'
+  ) OR NOT COALESCE(public.can_access('recepcao', 'create'), FALSE) THEN
+    RAISE EXCEPTION 'Perfil sem permissão para realizar check-in'
       USING ERRCODE = '42501';
   END IF;
 END;
@@ -562,7 +790,7 @@ DECLARE
   v_reason TEXT;
 BEGIN
   SELECT * INTO v_actor FROM public.get_scheduling_actor();
-  PERFORM public.assert_reception_financial_permission();
+  PERFORM public.assert_reception_checkin_permission();
   v_a := public.assert_reception_appointment_scope(p_appointment_id);
 
   SELECT *
@@ -748,6 +976,8 @@ REVOKE ALL ON FUNCTION public.perform_reception_checkin_secure(
 ) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.get_scheduling_actor()
   FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.assert_reception_checkin_permission()
+  FROM PUBLIC, anon, authenticated;
 
 DO $$
 BEGIN
@@ -776,3 +1006,4 @@ COMMENT ON FUNCTION public.perform_reception_checkin_secure(
   BIGINT, TEXT, TEXT
 ) IS
   'Check-in idempotente e transacional; usa o ciclo oficial de status da agenda.';
+

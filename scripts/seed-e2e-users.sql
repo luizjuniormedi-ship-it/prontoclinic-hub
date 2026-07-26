@@ -9,6 +9,8 @@
   \quit 1
 \endif
 
+BEGIN;
+
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 INSERT INTO public.companies (id, name, lg_ativo)
@@ -238,16 +240,24 @@ WITH permissions(role_name,module,can_view,can_create,can_edit,can_delete,can_ex
     ('gestor','financeiro',TRUE,FALSE,FALSE,FALSE,TRUE),
     ('gestor','bi',TRUE,FALSE,FALSE,FALSE,TRUE),
     ('enfermagem','enfermagem',TRUE,TRUE,TRUE,FALSE,FALSE),
+    ('enfermagem','agenda',TRUE,FALSE,FALSE,FALSE,FALSE),
+    ('enfermagem','pacientes',TRUE,FALSE,FALSE,FALSE,FALSE),
     ('enfermagem','prontuario',TRUE,TRUE,TRUE,FALSE,FALSE),
     ('laboratorio','laboratorio',TRUE,TRUE,TRUE,FALSE,TRUE),
     ('laboratorio','dicom',TRUE,FALSE,FALSE,FALSE,FALSE),
+    ('diagnostico','agenda',TRUE,FALSE,FALSE,FALSE,FALSE),
+    ('diagnostico','pacientes',TRUE,FALSE,FALSE,FALSE,FALSE),
     ('diagnostico','dicom',TRUE,TRUE,TRUE,FALSE,TRUE),
+    ('farmacia','pacientes',TRUE,FALSE,FALSE,FALSE,FALSE),
     ('farmacia','farmacia',TRUE,TRUE,TRUE,FALSE,TRUE),
+    ('financeiro','agenda',TRUE,FALSE,FALSE,FALSE,FALSE),
+    ('financeiro','pacientes',TRUE,FALSE,FALSE,FALSE,FALSE),
     ('financeiro','faturamento',TRUE,TRUE,TRUE,FALSE,TRUE),
     ('financeiro','financeiro',TRUE,TRUE,TRUE,FALSE,TRUE),
+    ('faturamento','agenda',TRUE,FALSE,FALSE,FALSE,FALSE),
+    ('faturamento','pacientes',TRUE,FALSE,FALSE,FALSE,FALSE),
     ('faturamento','faturamento',TRUE,TRUE,TRUE,FALSE,TRUE),
     ('call_center','agenda',TRUE,TRUE,FALSE,FALSE,FALSE),
-    ('call_center','recepcao',TRUE,TRUE,TRUE,FALSE,FALSE),
     ('call_center','pacientes',TRUE,TRUE,FALSE,FALSE,FALSE),
     ('dpo','auditoria',TRUE,TRUE,TRUE,FALSE,TRUE),
     ('dpo','recepcao',TRUE,FALSE,FALSE,FALSE,FALSE),
@@ -289,12 +299,15 @@ WHERE rp.company_id = 'eeeeeeee-1000-4000-8000-000000000001'
       ('medico','agenda'), ('medico','pacientes'), ('medico','prontuario'),
       ('gestor','agenda'), ('gestor','recepcao'), ('gestor','pacientes'),
       ('gestor','faturamento'), ('gestor','financeiro'), ('gestor','bi'),
-      ('enfermagem','enfermagem'), ('enfermagem','prontuario'),
+      ('enfermagem','enfermagem'), ('enfermagem','agenda'), ('enfermagem','pacientes'),
+      ('enfermagem','prontuario'),
       ('laboratorio','laboratorio'), ('laboratorio','dicom'),
-      ('diagnostico','dicom'), ('farmacia','farmacia'),
+      ('diagnostico','agenda'), ('diagnostico','pacientes'), ('diagnostico','dicom'),
+      ('farmacia','pacientes'), ('farmacia','farmacia'),
+      ('financeiro','agenda'), ('financeiro','pacientes'),
       ('financeiro','faturamento'), ('financeiro','financeiro'),
-      ('faturamento','faturamento'),
-      ('call_center','agenda'), ('call_center','recepcao'), ('call_center','pacientes'),
+      ('faturamento','agenda'), ('faturamento','pacientes'), ('faturamento','faturamento'),
+      ('call_center','agenda'), ('call_center','pacientes'),
       ('dpo','auditoria'), ('dpo','recepcao'),
       ('administrativo','agenda'), ('administrativo','cadastros'), ('administrativo','faturamento'),
       ('paciente','agenda'), ('paciente','pacientes')
@@ -455,3 +468,6 @@ ON CONFLICT (id) DO UPDATE SET
   lg_confirmado = EXCLUDED.lg_confirmado,
   lg_checkin = EXCLUDED.lg_checkin,
   notes = EXCLUDED.notes;
+
+COMMIT;
+

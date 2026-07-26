@@ -364,3 +364,4 @@ export function TriagePanel({ companyId }: TriagePanelProps): JSX.Element {
 }
 
 export default TriagePanel;
+

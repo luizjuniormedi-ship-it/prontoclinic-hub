@@ -724,3 +724,4 @@ export function PharmacyManager() {
     </div>
   );
 }
+

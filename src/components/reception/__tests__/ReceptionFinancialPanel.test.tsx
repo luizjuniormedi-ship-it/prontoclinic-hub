@@ -317,3 +317,4 @@ describe("ReceptionFinancialPanel", () => {
     expect(screen.getByRole("button", { name: /^Registrar método da assinatura\./ })).toBeInTheDocument();
   });
 });
+

@@ -70,3 +70,4 @@ describe("FinancialPage — seletor corporativo de pacientes", () => {
       .toBeEnabled();
   });
 });
+

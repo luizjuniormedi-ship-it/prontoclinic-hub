@@ -21,3 +21,4 @@ describe("matchesCallCenterContactSearch", () => {
     expect(matchesCallCenterContactSearch(contact, "exame")).toBe(true);
   });
 });
+

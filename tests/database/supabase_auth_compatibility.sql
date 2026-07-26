@@ -12,8 +12,15 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
     CREATE ROLE service_role NOLOGIN BYPASSRLS;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_prontomedic') THEN
+    CREATE ROLE app_prontomedic LOGIN PASSWORD 'local-e2e-app-password'
+      NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+  END IF;
 END
 $$;
+
+ALTER ROLE app_prontomedic PASSWORD 'local-e2e-app-password';
+GRANT authenticated TO app_prontomedic;
 
 CREATE SCHEMA IF NOT EXISTS auth;
 
@@ -47,6 +54,10 @@ CREATE TABLE IF NOT EXISTS auth.refresh_tokens (
 
 ALTER TABLE auth.refresh_tokens ADD COLUMN IF NOT EXISTS parent UUID;
 ALTER TABLE auth.refresh_tokens ADD COLUMN IF NOT EXISTS session_id UUID;
+
+GRANT USAGE ON SCHEMA auth, public TO app_prontomedic;
+GRANT SELECT ON auth.users TO app_prontomedic;
+GRANT SELECT, INSERT, UPDATE ON auth.refresh_tokens TO app_prontomedic;
 
 CREATE INDEX IF NOT EXISTS idx_auth_refresh_tokens_user
   ON auth.refresh_tokens(user_id, revoked);
@@ -114,3 +125,4 @@ BEGIN
   RETURN v_id;
 END;
 $$;
+

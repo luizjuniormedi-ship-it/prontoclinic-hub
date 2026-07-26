@@ -166,3 +166,4 @@ describe("navigation catalog", () => {
     expect(getNavigationItemForPath("/")?.id).toBe("dashboard");
   });
 });
+

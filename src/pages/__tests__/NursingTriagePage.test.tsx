@@ -49,3 +49,4 @@ describe("NursingTriagePage — hierarquia de títulos", () => {
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
   });
 });
+

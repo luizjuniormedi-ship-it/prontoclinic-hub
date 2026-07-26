@@ -79,3 +79,4 @@ describe("PatientCreatePage — persistência da data de nascimento", () => {
     expect(mocks.navigate).toHaveBeenCalledWith("/patients");
   });
 });
+
