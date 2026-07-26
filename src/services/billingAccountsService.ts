@@ -45,6 +45,12 @@ export interface PendingIssue {
   resolved: boolean;
 }
 
+export interface BillingCheckResult {
+  pendingCount: number;
+  financialIssues: string[];
+  status: Extract<BillingStatus, "com_pendencia" | "pronta_envio">;
+}
+
 export interface Competency {
   id: number;
   competence_month: string;
@@ -63,6 +69,28 @@ export const BILLING_STATUS_LABELS: Partial<Record<BillingStatus, string>> = {
   cancelada: "Cancelada", particular_paga: "Particular paga", particular_pendente: "Particular pendente",
   inadimplente: "Inadimplente", reaberta: "Reaberta",
 };
+
+export function getBillingFinancialIssues(account: BillingAccount): string[] {
+  const gross = Number(account.total_gross_amount);
+  const net = Number(account.total_net_amount);
+  const issues: string[] = [];
+  if (!Number.isFinite(gross) || gross <= 0) issues.push("Valor bruto deve ser maior que zero.");
+  if (!Number.isFinite(net) || net < 0) issues.push("Valor líquido não pode ser negativo.");
+  if (Number.isFinite(gross) && Number.isFinite(net) && net > gross) {
+    issues.push("Valor líquido não pode superar o valor bruto.");
+  }
+  return issues;
+}
+
+export function isBillingAccountReady(
+  account: BillingAccount,
+  unresolvedIssueCount = 0,
+): boolean {
+  return account.status === "pronta_envio"
+    && !account.has_pending_issues
+    && unresolvedIssueCount === 0
+    && getBillingFinancialIssues(account).length === 0;
+}
 
 export const billingAccountsService = {
   async list(filters?: { status?: string; billing_type?: string; competence?: string; onlyPending?: boolean }): Promise<BillingAccount[]> {
@@ -91,11 +119,40 @@ export const billingAccountsService = {
     return (data || []) as unknown as PendingIssue[];
   },
 
-  /** Roda a glosa preventiva na conta (recalcula pendências via função SQL). */
-  async checkPending(accountId: string): Promise<number> {
-    const { data, error } = await supabase.rpc("billing_check_pending", { p_account_id: accountId });
+  /**
+   * Roda a glosa preventiva e persiste o estado canônico da conta.
+   * O UPDATE dispara o audit_trigger_func já associado a billing_accounts.
+   */
+  async checkPending(account: BillingAccount): Promise<BillingCheckResult> {
+    const financialIssues = getBillingFinancialIssues(account);
+    if (financialIssues.length > 0) {
+      if (account.status !== "com_pendencia" || !account.has_pending_issues) {
+        const { error } = await supabase.from("billing_accounts")
+          .update({ status: "com_pendencia", has_pending_issues: true })
+          .eq("id", account.id);
+        if (error) throw new Error(error.message);
+      }
+      return {
+        pendingCount: financialIssues.length,
+        financialIssues,
+        status: "com_pendencia",
+      };
+    }
+
+    const { data, error } = await supabase.rpc("billing_check_pending", { p_account_id: account.id });
     if (error) throw new Error(error.message);
-    return (data as number) ?? 0;
+
+    const pendingCount = (data as number) ?? 0;
+    const status = pendingCount > 0 ? "com_pendencia" : "pronta_envio";
+    const hasPendingIssues = pendingCount > 0;
+    if (account.status !== status || account.has_pending_issues !== hasPendingIssues) {
+      const { error: updateError } = await supabase.from("billing_accounts")
+        .update({ status, has_pending_issues: hasPendingIssues })
+        .eq("id", account.id);
+      if (updateError) throw new Error(updateError.message);
+    }
+
+    return { pendingCount, financialIssues: [], status };
   },
 
   async resolveIssue(issueId: number): Promise<void> {
@@ -135,8 +192,8 @@ export const billingAccountsService = {
     return {
       total: all.length,
       abertas: all.filter((a) => a.status === "aberta").length,
-      prontas: all.filter((a) => a.status === "aberta" && !a.has_pending_issues).length,
-      comPendencia: all.filter((a) => a.has_pending_issues).length,
+      prontas: all.filter((a) => isBillingAccountReady(a)).length,
+      comPendencia: all.filter((a) => a.has_pending_issues || getBillingFinancialIssues(a).length > 0).length,
       enviadas: all.filter((a) => a.status === "enviada").length,
       pagas: all.filter((a) => ["paga", "parcialmente_paga", "particular_paga"].includes(a.status)).length,
     };

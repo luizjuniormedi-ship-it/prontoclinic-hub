@@ -19,7 +19,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Calendar, Clock, MapPin, User, X, RefreshCw, CheckCircle2,
-  AlertTriangle, Loader2, Filter, ChevronRight,
+  AlertTriangle, Loader2, Filter,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState, ErrorState } from "@/components/StateViews";
@@ -45,7 +45,6 @@ import type { AppointmentStatusForBadge } from "@/types/missing";
 
 type Filter = "todos" | "agendado" | "confirmado" | "atendido" | "cancelado" | "faltou";
 
-interface UserProfileWithPatient { id: string; patient_id?: string | null; }
 interface ErrorWithMessage { message?: string; }
 
 function startOfDay(iso: string): Date {
@@ -86,26 +85,17 @@ export default function MeusAgendamentosPage() {
     (async () => {
       try {
         setLoading(true);
-        // 1) Resolve patient_id do usuario logado
+        // O vínculo do portal é autoritativo em patients.user_id. A policy
+        // restringe o papel paciente à própria linha.
         let patientId: string | null = null;
         if (user?.id) {
-          const { data: prof } = await supabase
-            .from("user_profiles")
+          const { data: patient, error: patientError } = await supabase
+            .from("patients")
             .select("id")
-            .eq("id", user.id)
+            .eq("user_id", user.id)
             .maybeSingle();
-          // Tenta campo direto na user_profiles
-          if (prof && (prof as UserProfileWithPatient).patient_id) {
-            patientId = (prof as UserProfileWithPatient).patient_id ?? null;
-          } else if (user.email) {
-            // Fallback: tenta casar pelo e-mail
-            const { data: pat } = await supabase
-              .from("patients")
-              .select("id")
-              .eq("email", user.email)
-              .maybeSingle();
-            if (pat) patientId = pat.id as string;
-          }
+          if (patientError) throw patientError;
+          if (patient) patientId = String(patient.id);
         }
 
         if (!patientId) {
@@ -160,7 +150,7 @@ export default function MeusAgendamentosPage() {
     if (!cancelTarget) return;
     setCancelLoading(true);
     try {
-      await appointmentsService.updateStatus(cancelTarget.id, "cancelled", cancelReason || "Cancelado pelo paciente");
+      await appointmentsService.updateMyStatus(cancelTarget.id, "cancelled", cancelReason || "Cancelado pelo paciente");
       setAppointments((prev) =>
         prev.map((a) => (a.id === cancelTarget.id ? { ...a, status: "cancelled" } : a)),
       );
@@ -177,7 +167,7 @@ export default function MeusAgendamentosPage() {
   const handleConfirm = async (appt: DbAppointment) => {
     setConfirmingId(appt.id);
     try {
-      await appointmentsService.updateStatus(appt.id, "confirmed");
+      await appointmentsService.updateMyStatus(appt.id, "confirmed");
       setAppointments((prev) =>
         prev.map((a) => (a.id === appt.id ? { ...a, status: "confirmed" } : a)),
       );
@@ -330,16 +320,7 @@ export default function MeusAgendamentosPage() {
                     <AppointmentCard
                       appt={a}
                       prof={prof}
-                      actions={
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => a.patient_id && navigate(`/patients/${a.patient_id}`)}
-                        >
-                          Ver detalhes
-                          <ChevronRight className="ml-1 h-3.5 w-3.5" />
-                        </Button>
-                      }
+                      actions={null}
                     />
                   </li>
                 );
@@ -456,7 +437,7 @@ function AppointmentCard({
                 {appt.unit_id && (
                   <span className="flex items-center gap-1">
                     <MapPin className="h-3 w-3" />
-                    Unidade {appt.unit_id.slice(0, 6)}
+                    Unidade {String(appt.unit_id).slice(0, 6)}
                   </span>
                 )}
               </div>

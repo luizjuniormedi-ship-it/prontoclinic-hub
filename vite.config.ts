@@ -1,21 +1,30 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
-import path from "path";
+import path from "node:path";
 import { componentTagger } from "lovable-tagger";
+
+const configDir = process.cwd();
+const frameProtectionHeaders = {
+  "Content-Security-Policy": "frame-ancestors 'none'",
+  "X-Frame-Options": "DENY",
+};
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  root: configDir,
   server: {
     host: "::",
     port: 8080,
     hmr: {
       overlay: false,
     },
+    headers: frameProtectionHeaders,
   },
   preview: {
     // Permite que o app seja embedado em tunnels (localtunnel, ngrok, etc.)
     // Necessário para deploy via localtunnel.loca.lt
     allowedHosts: true,
+    headers: frameProtectionHeaders,
   },
   plugins: [
     react(),
@@ -23,8 +32,9 @@ export default defineConfig(({ mode }) => ({
   ]
     .filter(Boolean),
   resolve: {
+    preserveSymlinks: true,
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(configDir, "./src"),
     },
   },
   build: {

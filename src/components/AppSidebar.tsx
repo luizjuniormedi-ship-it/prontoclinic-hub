@@ -1,222 +1,110 @@
+import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { Grid3X3, Heart } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import {
-  LayoutDashboard, Users, Calendar, FileText, DollarSign, Settings, Heart,
-  UserCheck, Stethoscope, ShieldCheck, UserCog, KeyRound, Phone,
-  ClipboardList, Monitor, Receipt, Banknote, Building2, Database,
-  Server, FileImage, Activity, Radio, Shield, ScrollText, Bell,
-  ListChecks, Calculator, FileSpreadsheet, ListPlus, Pill,
-  HeartPulse, BarChart3, FlaskConical, Video,
-  BedDouble, Scissors, AlertOctagon, FileSignature, Sparkles,
-  Truck, ShoppingCart, Star, Ambulance, Clock, Syringe,
-} from "lucide-react";
-import {
-  Sidebar, SidebarContent, useSidebar,
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
-import { FlatSection, CollapsibleSection, MenuGroup } from "./sidebar/SidebarSection";
-import { MenuItem } from "./sidebar/SidebarItem";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { FlatSection, type MenuGroup } from "./sidebar/SidebarSection";
 import { SidebarFooter } from "./sidebar/SidebarFooter";
+import { getSidebarNavigation } from "@/config/navigation";
+import { normalizeRoleName } from "@/config/routePermissions";
+import { useActiveAccessRole } from "@/hooks/useActiveAccessRole";
 
-const mainItems: MenuGroup = {
-  items: [
-    { title: "Dashboard", url: "/", icon: LayoutDashboard },
-    { title: "Agenda", url: "/schedule", icon: Calendar },
-    { title: "Recepção", url: "/reception", icon: UserCheck },
-    { title: "Triagem", url: "/nursing/triage", icon: HeartPulse },
-    { title: "Cuidados Enfermagem", url: "/nursing/care", icon: Syringe },
-    { title: "Pacientes", url: "/patients", icon: Users },
-    { title: "Profissionais", url: "/professionals", icon: Stethoscope },
-    { title: "Prontuário", url: "/records", icon: FileText },
-    { title: "Atendimento (PEP)", url: "/encounters", icon: Stethoscope },
-    { title: "Timeline Clínica", url: "/clinical-timeline", icon: Clock },
-    { title: "Farmácia", url: "/pharmacy", icon: Pill },
-    { title: "Laboratório", url: "/lab", icon: FlaskConical },
-    { title: "Call Center", url: "/callcenter", icon: Phone },
-    { title: "Telemedicina", url: "/telemedicina", icon: Video },
-  ],
+const roleLabels: Record<string, string> = {
+  admin: "Administração",
+  gestor: "Gestão",
+  recepcao: "Recepção",
+  medico: "Área médica",
+  enfermagem: "Enfermagem",
+  laboratorio: "Laboratório",
+  diagnostico: "Diagnóstico",
+  farmacia: "Farmácia",
+  financeiro: "Financeiro",
+  dpo: "Privacidade",
+  administrativo: "Administrativo",
 };
-
-const dicomItems: MenuGroup = {
-  label: "PACS / DICOM",
-  items: [],
-  subItems: [
-    {
-      groupTitle: "Imagem",
-      items: [
-        { title: "Equipamentos", url: "/admin/dicom", icon: Server },
-        { title: "Modalidades", url: "/dicom/modalities", icon: Activity },
-        { title: "Nós DICOM", url: "/dicom/nodes", icon: Server },
-        { title: "Integração", url: "/dicom/dashboard", icon: Monitor },
-        { title: "Pedidos", url: "/dicom/orders", icon: FileImage },
-      ],
-    },
-    {
-      groupTitle: "Laudos",
-      items: [
-        { title: "Worklist", url: "/dicom/worklist", icon: ListChecks },
-        { title: "Templates", url: "/admin/report-templates", icon: FileSpreadsheet },
-        { title: "Visualizador", url: "/pacs", icon: Monitor },
-        { title: "Laudos", url: "/dicom/reports", icon: ScrollText },
-      ],
-    },
-    {
-      groupTitle: "Enfermagem",
-      items: [
-        { title: "Painel de Chamada", url: "/nursing/queue", icon: Monitor },
-      ],
-    },
-  ],
-};
-
-const financialItems: MenuGroup = {
-  label: "Faturamento",
-  items: [],
-  subItems: [
-    {
-      groupTitle: "Operação",
-      items: [
-        { title: "Contas", url: "/billing-accounts", icon: Receipt },
-        { title: "Produção", url: "/billing-production", icon: Receipt },
-        { title: "TISS", url: "/admin/tiss", icon: FileSpreadsheet },
-        { title: "Repasse", url: "/professional-payment", icon: Banknote },
-        { title: "Financeiro", url: "/financial", icon: DollarSign },
-      ],
-    },
-  ],
-};
-
-const biItems: MenuGroup = {
-  label: "Inteligência de Negócio",
-  items: [
-    { title: "BI / Indicadores", url: "/bi", icon: BarChart3 },
-  ],
-  subItems: [
-    {
-      groupTitle: "Gestão",
-      items: [
-        { title: "Metas", url: "/bi/metas", icon: ListChecks },
-        { title: "Alertas", url: "/bi/alertas", icon: Bell },
-      ],
-    },
-  ],
-};
-
-const clinicalAdvancedItems: MenuGroup = {
-  label: "Assistência Avançada",
-  items: [],
-  subItems: [
-    {
-      groupTitle: "Hospital",
-      items: [
-        { title: "Internação", url: "/internacao", icon: BedDouble },
-        { title: "Centro Cirúrgico", url: "/cirurgia", icon: Scissors },
-        { title: "Pronto Atendimento", url: "/pa", icon: AlertOctagon },
-      ],
-    },
-    {
-      groupTitle: "Documentos & IA",
-      items: [
-        { title: "Assinatura Digital", url: "/assinatura", icon: FileSignature },
-        { title: "IA Clínica", url: "/ia-clinica", icon: Sparkles },
-      ],
-    },
-  ],
-};
-
-const logisticsItems: MenuGroup = {
-  label: "Logística & Suprimentos",
-  items: [],
-  subItems: [
-    {
-      groupTitle: "Compras",
-      items: [
-        { title: "Compras", url: "/purchases", icon: ShoppingCart },
-      ],
-    },
-    {
-      groupTitle: "Operação",
-      items: [
-        { title: "Transporte", url: "/transport", icon: Truck },
-      ],
-    },
-    {
-      groupTitle: "Experiência",
-      items: [
-        { title: "NPS", url: "/nps", icon: Star },
-      ],
-    },
-  ],
-};
-
-const adminItems: MenuGroup = {
-  label: "Administração",
-  items: [],
-  subItems: [
-    {
-      groupTitle: "Acesso",
-      items: [
-        { title: "Usuários", url: "/admin/users", icon: UserCog },
-        { title: "Perfis", url: "/admin/profiles", icon: ShieldCheck },
-        { title: "Permissões", url: "/admin/permissions", icon: KeyRound },
-        { title: "Empresas", url: "/companies", icon: Building2 },
-      ],
-    },
-    {
-      groupTitle: "Convênios",
-      items: [
-        { title: "Convênios", url: "/admin/insurances", icon: Shield },
-        { title: "Credenciamento", url: "/admin/credentialing", icon: ListPlus },
-        { title: "Tabela de Preços", url: "/admin/price-tables", icon: Calculator },
-      ],
-    },
-    {
-      groupTitle: "Compliance",
-      items: [
-        { title: "LGPD", url: "/admin/lgpd", icon: Shield },
-        { title: "Auditoria", url: "/admin/audit", icon: FileText },
-        { title: "Notificações", url: "/admin/notifications", icon: Bell },
-      ],
-    },
-  ],
-};
-
-const bottomItems: MenuItem[] = [
-  { title: "Cadastros", url: "/master-data", icon: Database },
-  { title: "Configurações", url: "/settings", icon: Settings },
-];
 
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const roleName = user?.role_name;
+  const roleName = useActiveAccessRole(user?.role_name);
+  const normalizedRole = normalizeRoleName(roleName);
 
-  const handleLogout = () => { logout(); navigate("/login"); };
+  const primaryGroup = useMemo<MenuGroup>(() => ({
+    label: "Meu trabalho",
+    items: getSidebarNavigation(roleName),
+  }), [roleName]);
+
+  const openAllModules = () => {
+    document.dispatchEvent(new CustomEvent("open-navigation-command"));
+  };
+
+  const handleLogout = () => {
+    void logout();
+    navigate("/login");
+  };
 
   return (
-    <Sidebar collapsible="icon" className="border-r border-sidebar-border" role="navigation" aria-label="Navegação principal">
+    <Sidebar
+      collapsible="icon"
+      className="border-r border-sidebar-border"
+      role="navigation"
+      aria-label="Navegação principal"
+    >
       <div className="p-4 flex items-center gap-2 border-b border-sidebar-border">
         <div className="rounded-lg bg-primary p-1.5">
-          <Heart className="h-5 w-5 text-primary-foreground" />
+          <Heart className="h-5 w-5 text-primary-foreground" aria-hidden="true" />
         </div>
         {!collapsed && (
-          <div>
+          <div className="min-w-0">
             <h2 className="text-base font-bold tracking-tight">PRONTOMEDIC</h2>
-            <p className="text-[10px] text-sidebar-muted leading-none">Gestão Clínica</p>
+            <p className="text-[10px] text-sidebar-muted leading-none truncate">
+              {normalizedRole ? roleLabels[normalizedRole] : "Gestão clínica"}
+            </p>
           </div>
         )}
       </div>
 
       <SidebarContent className="pt-2 scrollbar-thin">
-        <FlatSection group={mainItems} collapsed={collapsed} roleName={roleName} />
-        <CollapsibleSection group={dicomItems} collapsed={collapsed} roleName={roleName} />
-        <CollapsibleSection group={financialItems} collapsed={collapsed} roleName={roleName} />
-        <CollapsibleSection group={clinicalAdvancedItems} collapsed={collapsed} roleName={roleName} />
-        <CollapsibleSection group={logisticsItems} collapsed={collapsed} roleName={roleName} />
-        <CollapsibleSection group={biItems} collapsed={collapsed} roleName={roleName} />
-        <CollapsibleSection group={adminItems} collapsed={collapsed} roleName={roleName} />
-        <FlatSection group={{ items: bottomItems }} collapsed={collapsed} roleName={roleName} />
+        <FlatSection group={primaryGroup} collapsed={collapsed} roleName={roleName} />
+
+        <SidebarGroup className="mt-auto">
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <Tooltip delayDuration={350}>
+                  <TooltipTrigger asChild>
+                    <SidebarMenuButton
+                      onClick={openAllModules}
+                      className="w-full text-sidebar-foreground hover:bg-sidebar-accent"
+                      aria-label="Abrir todos os módulos disponíveis"
+                    >
+                      <Grid3X3 className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      {!collapsed && <span>Todos os módulos</span>}
+                    </SidebarMenuButton>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="max-w-xs">
+                    <p className="font-medium">Todos os módulos</p>
+                    <p className="text-xs text-muted-foreground">
+                      Pesquise e abra qualquer área permitida para o seu perfil.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
 
       <SidebarFooter user={user} collapsed={collapsed} onLogout={handleLogout} />

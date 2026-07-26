@@ -1,24 +1,28 @@
 import { ReactNode, useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { AppHeader } from "@/components/AppHeader";
 import { useAuth } from "@/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { LiveRegion } from "@/components/a11y/LiveRegion";
-import { useLiveAnnounce } from "@/components/a11y/LiveRegion";
-import { useLocation } from "react-router-dom";
+import { LiveRegion, useLiveAnnounce } from "@/components/a11y/LiveRegion";
 import { useApplicationSession } from "@/hooks/useApplicationSession";
 import { initializeAccessContext } from "@/services/accessContextBootstrap";
+import { getNavigationItemForPath } from "@/config/navigation";
+import { useActiveAccessRole } from "@/hooks/useActiveAccessRole";
+import { PageBreadcrumb } from "@/components/PageHeader";
+import { useQueryClient } from "@tanstack/react-query";
 
 type ContextStatus = "loading" | "ready" | "selection-required" | "error";
 
 export function AppLayout({ children }: { children: ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
+  const activeRoleName = useActiveAccessRole(user?.role_name);
   const location = useLocation();
   const { message, announce } = useLiveAnnounce();
   const [contextStatus, setContextStatus] = useState<ContextStatus>("loading");
+  const queryClient = useQueryClient();
   useApplicationSession(undefined, contextStatus === "ready");
 
   useEffect(() => {
@@ -28,71 +32,44 @@ export function AppLayout({ children }: { children: ReactNode }) {
     }
 
     let active = true;
+    const onContextChanging = () => {
+      if (!active) return;
+      queryClient.clear();
+      setContextStatus("loading");
+    };
     const onContextChanged = () => active && setContextStatus("ready");
+    const onContextChangeFailed = () => active && setContextStatus("error");
+    window.addEventListener("prontomedic:access-context-changing", onContextChanging);
     window.addEventListener("prontomedic:access-context-changed", onContextChanged);
+    window.addEventListener("prontomedic:access-context-change-failed", onContextChangeFailed);
     void initializeAccessContext()
       .then((selected) => {
         if (active) setContextStatus(selected ? "ready" : "selection-required");
       })
-      .catch(() => active && setContextStatus("error"));
+      .catch(() => {
+        if (active) setContextStatus("error");
+      });
 
     return () => {
       active = false;
+      window.removeEventListener("prontomedic:access-context-changing", onContextChanging);
       window.removeEventListener("prontomedic:access-context-changed", onContextChanged);
+      window.removeEventListener("prontomedic:access-context-change-failed", onContextChangeFailed);
     };
-  }, [isAuthenticated, isLoading]);
+  }, [isAuthenticated, isLoading, queryClient]);
 
-  // Mount global keyboard shortcuts (Ctrl+K, Ctrl+N, g+d, g+a, ...)
-  useKeyboardShortcuts();
-
-  // Announce page changes to screen readers (polite, non-urgent)
-  const pathLabels: Record<string, string> = {
-    "/": "Dashboard",
-    "/patients": "Pacientes",
-    "/professionals": "Profissionais",
-    "/schedule": "Agenda",
-    "/callcenter": "Call Center",
-    "/reception": "Recepção",
-    "/records": "Prontuário",
-    "/worklist": "Worklist",
-    "/pacs": "PACS",
-    "/dicom/orders": "Pedidos de Imagem",
-    "/dicom/worklist": "DICOM Worklist",
-    "/dicom/reports": "Laudos",
-    "/dicom/modalities": "Equipamentos",
-    "/dicom/nodes": "Nós DICOM",
-    "/dicom/dashboard": "Integração DICOM",
-    "/financial": "Financeiro",
-    "/billing-production": "Faturamento",
-    "/professional-payment": "Pagamento de Profissionais",
-    "/companies": "Empresas",
-    "/master-data": "Cadastros",
-    "/admin/users": "Usuários",
-    "/admin/profiles": "Perfis",
-    "/admin/permissions": "Permissões",
-    "/settings": "Configurações",
-    "/purchases": "Compras",
-    "/transport": "Transporte",
-    "/nps": "NPS",
-  };
-  const currentPage = pathLabels[location.pathname] || "Página";
+  useKeyboardShortcuts(activeRoleName);
+  const currentPage = getNavigationItemForPath(location.pathname)?.title ?? "Página";
 
   if (isLoading) {
     return (
-      <div
-        className="min-h-screen flex items-center justify-center bg-background"
-        role="status"
-        aria-live="polite"
-        aria-label="Carregando aplicação"
-      >
+      <div className="min-h-screen flex items-center justify-center bg-background" role="status" aria-live="polite" aria-label="Carregando aplicação">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
 
   return (
     <SidebarProvider>
@@ -105,10 +82,15 @@ export function AppLayout({ children }: { children: ReactNode }) {
             role="main"
             tabIndex={-1}
             aria-label={`Conteúdo principal: ${currentPage}`}
-            className="flex-1 p-6 overflow-auto focus:outline-none"
+            className="flex-1 p-4 md:p-6 overflow-auto focus:outline-none"
             onFocus={() => announce(`Navegou para ${currentPage}`)}
           >
-            {contextStatus === "ready" ? children : (
+            {contextStatus === "ready" ? (
+              <>
+                <PageBreadcrumb currentTitle={currentPage} />
+                {children}
+              </>
+            ) : (
               <div className="flex min-h-64 items-center justify-center text-center" role="status" aria-live="polite">
                 {contextStatus === "loading" ? (
                   <Loader2 className="h-8 w-8 animate-spin text-primary" aria-label="Ativando contexto de acesso" />
@@ -120,7 +102,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
                     <p className="text-sm text-muted-foreground">
                       {contextStatus === "selection-required"
                         ? "Escolha a empresa, unidade e perfil no seletor do cabeçalho para continuar."
-                        : "Não foi possível validar a empresa, unidade e perfil desta sessão."}
+                        : "Não foi possível validar a empresa, unidade e perfil desta sessão. Recarregue a página para recuperar o último contexto autorizado."}
                     </p>
                   </div>
                 )}

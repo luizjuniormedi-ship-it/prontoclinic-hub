@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Info } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,55 @@ import { validateAppointmentFields, checkOverlap, checkReturnRule, handleService
 import { Patient } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/utils/formatters";
+import { useAuth } from "@/hooks/useAuth";
+import { useActiveAccessContext } from "@/hooks/useActiveAccessRole";
+import { supabase } from "@/lib/supabase";
+
+type ProfessionalUnitLink = {
+  professional_id: string | number;
+  unit_id?: string | number | null;
+  slot1_unit_id?: string | number | null;
+  slot2_unit_id?: string | number | null;
+  slot3_unit_id?: string | number | null;
+};
+
+export function canonicalUnitId(value: string | number | null | undefined): string | null {
+  const raw = String(value ?? "").trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? String(parsed) : null;
+}
+
+export function professionalIdsForUnit(
+  rows: ProfessionalUnitLink[],
+  unitId: string | number | null | undefined,
+): Set<string> {
+  const canonical = canonicalUnitId(unitId);
+  if (!canonical) return new Set();
+  return new Set(
+    rows
+      .filter((row) => [
+        row.unit_id,
+        row.slot1_unit_id,
+        row.slot2_unit_id,
+        row.slot3_unit_id,
+      ].some((candidate) => canonicalUnitId(candidate) === canonical))
+      .map((row) => String(row.professional_id)),
+  );
+}
+
+export function filterProfessionalsForUnit(
+  professionals: DbProfessional[],
+  linkedProfessionalIds: Set<string>,
+): DbProfessional[] {
+  return professionals.filter((professional) => {
+    const status = professional.status?.toLowerCase();
+    const active = status
+      ? status === "active" || status === "ativo"
+      : professional.lg_ativo !== false;
+    return active && linkedProfessionalIds.has(String(professional.id));
+  });
+}
 
 interface NewAppointmentDialogProps {
   open: boolean;
@@ -29,6 +78,9 @@ interface NewAppointmentDialogProps {
 
 export function NewAppointmentDialog({ open, onOpenChange, professionals, specialties, appointmentTypes, services, insurances, patients, selectedDate, onCreated }: NewAppointmentDialogProps) {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const activeContext = useActiveAccessContext(user?.role_name, user?.company_id);
+  const activeUnitId = canonicalUnitId(activeContext.unitId);
   const [patientId, setPatientId] = useState("");
   const [professionalId, setProfessionalId] = useState("");
   const [specialtyId, setSpecialtyId] = useState("");
@@ -48,6 +100,9 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
   const [patientSearch, setPatientSearch] = useState("");
   const [patientResults, setPatientResults] = useState<Patient[]>([]);
   const [patientSearchLoading, setPatientSearchLoading] = useState(false);
+  const [linkedProfessionalIds, setLinkedProfessionalIds] = useState<Set<string>>(new Set());
+  const [unitProfessionalsLoading, setUnitProfessionalsLoading] = useState(false);
+  const [unitProfessionalsError, setUnitProfessionalsError] = useState<string | null>(null);
 
   // Validation states
   const [overlapWarning, setOverlapWarning] = useState<string | null>(null);
@@ -57,6 +112,45 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
 
   // Reset on selectedDate change
   useEffect(() => { setDate(selectedDate); }, [selectedDate]);
+
+  const loadUnitProfessionals = useCallback(async () => {
+    if (!activeUnitId) {
+      setLinkedProfessionalIds(new Set());
+      setUnitProfessionalsError("Selecione uma unidade operacional antes de criar o agendamento.");
+      return;
+    }
+
+    try {
+      setUnitProfessionalsLoading(true);
+      setUnitProfessionalsError(null);
+      let query = supabase
+        .from("professional_schedules")
+        .select("professional_id, unit_id, slot1_unit_id, slot2_unit_id, slot3_unit_id")
+        .eq("lg_habilitado", true);
+      if (activeContext.companyId) {
+        query = query.eq("company_id", activeContext.companyId);
+      }
+      const { data, error } = await query;
+      if (error) throw error;
+      setLinkedProfessionalIds(professionalIdsForUnit(
+        (data ?? []) as ProfessionalUnitLink[],
+        activeUnitId,
+      ));
+    } catch (error) {
+      setLinkedProfessionalIds(new Set());
+      setUnitProfessionalsError(
+        error instanceof Error
+          ? `Não foi possível carregar os profissionais da unidade: ${error.message}`
+          : "Não foi possível carregar os profissionais da unidade.",
+      );
+    } finally {
+      setUnitProfessionalsLoading(false);
+    }
+  }, [activeContext.companyId, activeUnitId]);
+
+  useEffect(() => {
+    if (open) void loadUnitProfessionals();
+  }, [loadUnitProfessionals, open]);
 
   const resetForm = () => {
     setPatientId(""); setProfessionalId(""); setSpecialtyId("");
@@ -165,11 +259,16 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
   }, [patientSearch]);
 
   const patientOptions = patientSearch.trim().length >= 2 ? patientResults : patients;
-  const activeProfessionals = professionals.filter((p) => {
-    const status = p.status?.toLowerCase();
-    if (status) return status === "active" || status === "ativo";
-    return p.lg_ativo !== false;
-  });
+  const activeProfessionals = useMemo(
+    () => filterProfessionalsForUnit(professionals, linkedProfessionalIds),
+    [linkedProfessionalIds, professionals],
+  );
+
+  useEffect(() => {
+    if (professionalId && !activeProfessionals.some((professional) => professional.id === professionalId)) {
+      setProfessionalId("");
+    }
+  }, [activeProfessionals, professionalId]);
 
   useEffect(() => {
     if (!patientId || !professionalId) { setRequirements(null); return; }
@@ -195,6 +294,15 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
   }, [patientId, professionalId, serviceId, insuranceId, cardNumber]);
 
   const handleSubmit = async () => {
+    if (!activeUnitId) {
+      setValidationErrors(["Selecione uma unidade operacional antes de criar o agendamento."]);
+      return;
+    }
+    if (!linkedProfessionalIds.has(String(professionalId))) {
+      setValidationErrors(["Selecione um profissional habilitado na unidade ativa."]);
+      return;
+    }
+
     // Validate fields
     const errors = validateAppointmentFields({
       patient_id: patientId,
@@ -230,6 +338,8 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
       setValidationErrors([]);
 
       await appointmentsService.create({
+        company_id: activeContext.companyId || user?.company_id || undefined,
+        unit_id: activeUnitId,
         patient_id: patientId,
         professional_id: professionalId,
         specialty_id: specialtyId || undefined,
@@ -362,15 +472,43 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
           </div>
 
           <div className="space-y-2">
-            <Label>Profissional *</Label>
+            <Label>Profissional da unidade *</Label>
             <Select value={professionalId} onValueChange={setProfessionalId}>
-              <SelectTrigger aria-label="Selecionar profissional"><SelectValue placeholder="Selecione" /></SelectTrigger>
+              <SelectTrigger
+                aria-label="Selecionar profissional da unidade ativa"
+                disabled={!activeUnitId || unitProfessionalsLoading || Boolean(unitProfessionalsError)}
+              >
+                <SelectValue
+                  placeholder={
+                    unitProfessionalsLoading
+                      ? "Carregando profissionais..."
+                      : activeProfessionals.length > 0
+                        ? "Selecione"
+                        : "Nenhum profissional habilitado"
+                  }
+                />
+              </SelectTrigger>
               <SelectContent>
                 {activeProfessionals.map((p) => (
                   <SelectItem key={p.id} value={p.id}>{p.full_name} — {p.category}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {unitProfessionalsError && (
+              <div className="flex items-center justify-between gap-2" role="alert">
+                <p className="text-xs text-destructive">{unitProfessionalsError}</p>
+                {activeUnitId && (
+                  <Button type="button" variant="outline" size="sm" onClick={() => void loadUnitProfessionals()}>
+                    Recarregar
+                  </Button>
+                )}
+              </div>
+            )}
+            {!unitProfessionalsLoading && !unitProfessionalsError && activeUnitId && activeProfessionals.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Nenhum profissional possui agenda habilitada nesta unidade.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -417,7 +555,17 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={handleClose}>Cancelar</Button>
-          <Button onClick={handleSubmit} disabled={saving || !!overlapWarning || Boolean(requirements?.errors.length)}>
+          <Button
+            onClick={handleSubmit}
+            disabled={
+              saving
+              || unitProfessionalsLoading
+              || !activeUnitId
+              || !!unitProfessionalsError
+              || !!overlapWarning
+              || Boolean(requirements?.errors.length)
+            }
+          >
             {saving ? "Salvando..." : "Agendar"}
           </Button>
         </DialogFooter>

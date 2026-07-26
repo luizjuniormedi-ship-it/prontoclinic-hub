@@ -17,6 +17,10 @@ export interface ApplicationSessionRegistration {
   device_id: string;
   idle_expires_at: string;
   absolute_expires_at?: string;
+  company_id: string;
+  membership_id: string;
+  role_id: number;
+  unit_id: number | null;
 }
 
 export interface DeviceRevocationResult {

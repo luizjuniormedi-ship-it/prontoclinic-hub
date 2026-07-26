@@ -383,13 +383,10 @@ class BIServiceImpl {
     const { data, error } = await supabase
       .from("v_ocupacao_profissional")
       .select("*")
+      .eq("company_id", companyId)
       .order("nr_agendamentos_total", { ascending: false });
 
     if (error) throw error;
-
-    // Filtra profissionais da company (a view não tem company_id, mas podemos
-    // cruzar com a tabela de profissionais depois — deixamos todos por ora)
-    void companyId;
 
     return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
       cd_profissional: String(r.cd_profissional ?? ""),
@@ -413,11 +410,10 @@ class BIServiceImpl {
     const { data, error } = await supabase
       .from("v_faturamento_convenio")
       .select("*")
+      .eq("company_id", companyId)
       .order("vl_faturado", { ascending: false });
 
     if (error) throw error;
-
-    void companyId;
 
     return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
       cd_convenio: String(r.cd_convenio ?? ""),

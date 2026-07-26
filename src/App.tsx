@@ -1,12 +1,15 @@
 import { lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConfirmProvider } from "@/hooks/useConfirm";
 import { AuthProvider } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/AppLayout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { useAuth } from "@/hooks/useAuth";
+import { useActiveAccessRole } from "@/hooks/useActiveAccessRole";
+import { normalizeRoleName } from "@/config/routePermissions";
 
 // Public pages — eager import for fast FCP/TTI on login + pre-cadastro
 import LoginPage from "@/pages/LoginPage";
@@ -20,6 +23,15 @@ import NotFound from "@/pages/NotFound";
 
 // Authenticated pages — lazy loaded (code-split per route)
 const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
+
+function RoleAwareHome() {
+  const { user } = useAuth();
+  const roleName = useActiveAccessRole(user?.role_name);
+  if (normalizeRoleName(roleName) === "paciente") {
+    return <Navigate to="/meus-agendamentos" replace />;
+  }
+  return <LazyRoute><DashboardPage /></LazyRoute>;
+}
 
 // Patients
 const PatientsPage = lazy(() => import("@/pages/PatientsPage"));
@@ -148,6 +160,7 @@ function LoadingFallback() {
       className="flex items-center justify-center min-h-[50vh]"
       role="status"
       aria-live="polite"
+      data-testid="lazy-route-loading"
     >
       <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
     </div>
@@ -180,7 +193,7 @@ const App = () => (
             <Route path="/confirmar-email" element={<ConfirmarEmailPage />} />
 
             {/* Authenticated — lazy */}
-            <Route path="/" element={<AppLayout><ProtectedRoute path="/"><LazyRoute><DashboardPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/" element={<AppLayout><ProtectedRoute path="/"><RoleAwareHome /></ProtectedRoute></AppLayout>} />
 
             {/* Patients */}
             <Route path="/patients" element={<AppLayout><ProtectedRoute path="/patients"><LazyRoute><PatientsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
@@ -207,15 +220,15 @@ const App = () => (
             <Route path="/dicom/worklist" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomWorklistPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/dicom/dashboard" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomDashboardPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/dicom/reports" element={<AppLayout><ProtectedRoute path="/dicom/reports"><LazyRoute><RadiologyReportsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/admin/dicom" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><DicomEquipmentManager /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/admin/report-templates" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><ReportTemplateEditor /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/dicom" element={<AppLayout><ProtectedRoute path="/admin/dicom"><LazyRoute><DicomEquipmentManager /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/report-templates" element={<AppLayout><ProtectedRoute path="/admin/report-templates"><LazyRoute><ReportTemplateEditor /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* Financial */}
             <Route path="/financial" element={<AppLayout><ProtectedRoute path="/financial"><LazyRoute><FinancialPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/billing-production" element={<AppLayout><ProtectedRoute path="/billing-production"><LazyRoute><BillingProductionPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/billing-accounts" element={<AppLayout><ProtectedRoute path="/billing-accounts"><LazyRoute><BillingAccountsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/professional-payment" element={<AppLayout><ProtectedRoute path="/professional-payment"><LazyRoute><ProfessionalPaymentPage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/admin/tiss" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><TissManager /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/tiss" element={<AppLayout><ProtectedRoute path="/admin/tiss"><LazyRoute><TissManager /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* Master + Companies */}
             <Route path="/settings" element={<AppLayout><ProtectedRoute path="/settings"><LazyRoute><SettingsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
@@ -223,17 +236,17 @@ const App = () => (
             <Route path="/companies" element={<AppLayout><ProtectedRoute path="/companies"><LazyRoute><CompaniesPage /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* Admin (users/profiles/permissions) */}
-            <Route path="/admin/users" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><AdminUsersPage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/admin/profiles" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><AdminProfilesPage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/admin/permissions" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><AdminPermissionsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/users" element={<AppLayout><ProtectedRoute path="/admin/users"><LazyRoute><AdminUsersPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/profiles" element={<AppLayout><ProtectedRoute path="/admin/profiles"><LazyRoute><AdminProfilesPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/permissions" element={<AppLayout><ProtectedRoute path="/admin/permissions"><LazyRoute><AdminPermissionsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* Admin (insurances / price tables / LGPD / audit / notifications) */}
-            <Route path="/admin/insurances" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><InsuranceManager /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/admin/price-tables" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><PriceTableEditor /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/admin/credentialing" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><ProfessionalCredentialingPage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/admin/lgpd" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><LGPDManager /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/admin/audit" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><AuditLogViewer /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/admin/notifications" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><NotificationCenter /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/insurances" element={<AppLayout><ProtectedRoute path="/admin/insurances"><LazyRoute><InsuranceManager /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/price-tables" element={<AppLayout><ProtectedRoute path="/admin/price-tables"><LazyRoute><PriceTableEditor /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/credentialing" element={<AppLayout><ProtectedRoute path="/admin/credentialing"><LazyRoute><ProfessionalCredentialingPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/lgpd" element={<AppLayout><ProtectedRoute path="/admin/lgpd"><LazyRoute><LGPDManager /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/audit" element={<AppLayout><ProtectedRoute path="/admin/audit"><LazyRoute><AuditLogViewer /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/notifications" element={<AppLayout><ProtectedRoute path="/admin/notifications"><LazyRoute><NotificationCenter /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* LIS / Laboratório */}
             <Route path="/lab" element={<AppLayout><ProtectedRoute path="/lab"><LazyRoute><LabPage /></LazyRoute></ProtectedRoute></AppLayout>} />
@@ -248,9 +261,9 @@ const App = () => (
             <Route path="/pharmacy" element={<AppLayout><ProtectedRoute path="/pharmacy"><LazyRoute><PharmacyPage /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* Nursing / Triage */}
-            <Route path="/nursing/triage" element={<AppLayout><ProtectedRoute path="/nursing"><LazyRoute><NursingTriagePage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/nursing/queue" element={<AppLayout><ProtectedRoute path="/nursing"><LazyRoute><NursingTriagePage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/nursing/care" element={<AppLayout><ProtectedRoute path="/nursing"><LazyRoute><NursingCarePage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/nursing/triage" element={<AppLayout><ProtectedRoute path="/nursing/triage"><LazyRoute><NursingTriagePage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/nursing/queue" element={<AppLayout><ProtectedRoute path="/nursing/queue"><LazyRoute><NursingTriagePage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/nursing/care" element={<AppLayout><ProtectedRoute path="/nursing/care"><LazyRoute><NursingCarePage /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* BI / Indicadores */}
             <Route path="/bi" element={<AppLayout><ProtectedRoute path="/bi"><LazyRoute><BiDashboardPage /></LazyRoute></ProtectedRoute></AppLayout>} />

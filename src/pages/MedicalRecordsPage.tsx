@@ -4,6 +4,7 @@ import { Search, Users, User, AlertTriangle, FileText } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState, LoadingState, ErrorState } from "@/components/StateViews";
 import { supabase } from "@/lib/supabase";
@@ -20,7 +21,7 @@ export default function MedicalRecordsPage() {
   const debouncedSearch = useDebounce(search, 300);
   const [patients, setPatients] = useState<PatientRow[]>([]);
   const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [professionalsWarning, setProfessionalsWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedPatient, setSelectedPatient] = useState<PatientRow | null>(null);
   const [records, setRecords] = useState<DbMedicalRecord[]>([]);
@@ -31,8 +32,12 @@ export default function MedicalRecordsPage() {
   useEffect(() => {
     professionalsLookup.getAll()
       .then(setProfessionals)
-      .catch((err) => setError((err as Error).message))
-      .finally(() => setLoading(false));
+      .catch(() => {
+        setProfessionals([]);
+        setProfessionalsWarning(
+          "Os nomes dos profissionais não puderam ser carregados. A busca de prontuários continua disponível.",
+        );
+      })
   }, []);
 
   useEffect(() => {
@@ -72,7 +77,6 @@ export default function MedicalRecordsPage() {
 
   const filtered = patients;
 
-  if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
 
   if (selectedPatient) {
@@ -138,31 +142,50 @@ export default function MedicalRecordsPage() {
   return (
     <div className="space-y-6 animate-fade-in">
       <PageHeader title="Prontuário Eletrônico" description="Selecione um paciente para acessar o prontuário" />
+      {professionalsWarning && (
+        <Alert>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>{professionalsWarning}</AlertDescription>
+        </Alert>
+      )}
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input placeholder="Buscar por nome..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <Input
+          aria-label="Buscar paciente por nome"
+          placeholder="Buscar por nome..."
+          className="pl-9"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
       </div>
       {debouncedSearch.trim().length < 2 ? <EmptyState icon={Search} title="Busque um paciente" description="Digite ao menos 2 caracteres para localizar o prontuário." /> : filtered.length === 0 ? <EmptyState icon={Users} title="Nenhum paciente encontrado" /> : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((p) => {
             const age = p.birth_date ? calculateAge(p.birth_date) : null;
             return (
-              <Card key={p.id} className="cursor-pointer hover:shadow-md hover:border-primary/30 transition-all" onClick={() => handleSelectPatient(p)}>
-                <CardContent className="p-4 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0"><User className="h-4 w-4 text-primary" /></div>
-                    <div>
-                      <p className="font-medium text-sm">{p.full_name}</p>
-                      <p className="text-xs text-muted-foreground">{age != null ? `${age}a • ` : ""}{p.sex === "M" ? "Masc." : p.sex === "F" ? "Fem." : "Outro"} • {p.insurance_plan_id || "Particular"}</p>
+              <Card key={p.id} className="hover:shadow-md hover:border-primary/30 transition-all">
+                <button
+                  type="button"
+                  className="block w-full rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  onClick={() => handleSelectPatient(p)}
+                  aria-label={`Abrir prontuário de ${p.full_name}`}
+                >
+                  <CardContent className="p-4 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0"><User className="h-4 w-4 text-primary" /></div>
+                      <div>
+                        <p className="font-medium text-sm">{p.full_name}</p>
+                        <p className="text-xs text-muted-foreground">{age != null ? `${age}a • ` : ""}{p.sex === "M" ? "Masc." : p.sex === "F" ? "Fem." : "Outro"} • {p.insurance_plan_id || "Particular"}</p>
+                      </div>
                     </div>
-                  </div>
-                  {p.allergies && (
-                    <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-destructive/10 w-fit">
-                      <AlertTriangle className="h-2.5 w-2.5 text-destructive" />
-                      <span className="text-[10px] text-destructive font-medium">{p.allergies}</span>
-                    </div>
-                  )}
-                </CardContent>
+                    {p.allergies && (
+                      <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-destructive/10 w-fit">
+                        <AlertTriangle className="h-2.5 w-2.5 text-destructive" />
+                        <span className="text-[10px] text-destructive font-medium">{p.allergies}</span>
+                      </div>
+                    )}
+                  </CardContent>
+                </button>
               </Card>
             );
           })}

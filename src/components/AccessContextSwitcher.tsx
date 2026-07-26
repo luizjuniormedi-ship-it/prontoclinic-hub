@@ -37,13 +37,27 @@ export function AccessContextSwitcher() {
     return () => { active = false; };
   }, [toast]);
 
+  useEffect(() => {
+    const onContextChanged = (event: Event) => {
+      const selectedContext = (event as CustomEvent<AccessContextOption>).detail;
+      setCurrent(
+        options.find((option) => sameContext(option, selectedContext)) ?? null,
+      );
+    };
+    window.addEventListener("prontomedic:access-context-changed", onContextChanged);
+    return () => window.removeEventListener("prontomedic:access-context-changed", onContextChanged);
+  }, [options]);
+
   const select = async (option: AccessContextOption) => {
     setLoading(true);
+    window.dispatchEvent(new CustomEvent("prontomedic:access-context-changing", { detail: option }));
     try {
       await activateAccessContext(option);
       setCurrent(option);
     } catch (error) {
+      window.dispatchEvent(new CustomEvent("prontomedic:access-context-change-failed", { detail: option }));
       toast({ title: "Não foi possível trocar o contexto", description: error instanceof Error ? error.message : undefined, variant: "destructive" });
+    } finally {
       setLoading(false);
     }
   };

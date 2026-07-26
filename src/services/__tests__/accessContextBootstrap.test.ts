@@ -41,6 +41,10 @@ beforeEach(() => {
     session_id: "session-1",
     device_id: "device-1",
     idle_expires_at: "2026-07-17T12:00:00Z",
+    company_id: option.companyId,
+    membership_id: option.membershipId,
+    role_id: option.roleId,
+    unit_id: option.unitId,
   });
 });
 

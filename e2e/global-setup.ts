@@ -65,7 +65,15 @@ export default async function globalSetup(config: FullConfig) {
     { email: 'admin@prontomedic.test', role: 'admin' as const },
     { email: 'doctor@prontomedic.test', role: 'doctor' as const },
     { email: 'recepcao@prontomedic.test', role: 'reception' as const },
-    { email: 'paciente@prontomedic.test', role: 'patient' as const }
+    { email: 'paciente@prontomedic.test', role: 'patient' as const },
+    { email: 'gestor@prontomedic.test', role: 'gestor' as const },
+    { email: 'enfermagem@prontomedic.test', role: 'enfermagem' as const },
+    { email: 'laboratorio@prontomedic.test', role: 'laboratorio' as const },
+    { email: 'diagnostico@prontomedic.test', role: 'diagnostico' as const },
+    { email: 'farmacia@prontomedic.test', role: 'farmacia' as const },
+    { email: 'financeiro@prontomedic.test', role: 'financeiro' as const },
+    { email: 'dpo@prontomedic.test', role: 'dpo' as const },
+    { email: 'administrativo@prontomedic.test', role: 'administrativo' as const }
   ];
 
   for (const u of users) {

@@ -1,0 +1,56 @@
+name: Database contracts
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  database-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 54322:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Replay migrations and run database contracts
+        env:
+          PGHOST: localhost
+          PGPORT: 54322
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -o pipefail
+          {
+            createdb prontomedic_contracts
+            scripts/replay-migrations.sh prontomedic_contracts
+            psql -v ON_ERROR_STOP=1 -d prontomedic_contracts -f tests/database/auth_foundation.sql
+            psql -v ON_ERROR_STOP=1 -d prontomedic_contracts -f tests/database/access_context_foundation.sql
+            psql -v ON_ERROR_STOP=1 -d prontomedic_contracts -f tests/database/sessions_and_secure_drafts.sql
+            psql -v ON_ERROR_STOP=1 -d prontomedic_contracts -f tests/database/auth_admin_provisioning.sql
+            psql -v ON_ERROR_STOP=1 -d prontomedic_contracts -f tests/database/operational_rls.sql
+            psql -v ON_ERROR_STOP=1 -d prontomedic_contracts -f tests/database/patient_portal_scope.sql
+            psql -v ON_ERROR_STOP=1 -d prontomedic_contracts -f tests/database/reception_checkout.sql
+            psql -v ON_ERROR_STOP=1 -d prontomedic_contracts -f tests/database/runtime_contract_hardening.sql
+          } 2>&1 | tee database-contracts.log
+
+      - name: Upload database diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-contracts-log
+          path: database-contracts.log
+          retention-days: 30

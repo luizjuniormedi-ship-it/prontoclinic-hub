@@ -8,13 +8,13 @@ import {
 
 type Theme = "light" | "dark";
 
-interface CompanySwitcherProps {
+interface ThemeToggleProps {
   /** Current theme; controls icon and aria labels. */
   theme: Theme;
   onToggleTheme: () => void;
 }
 
-export function CompanySwitcher({ theme, onToggleTheme }: CompanySwitcherProps) {
+export function ThemeToggle({ theme, onToggleTheme }: ThemeToggleProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>

@@ -27,6 +27,10 @@ beforeEach(() => {
     session_id: "10000000-0000-0000-0000-000000000001",
     device_id: "20000000-0000-0000-0000-000000000002",
     idle_expires_at: "2026-07-17T00:00:00Z",
+    company_id: "company-1",
+    membership_id: "membership-1",
+    role_id: 1,
+    unit_id: null,
   });
   vi.mocked(getClientDeviceId).mockReturnValue("30000000-0000-0000-0000-000000000003");
   vi.mocked(supabase.auth.signOut).mockResolvedValue({ error: null } as never);

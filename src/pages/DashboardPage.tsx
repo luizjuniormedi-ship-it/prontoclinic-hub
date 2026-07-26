@@ -11,6 +11,8 @@ import { supabase } from "@/lib/supabase";
 import { appointmentsService, professionalsLookup, DbAppointment, DbProfessional } from "@/services/appointmentsService";
 import { calculateAge } from "@/utils/formatters";
 import { useAuth } from "@/hooks/useAuth";
+import { useActiveAccessRole } from "@/hooks/useActiveAccessRole";
+import { canAccessRoute } from "@/config/routePermissions";
 import type { AppointmentStatusForBadge } from "@/types/missing";
 
 interface PatientRow { id: string; full_name: string; birth_date: string | null; }
@@ -24,30 +26,41 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
+  const activeRoleName = useActiveAccessRole(user?.role_name);
+  const canReadSchedule = canAccessRoute(activeRoleName, "/schedule");
+  const canReadPatients = canAccessRoute(activeRoleName, "/patients");
+  const canOpenReception = canAccessRoute(activeRoleName, "/reception");
   const today = new Date().toISOString().split("T")[0];
 
   useEffect(() => {
     (async () => {
       try {
         setLoading(true);
-        const [profs, appts, { count }] = await Promise.all([
-          professionalsLookup.getAll(),
-          appointmentsService.getByDate(today),
-          supabase.from("patients").select("id", { count: "exact", head: true }),
+        const [profs, appts, patientCountResult] = await Promise.all([
+          canReadSchedule ? professionalsLookup.getAll() : Promise.resolve([]),
+          canReadSchedule ? appointmentsService.getByDate(today) : Promise.resolve([]),
+          canReadPatients
+            ? supabase.from("patients").select("id", { count: "exact", head: true })
+            : Promise.resolve({ count: 0, error: null }),
         ]);
+        if (patientCountResult.error) throw patientCountResult.error;
         setProfessionals(profs);
         setAppointments(appts);
-        setTotalPatients(count || 0);
+        setTotalPatients(patientCountResult.count || 0);
 
         const patientIds = [...new Set(appts.map((a) => a.patient_id).filter(Boolean))];
-        if (patientIds.length > 0) {
-          const { data } = await supabase.from("patients").select("id, full_name, birth_date").in("id", patientIds);
+        if (canReadPatients && patientIds.length > 0) {
+          const { data, error: patientsError } = await supabase
+            .from("patients")
+            .select("id, full_name, birth_date")
+            .in("id", patientIds);
+          if (patientsError) throw patientsError;
           setPatients(data || []);
         }
       } catch (err) { setError((err as Error).message); }
       finally { setLoading(false); }
     })();
-  }, [today]);
+  }, [canReadPatients, canReadSchedule, today]);
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
@@ -63,16 +76,35 @@ export default function DashboardPage() {
     <div className="space-y-6 animate-fade-in">
       <PageHeader title="Dashboard" description={`Bem-vindo, ${user?.full_name || ""}! Visão geral da clínica.`} />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <StatsCard title="Agendamentos Hoje" value={appointments.length} icon={Calendar} variant="primary" />
-        <StatsCard title="Pacientes Cadastrados" value={totalPatients} icon={Users} variant="secondary" />
-        <StatsCard title="Aguardando" value={waiting} icon={Clock} variant="warning" />
-        <StatsCard title="Em Atendimento" value={inProgress} icon={Stethoscope} variant="success" />
-        <StatsCard title="Faltas Hoje" value={noShow} icon={UserX} variant="destructive" />
-      </div>
+      {(canReadSchedule || canReadPatients) ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          {canReadSchedule && (
+            <>
+              <StatsCard title="Agendamentos Hoje" value={appointments.length} icon={Calendar} variant="primary" />
+              <StatsCard title="Aguardando" value={waiting} icon={Clock} variant="warning" />
+              <StatsCard title="Em Atendimento" value={inProgress} icon={Stethoscope} variant="success" />
+              <StatsCard title="Faltas Hoje" value={noShow} icon={UserX} variant="destructive" />
+            </>
+          )}
+          {canReadPatients && (
+            <StatsCard title="Pacientes Cadastrados" value={totalPatients} icon={Users} variant="secondary" />
+          )}
+        </div>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Acesso por perfil</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              Use o menu para abrir as áreas autorizadas para o seu perfil.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Quick action alerts */}
-      {(waiting > 0 || inProgress > 0) && (
+      {canOpenReception && (waiting > 0 || inProgress > 0) && (
         <div className="flex flex-col gap-2">
           {waiting > 0 && (
             <Card className="border-warning/30 bg-warning/5 cursor-pointer hover:shadow-md" onClick={() => navigate("/reception")}>
@@ -89,7 +121,7 @@ export default function DashboardPage() {
       )}
 
       {/* Next appointments */}
-      <Card>
+      {canReadSchedule && <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-lg">Próximos Atendimentos</CardTitle>
           <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate("/schedule")}>Ver Agenda →</Button>
@@ -118,7 +150,7 @@ export default function DashboardPage() {
             </div>
           )}
         </CardContent>
-      </Card>
+      </Card>}
     </div>
   );
 }

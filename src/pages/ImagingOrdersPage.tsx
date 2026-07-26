@@ -296,7 +296,13 @@ export default function ImagingOrdersPage() {
       <div className="flex gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Buscar paciente ou accession..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Input
+            aria-label="Buscar pedidos de imagem"
+            placeholder="Buscar paciente ou accession..."
+            className="pl-9"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger>

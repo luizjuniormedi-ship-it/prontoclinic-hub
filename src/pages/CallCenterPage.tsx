@@ -16,6 +16,7 @@ import { patientsService } from "@/services/patientsService";
 import { Patient } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 import { friendlyError } from "@/utils/friendlyError";
+import { matchesCallCenterContactSearch } from "@/utils/callCenterSearch";
 
 const resultLabels: Record<CallCenterResult, string> = {
   agendado: "Agendado",
@@ -55,11 +56,20 @@ const channelLabels: Record<CallCenterChannel, string> = {
   indicacao: "Indicação",
 };
 
+export function normalizeCallCenterText(text: string): string {
+  return text.split("mÃ³dulo").join("módulo");
+}
+
+function callCenterError(error: unknown, action: string): string {
+  return normalizeCallCenterText(friendlyError(error, action));
+}
+
 export default function CallCenterPage() {
   const [contacts, setContacts] = useState<CallCenterContactLog[]>([]);
   const [tasks, setTasks] = useState<CallCenterTask[]>([]);
   const [confirmations, setConfirmations] = useState<ConfirmationQueueItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshingConfirmationQueue, setRefreshingConfirmationQueue] = useState(false);
   const [search, setSearch] = useState("");
   const [resultFilter, setResultFilter] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -68,7 +78,6 @@ export default function CallCenterPage() {
   const reload = async () => {
     try {
       setLoading(true);
-      await callCenterService.refreshConfirmationQueue(3);
       const [contactRows, taskRows, confirmationRows] = await Promise.all([
         callCenterService.listContacts(),
         callCenterService.listTasks("pending"),
@@ -78,7 +87,7 @@ export default function CallCenterPage() {
       setTasks(taskRows);
       setConfirmations(confirmationRows);
     } catch (err) {
-      toast({ title: friendlyError(err, "Carregar call center"), variant: "destructive" });
+      toast({ title: callCenterError(err, "Carregar call center"), variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -86,13 +95,21 @@ export default function CallCenterPage() {
 
   useEffect(() => { void reload(); }, []);
 
+  const handleRefreshConfirmationQueue = async () => {
+    try {
+      setRefreshingConfirmationQueue(true);
+      await callCenterService.refreshConfirmationQueue(3);
+      await reload();
+      toast({ title: "Fila de confirmação atualizada" });
+    } catch (error) {
+      toast({ title: callCenterError(error, "Atualizar fila de confirmação"), variant: "destructive" });
+    } finally {
+      setRefreshingConfirmationQueue(false);
+    }
+  };
+
   const filtered = contacts.filter((r) => {
-    const q = search.trim().toLowerCase();
-    const matchSearch = !q ||
-      (r.patient_name || "").toLowerCase().includes(q) ||
-      (r.patient_cpf || "").includes(q.replace(/\D/g, "")) ||
-      (r.patient_phone || "").includes(q.replace(/\D/g, "")) ||
-      r.contact_reason.toLowerCase().includes(q);
+    const matchSearch = matchesCallCenterContactSearch(r, search);
     const matchResult = resultFilter === "all" || r.result === resultFilter;
     return matchSearch && matchResult;
   });
@@ -113,7 +130,7 @@ export default function CallCenterPage() {
       toast({ title: outcome === "confirmed" ? "Presença confirmada" : "Tentativa registrada" });
       await reload();
     } catch (error) {
-      toast({ title: friendlyError(error, "Registrar confirmação"), variant: "destructive" });
+      toast({ title: callCenterError(error, "Registrar confirmação"), variant: "destructive" });
     }
   };
 
@@ -122,7 +139,18 @@ export default function CallCenterPage() {
   return (
     <div className="space-y-6 animate-fade-in">
       <PageHeader title="Call Center" description="Contatos, retornos e tarefas operacionais" actions={
-        <Button onClick={() => setDialogOpen(true)}><Plus className="mr-2 h-4 w-4" />Novo Contato</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() => void handleRefreshConfirmationQueue()}
+            disabled={refreshingConfirmationQueue}
+            aria-busy={refreshingConfirmationQueue}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${refreshingConfirmationQueue ? "animate-spin" : ""}`} />
+            {refreshingConfirmationQueue ? "Atualizando fila..." : "Atualizar fila de confirmação"}
+          </Button>
+          <Button onClick={() => setDialogOpen(true)}><Plus className="mr-2 h-4 w-4" />Novo Contato</Button>
+        </div>
       } />
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
@@ -143,7 +171,7 @@ export default function CallCenterPage() {
       <div className="flex gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[220px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Buscar por paciente, CPF, telefone ou motivo..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Input aria-label="Buscar contatos" placeholder="Buscar por paciente, CPF, telefone ou motivo..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <Select value={resultFilter} onValueChange={setResultFilter}>
           <SelectTrigger className="w-[180px]"><SelectValue placeholder="Resultado" /></SelectTrigger>
@@ -262,7 +290,7 @@ function NewContactDialog({ open, onOpenChange, onCreated }: NewContactDialogPro
       onOpenChange(false);
       onCreated();
     } catch (err) {
-      toast({ title: friendlyError(err, "Registrar contato"), variant: "destructive" });
+      toast({ title: callCenterError(err, "Registrar contato"), variant: "destructive" });
     } finally {
       setSaving(false);
     }

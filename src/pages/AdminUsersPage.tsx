@@ -138,7 +138,16 @@ export default function AdminUsersPage() {
     }
   };
 
-  if (loading) return <div className="p-6 text-muted-foreground">Carregando...</div>;
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Usuários do Sistema" description="Gestão de usuários e acessos" />
+        <div className="p-6 text-muted-foreground" role="status" aria-live="polite">
+          Carregando usuários...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -147,7 +156,13 @@ export default function AdminUsersPage() {
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Buscar por nome, e-mail, CPF ou cargo..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          <Input
+            aria-label="Buscar usuários"
+            placeholder="Buscar por nome, e-mail, CPF ou cargo..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
         </div>
         <Select value={filterStatus} onValueChange={setFilterStatus}>
           <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>

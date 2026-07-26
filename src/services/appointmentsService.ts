@@ -246,6 +246,16 @@ export const appointmentsService = {
     return data as DbAppointment;
   },
 
+  async updateMyStatus(id: string, newStatus: "confirmed" | "cancelled", reason?: string): Promise<DbAppointment> {
+    const { data, error } = await supabase.rpc("update_my_appointment_status_secure", {
+      p_appointment_id: requiredBigIntParam(id, "Agendamento"),
+      p_target_status: newStatus,
+      p_reason: reason || null,
+    });
+    if (error) throw new Error("Erro ao atualizar seu agendamento: " + error.message);
+    return data as DbAppointment;
+  },
+
   async reschedule(id: string, input: AppointmentRescheduleInput): Promise<DbAppointment> {
     const { data, error } = await supabase.rpc('reschedule_appointment_secure', {
       p_appointment_id: requiredBigIntParam(id, 'Agendamento'),

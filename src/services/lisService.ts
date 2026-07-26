@@ -81,6 +81,31 @@ export interface ExameCatalogo {
   updated_at: string;
 }
 
+export function normalizeLabNumeric(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const normalized = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(normalized) ? normalized : null;
+}
+
+export function formatLabCurrency(value: unknown): string {
+  const normalized = normalizeLabNumeric(value);
+  return normalized === null
+    ? "—"
+    : `R$ ${normalized.toFixed(2).replace(".", ",")}`;
+}
+
+export function mapExameCatalogo(row: Record<string, unknown>): ExameCatalogo {
+  return {
+    ...(row as unknown as ExameCatalogo),
+    id: normalizeLabNumeric(row.id) ?? 0,
+    nr_prazo_dias: normalizeLabNumeric(row.nr_prazo_dias) ?? 0,
+    vl_particular: normalizeLabNumeric(row.vl_particular),
+    vl_convenio: normalizeLabNumeric(row.vl_convenio),
+    cd_origem_sigh: normalizeLabNumeric(row.cd_origem_sigh),
+    lg_ativo: row.lg_ativo === true || row.lg_ativo === "true",
+  };
+}
+
 export interface ValorReferencia {
   id: number;
   cd_exame: number;
@@ -361,7 +386,7 @@ export const catalogo = {
 
     const { data, error } = await q;
     if (error) throw error;
-    return (data || []) as ExameCatalogo[];
+    return (data || []).map((row) => mapExameCatalogo(row as Record<string, unknown>));
   },
 
   async getById(id: number): Promise<ExameCatalogo | null> {
@@ -371,7 +396,7 @@ export const catalogo = {
       .eq("id", id)
       .maybeSingle();
     if (error) throw error;
-    return (data as ExameCatalogo) ?? null;
+    return data ? mapExameCatalogo(data as Record<string, unknown>) : null;
   },
 
   async create(input: Omit<ExameCatalogo, "id" | "created_at" | "updated_at">): Promise<ExameCatalogo> {
@@ -381,7 +406,7 @@ export const catalogo = {
       .select()
       .single();
     if (error) throw error;
-    return data as ExameCatalogo;
+    return mapExameCatalogo(data as Record<string, unknown>);
   },
 
   async update(id: number, patch: Partial<ExameCatalogo>): Promise<ExameCatalogo> {
@@ -392,7 +417,7 @@ export const catalogo = {
       .select()
       .single();
     if (error) throw error;
-    return data as ExameCatalogo;
+    return mapExameCatalogo(data as Record<string, unknown>);
   },
 
   async inactivate(id: number): Promise<void> {
@@ -433,43 +458,21 @@ export const valorReferencia = {
 
 export const pedido = {
   async listar(companyId: string, filters: PedidoFilters = {}): Promise<PedidoLab[]> {
-    let q = supabase
-      .from("exames_lab_pedido")
-      .select(
-        `*,
-        paciente:patients!exames_lab_pedido_cd_paciente_fkey(full_name),
-        medico:professionals!exames_lab_pedido_cd_medico_fkey(full_name),
-        itens:exames_lab_pedido_itens(count)`,
-      )
-      .eq("company_id", companyId)
-      .order("dt_pedido", { ascending: false });
-
-    if (filters.tp_status) {
-      if (Array.isArray(filters.tp_status)) {
-        q = q.in("tp_status", filters.tp_status);
-      } else {
-        q = q.eq("tp_status", filters.tp_status);
-      }
-    }
-    if (filters.cd_paciente) q = q.eq("cd_paciente", filters.cd_paciente);
-    if (filters.cd_medico) q = q.eq("cd_medico", filters.cd_medico);
-    if (filters.tp_prioridade) q = q.eq("tp_prioridade", filters.tp_prioridade);
-    if (filters.dt_inicio) q = q.gte("dt_pedido", filters.dt_inicio);
-    if (filters.dt_fim) q = q.lte("dt_pedido", filters.dt_fim);
-
-    const { data, error } = await q;
-    if (error) throw error;
-    return (data || []).map((row: Record<string, unknown>) => {
-      const paciente = row.paciente as { full_name?: string } | null;
-      const medico = row.medico as { full_name?: string } | null;
-      const itens = row.itens as Array<{ count: number }> | null;
-      return {
-        ...(row as unknown as PedidoLab),
-        paciente_nome: paciente?.full_name,
-        medico_nome: medico?.full_name,
-        itens_count: itens?.[0]?.count ?? 0,
-      };
+    const { data, error } = await supabase.rpc("get_lab_order_summaries", {
+      p_company_id: companyId,
     });
+    if (error) throw error;
+    let rows = (Array.isArray(data) ? data : []) as PedidoLab[];
+    if (filters.tp_status) {
+      const allowed = Array.isArray(filters.tp_status) ? filters.tp_status : [filters.tp_status];
+      rows = rows.filter((row) => allowed.includes(row.tp_status));
+    }
+    if (filters.cd_paciente) rows = rows.filter((row) => row.cd_paciente === filters.cd_paciente);
+    if (filters.cd_medico) rows = rows.filter((row) => row.cd_medico === filters.cd_medico);
+    if (filters.tp_prioridade) rows = rows.filter((row) => row.tp_prioridade === filters.tp_prioridade);
+    if (filters.dt_inicio) rows = rows.filter((row) => row.dt_pedido >= filters.dt_inicio!);
+    if (filters.dt_fim) rows = rows.filter((row) => row.dt_pedido <= filters.dt_fim!);
+    return rows;
   },
 
   async getById(id: number): Promise<{
@@ -683,29 +686,11 @@ export const resultado = {
 
 export const alerta = {
   async listarPendentes(companyId?: string): Promise<AlertaCritico[]> {
-    let q = supabase
-      .from("exames_lab_alerta_critico")
-      .select(
-        `*,
-        paciente:patients!exames_lab_alerta_critico_cd_paciente_fkey(full_name),
-        medico:professionals!exames_lab_alerta_critico_cd_medico_fkey(full_name)`,
-      )
-      .eq("lg_comunicado", false)
-      .order("dt_alerta", { ascending: false });
-    if (companyId) {
-      q = q.eq("company_id", companyId);
-    }
-    const { data, error } = await q;
-    if (error) throw error;
-    return (data || []).map((row: Record<string, unknown>) => {
-      const paciente = row.paciente as { full_name?: string } | null;
-      const medico = row.medico as { full_name?: string } | null;
-      return {
-        ...(row as unknown as AlertaCritico),
-        paciente_nome: paciente?.full_name,
-        medico_nome: medico?.full_name,
-      };
+    const { data, error } = await supabase.rpc("get_lab_critical_alerts", {
+      p_company_id: companyId ?? null,
     });
+    if (error) throw error;
+    return (Array.isArray(data) ? data : []) as AlertaCritico[];
   },
 
   async comunicar(

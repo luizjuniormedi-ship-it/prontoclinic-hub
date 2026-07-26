@@ -121,17 +121,40 @@ export const callCenterService = {
   async listContacts(limit = 100): Promise<CallCenterContactLog[]> {
     const { data, error } = await supabase
       .from("scheduling_contact_logs")
-      .select("*, patients:patient_id(full_name, cpf, phone)")
+      .select("*")
       .order("created_at", { ascending: false })
       .limit(limit);
 
     if (error) throw new Error(`Erro ao listar contatos do call center: ${error.message}`);
 
-    return (data || []).map((row: any) => ({
+    const rows = (data || []) as any[];
+    const patientIds = [...new Set(
+      rows
+        .map((row) => row.patient_id)
+        .filter((patientId) => patientId !== null && patientId !== undefined && patientId !== "")
+        .map((patientId) => Number(patientId))
+        .filter((patientId) => Number.isFinite(patientId)),
+    )];
+    const patientsResult = patientIds.length
+      ? await supabase
+          .from("patients")
+          .select("id, full_name, cpf, phone")
+          .in("id", patientIds)
+      : { data: [] as any[], error: null };
+
+    if (patientsResult.error) {
+      throw new Error(`Erro ao carregar pacientes do call center: ${patientsResult.error.message}`);
+    }
+
+    const patientsById = new Map(
+      (patientsResult.data || []).map((patient: any) => [Number(patient.id), patient]),
+    );
+
+    return rows.map((row: any) => ({
       ...row,
-      patient_name: row.patients?.full_name ?? null,
-      patient_cpf: row.patients?.cpf ?? null,
-      patient_phone: row.patients?.phone ?? null,
+      patient_name: patientsById.get(Number(row.patient_id))?.full_name ?? null,
+      patient_cpf: patientsById.get(Number(row.patient_id))?.cpf ?? null,
+      patient_phone: patientsById.get(Number(row.patient_id))?.phone ?? null,
     }));
   },
 

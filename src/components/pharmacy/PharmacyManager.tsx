@@ -693,18 +693,6 @@ function AlertasTab() {
 export function PharmacyManager() {
   return (
     <div className="space-y-4 p-2 md:p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold">
-            <Pill className="h-6 w-6" />
-            Farmácia e Materiais
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Catálogo, estoque, lotes, dispensação e alertas
-          </p>
-        </div>
-      </div>
-
       <Tabs defaultValue="medicamentos" className="w-full">
         <TabsList className="grid w-full grid-cols-3 md:grid-cols-6" aria-label="Seções da farmácia">
           <TabsTrigger value="medicamentos">

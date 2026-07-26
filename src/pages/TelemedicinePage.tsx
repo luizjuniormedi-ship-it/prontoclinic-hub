@@ -18,6 +18,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Video, AlertCircle, ArrowRight, ListChecks } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useActiveAccessContext } from "@/hooks/useActiveAccessRole";
+import { normalizeRoleName } from "@/config/routePermissions";
 import { supabase } from "@/lib/supabase";
 import { telemedicinaService, type TelemedSala } from "@/services/telemedicinaService";
 import { TelemedicineLobby } from "@/components/telemedicina/TelemedicineLobby";
@@ -28,6 +30,7 @@ type Modo = "lista" | "lobby" | "sala" | "historico";
 
 export default function TelemedicinePage() {
   const { user } = useAuth();
+  const activeContext = useActiveAccessContext(user?.role_name, user?.company_id);
   const [params, setParams] = useSearchParams();
   const [modo, setModo] = useState<Modo>("lista");
   const [salaAtual, setSalaAtual] = useState<TelemedSala | null>(null);
@@ -35,7 +38,7 @@ export default function TelemedicinePage() {
   const [erro, setErro] = useState<string | null>(null);
   const [loadingSala, setLoadingSala] = useState(false);
 
-  const companyId = user?.company_id ?? "";
+  const companyId = activeContext.companyId ?? "";
 
   // Carrega sala via token na URL
   useEffect(() => {
@@ -77,11 +80,18 @@ export default function TelemedicinePage() {
     },
   });
 
-  const participante = useMemo(() => ({
-    userId: user?.id ?? "anon",
-    nome: user?.full_name ?? "Visitante",
-    role: user?.role_name?.toLowerCase().includes("medic") ? "MEDICO" : "PACIENTE",
-  }), [user]);
+  const participante = useMemo(() => {
+    const activeRole = normalizeRoleName(activeContext.roleName);
+    return {
+      userId: user?.id ?? "anon",
+      nome: user?.full_name ?? "Visitante",
+      role: activeRole === "medico"
+        ? "MEDICO"
+        : activeRole === "admin" || activeRole === "gestor"
+          ? "OBSERVADOR"
+          : "PACIENTE",
+    };
+  }, [activeContext.roleName, user?.full_name, user?.id]);
 
   async function iniciarSala(appointmentId: number) {
     setErro(null);

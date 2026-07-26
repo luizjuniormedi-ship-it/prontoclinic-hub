@@ -5,7 +5,6 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { AppLayout } from "@/components/AppLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, ErrorState } from "@/components/StateViews";
 import { MetasManager } from "@/components/bi/MetasManager";
@@ -61,25 +60,23 @@ export default function BiMetasPage() {
   };
 
   return (
-    <AppLayout>
-      <div className="space-y-6 animate-fade-in">
-        <PageHeader
-          title="Metas de Performance"
-          description="Defina objetivos por KPI, período e tipo de comparação."
+    <div className="space-y-6 animate-fade-in">
+      <PageHeader
+        title="Metas de Performance"
+        description="Defina objetivos por KPI, período e tipo de comparação."
+      />
+      {loading ? (
+        <LoadingState message="Carregando metas..." />
+      ) : error ? (
+        <ErrorState message={error} onRetry={carregar} />
+      ) : (
+        <MetasManager
+          companyId={companyId}
+          metas={metas}
+          onSalvar={handleSalvar}
+          onExcluir={handleExcluir}
         />
-        {loading ? (
-          <LoadingState message="Carregando metas..." />
-        ) : error ? (
-          <ErrorState message={error} onRetry={carregar} />
-        ) : (
-          <MetasManager
-            companyId={companyId}
-            metas={metas}
-            onSalvar={handleSalvar}
-            onExcluir={handleExcluir}
-          />
-        )}
-      </div>
-    </AppLayout>
+      )}
+    </div>
   );
 }

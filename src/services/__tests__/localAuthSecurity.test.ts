@@ -19,7 +19,9 @@ describe("local auth server security invariants", () => {
   it("delega o escopo de empresa e unidade ao RLS em todas as consultas REST", () => {
     expect(source).not.toContain("requiredCompanyScope(profile, table)");
     expect(source).toContain("SET LOCAL ROLE authenticated");
-    expect(source).toContain("queryAsAuthenticated(payload, query, values)");
+    expect(source).toContain("queryAsAuthenticated(payload, query, values, profile)");
+    expect(source).toContain("set_config('app.current_company_id'");
+    expect(source).toContain("set_config('app.current_unit_id'");
     expect(source).toContain("`INSERT INTO public.\"${table}\"");
     expect(source).toContain("`UPDATE public.\"${table}\"");
   });
@@ -52,7 +54,88 @@ describe("local auth server security invariants", () => {
 
   it("executa consultas REST sob o papel authenticated para exercer RLS real", () => {
     expect(source).toContain("SET LOCAL ROLE authenticated");
-    expect(source).toContain("queryAsAuthenticated(payload, query, values)");
+    expect(source).toContain("queryAsAuthenticated(payload, query, values, profile)");
+  });
+
+  it("autoriza pelo contexto ativo da sessao e isola o cache por empresa e papel", () => {
+    expect(source).toContain("async function getAuthorizationContext(payload)");
+    expect(source).toContain("ctx.session_id = $2::uuid");
+    expect(source).toContain("public.active_company_id() AS company_id");
+    expect(source).toContain("public.active_company_id() IS NOT NULL");
+    expect(source).not.toContain("public.current_application_session_is_active()");
+    expect(source).not.toContain("JOIN public.application_sessions app_session");
+    expect(source).not.toContain("JOIN public.application_devices device");
+    expect(source).toContain("const cacheKey = `${profile.company_id}:${profile.role_id}`");
+    expect(source).toContain("WHERE rp.company_id = $1");
+    expect(source).toContain("AND rp.role_id = $2");
+    expect(source).not.toContain("async function loadRolePerms(role)");
+  });
+
+  it("limita o bootstrap às RPCs de contexto e exige contexto ativo no self-service", () => {
+    expect(source).toContain("list_authorized_access_contexts: { scope: 'bootstrap' }");
+    expect(source).toContain("activate_application_context: { scope: 'bootstrap' }");
+    expect(source).toContain("update_my_appointment_status_secure: { scope: 'self' }");
+    expect(source).toContain("required?.scope === 'bootstrap'");
+    expect(source).not.toContain("required?.scope === 'self'\n        ? await getUserProfile");
+  });
+
+  it("preserva catalogos seguros sem expor a matriz bruta de autorizacao", () => {
+    expect(source).toMatch(/REFERENCE_TABLES[\s\S]*'professionals'/);
+    expect(source).toMatch(/REFERENCE_TABLES[\s\S]*'roles'/);
+    const referenceBlock = source.match(/const REFERENCE_TABLES = new Set\(\[([\s\S]*?)\]\);/)?.[1] ?? "";
+    expect(referenceBlock).not.toContain("'role_permissions'");
+    expect(source).toContain("if (REFERENCE_TABLES.has(t)) return null");
+    expect(source.indexOf("if (REFERENCE_TABLES.has(t)) return null"))
+      .toBeLessThan(source.indexOf("for (const [re, mod] of map)"));
+  });
+
+  it("permite ao call center atualizar a fila sem conceder edicao ampla da agenda", () => {
+    expect(source).toContain(
+      "refresh_confirmation_queue_secure: { module: 'agenda', action: 'can_create' }",
+    );
+    expect(source).not.toContain(
+      "refresh_confirmation_queue_secure: { module: 'agenda', action: 'can_edit' }",
+    );
+    expect(source).toContain(
+      "record_confirmation_attempt_secure: { module: 'agenda', action: 'can_create' }",
+    );
+  });
+
+  it("mapeia filas do call center para agenda e contratos de BI para bi", () => {
+    expect(source).toContain(
+      "[/^scheduling_contact_logs|^scheduling_call_center_tasks|^scheduling_confirmation_/, 'agenda']",
+    );
+    expect(source).toContain(
+      "[/^v_ocupacao_profissional$|^v_faturamento_convenio$/, 'bi']",
+    );
+  });
+
+  it("autoriza apenas as projecoes laboratoriais e traduz RLS negado para 403", () => {
+    expect(source).toContain(
+      "get_lab_order_summaries: { module: 'laboratorio', action: 'can_view' }",
+    );
+    expect(source).toContain(
+      "get_lab_critical_alerts: { module: 'laboratorio', action: 'can_view' }",
+    );
+    expect(source).toContain("return error?.code === '42501' ? 403 : 400");
+  });
+
+  it("autoriza a manutencao administrativa de permissoes e invalida o cache", () => {
+    expect(source).toContain("upsert_role_permission: { module: 'admin', action: 'can_edit' }");
+    expect(source).toContain("if (fnName === 'upsert_role_permission') permCache.clear()");
+  });
+
+  it("preserva as colunas das RPCs que retornam tabela sem inferencia dinamica", () => {
+    expect(source).toContain("const TABLE_RETURNING_RPCS = new Set([");
+    expect(source).toContain("'list_company_users_admin'");
+    expect(source).toContain('`SELECT * FROM public."${fnName}"(${namedArgs})`');
+    expect(source).toContain("const val = returnsRows");
+    expect(source).toContain("? result.rows");
+  });
+
+  it("aceita somente o wildcard SQL literal em selects REST", () => {
+    expect(source).toContain("if (col !== '*' && !isIdentifier(col))");
+    expect(source).toContain("col === '*' ? '*' : quoteIdent(col)");
   });
 
   it("nao concede bypass total a cargos administrativos secundarios", () => {

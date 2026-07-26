@@ -2,12 +2,17 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react-swc';
 import path from 'path';
 
+// Vitest bundles this config before loading it. import.meta.url can then point
+// at the temporary bundle directory, so anchor all paths to the npm cwd.
+const projectRoot = process.cwd();
+
 export default defineConfig({
+  root: projectRoot,
   plugins: [react()],
   test: {
     globals: true,
     environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
+    setupFiles: [path.resolve(projectRoot, 'src/test/setup.ts')],
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**'],
     coverage: {
@@ -60,8 +65,9 @@ export default defineConfig({
     }
   },
   resolve: {
+    preserveSymlinks: true,
     alias: {
-      '@': path.resolve(__dirname, './src')
+      '@': path.resolve(projectRoot, './src')
     }
   }
 });
