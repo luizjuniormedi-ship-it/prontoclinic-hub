@@ -61,7 +61,8 @@ describe("local auth server security invariants", () => {
     expect(source).toContain("async function getAuthorizationContext(payload)");
     expect(source).toContain("ctx.session_id = $2::uuid");
     expect(source).toContain("public.active_company_id() AS company_id");
-    expect(source).toContain("public.current_application_session_is_active()");
+    expect(source).toContain("public.active_company_id() IS NOT NULL");
+    expect(source).not.toContain("public.current_application_session_is_active()");
     expect(source).not.toContain("JOIN public.application_sessions app_session");
     expect(source).not.toContain("JOIN public.application_devices device");
     expect(source).toContain("const cacheKey = `${profile.company_id}:${profile.role_id}`");

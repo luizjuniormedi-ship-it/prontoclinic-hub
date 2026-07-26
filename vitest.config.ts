@@ -1,8 +1,9 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react-swc';
 import path from 'path';
+import { fileURLToPath } from 'node:url';
 
-const projectRoot = process.cwd();
+const projectRoot = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig({
   root: projectRoot,
@@ -69,4 +70,3 @@ export default defineConfig({
     }
   }
 });
-

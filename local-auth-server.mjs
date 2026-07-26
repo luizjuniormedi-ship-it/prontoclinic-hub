@@ -167,7 +167,7 @@ async function getAuthorizationContext(payload) {
       AND r.lg_ativo IS TRUE
      WHERE ctx.user_id = $1
        AND ctx.session_id = $2::uuid
-       AND public.current_application_session_is_active()
+       AND public.active_company_id() IS NOT NULL
      LIMIT 1`,
     [payload.sub, payload.session_id],
   );
