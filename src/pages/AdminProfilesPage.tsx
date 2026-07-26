@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Search, Shield, Lock, Users } from "lucide-react";
 import { userProfilesService } from "@/services/userProfilesService";
+import { rolePermissionsService } from "@/services/rolePermissionsService";
 import { useToast } from "@/hooks/use-toast";
 
 interface ProfileWithCount {
@@ -27,18 +27,22 @@ export default function AdminProfilesPage() {
     const load = async () => {
       setLoading(true);
       try {
-        const [profs, users] = await Promise.all([
+        const [profs, users, permissions] = await Promise.all([
           userProfilesService.getProfiles(),
           userProfilesService.getAll(),
+          rolePermissionsService.getAll(),
         ]);
         // Enriquece com contagem de usuários por role
         const enriched: ProfileWithCount[] = profs.map((p) => {
           const count = users.filter((u) => (u.role_name ?? "") === p.id).length;
-          // Permissões estimadas: 1 por módulo (em produção, viriam de uma tabela permission_matrix)
+          const rolePermissionCount = permissions.filter((permission) =>
+            permission.role_id === p.databaseId
+            && (permission.can_view || permission.can_create || permission.can_edit || permission.can_delete || permission.can_export)
+          ).length;
           return {
             ...p,
             userCount: count,
-            permissions: 8, // valor estimado — substituir por count real quando houver tabela
+            permissions: rolePermissionCount,
             isSystem: p.id === "admin",
           };
         });

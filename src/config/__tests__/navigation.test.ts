@@ -21,8 +21,11 @@ const roles: RoleName[] = [
   "diagnostico",
   "farmacia",
   "financeiro",
+  "faturamento",
+  "call_center",
   "dpo",
   "administrativo",
+  "paciente",
 ];
 
 const expectedSidebarIds: Record<RoleName, string[]> = {
@@ -35,8 +38,11 @@ const expectedSidebarIds: Record<RoleName, string[]> = {
   diagnostico: ["dashboard", "imaging-orders", "imaging-execution", "dicom-worklist", "pacs", "radiology-reports"],
   farmacia: ["dashboard", "pharmacy", "purchases"],
   financeiro: ["dashboard", "billing-accounts", "billing-production", "financial", "professional-payment", "tiss"],
+  faturamento: ["dashboard", "billing-accounts", "billing-production", "tiss", "price-tables"],
+  call_center: ["dashboard", "call-center", "schedule", "patients"],
   dpo: ["dashboard", "lgpd", "audit", "admin-notifications"],
   administrativo: ["dashboard", "professionals", "companies", "insurances", "credentialing", "price-tables", "master-data", "settings"],
+  paciente: ["my-appointments"],
 };
 
 describe("navigation catalog", () => {
@@ -132,6 +138,17 @@ describe("navigation catalog", () => {
     const dpoIds = getAccessibleNavigation("dpo").map((entry) => entry.id);
     expect(dpoIds).toEqual(expect.arrayContaining(["lgpd", "audit", "admin-notifications"]));
     expect(dpoIds).not.toEqual(expect.arrayContaining(["patients", "billing-accounts"]));
+
+    const patientIds = getAccessibleNavigation("paciente").map((entry) => entry.id);
+    expect(patientIds).toEqual(["dashboard", "my-appointments"]);
+    expect(patientIds).not.toEqual(expect.arrayContaining(["patients", "records", "admin-users"]));
+
+    const administrativeIds = getAccessibleNavigation("administrativo").map((entry) => entry.id);
+    expect(administrativeIds).not.toEqual(expect.arrayContaining(["admin-users", "admin-profiles", "admin-permissions"]));
+
+    const receptionIdsAfterSegregation = getAccessibleNavigation("recepcao").map((entry) => entry.id);
+    expect(receptionIdsAfterSegregation).toContain("nursing-queue");
+    expect(receptionIdsAfterSegregation).not.toEqual(expect.arrayContaining(["nursing-triage", "nursing-care"]));
   });
 
   it("normalizes canonical, accented and operational role names", () => {
@@ -140,6 +157,7 @@ describe("navigation catalog", () => {
     expect(normalizeRoleName("Farmácia")).toBe("farmacia");
     expect(normalizeRoleName("Recepção")).toBe("recepcao");
     expect(normalizeRoleName("Técnico")).toBe("diagnostico");
+    expect(normalizeRoleName("Paciente")).toBe("paciente");
   });
 
   it("uses the most specific route when identifying the current screen", () => {

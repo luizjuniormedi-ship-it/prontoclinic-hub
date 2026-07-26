@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -6,6 +6,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Shield, Save } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { EmptyState, ErrorState, LoadingState } from "@/components/StateViews";
 import {
   rolePermissionsService,
   MODULE_LABELS,
@@ -44,38 +46,51 @@ export default function AdminPermissionsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<number | null>(null);
   const [activeRole, setActiveRole] = useState<string>("admin");
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const [perms, profs, usrs] = await Promise.all([
+        rolePermissionsService.getAll(),
+        userProfilesService.getProfiles(),
+        userProfilesService.getAll(),
+      ]);
+      setPermissions(perms);
+      setUsers(usrs);
+      const enriched: Role[] = profs.map((p) => ({
+        id: p.databaseId,
+        name: p.id,
+        label: ROLE_LABELS[p.id] ?? p.name,
+        description: p.description,
+        userCount: usrs.filter((u) => (u.role_name ?? "") === p.id).length,
+      }));
+      setRoles(enriched);
+      setActiveRole((current) => (
+        enriched.some((role) => role.name === current)
+          ? current
+          : enriched[0]?.name ?? ""
+      ));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setPermissions([]);
+      setRoles([]);
+      setUsers([]);
+      setLoadError(message);
+      toast({
+        title: "Erro ao carregar matriz",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const [perms, profs, usrs] = await Promise.all([
-          rolePermissionsService.getAll(),
-          userProfilesService.getProfiles(),
-          userProfilesService.getAll(),
-        ]);
-        setPermissions(perms);
-        setUsers(usrs);
-        const enriched: Role[] = profs.map((p) => ({
-          id: p.databaseId,
-          name: p.id,
-          label: ROLE_LABELS[p.id] ?? p.name,
-          description: p.description,
-          userCount: usrs.filter((u) => (u.role_name ?? "") === p.id).length,
-        }));
-        setRoles(enriched);
-      } catch (err) {
-        toast({
-          title: "Erro ao carregar matriz",
-          description: err instanceof Error ? err.message : String(err),
-          variant: "destructive",
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
     void load();
-  }, [toast]);
+  }, [load]);
 
   const modules = useMemo(() => {
     return Object.keys(MODULE_LABELS).sort((a, b) => a.localeCompare(b));
@@ -136,8 +151,6 @@ export default function AdminPermissionsPage() {
     }
   };
 
-  if (loading) return <div className="p-6 text-muted-foreground">Carregando matriz de permissões...</div>;
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -145,6 +158,19 @@ export default function AdminPermissionsPage() {
         description="Configure o que cada perfil pode fazer em cada módulo. Alterações são salvas automaticamente."
       />
 
+      {loading ? (
+        <LoadingState message="Carregando matriz de permissões..." />
+      ) : loadError ? (
+        <ErrorState message={loadError} onRetry={() => void load()} />
+      ) : roles.length === 0 ? (
+        <EmptyState
+          icon={Shield}
+          title="Nenhum perfil disponível"
+          description="A matriz depende de perfis ativos na empresa. Recarregue os dados ou revise o cadastro de perfis."
+          action={<Button variant="outline" onClick={() => void load()}>Recarregar perfis</Button>}
+        />
+      ) : (
+        <>
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         {roles.map((r) => (
           <Card key={r.name} className={activeRole === r.name ? "border-primary" : ""}>
@@ -219,6 +245,8 @@ export default function AdminPermissionsPage() {
           </TabsContent>
         ))}
       </Tabs>
+        </>
+      )}
     </div>
   );
 }

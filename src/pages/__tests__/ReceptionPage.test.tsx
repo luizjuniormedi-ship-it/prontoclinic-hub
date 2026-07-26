@@ -239,7 +239,9 @@ describe("ReceptionPage", () => {
     expect(await screen.findByRole("heading", { name: "Jornada do check-in" })).toBeInTheDocument();
     expect(screen.getByText(/Cadastro e documentos/)).toBeInTheDocument();
     expect(screen.getByText(/Pagador e convênio/)).toBeInTheDocument();
-    expect(await screen.findByText("Autorização pendente ou inválida")).toBeInTheDocument();
+    expect(
+      (await screen.findAllByText("Autorização pendente ou inválida")).length,
+    ).toBeGreaterThanOrEqual(1);
 
     const blockedAction = screen.getByRole("button", {
       name: /Liberar por exceção\. Existem pendências bloqueantes e seu perfil não pode liberar por exceção\./i,

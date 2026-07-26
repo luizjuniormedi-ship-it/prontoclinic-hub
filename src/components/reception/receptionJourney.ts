@@ -17,7 +17,7 @@ export interface ReceptionJourneyStep {
   label: string;
   description: string;
   status: ReceptionJourneyStepStatus;
-  issue?: CheckinIssue;
+  issues: CheckinIssue[];
 }
 
 const issueTypesByStep: Partial<Record<ReceptionJourneyStepId, string[]>> = {
@@ -25,8 +25,8 @@ const issueTypesByStep: Partial<Record<ReceptionJourneyStepId, string[]>> = {
   payer: ["insurance_card", "insurance", "payer"],
   eligibility: ["eligibility"],
   authorization: ["authorization"],
-  tiss: ["tiss_guide"],
-  billing: ["billing", "payment"],
+  tiss: ["tiss_guide", "tiss_guide_missing", "tiss_guide_invalid", "tiss_signature_missing"],
+  billing: ["billing", "billing_not_prepared", "payment", "payment_pending", "cash_session_required"],
 };
 
 const defaultDescriptions: Record<ReceptionJourneyStepId, string> = {
@@ -51,13 +51,17 @@ const labels: Record<ReceptionJourneyStepId, string> = {
   destination: "Fila e destino",
 };
 
-function issueForStep(
+function issuesForStep(
   stepId: ReceptionJourneyStepId,
   readiness: CheckinReadiness | null,
-): CheckinIssue | undefined {
-  if (!readiness) return undefined;
+): CheckinIssue[] {
+  if (!readiness) return [];
   const acceptedTypes = issueTypesByStep[stepId] ?? [];
-  return readiness.issues.find((issue) => acceptedTypes.includes(issue.type));
+  return readiness.issues.filter((issue) => {
+    if (issue.step === stepId) return true;
+    if (stepId === "identification" && issue.step === "general") return true;
+    return acceptedTypes.includes(issue.type);
+  });
 }
 
 export function buildReceptionJourney(
@@ -75,14 +79,14 @@ export function buildReceptionJourney(
   ];
 
   return ids.map((id) => {
-    const issue = issueForStep(id, readiness);
+    const issues = issuesForStep(id, readiness);
     let status: ReceptionJourneyStepStatus = "pending";
 
     if (id === "identification") {
-      status = "complete";
+      status = issues.length > 0 ? "attention" : "complete";
     } else if (id === "destination") {
-      status = "pending";
-    } else if (issue) {
+      status = issues.length > 0 ? "attention" : "pending";
+    } else if (issues.length > 0) {
       status = "attention";
     } else if (readiness) {
       status = "complete";
@@ -91,9 +95,13 @@ export function buildReceptionJourney(
     return {
       id,
       label: labels[id],
-      description: issue?.description ?? defaultDescriptions[id],
+      description: issues.length === 1
+        ? issues[0].description
+        : issues.length > 1
+          ? `${issues.length} pendências nesta etapa.`
+          : defaultDescriptions[id],
       status,
-      issue,
+      issues,
     };
   });
 }
@@ -101,5 +109,5 @@ export function buildReceptionJourney(
 export function getBlockingReceptionIssues(
   readiness: CheckinReadiness | null,
 ): CheckinIssue[] {
-  return readiness?.issues.filter((issue) => issue.severity === "blocking") ?? [];
+  return readiness?.issues.filter((issue) => issue.blocking) ?? [];
 }

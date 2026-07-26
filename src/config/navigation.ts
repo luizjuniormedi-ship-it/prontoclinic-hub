@@ -127,8 +127,11 @@ const sidebarByRole: Record<RoleName, string[]> = {
   diagnostico: ["dashboard", "imaging-orders", "imaging-execution", "dicom-worklist", "pacs", "radiology-reports"],
   farmacia: ["dashboard", "pharmacy", "purchases"],
   financeiro: ["dashboard", "billing-accounts", "billing-production", "financial", "professional-payment", "tiss"],
+  faturamento: ["dashboard", "billing-accounts", "billing-production", "tiss", "price-tables"],
+  call_center: ["dashboard", "call-center", "schedule", "patients"],
   dpo: ["dashboard", "lgpd", "audit", "admin-notifications"],
   administrativo: ["dashboard", "professionals", "companies", "insurances", "credentialing", "price-tables", "master-data", "settings"],
+  paciente: ["my-appointments"],
 };
 
 export function getAccessibleNavigation(roleName: string | null | undefined): NavigationItem[] {
