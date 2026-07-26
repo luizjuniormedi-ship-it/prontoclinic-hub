@@ -74,17 +74,12 @@ async function fetchUserProfile(supabaseUser: SupabaseUser): Promise<UserProfile
     }
     if (!data) return null;
 
-    let role_name: string | null = data.role_name ?? null;
-    if (data.role_id) {
-      const { data: roleData } = await supabase.from("roles").select("name").eq("id", data.role_id).maybeSingle();
-      role_name = roleData?.name || role_name;
-    }
     const profile: UserProfile = {
       id: data.id,
       email: supabaseUser.email || "",
       full_name: data.full_name || supabaseUser.email || "Usuário",
       role_id: data.role_id,
-      role_name,
+      role_name: data.role_name ?? null,
       company_id: data.company_id,
       primary_unit_id: data.primary_unit_id,
       lg_ativo: data.lg_ativo === true,

@@ -1,446 +1,243 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { billingsService, financialService } from "@/services/financialService";
-
-// Mock do Supabase
-vi.mock("@/lib/supabase", () => {
-  const chain: any = {
-    select: vi.fn().mockReturnThis(),
-    insert: vi.fn().mockReturnThis(),
-    update: vi.fn().mockReturnThis(),
-    delete: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockReturnThis(),
-    neq: vi.fn().mockReturnThis(),
-    order: vi.fn().mockReturnThis(),
-    limit: vi.fn().mockReturnThis(),
-    or: vi.fn().mockReturnThis(),
-    gte: vi.fn().mockReturnThis(),
-    lte: vi.fn().mockReturnThis(),
-    in: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn(),
-    single: vi.fn(),
-  };
-  return {
-    supabase: {
-      from: vi.fn(() => chain),
-      auth: { getUser: vi.fn() },
-      rpc: vi.fn(),
-    },
-  };
-});
-
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  billingsService,
+  financialService,
+  type DbFinancialTransaction,
+} from "@/services/financialService";
 import { supabase } from "@/lib/supabase";
 
-describe("billingsService — getAll", () => {
+vi.mock("@/lib/supabase", () => ({
+  supabase: {
+    from: vi.fn(),
+    rpc: vi.fn(),
+  },
+}));
+
+const canonicalBilling = {
+  id: 41,
+  company_id: "company-1",
+  unit_id: 7,
+  patient_id: 12,
+  professional_id: 8,
+  appointment_id: 55,
+  billing_type: "particular",
+  total_gross_amount: 300,
+  total_discount_amount: 50,
+  total_net_amount: 250,
+  status: "aberta",
+  notes: null,
+  opened_at: "2026-07-25T10:00:00Z",
+  created_at: "2026-07-25T10:00:00Z",
+};
+
+const canonicalReceivable = {
+  id: 71,
+  company_id: "company-1",
+  unit_id: 7,
+  patient_id: 12,
+  billing_account_id: 41,
+  billing_id: 41,
+  professional_id: 8,
+  appointment_id: 55,
+  transaction_type: "receivable",
+  amount: 250,
+  discount: 0,
+  payment_method: null,
+  status: "open",
+  due_date: "2026-07-25",
+  payment_date: null,
+  notes: null,
+  created_at: "2026-07-25T10:00:00Z",
+};
+
+function billingListChain(result: { data: unknown; error: unknown }) {
+  return {
+    select: vi.fn().mockReturnThis(),
+    is: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockResolvedValue(result),
+  };
+}
+
+function billingLookupChain(result: { data: unknown; error: unknown }) {
+  return {
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    is: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue(result),
+  };
+}
+
+describe("billingsService — contrato canônico", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("retorna lista de faturamentos ordenada por created_at desc", async () => {
-    const rows = [
-      {
-        id: "b-1",
-        company_id: "company-uuid",
-        unit_id: "unit-uuid",
-        patient_id: "patient-uuid",
-        professional_id: null,
-        appointment_id: null,
-        billing_type: "consulta",
-        amount: 300,
+  it("lista billing_accounts e mantém a visão legada sem consultar billings", async () => {
+    const chain = billingListChain({ data: [canonicalBilling], error: null });
+    vi.mocked(supabase.from).mockReturnValue(chain as never);
+
+    const result = await billingsService.getAll();
+
+    expect(supabase.from).toHaveBeenCalledWith("billing_accounts");
+    expect(supabase.from).not.toHaveBeenCalledWith("billings");
+    expect(result).toEqual([
+      expect.objectContaining({
+        id: "41",
+        patient_id: "12",
+        appointment_id: "55",
+        gross_amount: 300,
         discount: 50,
-        total: 250,
+        net_amount: 250,
         status: "em_aberto",
-        notes: null,
-        created_at: "2026-01-01T00:00:00Z",
-      },
-      {
-        id: "b-2",
-        company_id: "company-uuid",
-        unit_id: "unit-uuid",
-        patient_id: "patient-uuid-2",
-        professional_id: "prof-uuid",
-        appointment_id: null,
-        billing_type: "exame",
-        amount: 500,
-        discount: 0,
-        total: 500,
-        status: "pago",
-        notes: "Exame de sangue",
-        created_at: "2026-01-02T00:00:00Z",
-      },
-    ];
-
-    const chain: any = {
-      select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockResolvedValue({ data: rows, error: null }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
-
-    const result = await billingsService.getAll();
-
-    expect(supabase.from).toHaveBeenCalledWith("billings");
-    expect(result).toHaveLength(2);
-    expect(result[0].id).toBe("b-1");
-    expect(result[0].net_amount).toBe(250);
-    expect(result[1].status).toBe("pago");
+        canonical_status: "aberta",
+      }),
+    ]);
   });
 
-  it("retorna array vazio quando não há dados", async () => {
-    const chain: any = {
-      select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockResolvedValue({ data: null, error: null }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
+  it("reutiliza idempotentemente a conta já vinculada ao atendimento", async () => {
+    const chain = billingLookupChain({ data: canonicalBilling, error: null });
+    vi.mocked(supabase.from).mockReturnValue(chain as never);
 
-    const result = await billingsService.getAll();
-    expect(result).toEqual([]);
+    const result = await billingsService.create({
+      appointment_id: "55",
+      patient_id: "12",
+      gross_amount: 300,
+      discount: 50,
+      net_amount: 250,
+    });
+
+    expect(result.id).toBe("41");
+    expect(supabase.rpc).not.toHaveBeenCalled();
   });
 
-  it("lança erro quando supabase retorna error", async () => {
-    const chain: any = {
-      select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockResolvedValue({ data: null, error: { message: "boom" } }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
+  it("prepara uma conta ausente pelo RPC transacional e a relê", async () => {
+    vi.mocked(supabase.from)
+      .mockReturnValueOnce(billingLookupChain({ data: null, error: null }) as never)
+      .mockReturnValueOnce(billingLookupChain({ data: canonicalBilling, error: null }) as never);
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: { account_id: 41 }, error: null } as never);
 
-    await expect(billingsService.getAll()).rejects.toThrow(/Erro ao buscar faturamentos/);
+    const result = await billingsService.create({
+      appointment_id: "55",
+      patient_id: "12",
+      billing_type: "particular",
+      gross_amount: 300,
+      discount: 50,
+      net_amount: 250,
+      notes: "Atendimento concluído",
+    });
+
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "prepare_reception_checkout_secure",
+      expect.objectContaining({
+        p_appointment_id: 55,
+        p_patient_responsibility: 250,
+        p_insurance_responsibility: 0,
+        p_collection_policy: "accounts_receivable",
+      }),
+    );
+    expect(result.id).toBe("41");
+  });
+
+  it("rejeita uma conta avulsa sem inventar linha em tabela legada", async () => {
+    await expect(billingsService.create({
+      patient_id: "12",
+      gross_amount: 100,
+      net_amount: 100,
+    })).rejects.toThrow(/a partir de um atendimento/i);
+
+    expect(supabase.from).not.toHaveBeenCalled();
+    expect(supabase.rpc).not.toHaveBeenCalled();
   });
 });
 
-describe("billingsService — create", () => {
+describe("financialService — recebíveis canônicos", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("cria faturamento com status padrão 'em_aberto' e discount=0", async () => {
-    const inserted: any = {
-      id: "b-99",
-      company_id: null,
-      patient_id: "patient-uuid",
-      professional_id: null,
-      amount: 200,
-      discount: 0,
-      total: 200,
-      status: "em_aberto",
-      notes: null,
-      created_at: "2026-01-01T00:00:00Z",
-    };
-    const chain: any = {
-      insert: vi.fn().mockReturnThis(),
+  it("lista somente financial_transactions do tipo receivable", async () => {
+    const chain = {
       select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: inserted, error: null }),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: [canonicalReceivable], error: null }),
     };
-    (supabase.from as any).mockReturnValue(chain);
+    vi.mocked(supabase.from).mockReturnValue(chain as never);
 
-    const result = await billingsService.create({
-      patient_id: "patient-uuid",
-      gross_amount: 200,
-      net_amount: 200,
-    });
+    const result = await financialService.getAll();
 
-    expect(supabase.from).toHaveBeenCalledWith("billings");
-    expect(chain.insert).toHaveBeenCalledTimes(1);
-    const insertedArg = chain.insert.mock.calls[0][0];
-    expect(insertedArg.status).toBe("em_aberto");
-    expect(insertedArg.discount).toBe(0);
-    expect(insertedArg.patient_id).toBe("patient-uuid");
-    expect(result).toEqual(expect.objectContaining({
-      id: "b-99",
-      patient_id: "patient-uuid",
-      gross_amount: 200,
-      discount: 0,
-      net_amount: 200,
-      status: "em_aberto",
+    expect(supabase.from).toHaveBeenCalledWith("financial_transactions");
+    expect(chain.eq).toHaveBeenCalledWith("transaction_type", "receivable");
+    expect(result[0]).toEqual(expect.objectContaining({
+      id: "71",
+      billing_id: "41",
+      appointment_id: "55",
+      status: "pendente",
+      canonical_status: "open",
     }));
   });
 
-  it("preserva status e discount quando fornecidos", async () => {
-    const inserted: any = { id: "b-100" };
-    const chain: any = {
-      insert: vi.fn().mockReturnThis(),
+  it("registra PIX pelo RPC seguro com referência e idempotência", async () => {
+    const refreshed = { ...canonicalReceivable, status: "paid", payment_date: "2026-07-25" };
+    const refreshChain = {
       select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: inserted, error: null }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
-
-    await billingsService.create({
-      patient_id: "patient-uuid",
-      gross_amount: 300,
-      discount: 30,
-      net_amount: 270,
-      status: "pago",
-    });
-
-    const insertedArg = chain.insert.mock.calls[0][0];
-    expect(insertedArg.status).toBe("pago");
-    expect(insertedArg.discount).toBe(30);
-  });
-
-  it("lança erro quando supabase retorna error", async () => {
-    const chain: any = {
-      insert: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: null, error: { message: "fk fail" } }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
-
-    await expect(
-      billingsService.create({
-        patient_id: "patient-uuid",
-        gross_amount: 100,
-        net_amount: 100,
-      })
-    ).rejects.toThrow(/Erro ao criar faturamento/);
-  });
-});
-
-describe("billingsService — updateStatus", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("atualiza status do faturamento", async () => {
-    const updated = { id: "b-1", status: "pago" };
-    const chain: any = {
-      update: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: updated, error: null }),
+      maybeSingle: vi.fn().mockResolvedValue({ data: refreshed, error: null }),
     };
-    (supabase.from as any).mockReturnValue(chain);
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: {}, error: null } as never);
+    vi.mocked(supabase.from).mockReturnValue(refreshChain as never);
 
-    const result = await billingsService.updateStatus("b-1", "pago");
-
-    expect(supabase.from).toHaveBeenCalledWith("billings");
-    expect(chain.update).toHaveBeenCalledWith({ status: "pago" });
-    expect(chain.eq).toHaveBeenCalledWith("id", "b-1");
-    expect(result).toEqual(updated);
-  });
-
-  it("lança erro quando supabase retorna error", async () => {
-    const chain: any = {
-      update: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: null, error: { message: "db err" } }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
-
-    await expect(billingsService.updateStatus("b-1", "cancelado")).rejects.toThrow(
-      /Erro ao atualizar faturamento/
-    );
-  });
-});
-
-describe("financialService — getAll", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("retorna lista de transações financeiras", async () => {
-    const rows = [
+    const result = await financialService.markPaid(
       {
-        id: "t-1",
-        company_id: null,
-        unit_id: null,
-        patient_id: "patient-uuid",
-        billing_id: "b-1",
-        professional_id: null,
-        appointment_id: null,
-        amount: 250,
-        discount: 0,
-        payment_method: "pix",
-        status: "pago",
-        due_date: "2026-01-15",
-        payment_date: "2026-01-15",
-        notes: null,
-        created_at: "2026-01-01T00:00:00Z",
-      },
-    ];
-
-    const chain: any = {
-      select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockResolvedValue({ data: rows, error: null }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
-
-    const result = await financialService.getAll();
-
-    expect(supabase.from).toHaveBeenCalledWith("financial_transactions");
-    expect(result).toHaveLength(1);
-    expect(result[0].amount).toBe(250);
-    expect(result[0].payment_method).toBe("pix");
-  });
-
-  it("retorna array vazio quando data=null", async () => {
-    const chain: any = {
-      select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockResolvedValue({ data: null, error: null }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
-
-    const result = await financialService.getAll();
-    expect(result).toEqual([]);
-  });
-
-  it("lança erro quando supabase retorna error", async () => {
-    const chain: any = {
-      select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockResolvedValue({ data: null, error: { message: "x" } }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
-
-    await expect(financialService.getAll()).rejects.toThrow(/Erro ao buscar transações/);
-  });
-});
-
-describe("financialService — create", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("cria transação com status padrão 'pendente' e discount=0", async () => {
-    const inserted: any = { id: "t-99" };
-    const chain: any = {
-      insert: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: inserted, error: null }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
-
-    const result = await financialService.create({
-      patient_id: "patient-uuid",
-      amount: 100,
-    });
-
-    expect(supabase.from).toHaveBeenCalledWith("financial_transactions");
-    const insertedArg = chain.insert.mock.calls[0][0];
-    expect(insertedArg.status).toBe("pendente");
-    expect(insertedArg.discount).toBe(0);
-    expect(insertedArg.patient_id).toBe("patient-uuid");
-    expect(result).toEqual(inserted);
-  });
-
-  it("preserva status e discount fornecidos", async () => {
-    const inserted: any = { id: "t-100" };
-    const chain: any = {
-      insert: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: inserted, error: null }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
-
-    await financialService.create({
-      patient_id: "patient-uuid",
-      amount: 200,
-      discount: 20,
-      status: "pago",
-      payment_method: "cartao",
-    });
-
-    const insertedArg = chain.insert.mock.calls[0][0];
-    expect(insertedArg.status).toBe("pago");
-    expect(insertedArg.discount).toBe(20);
-    expect(insertedArg.payment_method).toBe("cartao");
-  });
-
-  it("lança erro quando supabase retorna error", async () => {
-    const chain: any = {
-      insert: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: null, error: { message: "fail" } }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
-
-    await expect(
-      financialService.create({
-        patient_id: "patient-uuid",
-        amount: 100,
-      })
-    ).rejects.toThrow(/Erro ao criar transação/);
-  });
-});
-
-describe("financialService — markPaid", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("marca transação como paga com método e data atual", async () => {
-    const updated = { id: "t-1", status: "pago" };
-    const chain: any = {
-      update: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: updated, error: null }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
-
-    const result = await financialService.markPaid("t-1", "pix");
-
-    expect(supabase.from).toHaveBeenCalledWith("financial_transactions");
-    const updateArg = chain.update.mock.calls[0][0];
-    expect(updateArg.status).toBe("pago");
-    expect(updateArg.payment_method).toBe("pix");
-    expect(updateArg.payment_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(chain.eq).toHaveBeenCalledWith("id", "t-1");
-    expect(result).toEqual(updated);
-  });
-
-  it("lança erro quando supabase retorna error", async () => {
-    const chain: any = {
-      update: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: null, error: { message: "x" } }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
-
-    await expect(financialService.markPaid("t-1", "dinheiro")).rejects.toThrow(
-      /Erro ao registrar pagamento/
+        ...canonicalReceivable,
+        id: "71",
+        patient_id: "12",
+        billing_id: "41",
+        professional_id: "8",
+        appointment_id: "55",
+        status: "pendente",
+        canonical_status: "open",
+      } as DbFinancialTransaction,
+      "pix",
+      "PIX-E2E-0001",
     );
-  });
-});
 
-describe("financialService — updateStatus", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("atualiza status da transação", async () => {
-    const updated = { id: "t-1", status: "cancelado" };
-    const chain: any = {
-      update: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: updated, error: null }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
-
-    const result = await financialService.updateStatus("t-1", "cancelado");
-
-    expect(supabase.from).toHaveBeenCalledWith("financial_transactions");
-    expect(chain.update).toHaveBeenCalledWith({ status: "cancelado" });
-    expect(chain.eq).toHaveBeenCalledWith("id", "t-1");
-    expect(result).toEqual(updated);
-  });
-
-  it("lança erro quando supabase retorna error", async () => {
-    const chain: any = {
-      update: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: null, error: { message: "y" } }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
-
-    await expect(financialService.updateStatus("t-1", "x")).rejects.toThrow(
-      /Erro ao atualizar transação/
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "register_reception_payment_secure",
+      expect.objectContaining({
+        p_appointment_id: 55,
+        p_amount: 250,
+        p_payment_method: "pix",
+        p_idempotency_key: "financial:71:full-payment",
+        p_external_reference: "PIX-E2E-0001",
+      }),
     );
+    expect(result.status).toBe("pago");
+    expect(result.canonical_status).toBe("paid");
+  });
+
+  it("não registra pagamento eletrônico sem comprovante", async () => {
+    const transaction = {
+      id: "71",
+      appointment_id: "55",
+      amount: 250,
+    } as DbFinancialTransaction;
+
+    await expect(financialService.markPaid(transaction, "pix"))
+      .rejects.toThrow(/comprovante/i);
+    expect(supabase.rpc).not.toHaveBeenCalled();
+  });
+
+  it("não registra recebível sem vínculo com atendimento", async () => {
+    const transaction = {
+      id: "71",
+      appointment_id: null,
+      amount: 250,
+    } as DbFinancialTransaction;
+
+    await expect(financialService.markPaid(transaction, "dinheiro"))
+      .rejects.toThrow(/vinculado a um atendimento/i);
+    expect(supabase.rpc).not.toHaveBeenCalled();
   });
 });

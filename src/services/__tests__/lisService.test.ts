@@ -14,6 +14,7 @@ import {
   mapExameCatalogo,
   normalizeLabNumeric,
   parseHL7,
+  alerta,
   pedido,
 } from "@/services/lisService";
 
@@ -240,3 +241,63 @@ describe("lisService — pedido.create()", () => {
   });
 });
 
+describe("lisService — projeções seguras de leitura", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("lista pedidos pelo RPC tenant-scoped e aplica filtros no resultado", async () => {
+    const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+    rpc.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          company_id: "00000000-0000-0000-0000-000000000001",
+          cd_paciente: 10,
+          cd_medico: 20,
+          tp_status: "PENDENTE",
+          tp_prioridade: "URGENTE",
+          dt_pedido: "2026-07-25T10:00:00Z",
+        },
+        {
+          id: 2,
+          company_id: "00000000-0000-0000-0000-000000000001",
+          cd_paciente: 11,
+          cd_medico: 21,
+          tp_status: "LIBERADO",
+          tp_prioridade: "ROTINA",
+          dt_pedido: "2026-07-25T11:00:00Z",
+        },
+      ],
+      error: null,
+    });
+
+    const result = await pedido.listar(
+      "00000000-0000-0000-0000-000000000001",
+      { tp_status: "PENDENTE", cd_paciente: 10 },
+    );
+
+    expect(rpc).toHaveBeenCalledWith("get_lab_order_summaries", {
+      p_company_id: "00000000-0000-0000-0000-000000000001",
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(1);
+  });
+
+  it("lista alertas críticos pelo RPC tenant-scoped", async () => {
+    const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+    rpc.mockResolvedValue({
+      data: [{ id: 7, lg_comunicado: false }],
+      error: null,
+    });
+
+    const result = await alerta.listarPendentes(
+      "00000000-0000-0000-0000-000000000001",
+    );
+
+    expect(rpc).toHaveBeenCalledWith("get_lab_critical_alerts", {
+      p_company_id: "00000000-0000-0000-0000-000000000001",
+    });
+    expect(result).toEqual([{ id: 7, lg_comunicado: false }]);
+  });
+});

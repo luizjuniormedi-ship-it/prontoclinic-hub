@@ -155,4 +155,3 @@ export function getAccessiblePrefixes(roleName: string | null | undefined): stri
     .filter(([, entry]) => entry === "*" || Boolean(normalized && entry.includes(normalized)))
     .map(([prefix]) => prefix);
 }
-

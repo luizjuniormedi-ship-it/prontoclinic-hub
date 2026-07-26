@@ -138,7 +138,16 @@ export default function AdminUsersPage() {
     }
   };
 
-  if (loading) return <div className="p-6 text-muted-foreground">Carregando...</div>;
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Usuários do Sistema" description="Gestão de usuários e acessos" />
+        <div className="p-6 text-muted-foreground" role="status" aria-live="polite">
+          Carregando usuários...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -249,4 +258,3 @@ export default function AdminUsersPage() {
     </div>
   );
 }
-

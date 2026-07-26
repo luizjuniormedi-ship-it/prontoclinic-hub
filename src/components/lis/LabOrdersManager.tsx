@@ -11,7 +11,7 @@
  * Migration: 20260101000018_lis.sql
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Card,
@@ -64,6 +64,9 @@ import {
   FileText,
   AlertTriangle,
   Trash2,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { LabResultForm } from "./LabResultForm";
 import { CriticalAlertsBanner } from "./CriticalAlertsBanner";
@@ -83,6 +86,14 @@ import {
 } from "@/services/lisService";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/components/ui/use-toast";
+import { useDebounce } from "@/hooks/useDebounce";
+import { patientsService } from "@/services/patientsService";
+import {
+  professionalsLookup,
+  type DbProfessional,
+} from "@/services/appointmentsService";
+import type { Patient } from "@/types";
+import { formatCPF } from "@/utils/formatters";
 
 function statusBadge(status: LabPedidoStatus): { label: string; cls: string } {
   const map: Record<LabPedidoStatus, { label: string; cls: string }> = {
@@ -888,6 +899,41 @@ function CatalogoFormModal({
   );
 }
 
+const LAB_LOOKUP_PAGE_SIZE = 8;
+
+function toLabNumericId(value: string | number | null | undefined): number | null {
+  const numeric = Number(value);
+  return Number.isSafeInteger(numeric) && numeric > 0 ? numeric : null;
+}
+
+function normalizedLookupText(value: string | null | undefined): string {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR");
+}
+
+function isActiveProfessional(professional: DbProfessional): boolean {
+  const status = professional.status?.toLocaleLowerCase("pt-BR");
+  return professional.lg_ativo !== false && status !== "inactive" && status !== "inativo";
+}
+
+function patientIdentifier(patient: Patient): string {
+  if (patient.cpf) return `CPF ${formatCPF(patient.cpf.replace(/\D/g, ""))}`;
+  if (patient.birthDate) {
+    const [year, month, day] = patient.birthDate.split("-");
+    if (year && month && day) return `Nascimento ${day}/${month}/${year}`;
+  }
+  return "Cadastro sem CPF informado";
+}
+
+function professionalIdentifier(professional: DbProfessional): string {
+  const council = [professional.council_type, professional.council_number]
+    .filter(Boolean)
+    .join(" ");
+  return [professional.category, council].filter(Boolean).join(" — ") || "Profissional de saúde";
+}
+
 // ── Modal: Novo Pedido ───────────────────────────────────────────────────────
 function NovoPedidoModal({
   companyId,
@@ -898,14 +944,20 @@ function NovoPedidoModal({
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [cdPaciente, setCdPaciente] = useState("");
-  const [cdMedico, setCdMedico] = useState("");
+  const [patientSearch, setPatientSearch] = useState("");
+  const [professionalSearch, setProfessionalSearch] = useState("");
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [selectedProfessional, setSelectedProfessional] = useState<DbProfessional | null>(null);
+  const [patientPage, setPatientPage] = useState(0);
+  const [professionalPage, setProfessionalPage] = useState(0);
   const [hipotese, setHipotese] = useState("");
   const [observacoes, setObservacoes] = useState("");
   const [prioridade, setPrioridade] = useState<"ROTINA" | "URGENTE" | "EMERGENCIA">("ROTINA");
   const [tipoAtendimento, setTipoAtendimento] = useState<"AMBULATORIAL" | "INTERNACAO" | "URGENCIA" | "DOMICILIAR">("AMBULATORIAL");
   const [itensSelecionados, setItensSelecionados] = useState<number[]>([]);
   const { toast } = useToast();
+  const debouncedPatientSearch = useDebounce(patientSearch.trim(), 300);
+  const debouncedProfessionalSearch = useDebounce(professionalSearch.trim(), 300);
 
   const { data: examesDisponiveis } = useQuery({
     queryKey: ["lab-catalogo-select", companyId],
@@ -913,18 +965,113 @@ function NovoPedidoModal({
     enabled: !!companyId,
   });
 
+  const {
+    data: patientResults = [],
+    isFetching: patientSearchLoading,
+    error: patientSearchError,
+  } = useQuery({
+    queryKey: ["lab-patient-search", companyId, debouncedPatientSearch],
+    queryFn: () => patientsService.search(debouncedPatientSearch),
+    enabled: !!companyId && debouncedPatientSearch.length >= 2,
+    staleTime: 30_000,
+  });
+
+  const {
+    data: professionalDirectory = [],
+    isFetching: professionalSearchLoading,
+    error: professionalSearchError,
+  } = useQuery({
+    queryKey: ["lab-professional-directory", companyId],
+    queryFn: () => professionalsLookup.getAll(),
+    enabled: !!companyId && debouncedProfessionalSearch.length >= 2,
+    staleTime: 30_000,
+  });
+
+  const authorizedPatients = useMemo(
+    () =>
+      patientResults.filter(
+        (patient) =>
+          patient.companyId === companyId && toLabNumericId(patient.id) !== null,
+      ),
+    [companyId, patientResults],
+  );
+
+  const authorizedProfessionals = useMemo(() => {
+    const term = normalizedLookupText(debouncedProfessionalSearch);
+    return professionalDirectory.filter((professional) => {
+      if (
+        professional.company_id !== companyId ||
+        !isActiveProfessional(professional) ||
+        toLabNumericId(professional.id) === null
+      ) {
+        return false;
+      }
+      const searchable = normalizedLookupText(
+        [
+          professional.full_name,
+          professional.category,
+          professional.council_type,
+          professional.council_number,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
+      return searchable.includes(term);
+    });
+  }, [companyId, debouncedProfessionalSearch, professionalDirectory]);
+
+  const patientPageCount = Math.max(
+    1,
+    Math.ceil(authorizedPatients.length / LAB_LOOKUP_PAGE_SIZE),
+  );
+  const professionalPageCount = Math.max(
+    1,
+    Math.ceil(authorizedProfessionals.length / LAB_LOOKUP_PAGE_SIZE),
+  );
+  const visiblePatients = authorizedPatients.slice(
+    patientPage * LAB_LOOKUP_PAGE_SIZE,
+    (patientPage + 1) * LAB_LOOKUP_PAGE_SIZE,
+  );
+  const visibleProfessionals = authorizedProfessionals.slice(
+    professionalPage * LAB_LOOKUP_PAGE_SIZE,
+    (professionalPage + 1) * LAB_LOOKUP_PAGE_SIZE,
+  );
+
+  useEffect(() => {
+    setPatientPage(0);
+  }, [debouncedPatientSearch]);
+
+  useEffect(() => {
+    setProfessionalPage(0);
+  }, [debouncedProfessionalSearch]);
+
+  useEffect(() => {
+    if (patientPage >= patientPageCount) setPatientPage(0);
+  }, [patientPage, patientPageCount]);
+
+  useEffect(() => {
+    if (professionalPage >= professionalPageCount) setProfessionalPage(0);
+  }, [professionalPage, professionalPageCount]);
+
+  const selectedPatientId = toLabNumericId(selectedPatient?.id);
+  const selectedProfessionalId = toLabNumericId(selectedProfessional?.id);
+
   const criar = useMutation({
-    mutationFn: () =>
-      pedidoService.create({
+    mutationFn: () => {
+      if (selectedPatientId === null || selectedProfessionalId === null) {
+        throw new Error("Selecione um paciente e um profissional válidos.");
+      }
+      return pedidoService.create({
         company_id: companyId,
-        cd_paciente: Number(cdPaciente),
-        cd_medico: Number(cdMedico),
+        cd_paciente: selectedPatientId,
+        cd_medico: selectedProfessionalId,
         cd_tipo_atendimento: tipoAtendimento,
         tp_prioridade: prioridade,
         ds_hipotese_diagnostica: hipotese || undefined,
         ds_observacoes: observacoes || undefined,
         itens: itensSelecionados.map((id) => ({ cd_exame: id })),
-      }),
+      });
+    },
     onSuccess: () => {
       toast({ title: "Pedido criado com sucesso" });
       onCreated();
@@ -940,21 +1087,231 @@ function NovoPedidoModal({
           <DialogDescription>Selecione paciente, médico e exames</DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <Label>ID Paciente*</Label>
+          <div className="col-span-2 space-y-2">
+            <Label htmlFor="lab-patient-search">Paciente*</Label>
             <Input
-              type="number"
-              value={cdPaciente}
-              onChange={(e) => setCdPaciente(e.target.value)}
+              id="lab-patient-search"
+              value={patientSearch}
+              onChange={(event) => {
+                setPatientSearch(event.target.value);
+                setSelectedPatient(null);
+              }}
+              placeholder="Buscar por nome, CPF ou telefone..."
+              autoComplete="off"
+              aria-controls="lab-patient-results"
+              aria-describedby="lab-patient-help"
             />
+            <p id="lab-patient-help" className="text-xs text-muted-foreground">
+              Digite ao menos 2 caracteres. A busca respeita a empresa ativa.
+            </p>
+            {selectedPatient && (
+              <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 p-3">
+                <div>
+                  <p className="text-sm font-medium">{selectedPatient.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {patientIdentifier(selectedPatient)}
+                  </p>
+                </div>
+                <CheckCircle2 className="h-5 w-5 shrink-0 text-green-600" aria-hidden="true" />
+              </div>
+            )}
+            {debouncedPatientSearch.length >= 2 && (
+              <div
+                id="lab-patient-results"
+                role="listbox"
+                aria-label="Resultados da busca de pacientes"
+                className="rounded-md border"
+              >
+                {patientSearchLoading ? (
+                  <p className="p-3 text-sm text-muted-foreground" role="status">
+                    Buscando pacientes...
+                  </p>
+                ) : patientSearchError ? (
+                  <p className="p-3 text-sm text-destructive" role="alert">
+                    Não foi possível buscar pacientes neste momento.
+                  </p>
+                ) : visiblePatients.length === 0 ? (
+                  <p className="p-3 text-sm text-muted-foreground" role="status">
+                    Nenhum paciente encontrado.
+                  </p>
+                ) : (
+                  <div className="divide-y">
+                    {visiblePatients.map((patient) => {
+                      const selected = selectedPatient?.id === patient.id;
+                      return (
+                        <button
+                          key={patient.id}
+                          type="button"
+                          role="option"
+                          aria-selected={selected}
+                          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={() => {
+                            setSelectedPatient(patient);
+                            setPatientSearch(patient.name);
+                          }}
+                        >
+                          <span>
+                            <span className="block text-sm font-medium">{patient.name}</span>
+                            <span className="block text-xs text-muted-foreground">
+                              {patientIdentifier(patient)}
+                            </span>
+                          </span>
+                          {selected && (
+                            <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" aria-hidden="true" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {authorizedPatients.length > LAB_LOOKUP_PAGE_SIZE && (
+                  <div className="flex items-center justify-between border-t px-2 py-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      aria-label="Página anterior de pacientes"
+                      disabled={patientPage === 0}
+                      onClick={() => setPatientPage((page) => Math.max(0, page - 1))}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      Página {patientPage + 1} de {patientPageCount}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      aria-label="Próxima página de pacientes"
+                      disabled={patientPage >= patientPageCount - 1}
+                      onClick={() =>
+                        setPatientPage((page) => Math.min(patientPageCount - 1, page + 1))
+                      }
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-          <div>
-            <Label>ID Médico*</Label>
+          <div className="col-span-2 space-y-2">
+            <Label htmlFor="lab-professional-search">Médico ou profissional solicitante*</Label>
             <Input
-              type="number"
-              value={cdMedico}
-              onChange={(e) => setCdMedico(e.target.value)}
+              id="lab-professional-search"
+              value={professionalSearch}
+              onChange={(event) => {
+                setProfessionalSearch(event.target.value);
+                setSelectedProfessional(null);
+              }}
+              placeholder="Buscar por nome, categoria ou conselho..."
+              autoComplete="off"
+              aria-controls="lab-professional-results"
+              aria-describedby="lab-professional-help"
             />
+            <p id="lab-professional-help" className="text-xs text-muted-foreground">
+              Somente profissionais ativos da empresa atual são exibidos.
+            </p>
+            {selectedProfessional && (
+              <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 p-3">
+                <div>
+                  <p className="text-sm font-medium">{selectedProfessional.full_name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {professionalIdentifier(selectedProfessional)}
+                  </p>
+                </div>
+                <CheckCircle2 className="h-5 w-5 shrink-0 text-green-600" aria-hidden="true" />
+              </div>
+            )}
+            {debouncedProfessionalSearch.length >= 2 && (
+              <div
+                id="lab-professional-results"
+                role="listbox"
+                aria-label="Resultados da busca de profissionais"
+                className="rounded-md border"
+              >
+                {professionalSearchLoading ? (
+                  <p className="p-3 text-sm text-muted-foreground" role="status">
+                    Buscando profissionais...
+                  </p>
+                ) : professionalSearchError ? (
+                  <p className="p-3 text-sm text-destructive" role="alert">
+                    Não foi possível buscar profissionais neste momento.
+                  </p>
+                ) : visibleProfessionals.length === 0 ? (
+                  <p className="p-3 text-sm text-muted-foreground" role="status">
+                    Nenhum profissional encontrado.
+                  </p>
+                ) : (
+                  <div className="divide-y">
+                    {visibleProfessionals.map((professional) => {
+                      const selected = selectedProfessional?.id === professional.id;
+                      return (
+                        <button
+                          key={professional.id}
+                          type="button"
+                          role="option"
+                          aria-selected={selected}
+                          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={() => {
+                            setSelectedProfessional(professional);
+                            setProfessionalSearch(professional.full_name);
+                          }}
+                        >
+                          <span>
+                            <span className="block text-sm font-medium">
+                              {professional.full_name}
+                            </span>
+                            <span className="block text-xs text-muted-foreground">
+                              {professionalIdentifier(professional)}
+                            </span>
+                          </span>
+                          {selected && (
+                            <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" aria-hidden="true" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {authorizedProfessionals.length > LAB_LOOKUP_PAGE_SIZE && (
+                  <div className="flex items-center justify-between border-t px-2 py-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      aria-label="Página anterior de profissionais"
+                      disabled={professionalPage === 0}
+                      onClick={() => setProfessionalPage((page) => Math.max(0, page - 1))}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      Página {professionalPage + 1} de {professionalPageCount}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      aria-label="Próxima página de profissionais"
+                      disabled={professionalPage >= professionalPageCount - 1}
+                      onClick={() =>
+                        setProfessionalPage((page) =>
+                          Math.min(professionalPageCount - 1, page + 1),
+                        )
+                      }
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div>
             <Label>Prioridade</Label>
@@ -1026,7 +1383,10 @@ function NovoPedidoModal({
           <Button
             onClick={() => criar.mutate()}
             disabled={
-              !cdPaciente || !cdMedico || itensSelecionados.length === 0 || criar.isPending
+              selectedPatientId === null ||
+              selectedProfessionalId === null ||
+              itensSelecionados.length === 0 ||
+              criar.isPending
             }
           >
             Criar pedido
@@ -1036,4 +1396,3 @@ function NovoPedidoModal({
     </Dialog>
   );
 }
-

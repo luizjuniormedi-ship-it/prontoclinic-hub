@@ -101,6 +101,25 @@ describe("local auth server security invariants", () => {
     );
   });
 
+  it("mapeia filas do call center para agenda e contratos de BI para bi", () => {
+    expect(source).toContain(
+      "[/^scheduling_contact_logs|^scheduling_call_center_tasks|^scheduling_confirmation_/, 'agenda']",
+    );
+    expect(source).toContain(
+      "[/^v_ocupacao_profissional$|^v_faturamento_convenio$/, 'bi']",
+    );
+  });
+
+  it("autoriza apenas as projecoes laboratoriais e traduz RLS negado para 403", () => {
+    expect(source).toContain(
+      "get_lab_order_summaries: { module: 'laboratorio', action: 'can_view' }",
+    );
+    expect(source).toContain(
+      "get_lab_critical_alerts: { module: 'laboratorio', action: 'can_view' }",
+    );
+    expect(source).toContain("return error?.code === '42501' ? 403 : 400");
+  });
+
   it("autoriza a manutencao administrativa de permissoes e invalida o cache", () => {
     expect(source).toContain("upsert_role_permission: { module: 'admin', action: 'can_edit' }");
     expect(source).toContain("if (fnName === 'upsert_role_permission') permCache.clear()");

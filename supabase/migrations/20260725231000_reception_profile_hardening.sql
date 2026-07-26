@@ -1006,4 +1006,3 @@ COMMENT ON FUNCTION public.perform_reception_checkin_secure(
   BIGINT, TEXT, TEXT
 ) IS
   'Check-in idempotente e transacional; usa o ciclo oficial de status da agenda.';
-

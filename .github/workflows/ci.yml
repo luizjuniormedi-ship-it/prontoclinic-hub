@@ -84,6 +84,9 @@ jobs:
             psql -v ON_ERROR_STOP=1 \
               -h localhost -p 54322 -U postgres -d "$database" \
               -f tests/database/reception_checkout.sql >/dev/null
+            psql -v ON_ERROR_STOP=1 \
+              -h localhost -p 54322 -U postgres -d "$database" \
+              -f tests/database/runtime_contract_hardening.sql >/dev/null
           done
 
           # Retry das migrations críticas no mesmo banco: qualquer aplicação
@@ -108,7 +111,8 @@ jobs:
           for migration in \
             20260725224000_reception_checkout_workflow.sql \
             20260725230000_patient_portal_scope.sql \
-            20260725231000_reception_profile_hardening.sql; do
+            20260725231000_reception_profile_hardening.sql \
+            20260725232000_runtime_contract_hardening.sql; do
             psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
               -d migrations_first --single-transaction \
               -f "supabase/migrations/$migration" >/dev/null
@@ -123,7 +127,8 @@ jobs:
             auth_admin_provisioning.sql \
             operational_rls.sql \
             patient_portal_scope.sql \
-            reception_checkout.sql; do
+            reception_checkout.sql \
+            runtime_contract_hardening.sql; do
             psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
               -d migrations_first -f "tests/database/$contract" >/dev/null
           done

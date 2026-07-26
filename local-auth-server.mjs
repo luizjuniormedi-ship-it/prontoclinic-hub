@@ -209,7 +209,8 @@ function tableToModule(table) {
     [/^insurance|^convenio|^plano|^fonte_pagadora/, 'faturamento'],
     // recepÃ§Ã£o: check-in, autorizaÃ§Ã£o, elegibilidade, guias, senhas, documentos
     [/^reception_|^senhas_atendimento/, 'recepcao'],
-    [/^scheduling_contact_logs|^scheduling_call_center_tasks|^scheduling_confirmation_/, 'recepcao'],
+    [/^scheduling_contact_logs|^scheduling_call_center_tasks|^scheduling_confirmation_/, 'agenda'],
+    [/^v_ocupacao_profissional$|^v_faturamento_convenio$/, 'bi'],
     [/^bi_|^nps_|^dashboard/, 'bi'],
     [/^telemedicina/, 'telemedicina'],
     [/^internacao|^leito/, 'internacao'],
@@ -307,6 +308,8 @@ const RPC_PERMISSIONS = {
   sign_reception_tiss_guide_secure: { module: 'recepcao', action: 'can_edit' },
   perform_reception_checkin_secure: { module: 'recepcao', action: 'can_create' },
   finalize_attendance_secure: { module: 'prontuario', action: 'can_create' },
+  get_lab_order_summaries: { module: 'laboratorio', action: 'can_view' },
+  get_lab_critical_alerts: { module: 'laboratorio', action: 'can_view' },
   update_reception_authorization_secure: { module: 'recepcao', action: 'can_edit' },
   update_reception_eligibility_secure: { module: 'recepcao', action: 'can_edit' },
 };
@@ -358,6 +361,10 @@ function cors(req, res) {
 function json(res, data, status = 200) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
+}
+
+function sqlErrorStatus(error) {
+  return error?.code === '42501' ? 403 : 400;
 }
 
 function parseBody(req, maxBytes = 1024 * 1024) {
@@ -872,7 +879,11 @@ const server = createServer(async (req, res) => {
           }
           return json(res, result.rows);
         } catch (e) {
-          return json(res, { error: e.message, message: e.message, code: 'PGRST000' }, 400);
+          return json(
+            res,
+            { error: e.message, message: e.message, code: e.code || 'PGRST000' },
+            sqlErrorStatus(e),
+          );
         }
       }
 
@@ -901,7 +912,7 @@ const server = createServer(async (req, res) => {
           }
           return json(res, {}, 201);
         } catch (e) {
-          return json(res, { error: e.message, message: e.message }, 400);
+          return json(res, { error: e.message, message: e.message, code: e.code }, sqlErrorStatus(e));
         }
       }
 
@@ -929,7 +940,7 @@ const server = createServer(async (req, res) => {
           if (table === 'role_permissions' || table === 'roles') permCache.clear();
           return json(res, result.rows[0] || {});
         } catch (e) {
-          return json(res, { error: e.message, message: e.message }, 400);
+          return json(res, { error: e.message, message: e.message, code: e.code }, sqlErrorStatus(e));
         }
       }
     }

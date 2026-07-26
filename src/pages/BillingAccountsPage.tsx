@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState } from "@/components/StateViews";
-import { billingAccountsService, BILLING_STATUS_LABELS, getBillingFinancialIssues, type BillingAccount, type PendingIssue, type Competency } from "@/services/billingAccountsService";
+import { billingAccountsService, BILLING_STATUS_LABELS, getBillingFinancialIssues, isBillingAccountReady, type BillingAccount, type PendingIssue, type Competency } from "@/services/billingAccountsService";
 import { toast } from "@/hooks/use-toast";
 import { useConfirm } from "@/hooks/useConfirm";
 import { formatDate } from "@/utils/formatters";
@@ -72,13 +72,26 @@ export default function BillingAccountsPage() {
   const recheckPending = async (a: BillingAccount) => {
     setBusy(true);
     try {
-      const financialIssues = getBillingFinancialIssues(a);
-      if (financialIssues.length > 0) {
-        toast({ title: "Conta com inconsistência financeira", description: financialIssues.join(" "), variant: "destructive" });
-        return;
-      }
-      const n = await billingAccountsService.checkPending(a.id);
-      toast({ title: "Glosa preventiva executada", description: n > 0 ? `${n} pendência(s) detectada(s)` : "Nenhuma pendência — pronta para envio" });
+      const result = await billingAccountsService.checkPending(a);
+      toast(result.pendingCount > 0
+        ? {
+            title: "Glosa preventiva com pendências",
+            description: result.financialIssues.length > 0
+              ? result.financialIssues.join(" ")
+              : `${result.pendingCount} pendência(s) detectada(s)`,
+            variant: "destructive",
+          }
+        : {
+            title: "Glosa preventiva executada",
+            description: "Nenhuma pendência — conta marcada como pronta para envio",
+          });
+      setDetail((current) => current?.id === a.id
+        ? {
+            ...current,
+            status: result.status,
+            has_pending_issues: result.pendingCount > 0,
+          }
+        : current);
       if (detail) setIssues(await billingAccountsService.pendingIssues(a.id));
       load();
     } catch (e) { toast({ title: "Erro", description: String(e), variant: "destructive" }); }
@@ -105,6 +118,7 @@ export default function BillingAccountsPage() {
   };
 
   const filtered = accounts.filter((a) => !search || a.patient_name?.toLowerCase().includes(search.toLowerCase()) || a.guide_number?.toLowerCase().includes(search.toLowerCase()));
+  const detailIsReady = detail ? isBillingAccountReady(detail, issues.length) : false;
 
   if (loading) return <LoadingState />;
 
@@ -266,10 +280,17 @@ export default function BillingAccountsPage() {
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">Pendências (glosa preventiva)</Label>
-                {issues.length === 0 && getBillingFinancialIssues(detail).length === 0 ? (
+                {detailIsReady ? (
                   <div className="rounded bg-success/10 p-2 text-xs flex items-center gap-2 text-success mt-1"><ShieldCheck className="h-4 w-4" />Sem pendências — conta pronta para envio</div>
                 ) : (
                   <div className="space-y-1 mt-1">
+                    {issues.length === 0
+                      && getBillingFinancialIssues(detail).length === 0
+                      && detail.status !== "pronta_envio" && (
+                        <div className="rounded bg-muted p-2 text-xs text-muted-foreground">
+                          Execute a glosa preventiva para validar e marcar a conta como pronta para envio.
+                        </div>
+                      )}
                     {getBillingFinancialIssues(detail).map((message) => (
                       <div key={message} className="rounded bg-destructive/10 p-2 text-xs flex items-center gap-2 text-destructive">
                         <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -305,4 +326,3 @@ export default function BillingAccountsPage() {
     </div>
   );
 }
-

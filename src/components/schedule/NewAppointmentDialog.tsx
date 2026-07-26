@@ -573,4 +573,3 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
     </Dialog>
   );
 }
-

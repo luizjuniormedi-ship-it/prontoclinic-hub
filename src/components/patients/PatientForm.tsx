@@ -455,4 +455,3 @@ export function PatientForm({ initialData, onSubmit, onCancel, saving, validatio
     </form>
   );
 }
-

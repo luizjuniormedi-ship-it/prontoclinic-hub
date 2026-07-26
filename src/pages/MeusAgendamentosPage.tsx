@@ -454,4 +454,3 @@ function AppointmentCard({
     </Card>
   );
 }
-

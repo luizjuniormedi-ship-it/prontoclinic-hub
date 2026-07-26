@@ -120,4 +120,3 @@ describe("receptionService readiness", () => {
     }));
   });
 });
-

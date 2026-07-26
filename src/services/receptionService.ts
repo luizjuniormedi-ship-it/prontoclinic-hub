@@ -276,4 +276,3 @@ export const receptionService = {
     if (error) throw new Error(`Erro ao atualizar elegibilidade: ${error.message}`);
   },
 };
-

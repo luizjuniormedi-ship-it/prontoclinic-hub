@@ -105,4 +105,3 @@ describe("ReceptionCheckinDialog", () => {
     expect(screen.getByText("Impacto: Bloqueia o faturamento")).toBeInTheDocument();
   });
 });
-

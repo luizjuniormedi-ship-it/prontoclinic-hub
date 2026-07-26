@@ -469,5 +469,39 @@ ON CONFLICT (id) DO UPDATE SET
   lg_checkin = EXCLUDED.lg_checkin,
   notes = EXCLUDED.notes;
 
-COMMIT;
+DO $$
+DECLARE
+  v_patient_contexts INTEGER;
+  v_linked_patients INTEGER;
+BEGIN
+  SELECT count(*)
+  INTO v_patient_contexts
+  FROM public.memberships m
+  JOIN public.membership_roles mr ON mr.membership_id = m.id
+  JOIN public.roles r ON r.id = mr.role_id
+  JOIN public.membership_units mu ON mu.membership_id = m.id
+  WHERE m.user_id = 'eeeeeeee-0000-4000-8000-000000000004'
+    AND m.company_id = 'eeeeeeee-1000-4000-8000-000000000001'
+    AND m.status = 'active'
+    AND r.name = 'paciente'
+    AND r.lg_ativo IS TRUE
+    AND mu.unit_id = 91001;
 
+  SELECT count(*)
+  INTO v_linked_patients
+  FROM public.patients p
+  WHERE p.user_id = 'eeeeeeee-0000-4000-8000-000000000004'
+    AND p.company_id = 'eeeeeeee-1000-4000-8000-000000000001'
+    AND p.unit_id = 91001
+    AND p.lg_ativo IS TRUE;
+
+  IF v_patient_contexts <> 1 OR v_linked_patients <> 1 THEN
+    RAISE EXCEPTION
+      'Fixture paciente inconsistente: contextos=%, vinculos=%',
+      v_patient_contexts,
+      v_linked_patients;
+  END IF;
+END;
+$$;
+
+COMMIT;

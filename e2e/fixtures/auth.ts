@@ -63,15 +63,23 @@ export const test = base.extend<{
       const breadcrumb = page.getByRole('navigation', {
         name: 'Localização da página',
       });
+      const contextError = page.getByRole('heading', {
+        name: 'Contexto de acesso indisponível',
+      });
 
       await expect(contextTrigger).toBeEnabled({ timeout: 15000 });
       await expect.poll(async () => (
         await selectionRequired.isVisible().catch(() => false)
         || await breadcrumb.isVisible().catch(() => false)
+        || await contextError.isVisible().catch(() => false)
       ), {
-        message: 'A aplicação deve ativar um contexto ou solicitar sua seleção',
+        message: 'A aplicação deve ativar um contexto, solicitar seleção ou informar a falha',
         timeout: 15000,
       }).toBe(true);
+
+      if (await contextError.isVisible()) {
+        throw new Error('A aplicação rejeitou a ativação do contexto autorizado');
+      }
 
       if (await selectionRequired.isVisible()) {
         await contextTrigger.click();
@@ -84,9 +92,9 @@ export const test = base.extend<{
 
       await expect(selectionRequired).toBeHidden();
       await expect(breadcrumb).toBeVisible({ timeout: 15000 });
+      await page.waitForLoadState('networkidle', { timeout: 10000 });
     });
   }
 });
 
 export { expect };
-

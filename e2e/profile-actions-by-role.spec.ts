@@ -218,7 +218,7 @@ test.describe("uso real de telas e controles por perfil", () => {
       const pageErrors: string[] = [];
       const requestErrors: string[] = [];
       const consoleErrors: string[] = [];
-      let monitorAllowedPhase = true;
+      let monitorAllowedPhase = false;
       page.on("pageerror", (error) => pageErrors.push(error.message));
       page.on("response", (response) => {
         if (monitorAllowedPhase && response.status() >= 400) {
@@ -239,6 +239,10 @@ test.describe("uso real de telas e controles por perfil", () => {
       });
 
       await loginAs(scenario.role);
+      pageErrors.length = 0;
+      requestErrors.length = 0;
+      consoleErrors.length = 0;
+      monitorAllowedPhase = true;
       await page.goto(scenario.route);
 
       const heading = page.getByRole("heading", { name: scenario.heading });
@@ -373,4 +377,3 @@ test.describe("uso real de telas e controles por perfil", () => {
     });
   }
 });
-

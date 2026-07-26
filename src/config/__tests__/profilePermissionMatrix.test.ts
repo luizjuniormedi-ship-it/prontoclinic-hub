@@ -72,4 +72,3 @@ describe("independent profile permission matrix", () => {
     });
   }
 });
-

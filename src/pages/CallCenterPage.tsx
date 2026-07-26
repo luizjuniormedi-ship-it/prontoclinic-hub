@@ -56,6 +56,14 @@ const channelLabels: Record<CallCenterChannel, string> = {
   indicacao: "Indicação",
 };
 
+export function normalizeCallCenterText(text: string): string {
+  return text.split("mÃ³dulo").join("módulo");
+}
+
+function callCenterError(error: unknown, action: string): string {
+  return normalizeCallCenterText(friendlyError(error, action));
+}
+
 export default function CallCenterPage() {
   const [contacts, setContacts] = useState<CallCenterContactLog[]>([]);
   const [tasks, setTasks] = useState<CallCenterTask[]>([]);
@@ -79,7 +87,7 @@ export default function CallCenterPage() {
       setTasks(taskRows);
       setConfirmations(confirmationRows);
     } catch (err) {
-      toast({ title: friendlyError(err, "Carregar call center"), variant: "destructive" });
+      toast({ title: callCenterError(err, "Carregar call center"), variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -94,7 +102,7 @@ export default function CallCenterPage() {
       await reload();
       toast({ title: "Fila de confirmação atualizada" });
     } catch (error) {
-      toast({ title: friendlyError(error, "Atualizar fila de confirmação"), variant: "destructive" });
+      toast({ title: callCenterError(error, "Atualizar fila de confirmação"), variant: "destructive" });
     } finally {
       setRefreshingConfirmationQueue(false);
     }
@@ -122,7 +130,7 @@ export default function CallCenterPage() {
       toast({ title: outcome === "confirmed" ? "Presença confirmada" : "Tentativa registrada" });
       await reload();
     } catch (error) {
-      toast({ title: friendlyError(error, "Registrar confirmação"), variant: "destructive" });
+      toast({ title: callCenterError(error, "Registrar confirmação"), variant: "destructive" });
     }
   };
 
@@ -282,7 +290,7 @@ function NewContactDialog({ open, onOpenChange, onCreated }: NewContactDialogPro
       onOpenChange(false);
       onCreated();
     } catch (err) {
-      toast({ title: friendlyError(err, "Registrar contato"), variant: "destructive" });
+      toast({ title: callCenterError(err, "Registrar contato"), variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -358,4 +366,3 @@ function NewContactDialog({ open, onOpenChange, onCreated }: NewContactDialogPro
     </Dialog>
   );
 }
-

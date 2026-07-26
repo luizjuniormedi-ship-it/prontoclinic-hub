@@ -263,4 +263,3 @@ describe("ReceptionPage", () => {
     expect(mocks.updateAuthorization).not.toHaveBeenCalled();
   });
 });
-

@@ -189,4 +189,3 @@ describe("receptionCheckoutService", () => {
     expect(isReceptionGuideValid(invalidErrors)).toBe(false);
   });
 });
-

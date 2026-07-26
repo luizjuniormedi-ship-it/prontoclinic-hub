@@ -111,4 +111,3 @@ export function getBlockingReceptionIssues(
 ): CheckinIssue[] {
   return readiness?.issues.filter((issue) => issue.blocking) ?? [];
 }
-

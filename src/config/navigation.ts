@@ -174,4 +174,3 @@ export function getNavigationItemForPath(pathname: string): NavigationItem | und
 export function getWorkspaceLabel(workspace: NavigationWorkspace): string {
   return navigationWorkspaces.find((entry) => entry.id === workspace)?.label ?? "Área";
 }
-

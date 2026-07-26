@@ -98,6 +98,19 @@ SET LOCAL request.jwt.claim.aal = 'aal2';
 SET LOCAL request.jwt.claims =
   '{"sub":"85000000-0000-0000-0000-000000000010","role":"authenticated","aal":"aal2","session_id":"85000000-0000-0000-0000-000000000099"}';
 
+SELECT pg_temp.assert_true(
+  jsonb_array_length(public.list_authorized_access_contexts()) = 1,
+  'paciente precisa receber exatamente um contexto autorizado'
+);
+
+SELECT pg_temp.assert_true(
+  public.list_authorized_access_contexts() #>> '{0,membership_id}'
+    = '85000000-0000-0000-0000-000000000020'
+  AND public.list_authorized_access_contexts() #>> '{0,role_name}' = 'paciente'
+  AND public.list_authorized_access_contexts() #>> '{0,unit_id}' = '850001',
+  'contexto do paciente precisa preservar membership, perfil e unidade autorizados'
+);
+
 SELECT public.activate_application_context(
   '85000000-0000-0000-0000-000000000020',
   (SELECT id FROM public.roles WHERE name = 'paciente'),
@@ -115,6 +128,29 @@ SELECT pg_temp.assert_true(
   (SELECT array_agg(id ORDER BY id) FROM public.appointments) = ARRAY[850030]::BIGINT[],
   'paciente nao pode listar agendamento de terceiro da mesma unidade'
 );
+
+DO $$
+DECLARE
+  v_insert_denied BOOLEAN := FALSE;
+BEGIN
+  BEGIN
+    INSERT INTO public.patients (
+      id, company_id, unit_id, user_id, full_name, status, lg_ativo
+    )
+    VALUES (
+      850022, '85000000-0000-0000-0000-000000000001', 850001,
+      '85000000-0000-0000-0000-000000000010',
+      'Paciente criado pelo portal', 'active', TRUE
+    );
+  EXCEPTION WHEN insufficient_privilege THEN
+    v_insert_denied := TRUE;
+  END;
+
+  IF v_insert_denied IS DISTINCT FROM TRUE THEN
+    RAISE EXCEPTION 'paciente conseguiu inserir cadastro clinico diretamente';
+  END IF;
+END;
+$$;
 
 SELECT public.update_my_appointment_status_secure(850030, 'confirmed', NULL);
 SELECT pg_temp.assert_true(
@@ -157,4 +193,3 @@ $$;
 
 RESET ROLE;
 ROLLBACK;
-
