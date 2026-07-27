@@ -351,7 +351,13 @@ BEGIN
       'roles_select_authenticated',
       'role_permissions_select_company',
       'role_permissions_insert_company_admin',
-      'role_permissions_update_company_admin'
+      'role_permissions_update_company_admin',
+      -- Policies nativas seguras já presentes em instalações evoluídas.
+      'module2_roles_admin',
+      'module2_roles_select',
+      'module2_role_permissions_admin',
+      'module2_role_permissions_select',
+      'app_imaging_user_profile_self'
     );
 
   IF v_unknown_policies IS NOT NULL THEN
