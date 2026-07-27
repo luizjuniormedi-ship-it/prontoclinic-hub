@@ -73,7 +73,7 @@ DECLARE
   v_company_id UUID;
 BEGIN
   IF EXISTS (SELECT 1 FROM public.role_permissions WHERE company_id IS NULL) THEN
-    SELECT COUNT(*), MIN(id) INTO v_company_count, v_company_id
+    SELECT COUNT(*) INTO v_company_count
     FROM public.companies;
 
     IF v_company_count <> 1 THEN
@@ -81,6 +81,11 @@ BEGIN
         'AUTH_FOUNDATION_PREFLIGHT: role_permissions sem company_id e % empresas; mapeamento manual obrigatório',
         v_company_count;
     END IF;
+
+    SELECT id INTO v_company_id
+    FROM public.companies
+    ORDER BY id
+    LIMIT 1;
 
     UPDATE public.role_permissions
        SET company_id = v_company_id
