@@ -25,6 +25,7 @@ vi.mock("@/lib/supabase", () => {
     gte: vi.fn().mockReturnThis(),
     lte: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
+    range: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
     maybeSingle: vi.fn(),
     single: vi.fn(),
@@ -44,7 +45,7 @@ import { supabase } from "@/lib/supabase";
 
 // ── Fixtures ──
 
-const makeAppointment = (overrides: Partial<any> = {}) => ({
+const makeAppointment = (overrides: Record<string, unknown> = {}) => ({
   id: "appt-1",
   company_id: "company-1",
   unit_id: "unit-1",
@@ -74,6 +75,7 @@ describe("appointmentsService — getByDateRange (getAll sem filtros)", () => {
       gte: vi.fn().mockReturnThis(),
       lte: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
+      range: vi.fn().mockReturnThis(),
     };
     (chain as { then: (r: (v: unknown) => unknown) => unknown }).then = (r) =>
       r({ data: rows, error: null });
@@ -90,6 +92,7 @@ describe("appointmentsService — getByDateRange (getAll sem filtros)", () => {
       gte: vi.fn().mockReturnThis(),
       lte: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
+      range: vi.fn().mockReturnThis(),
     };
     (chain as { then: (r: (v: unknown) => unknown) => unknown }).then = (r) =>
       r({ data: [], error: null });
@@ -105,6 +108,7 @@ describe("appointmentsService — getByDateRange (getAll sem filtros)", () => {
       gte: vi.fn().mockReturnThis(),
       lte: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
+      range: vi.fn().mockReturnThis(),
     };
     (chain as { then: (r: (v: unknown) => unknown) => unknown }).then = (r) =>
       r({ data: null, error: { message: "permission denied" } });
@@ -125,6 +129,7 @@ describe("appointmentsService — getByDate (filtro por data)", () => {
       gte: vi.fn().mockReturnThis(),
       lte: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
+      range: vi.fn().mockReturnThis(),
     };
     (chain as { then: (r: (v: unknown) => unknown) => unknown }).then = (r) =>
       r({ data: [makeAppointment()], error: null });
@@ -194,7 +199,8 @@ describe("appointmentsService — create", () => {
 
     const result = await appointmentsService.create({
       patient_id: "1",
-      professional_id: "1",
+      professional_id: "42",
+      unit_id: "7",
       appointment_date: "2026-06-23",
       start_time: "09:00",
     });
@@ -203,7 +209,8 @@ describe("appointmentsService — create", () => {
     expect(supabase.rpc).toHaveBeenCalledWith("create_appointment_with_requirements_secure", expect.objectContaining({
       p_status: "scheduled",
       p_patient_id: expect.any(Number),
-      p_professional_id: 1,
+      p_professional_id: 42,
+      p_unit_id: 7,
     }));
   });
 
@@ -395,17 +402,30 @@ describe("appointmentsService — delete", () => {
 describe("professionalsLookup — getAll", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("lista profissionais ordenados por nome", async () => {
+  it("normaliza IDs numéricos e duração DECIMAL antes de expor profissionais à UI", async () => {
     const chain: Record<string, unknown> = {
       select: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
     };
     (chain as { then: (r: (v: unknown) => unknown) => unknown }).then = (r) =>
-      r({ data: [{ id: "p1", full_name: "Dr. House" }], error: null });
+      r({
+        data: [{
+          id: 101,
+          company_id: 9,
+          full_name: "Dr. House",
+          default_duration_minutes: "45",
+        }],
+        error: null,
+      });
     (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue(chain);
 
     const result = await professionalsLookup.getAll();
     expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(expect.objectContaining({
+      id: "101",
+      company_id: "9",
+      default_duration_minutes: 45,
+    }));
     expect(supabase.from).toHaveBeenCalledWith("professionals");
   });
 });
@@ -413,17 +433,18 @@ describe("professionalsLookup — getAll", () => {
 describe("specialtiesLookup — getAll", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("lista especialidades ordenadas por nome", async () => {
+  it("normaliza ID numérico da especialidade", async () => {
     const chain: Record<string, unknown> = {
       select: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
     };
     (chain as { then: (r: (v: unknown) => unknown) => unknown }).then = (r) =>
-      r({ data: [{ id: "s1", name: "Cardiologia" }], error: null });
+      r({ data: [{ id: 201, name: "Cardiologia" }], error: null });
     (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue(chain);
 
     const result = await specialtiesLookup.getAll();
     expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("201");
     expect(supabase.from).toHaveBeenCalledWith("specialties");
   });
 });
@@ -431,17 +452,24 @@ describe("specialtiesLookup — getAll", () => {
 describe("appointmentTypesLookup — getAll", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("lista tipos de atendimento ordenados por nome", async () => {
+  it("normaliza ID e duração do tipo de atendimento", async () => {
     const chain: Record<string, unknown> = {
       select: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
     };
     (chain as { then: (r: (v: unknown) => unknown) => unknown }).then = (r) =>
-      r({ data: [{ id: "t1", name: "Consulta" }], error: null });
+      r({
+        data: [{ id: 301, name: "Consulta", default_duration_minutes: "60" }],
+        error: null,
+      });
     (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue(chain);
 
     const result = await appointmentTypesLookup.getAll();
     expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(expect.objectContaining({
+      id: "301",
+      default_duration_minutes: 60,
+    }));
     expect(supabase.from).toHaveBeenCalledWith("appointment_types");
   });
 });
@@ -449,17 +477,36 @@ describe("appointmentTypesLookup — getAll", () => {
 describe("servicesCatalogLookup — getAll", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("lista serviços do catálogo ordenados por nome", async () => {
+  it("normaliza IDs e valores DECIMAL do catálogo", async () => {
     const chain: Record<string, unknown> = {
       select: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
     };
     (chain as { then: (r: (v: unknown) => unknown) => unknown }).then = (r) =>
-      r({ data: [{ id: "svc1", name: "Eletrocardiograma" }], error: null });
+      r({
+        data: [{
+          id: 401,
+          specialty_id: 201,
+          name: "Eletrocardiograma",
+          default_duration_minutes: "30",
+          price: "125.50",
+          vl_particular: "110.25",
+          lg_autorizacao: "1",
+        }],
+        error: null,
+      });
     (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue(chain);
 
     const result = await servicesCatalogLookup.getAll();
     expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(expect.objectContaining({
+      id: "401",
+      specialty_id: "201",
+      default_duration_minutes: 30,
+      price: 125.5,
+      vl_particular: 110.25,
+      lg_autorizacao: 1,
+    }));
     expect(supabase.from).toHaveBeenCalledWith("services_catalog");
   });
 });
