@@ -150,6 +150,141 @@ GRANT EXECUTE ON FUNCTION public.active_unit_id()
 GRANT EXECUTE ON FUNCTION public.can_access(TEXT, TEXT)
   TO app_prontomedic, prontomedic_reception_rpc_owner;
 
+-- Existing databases already carry the Module 15 RPC, so repeat the final
+-- definition here to make authorization denials machine-readable without
+-- depending on a historical migration being replayed.
+CREATE OR REPLACE FUNCTION public.transition_insurance_authorization_secure(
+  p_authorization_id UUID,
+  p_status TEXT,
+  p_protocol_number TEXT DEFAULT NULL,
+  p_authorization_number TEXT DEFAULT NULL,
+  p_password_number TEXT DEFAULT NULL,
+  p_valid_until DATE DEFAULT NULL,
+  p_quantity_authorized INTEGER DEFAULT NULL,
+  p_quantity_used INTEGER DEFAULT NULL,
+  p_reason TEXT DEFAULT NULL
+)
+RETURNS public.insurance_authorizations
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $function$
+DECLARE
+  v_actor RECORD;
+  v_old public.insurance_authorizations;
+  v_row public.insurance_authorizations;
+  v_authorized INTEGER;
+  v_used INTEGER;
+BEGIN
+  SELECT * INTO v_actor FROM public.get_scheduling_actor();
+  IF v_actor.user_id IS NULL
+     OR v_actor.company_id IS NULL
+     OR NOT public.m15_can_operate_authorizations() THEN
+    RAISE EXCEPTION 'Usuario sem permissao para atualizar autorizacao'
+      USING ERRCODE = '42501';
+  END IF;
+
+  SELECT * INTO v_old
+  FROM public.insurance_authorizations
+  WHERE id = p_authorization_id
+    AND company_id = v_actor.company_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Autorizacao nao encontrada no tenant atual';
+  END IF;
+  IF p_status NOT IN (
+    'pendente',
+    'solicitada',
+    'em_analise',
+    'autorizada',
+    'parcialmente_autorizada',
+    'negada',
+    'vencida',
+    'cancelada',
+    'reenviada',
+    'liberada_excecao',
+    'nao_necessaria'
+  ) THEN
+    RAISE EXCEPTION 'Status de autorizacao invalido';
+  END IF;
+
+  v_authorized := COALESCE(
+    p_quantity_authorized,
+    v_old.quantity_authorized
+  );
+  IF p_status = 'autorizada' THEN
+    v_authorized := COALESCE(
+      p_quantity_authorized,
+      v_old.quantity_requested
+    );
+  END IF;
+  v_used := COALESCE(p_quantity_used, v_old.quantity_used);
+
+  IF v_authorized < 0 OR v_authorized > v_old.quantity_requested THEN
+    RAISE EXCEPTION 'Quantidade autorizada invalida';
+  END IF;
+  IF v_used < 0 OR v_used > v_authorized THEN
+    RAISE EXCEPTION 'Quantidade utilizada invalida';
+  END IF;
+  IF p_status IN (
+    'autorizada',
+    'parcialmente_autorizada',
+    'liberada_excecao'
+  ) AND NULLIF(
+    trim(COALESCE(p_authorization_number, v_old.authorization_number, '')),
+    ''
+  ) IS NULL THEN
+    RAISE EXCEPTION 'Numero da autorizacao e obrigatorio';
+  END IF;
+  IF p_status = 'negada'
+     AND NULLIF(trim(COALESCE(p_reason, '')), '') IS NULL THEN
+    RAISE EXCEPTION 'Motivo da negativa e obrigatorio';
+  END IF;
+
+  UPDATE public.insurance_authorizations
+  SET status = p_status,
+      protocol_number = COALESCE(
+        NULLIF(trim(p_protocol_number), ''),
+        protocol_number
+      ),
+      authorization_number = COALESCE(
+        NULLIF(trim(p_authorization_number), ''),
+        authorization_number
+      ),
+      password_number = COALESCE(
+        NULLIF(trim(p_password_number), ''),
+        password_number
+      ),
+      valid_until = COALESCE(p_valid_until, valid_until),
+      quantity_authorized = v_authorized,
+      quantity_used = v_used,
+      authorized_at = CASE
+        WHEN p_status IN (
+          'autorizada',
+          'parcialmente_autorizada',
+          'liberada_excecao'
+        ) THEN COALESCE(authorized_at, NOW())
+        ELSE authorized_at
+      END,
+      denied_at = CASE
+        WHEN p_status = 'negada' THEN NOW()
+        ELSE denied_at
+      END,
+      denial_reason = CASE
+        WHEN p_status = 'negada' THEN NULLIF(trim(p_reason), '')
+        ELSE denial_reason
+      END,
+      notes = concat_ws(E'\n', notes, NULLIF(trim(p_reason), '')),
+      updated_by = v_actor.user_id,
+      updated_at = NOW()
+  WHERE id = p_authorization_id
+  RETURNING * INTO v_row;
+
+  RETURN v_row;
+END;
+$function$;
+
 DO $runtime_policy_acl$
 BEGIN
   IF NOT EXISTS (
