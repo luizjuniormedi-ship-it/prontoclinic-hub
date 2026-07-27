@@ -144,9 +144,9 @@ GRANT EXECUTE ON FUNCTION public.get_scheduling_actor()
 -- Policies installed for the direct backend role call these helpers. Keep the
 -- grants explicit because earlier closures revoke PUBLIC and portal access.
 GRANT EXECUTE ON FUNCTION public.active_company_id()
-  TO app_prontomedic, prontomedic_reception_rpc_owner;
+  TO app_prontomedic, prontomedic_rpc_owner, prontomedic_reception_rpc_owner;
 GRANT EXECUTE ON FUNCTION public.active_unit_id()
-  TO app_prontomedic, prontomedic_reception_rpc_owner;
+  TO app_prontomedic, prontomedic_rpc_owner, prontomedic_reception_rpc_owner;
 GRANT EXECUTE ON FUNCTION public.can_access(TEXT, TEXT)
   TO app_prontomedic, prontomedic_reception_rpc_owner;
 
@@ -208,6 +208,71 @@ BEGIN
   END IF;
 END
 $organization_runtime_requirements$;
+
+-- The legacy runtime helper trusted request.jwt.claim.company_id, a mutable GUC
+-- retired above. Resolve the tenant from the persisted AAL2 context and the
+-- actor from the signed JWT while preserving the established unit rules.
+CREATE OR REPLACE FUNCTION private.org_can_access_unit_runtime(
+  p_company_id UUID,
+  p_unit_id INTEGER
+)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public, private
+AS $function$
+  SELECT p_company_id = public.active_company_id()
+    AND EXISTS (
+      SELECT 1
+      FROM public.units AS unit_record
+      WHERE unit_record.id = p_unit_id
+        AND unit_record.company_id = p_company_id
+        AND unit_record.lg_ativo = TRUE
+        AND (
+          p_unit_id = public.active_unit_id()
+          OR EXISTS (
+            SELECT 1
+            FROM public.user_profiles AS profile
+            WHERE (
+              profile.id = auth.uid()
+              OR profile.user_id = auth.uid()
+            )
+              AND profile.company_id = p_company_id
+              AND profile.lg_ativo = TRUE
+              AND (
+                profile.primary_unit_id = p_unit_id
+                OR lower(COALESCE(profile.role_name, '')) IN (
+                  'admin',
+                  'administrador',
+                  'gestor',
+                  'gerente',
+                  'administrativo'
+                )
+              )
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM public.unit_access AS unit_access_record
+            WHERE unit_access_record.user_id = auth.uid()
+              AND unit_access_record.company_id = p_company_id
+              AND unit_access_record.unit_id = p_unit_id
+              AND unit_access_record.valid_from <= CURRENT_DATE
+              AND (
+                unit_access_record.valid_until IS NULL
+                OR unit_access_record.valid_until >= CURRENT_DATE
+              )
+          )
+        )
+    );
+$function$;
+
+ALTER FUNCTION private.org_can_access_unit_runtime(UUID, INTEGER)
+  OWNER TO prontomedic_rpc_owner;
+REVOKE ALL ON FUNCTION private.org_can_access_unit_runtime(UUID, INTEGER)
+  FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION private.org_can_access_unit_runtime(UUID, INTEGER)
+  TO authenticated, app_prontomedic, prontomedic_rpc_owner;
 
 CREATE OR REPLACE FUNCTION public.org_can_access_unit(
   p_company_id UUID,

@@ -110,6 +110,19 @@ SELECT pg_temp.assert_true(
   'wrapper de acesso à unidade deve executar com owner restrito'
 );
 SELECT pg_temp.assert_true(
+  (
+    SELECT p.prosecdef
+      AND pg_get_userbyid(p.proowner) = 'prontomedic_rpc_owner'
+      AND pg_get_functiondef(p.oid) LIKE '%public.active_company_id()%'
+      AND pg_get_functiondef(p.oid) LIKE '%public.active_unit_id()%'
+      AND pg_get_functiondef(p.oid) NOT LIKE '%request.jwt.claim.company_id%'
+    FROM pg_proc p
+    WHERE p.oid =
+      'private.org_can_access_unit_runtime(uuid,integer)'::regprocedure
+  ),
+  'runtime organizacional deve usar o contexto AAL2 persistido'
+);
+SELECT pg_temp.assert_true(
   NOT EXISTS (
     SELECT 1
     FROM pg_proc p
@@ -597,20 +610,23 @@ SELECT pg_temp.assert_true(
 );
 
 SELECT public.create_appointment_with_requirements_secure(
-  840020, 840010, DATE '2026-07-19', TIME '10:00', TIME '10:30',
-  '84000000-0000-0000-0000-000000000001', 840001,
-  NULL, NULL, NULL, 'scheduled', FALSE, FALSE, NULL, NULL, NULL, NULL
+  840020::BIGINT, 840010::BIGINT,
+  DATE '2026-07-19', TIME '10:00', TIME '10:30',
+  '84000000-0000-0000-0000-000000000001'::UUID, 840001::INTEGER,
+  NULL::INTEGER, NULL::BIGINT, NULL::BIGINT,
+  'scheduled'::TEXT, FALSE, FALSE, NULL::TEXT,
+  NULL::INTEGER, NULL::TEXT, NULL::TEXT
 );
 SELECT pg_temp.assert_true(
   EXISTS (
     SELECT 1 FROM public.insurance_authorizations
     WHERE patient_id = 840020 AND unit_id = 840001 AND appointment_id IS NOT NULL
-      AND insurance_id = 840030 AND insurance_plan_id = 840040
+      AND insurance_id = 840030 AND insurance_plan_id::TEXT = '840040'
   )
   AND EXISTS (
     SELECT 1 FROM public.insurance_eligibility_checks
     WHERE patient_id = 840020 AND unit_id = 840001 AND appointment_id IS NOT NULL
-      AND insurance_id = 840030 AND insurance_plan_id = 840040
+      AND insurance_id = 840030 AND insurance_plan_id::TEXT = '840040'
       AND card_number = 'CARD-A1'
   ),
   'writer deve usar o plano padrão e propagar convênio, plano, carteirinha e unidade'
@@ -656,9 +672,12 @@ BEGIN
   END;
   BEGIN
     PERFORM public.create_appointment_with_requirements_secure(
-      840021, 840010, DATE '2026-07-19', TIME '11:00', TIME '11:30',
-      '84000000-0000-0000-0000-000000000001', 840002,
-      NULL, NULL, NULL, 'scheduled', FALSE, FALSE, NULL, 840030, 'CARD-A2', NULL
+      840021::BIGINT, 840010::BIGINT,
+      DATE '2026-07-19', TIME '11:00', TIME '11:30',
+      '84000000-0000-0000-0000-000000000001'::UUID, 840002::INTEGER,
+      NULL::INTEGER, NULL::BIGINT, NULL::BIGINT,
+      'scheduled'::TEXT, FALSE, FALSE, NULL::TEXT,
+      840030::INTEGER, 'CARD-A2'::TEXT, NULL::TEXT
     );
     RAISE EXCEPTION 'writer de agendamento aceitou unidade diferente do contexto ativo';
   EXCEPTION WHEN insufficient_privilege OR no_data_found THEN NULL;

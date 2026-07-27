@@ -269,7 +269,8 @@ DECLARE
 BEGIN
   SELECT * INTO v_actor FROM public.get_scheduling_actor();
   IF v_actor.user_id IS NULL OR v_actor.company_id IS NULL OR NOT public.m15_can_operate_authorizations() THEN
-    RAISE EXCEPTION 'Usuario sem permissao para atualizar autorizacao';
+    RAISE EXCEPTION 'Usuario sem permissao para atualizar autorizacao'
+      USING ERRCODE = '42501';
   END IF;
   SELECT * INTO v_old FROM public.insurance_authorizations WHERE id = p_authorization_id AND company_id = v_actor.company_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Autorizacao nao encontrada no tenant atual'; END IF;
