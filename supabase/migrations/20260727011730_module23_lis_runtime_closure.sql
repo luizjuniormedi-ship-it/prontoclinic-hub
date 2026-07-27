@@ -107,6 +107,11 @@ BEGIN
     END IF;
   END LOOP;
 
+  IF to_regprocedure('public.m23_upsert_equipment_secure(jsonb)') IS NOT NULL
+     OR to_regprocedure('public.m23_record_qc_run_secure(jsonb)') IS NOT NULL THEN
+    RAISE EXCEPTION 'Fictitious equipment/QC RPC signature is exposed';
+  END IF;
+
   IF EXISTS (
     SELECT 1
       FROM pg_proc procedure_row
@@ -118,8 +123,140 @@ BEGIN
          'm23_record_qc_run_secure'
        )
   ) THEN
-    RAISE EXCEPTION
-      'Equipment/QC RPCs are prohibited until real Module 23 tables and contracts exist';
+    IF to_regprocedure(
+         'public.m23_upsert_equipment_secure(uuid,integer,jsonb)'
+       ) IS NULL
+       OR to_regprocedure(
+         'public.m23_record_qc_run_secure(uuid,text,text,text,numeric,numeric,numeric,numeric,text)'
+       ) IS NULL
+       OR to_regprocedure(
+         'm23_private.upsert_equipment(uuid,integer,jsonb)'
+       ) IS NULL
+       OR to_regprocedure(
+         'm23_private.record_qc_run(uuid,text,text,text,numeric,numeric,numeric,numeric,text)'
+       ) IS NULL
+       OR to_regclass('public.lab_equipment') IS NULL
+       OR to_regclass('public.lab_quality_control_runs') IS NULL THEN
+      RAISE EXCEPTION
+        'Incomplete or unknown equipment/QC runtime contract is exposed';
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+        FROM pg_proc procedure_row
+        JOIN pg_namespace namespace_row
+          ON namespace_row.oid = procedure_row.pronamespace
+       WHERE namespace_row.nspname = 'public'
+         AND procedure_row.proname IN (
+           'm23_upsert_equipment_secure',
+           'm23_record_qc_run_secure'
+         )
+         AND procedure_row.oid NOT IN (
+           'public.m23_upsert_equipment_secure(uuid,integer,jsonb)'::REGPROCEDURE,
+           'public.m23_record_qc_run_secure(uuid,text,text,text,numeric,numeric,numeric,numeric,text)'::REGPROCEDURE
+         )
+    ) THEN
+      RAISE EXCEPTION 'Unknown equipment/QC RPC overload is exposed';
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+        FROM pg_class relation
+        JOIN pg_namespace namespace_row
+          ON namespace_row.oid = relation.relnamespace
+       WHERE namespace_row.nspname = 'public'
+         AND relation.relname IN (
+           'lab_equipment',
+           'lab_quality_control_runs'
+         )
+         AND (
+           relation.relkind <> 'r'
+           OR NOT relation.relrowsecurity
+           OR NOT relation.relforcerowsecurity
+         )
+    ) THEN
+      RAISE EXCEPTION
+        'Equipment/QC tables must be ordinary tables with RLS and FORCE RLS';
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+        FROM pg_proc procedure_row
+       WHERE procedure_row.oid IN (
+         'public.m23_upsert_equipment_secure(uuid,integer,jsonb)'::REGPROCEDURE,
+         'public.m23_record_qc_run_secure(uuid,text,text,text,numeric,numeric,numeric,numeric,text)'::REGPROCEDURE
+       )
+         AND procedure_row.prosecdef
+    ) THEN
+      RAISE EXCEPTION
+        'Public equipment/QC wrappers must remain security invokers';
+    END IF;
+
+    IF NOT has_function_privilege(
+         'app_prontomedic',
+         'public.m23_upsert_equipment_secure(uuid,integer,jsonb)',
+         'EXECUTE'
+       )
+       OR NOT has_function_privilege(
+         'app_prontomedic',
+         'public.m23_record_qc_run_secure(uuid,text,text,text,numeric,numeric,numeric,numeric,text)',
+         'EXECUTE'
+       )
+       OR has_function_privilege(
+         'anon',
+         'public.m23_upsert_equipment_secure(uuid,integer,jsonb)',
+         'EXECUTE'
+       )
+       OR has_function_privilege(
+         'authenticated',
+         'public.m23_upsert_equipment_secure(uuid,integer,jsonb)',
+         'EXECUTE'
+       )
+       OR has_function_privilege(
+         'anon',
+         'public.m23_record_qc_run_secure(uuid,text,text,text,numeric,numeric,numeric,numeric,text)',
+         'EXECUTE'
+       )
+       OR has_function_privilege(
+         'authenticated',
+         'public.m23_record_qc_run_secure(uuid,text,text,text,numeric,numeric,numeric,numeric,text)',
+         'EXECUTE'
+       ) THEN
+      RAISE EXCEPTION 'Unsafe equipment/QC wrapper ACL';
+    END IF;
+
+    IF NOT has_function_privilege(
+         'app_prontomedic',
+         'm23_private.upsert_equipment(uuid,integer,jsonb)',
+         'EXECUTE'
+       )
+       OR NOT has_function_privilege(
+         'app_prontomedic',
+         'm23_private.record_qc_run(uuid,text,text,text,numeric,numeric,numeric,numeric,text)',
+         'EXECUTE'
+       )
+       OR has_function_privilege(
+         'anon',
+         'm23_private.upsert_equipment(uuid,integer,jsonb)',
+         'EXECUTE'
+       )
+       OR has_function_privilege(
+         'authenticated',
+         'm23_private.upsert_equipment(uuid,integer,jsonb)',
+         'EXECUTE'
+       )
+       OR has_function_privilege(
+         'anon',
+         'm23_private.record_qc_run(uuid,text,text,text,numeric,numeric,numeric,numeric,text)',
+         'EXECUTE'
+       )
+       OR has_function_privilege(
+         'authenticated',
+         'm23_private.record_qc_run(uuid,text,text,text,numeric,numeric,numeric,numeric,text)',
+         'EXECUTE'
+       ) THEN
+      RAISE EXCEPTION 'Unsafe private equipment/QC implementation ACL';
+    END IF;
   END IF;
 END
 $preflight$;
@@ -3027,8 +3164,8 @@ COMMENT ON TABLE public.lab_order_operation_requests
 COMMENT ON TABLE public.lab_result_operation_requests
   IS 'Internal tenant/payload-bound idempotency ledger for Module 23 result recording; no client table access.';
 
--- Deliberate non-capabilities:
--- public.m23_upsert_equipment_secure and public.m23_record_qc_run_secure
--- are not created because no real equipment/QC tables and contracts exist.
+-- Equipment/QC are deliberately not created here. A pre-existing implementation
+-- is preserved only when its exact tables, signatures, RLS and ACL contract pass
+-- the preflight above.
 
 COMMIT;

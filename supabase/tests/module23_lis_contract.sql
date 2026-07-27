@@ -380,6 +380,96 @@ BEGIN
      OR to_regprocedure('public.m23_record_qc_run_secure(jsonb)') IS NOT NULL THEN
     RAISE EXCEPTION 'Fictitious equipment/QC RPC was exposed';
   END IF;
+
+  IF EXISTS (
+    SELECT 1
+      FROM pg_proc procedure_row
+      JOIN pg_namespace namespace_row
+        ON namespace_row.oid = procedure_row.pronamespace
+     WHERE namespace_row.nspname = 'public'
+       AND procedure_row.proname IN (
+         'm23_upsert_equipment_secure',
+         'm23_record_qc_run_secure'
+       )
+  ) THEN
+    IF to_regprocedure(
+         'public.m23_upsert_equipment_secure(uuid,integer,jsonb)'
+       ) IS NULL
+       OR to_regprocedure(
+         'public.m23_record_qc_run_secure(uuid,text,text,text,numeric,numeric,numeric,numeric,text)'
+       ) IS NULL
+       OR to_regprocedure(
+         'm23_private.upsert_equipment(uuid,integer,jsonb)'
+       ) IS NULL
+       OR to_regprocedure(
+         'm23_private.record_qc_run(uuid,text,text,text,numeric,numeric,numeric,numeric,text)'
+       ) IS NULL THEN
+      RAISE EXCEPTION 'Incomplete equipment/QC implementation is exposed';
+    END IF;
+
+    FOREACH v_table IN ARRAY ARRAY[
+      'lab_equipment',
+      'lab_quality_control_runs'
+    ] LOOP
+      IF NOT EXISTS (
+        SELECT 1
+          FROM pg_class relation
+          JOIN pg_namespace namespace_row
+            ON namespace_row.oid = relation.relnamespace
+         WHERE namespace_row.nspname = 'public'
+           AND relation.relname = v_table
+           AND relation.relkind = 'r'
+           AND relation.relrowsecurity
+           AND relation.relforcerowsecurity
+      ) THEN
+        RAISE EXCEPTION
+          'Equipment/QC table lacks RLS/FORCE RLS: public.%',
+          v_table;
+      END IF;
+    END LOOP;
+
+    FOREACH v_function IN ARRAY ARRAY[
+      'public.m23_upsert_equipment_secure(uuid,integer,jsonb)',
+      'public.m23_record_qc_run_secure(uuid,text,text,text,numeric,numeric,numeric,numeric,text)'
+    ] LOOP
+      SELECT function_row.prosecdef
+        INTO v_security_definer
+        FROM pg_proc function_row
+       WHERE function_row.oid = to_regprocedure(v_function);
+
+      IF v_security_definer
+         OR NOT has_function_privilege(
+           'app_prontomedic',
+           v_function,
+           'EXECUTE'
+         )
+         OR has_function_privilege('authenticated', v_function, 'EXECUTE')
+         OR has_function_privilege('anon', v_function, 'EXECUTE') THEN
+        RAISE EXCEPTION 'Unsafe equipment/QC public wrapper: %', v_function;
+      END IF;
+    END LOOP;
+
+    FOREACH v_function IN ARRAY ARRAY[
+      'm23_private.upsert_equipment(uuid,integer,jsonb)',
+      'm23_private.record_qc_run(uuid,text,text,text,numeric,numeric,numeric,numeric,text)'
+    ] LOOP
+      SELECT function_row.prosecdef
+        INTO v_security_definer
+        FROM pg_proc function_row
+       WHERE function_row.oid = to_regprocedure(v_function);
+
+      IF NOT v_security_definer
+         OR NOT has_function_privilege(
+           'app_prontomedic',
+           v_function,
+           'EXECUTE'
+         )
+         OR has_function_privilege('authenticated', v_function, 'EXECUTE')
+         OR has_function_privilege('anon', v_function, 'EXECUTE') THEN
+        RAISE EXCEPTION 'Unsafe equipment/QC private function: %', v_function;
+      END IF;
+    END LOOP;
+  END IF;
 END;
 $contract$;
 
