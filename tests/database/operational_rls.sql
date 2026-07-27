@@ -48,6 +48,15 @@ SELECT pg_temp.assert_true(
   'anon não pode consultar disponibilidade'
 );
 SELECT pg_temp.assert_true(
+  (
+    SELECT p.prosecdef
+      AND pg_get_userbyid(p.proowner) = 'prontomedic_rpc_owner'
+    FROM pg_proc p
+    WHERE p.oid = 'public.org_can_access_unit(uuid,integer)'::regprocedure
+  ),
+  'wrapper de acesso à unidade deve executar com owner restrito'
+);
+SELECT pg_temp.assert_true(
   NOT EXISTS (
     SELECT 1
     FROM pg_proc p

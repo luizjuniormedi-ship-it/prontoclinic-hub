@@ -156,4 +156,40 @@ BEGIN
 END
 $runtime_policy_acl$;
 
+DO $organization_runtime_requirements$
+BEGIN
+  IF to_regprocedure(
+       'private.org_can_access_unit_runtime(uuid,integer)'
+     ) IS NULL
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_roles
+       WHERE rolname = 'prontomedic_rpc_owner'
+     ) THEN
+    RAISE EXCEPTION
+      'Organization runtime owner or unit access implementation is missing';
+  END IF;
+END
+$organization_runtime_requirements$;
+
+CREATE OR REPLACE FUNCTION public.org_can_access_unit(
+  p_company_id UUID,
+  p_unit_id INTEGER
+)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public, private
+AS $function$
+  SELECT private.org_can_access_unit_runtime(p_company_id, p_unit_id);
+$function$;
+
+ALTER FUNCTION public.org_can_access_unit(UUID, INTEGER)
+  OWNER TO prontomedic_rpc_owner;
+REVOKE ALL ON FUNCTION public.org_can_access_unit(UUID, INTEGER)
+  FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.org_can_access_unit(UUID, INTEGER)
+  TO authenticated, app_prontomedic, prontomedic_reception_rpc_owner;
+
 COMMIT;
