@@ -150,7 +150,7 @@ BEGIN
   SELECT pg_get_functiondef('public.is_lab_user(uuid)'::REGPROCEDURE)
     INTO v_definition;
   IF v_definition NOT LIKE '%private.m23_normalize_role%'
-     OR v_definition NOT LIKE '%public.current_company_id()%'
+     OR v_definition NOT LIKE '%private.m23_effective_company_id()%'
      OR v_definition NOT LIKE '%laboratorio%' THEN
     RAISE EXCEPTION 'is_lab_user does not normalize aliases/tenant safely';
   END IF;
@@ -321,8 +321,8 @@ BEGIN
          AND policy.tablename = v_table
          AND 'prontomedic_lis_rpc_owner' = ANY(policy.roles)
          AND policy.cmd = 'ALL'
-         AND COALESCE(policy.qual, '') LIKE '%current_company_id%'
-         AND COALESCE(policy.with_check, '') LIKE '%current_company_id%'
+         AND COALESCE(policy.qual, '') LIKE '%m23_effective_company_id%'
+         AND COALESCE(policy.with_check, '') LIKE '%m23_effective_company_id%'
     ) THEN
       RAISE EXCEPTION 'Tenant-bound owner policy missing on public.%', v_table;
     END IF;
