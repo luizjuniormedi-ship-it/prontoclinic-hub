@@ -130,11 +130,37 @@ ALTER TABLE public.role_permissions
   ALTER COLUMN role_id SET NOT NULL,
   ALTER COLUMN module SET NOT NULL;
 
+CREATE UNIQUE INDEX IF NOT EXISTS role_permissions_company_role_module_idx
+  ON public.role_permissions (company_id, role_id, module);
+
 DO $$
 DECLARE
   v_constraint RECORD;
   v_index RECORD;
 BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_index index_record
+    WHERE index_record.indrelid = 'public.role_permissions'::regclass
+      AND index_record.indisunique
+      AND NOT index_record.indisprimary
+      AND (index_record.indisreplident OR index_record.indisclustered)
+      AND index_record.indpred IS NULL
+      AND index_record.indexprs IS NULL
+      AND (
+        SELECT array_agg(attribute_record.attname ORDER BY key.ordinality)
+        FROM unnest(index_record.indkey::SMALLINT[])
+          WITH ORDINALITY AS key(attnum, ordinality)
+        JOIN pg_attribute attribute_record
+          ON attribute_record.attrelid = index_record.indrelid
+         AND attribute_record.attnum = key.attnum
+        WHERE key.ordinality <= index_record.indnkeyatts
+      ) = ARRAY['role_id', 'module']::NAME[]
+  ) THEN
+    RAISE EXCEPTION
+      'AUTH_FOUNDATION_PREFLIGHT: índice legado é REPLICA IDENTITY ou CLUSTER; reconciliação manual obrigatória';
+  END IF;
+
   -- Remove apenas uniques legadas exatamente sobre (role_id,module).
   FOR v_constraint IN
     SELECT c.conname
@@ -191,9 +217,6 @@ BEGIN
   END LOOP;
 END;
 $$;
-
-CREATE UNIQUE INDEX IF NOT EXISTS role_permissions_company_role_module_idx
-  ON public.role_permissions (company_id, role_id, module);
 
 DO $$
 BEGIN

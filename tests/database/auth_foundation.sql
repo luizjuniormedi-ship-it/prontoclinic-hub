@@ -48,10 +48,21 @@ SELECT pg_temp.assert_true(
 SELECT pg_temp.assert_true(
   EXISTS (
     SELECT 1
-    FROM pg_index
-    WHERE indrelid = 'public.role_permissions'::regclass
-      AND indisunique
-      AND pg_get_indexdef(indexrelid) ~ '\(company_id, role_id, module\)'
+    FROM pg_index index_record
+    WHERE index_record.indrelid = 'public.role_permissions'::regclass
+      AND index_record.indisunique
+      AND index_record.indisvalid
+      AND index_record.indpred IS NULL
+      AND index_record.indexprs IS NULL
+      AND (
+        SELECT array_agg(attribute_record.attname ORDER BY key.ordinality)
+        FROM unnest(index_record.indkey::SMALLINT[])
+          WITH ORDINALITY AS key(attnum, ordinality)
+        JOIN pg_attribute attribute_record
+          ON attribute_record.attrelid = index_record.indrelid
+         AND attribute_record.attnum = key.attnum
+        WHERE key.ordinality <= index_record.indnkeyatts
+      ) = ARRAY['company_id', 'role_id', 'module']::NAME[]
   ),
   'role_permissions must enforce unique (company_id, role_id, module)'
 );
@@ -61,6 +72,8 @@ SELECT pg_temp.assert_true(
     FROM pg_index index_record
     WHERE index_record.indrelid = 'public.role_permissions'::regclass
       AND index_record.indisunique
+      AND index_record.indpred IS NULL
+      AND index_record.indexprs IS NULL
       AND (
         SELECT array_agg(attribute_record.attname ORDER BY key.ordinality)
         FROM unnest(index_record.indkey::SMALLINT[])
