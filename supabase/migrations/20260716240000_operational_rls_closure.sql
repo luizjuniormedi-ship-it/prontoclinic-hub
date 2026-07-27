@@ -703,7 +703,8 @@ BEGIN
       ADD CONSTRAINT patients_insurance_plan_id_fkey
       FOREIGN KEY (insurance_plan_id)
       REFERENCES public.insurance_plans(id)
-      ON DELETE SET NULL;
+      ON DELETE SET NULL
+      NOT VALID;
   END IF;
 END;
 $$;
