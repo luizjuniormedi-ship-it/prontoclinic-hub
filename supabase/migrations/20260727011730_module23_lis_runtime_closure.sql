@@ -2609,7 +2609,7 @@ BEGIN
 END
 $drop_legacy_result_rpc$;
 
-CREATE OR REPLACE FUNCTION public.m23_record_results_secure(
+CREATE OR REPLACE FUNCTION public.m23_record_results_idempotent_secure(
   p_item_id BIGINT,
   p_results JSONB,
   p_operation_id UUID
@@ -2661,7 +2661,7 @@ BEGIN
   );
   v_request_hash := md5(concat_ws(
     '|',
-    'm23_record_results_secure',
+    'm23_record_results_idempotent_secure',
     v_actor.company_id::TEXT,
     p_item_id::TEXT,
     p_results::TEXT
@@ -3142,7 +3142,7 @@ ALTER FUNCTION public.m23_collect_specimen_secure(BIGINT, TEXT)
   OWNER TO prontomedic_lis_rpc_owner;
 ALTER FUNCTION public.m23_transition_specimen_secure(BIGINT, TEXT)
   OWNER TO prontomedic_lis_rpc_owner;
-ALTER FUNCTION public.m23_record_results_secure(BIGINT, JSONB, UUID)
+ALTER FUNCTION public.m23_record_results_idempotent_secure(BIGINT, JSONB, UUID)
   OWNER TO prontomedic_lis_rpc_owner;
 ALTER FUNCTION public.m23_validate_result_secure(BIGINT)
   OWNER TO prontomedic_lis_rpc_owner;
@@ -3173,7 +3173,7 @@ REVOKE ALL ON FUNCTION public.m23_collect_specimen_secure(BIGINT, TEXT)
   FROM PUBLIC, anon, authenticated, app_prontomedic;
 REVOKE ALL ON FUNCTION public.m23_transition_specimen_secure(BIGINT, TEXT)
   FROM PUBLIC, anon, authenticated, app_prontomedic;
-REVOKE ALL ON FUNCTION public.m23_record_results_secure(BIGINT, JSONB, UUID)
+REVOKE ALL ON FUNCTION public.m23_record_results_idempotent_secure(BIGINT, JSONB, UUID)
   FROM PUBLIC, anon, authenticated, app_prontomedic;
 REVOKE ALL ON FUNCTION public.m23_validate_result_secure(BIGINT)
   FROM PUBLIC, anon, authenticated, app_prontomedic;
@@ -3192,7 +3192,7 @@ GRANT EXECUTE ON FUNCTION public.m23_collect_specimen_secure(BIGINT, TEXT)
   TO authenticated, app_prontomedic;
 GRANT EXECUTE ON FUNCTION public.m23_transition_specimen_secure(BIGINT, TEXT)
   TO authenticated, app_prontomedic;
-GRANT EXECUTE ON FUNCTION public.m23_record_results_secure(BIGINT, JSONB, UUID)
+GRANT EXECUTE ON FUNCTION public.m23_record_results_idempotent_secure(BIGINT, JSONB, UUID)
   TO authenticated, app_prontomedic;
 GRANT EXECUTE ON FUNCTION public.m23_validate_result_secure(BIGINT)
   TO authenticated, app_prontomedic;
@@ -3207,7 +3207,7 @@ COMMENT ON FUNCTION public.m23_upsert_reference_range_secure(JSONB)
   IS 'Module 23 tenant-bound reference range upsert. Returns the current row as JSONB.';
 COMMENT ON FUNCTION public.m23_create_lab_order_secure(UUID, JSONB, JSONB)
   IS 'Module 23 atomic/idempotent order creation. Returns pedido_id and itens_ids.';
-COMMENT ON FUNCTION public.m23_record_results_secure(BIGINT, JSONB, UUID)
+COMMENT ON FUNCTION public.m23_record_results_idempotent_secure(BIGINT, JSONB, UUID)
   IS 'Module 23 atomic and idempotent result upsert. Server-selects tenant reference ranges, returns a stable JSON array and moves the collected item to EM_ANALISE.';
 COMMENT ON SCHEMA private
   IS 'Private helpers are not exposed through the Supabase Data API.';

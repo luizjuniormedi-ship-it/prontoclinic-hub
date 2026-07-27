@@ -665,7 +665,7 @@ describe("lisService — mutações seguras", () => {
       p_order_id: 4,
       p_status: "EM_ANALISE",
     });
-    expect(supabase.rpc).toHaveBeenNthCalledWith(4, "m23_record_results_secure", {
+    expect(supabase.rpc).toHaveBeenNthCalledWith(4, "m23_record_results_idempotent_secure", {
       p_item_id: 5,
       p_results: [expect.objectContaining({
         ds_parametro: "Glicose",

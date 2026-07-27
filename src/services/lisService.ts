@@ -686,7 +686,7 @@ export const resultado = {
       ...input,
       dt_resultado: input.dt_resultado ?? new Date().toISOString(),
     } as Record<string, unknown>);
-    const { data, error } = await supabase.rpc("m23_record_results_secure", {
+    const { data, error } = await supabase.rpc("m23_record_results_idempotent_secure", {
       p_item_id: input.cd_item_pedido,
       p_results: [payload],
       p_operation_id: resolveOperationId(options),
@@ -733,7 +733,7 @@ export const resultado = {
       ds_hl7_message: p.ds_hl7_message ?? null,
     }));
 
-    const { data, error } = await supabase.rpc("m23_record_results_secure", {
+    const { data, error } = await supabase.rpc("m23_record_results_idempotent_secure", {
       p_item_id: cdItemPedido,
       p_results: rows,
       p_operation_id: resolveOperationId(options),

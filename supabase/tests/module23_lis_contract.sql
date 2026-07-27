@@ -75,7 +75,7 @@ BEGIN
     'public.m23_create_lab_order_secure(uuid,jsonb,jsonb)',
     'public.m23_collect_specimen_secure(bigint,text)',
     'public.m23_transition_specimen_secure(bigint,text)',
-    'public.m23_record_results_secure(bigint,jsonb,uuid)',
+    'public.m23_record_results_idempotent_secure(bigint,jsonb,uuid)',
     'public.m23_validate_result_secure(bigint)',
     'public.m23_acknowledge_critical_alert_secure(bigint,text)',
     'public.m23_deliver_order_secure(bigint)'
@@ -341,7 +341,7 @@ BEGIN
   END IF;
 
   SELECT pg_get_functiondef(
-    'public.m23_record_results_secure(bigint,jsonb,uuid)'::REGPROCEDURE
+    'public.m23_record_results_idempotent_secure(bigint,jsonb,uuid)'::REGPROCEDURE
   ) INTO v_definition;
   IF v_definition NOT LIKE '%jsonb_build_array%'
      OR v_definition NOT LIKE '%tp_status = ''EM_ANALISE''%'

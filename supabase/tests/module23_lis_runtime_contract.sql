@@ -14,10 +14,10 @@ BEGIN;
 DO $assert_result_rpc_signature$
 BEGIN
   IF to_regprocedure(
-       'public.m23_record_results_secure(bigint,jsonb,uuid)'
+       'public.m23_record_results_idempotent_secure(bigint,jsonb,uuid)'
      ) IS NULL THEN
     RAISE EXCEPTION
-      'Final result RPC signature m23_record_results_secure(BIGINT, JSONB, UUID) is missing';
+      'Final result RPC signature m23_record_results_idempotent_secure(BIGINT, JSONB, UUID) is missing';
   END IF;
   IF to_regprocedure(
        'public.m23_record_results_secure(bigint,jsonb)'
@@ -523,7 +523,7 @@ DECLARE
   v_error TEXT;
 BEGIN
   BEGIN
-    PERFORM public.m23_record_results_secure(
+    PERFORM public.m23_record_results_idempotent_secure(
       v_item_id,
       jsonb_build_array(
         jsonb_build_object(
@@ -785,7 +785,7 @@ DECLARE
   v_error TEXT;
 BEGIN
   BEGIN
-    PERFORM public.m23_record_results_secure(
+    PERFORM public.m23_record_results_idempotent_secure(
       v_item_id,
       jsonb_build_array(
         jsonb_build_object(
@@ -826,7 +826,7 @@ $assert_result_operation_id_required$;
 INSERT INTO lis_contract_state (key, value)
 SELECT
   'results_a',
-  public.m23_record_results_secure(
+  public.m23_record_results_idempotent_secure(
     (
       SELECT (value->'itens_ids'->>0)::BIGINT
         FROM lis_contract_state
@@ -853,7 +853,7 @@ SELECT
 INSERT INTO lis_contract_state (key, value)
 SELECT
   'results_a_repeated',
-  public.m23_record_results_secure(
+  public.m23_record_results_idempotent_secure(
     (
       SELECT (value->'itens_ids'->>0)::BIGINT
         FROM lis_contract_state
@@ -967,7 +967,7 @@ DECLARE
   v_error TEXT;
 BEGIN
   BEGIN
-    PERFORM public.m23_record_results_secure(
+    PERFORM public.m23_record_results_idempotent_secure(
       v_item_id,
       jsonb_build_array(
         jsonb_build_object(
@@ -1013,7 +1013,7 @@ END;
 $assert_result_operation_reuse$;
 
 UPDATE lis_contract_state
-   SET value = public.m23_record_results_secure(
+   SET value = public.m23_record_results_idempotent_secure(
      (
        SELECT (value->'itens_ids'->>0)::BIGINT
          FROM lis_contract_state
@@ -1215,7 +1215,7 @@ SELECT
 INSERT INTO lis_contract_state (key, value)
 SELECT
   'rectify_results_critical',
-  public.m23_record_results_secure(
+  public.m23_record_results_idempotent_secure(
     (
       SELECT (value->'itens_ids'->>0)::BIGINT
         FROM lis_contract_state
@@ -1241,7 +1241,7 @@ SELECT
 INSERT INTO lis_contract_state (key, value)
 SELECT
   'rectify_results_normal',
-  public.m23_record_results_secure(
+  public.m23_record_results_idempotent_secure(
     (
       SELECT (value->'itens_ids'->>0)::BIGINT
         FROM lis_contract_state
