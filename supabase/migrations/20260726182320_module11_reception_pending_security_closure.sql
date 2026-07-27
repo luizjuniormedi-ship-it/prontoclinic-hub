@@ -523,8 +523,14 @@ GRANT EXECUTE ON FUNCTION public.m14_can_release_eligibility_exception(INTEGER)
   TO prontomedic_reception_rpc_owner;
 GRANT EXECUTE ON FUNCTION public.current_company_id()
   TO prontomedic_reception_rpc_owner;
-GRANT EXECUTE ON FUNCTION public.get_my_company_id()
-  TO prontomedic_reception_rpc_owner;
+DO $optional_legacy_company_helper$
+BEGIN
+  IF to_regprocedure('public.get_my_company_id()') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.get_my_company_id()
+      TO prontomedic_reception_rpc_owner;
+  END IF;
+END
+$optional_legacy_company_helper$;
 GRANT EXECUTE ON FUNCTION public.org_can_access_unit(UUID, INTEGER)
   TO prontomedic_reception_rpc_owner;
 GRANT EXECUTE ON FUNCTION public.org_is_manager()
