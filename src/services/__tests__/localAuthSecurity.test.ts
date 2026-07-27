@@ -16,6 +16,88 @@ describe("local auth server security invariants", () => {
     expect(source).toContain("if (!required) return { ok: false");
   });
 
+  it("autoriza somente os contratos operacionais publicados de recepcao, TISS e portal", () => {
+    const requiredRpcContracts = [
+      "get_reception_precheckin_context",
+      "get_reception_patient_appointments_secure",
+      "get_reception_exception_capability",
+      "transition_reception_queue_ticket_secure",
+      "create_insurance_authorization_secure",
+      "transition_insurance_authorization_secure",
+      "create_insurance_eligibility_check_secure",
+      "update_insurance_eligibility_check_secure",
+      "record_reception_term_acceptance_secure",
+      "create_reception_document_pickup_secure",
+      "release_reception_document_pickup_secure",
+      "create_reception_walkin_secure",
+      "start_reception_checkin_workflow_secure",
+      "advance_reception_checkin_workflow_secure",
+      "ensure_billing_preaccount_for_checkin_secure",
+      "ensure_tiss_guide_for_checkin_secure",
+      "ensure_financial_receivable_for_checkin_secure",
+      "tiss_get_stats",
+      "m16_generate_monthly_batch_secure",
+      "m16_persist_xml_secure",
+      "m16_process_return_secure",
+      "m16_record_manual_denial_secure",
+      "m16_save_protocol_secure",
+      "patient_portal_list_appointments_secure",
+      "patient_portal_confirm_appointment_secure",
+      "patient_portal_cancel_appointment_secure",
+      "patient_portal_reschedule_appointment_secure",
+      "current_company_id",
+      "save_secure_clinical_draft",
+      "get_secure_clinical_draft",
+      "list_secure_clinical_drafts",
+      "delete_secure_clinical_draft",
+      "list_application_devices",
+      "revoke_application_device",
+      "log_data_access",
+      "criar_sala_telemedicina",
+      "detectar_alertas_bi",
+      "gerar_senha_triagem",
+      "upsert_role_permission",
+    ];
+
+    for (const rpc of requiredRpcContracts) {
+      expect(source).toMatch(new RegExp(`\\n\\s*${rpc}:`));
+    }
+  });
+
+  it("nao expoe pelo backend de navegador o gateway de transmissao TISS", () => {
+    expect(source).not.toMatch(
+      /\n\s*m16_record_transmission_result_gateway:/,
+    );
+  });
+
+  it("mantem RPCs inseguros ou inexistentes fora do catalogo", () => {
+    const blockedRpcContracts = [
+      "anonymize_patient",
+      "bedside_check",
+      "billing_check_pending",
+      "calc_imc",
+      "calcular_kpis_diarios",
+      "calcular_valor_estoque",
+      "cancel_pre_cadastro",
+      "check_prescription_safety",
+      "confirm_pre_cadastro",
+      "create_pre_cadastro",
+      "finalizar_sala_telemedicina",
+      "promote_pre_cadastro",
+      "publish_dicom_report",
+      "queue_notification",
+      "registrar_consentimento_gravacao",
+      "registrar_movimentacao_estoque",
+      "set_access_context",
+      "set_professional_schedule_grid_status_secure",
+      "upsert_professional_schedule_grid_secure",
+    ];
+
+    for (const rpc of blockedRpcContracts) {
+      expect(source).not.toMatch(new RegExp(`\\n\\s*${rpc}:`));
+    }
+  });
+
   it("delega o escopo de empresa e unidade ao RLS em todas as consultas REST", () => {
     expect(source).not.toContain("requiredCompanyScope(profile, table)");
     expect(source).toContain("SET LOCAL ROLE authenticated");
