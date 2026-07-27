@@ -1,6 +1,13 @@
 -- Fecha lacunas de tenant/unidade em agenda e convênios.
 -- Linhas legadas ambíguas bloqueiam a migration; nunca recebem unidade arbitrária.
 
+-- Instalações anteriores à foundation de agenda já possuem a tabela, mas não
+-- necessariamente a unidade principal. O campo permanece nulo no legado:
+-- as unidades das faixas continuam sendo a evidência autoritativa disponível.
+ALTER TABLE public.professional_schedules
+  ADD COLUMN IF NOT EXISTS unit_id INTEGER
+  REFERENCES public.units(id) ON DELETE SET NULL;
+
 CREATE OR REPLACE FUNCTION public.enforce_professional_schedule_scope()
 RETURNS TRIGGER
 LANGUAGE plpgsql
