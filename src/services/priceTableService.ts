@@ -50,6 +50,42 @@ export interface PriceLookup {
   found: boolean;
 }
 
+const EMPTY_PRICE_LOOKUP: PriceLookup = {
+  vl_particular: 0,
+  vl_convenio: 0,
+  vl_material: 0,
+  vl_medicamento: 0,
+  vl_taxa: 0,
+  vl_diaria: 0,
+  vl_gases: 0,
+  found: false,
+};
+
+function normalizeMoney(value: unknown): number {
+  const normalized = typeof value === "string"
+    ? value.trim().replace(",", ".")
+    : value;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed >= 0
+    ? Math.round(parsed * 100) / 100
+    : 0;
+}
+
+function normalizePriceLookup(value: unknown): PriceLookup {
+  if (!value || typeof value !== "object") return { ...EMPTY_PRICE_LOOKUP };
+  const row = value as Record<string, unknown>;
+  return {
+    vl_particular: normalizeMoney(row.vl_particular),
+    vl_convenio: normalizeMoney(row.vl_convenio),
+    vl_material: normalizeMoney(row.vl_material),
+    vl_medicamento: normalizeMoney(row.vl_medicamento),
+    vl_taxa: normalizeMoney(row.vl_taxa),
+    vl_diaria: normalizeMoney(row.vl_diaria),
+    vl_gases: normalizeMoney(row.vl_gases),
+    found: row.found === true || row.found === 1 || row.found === "true",
+  };
+}
+
 export const priceTableService = {
   async getAll(filters?: {
     serviceId?: number;
@@ -85,25 +121,20 @@ export const priceTableService = {
   async findPrice(
     serviceId: number,
     appointmentTypeId: number,
-    insurancePlanId: number | null = null
+    insurancePlanId: number | null = null,
+    companyId?: string | null,
   ): Promise<PriceLookup> {
     const { data, error } = await supabase.rpc("find_price", {
-      p_company_id: null,
+      p_company_id: companyId || null,
       p_service_id: serviceId,
       p_appointment_type_id: appointmentTypeId,
       p_insurance_plan_id: insurancePlanId,
     });
     if (error) {
       console.warn("find_price RPC falhou, retornando 0:", error);
-      return {
-        vl_particular: 0, vl_convenio: 0, vl_material: 0, vl_medicamento: 0,
-        vl_taxa: 0, vl_diaria: 0, vl_gases: 0, found: false,
-      };
+      return { ...EMPTY_PRICE_LOOKUP };
     }
-    return data?.[0] || {
-      vl_particular: 0, vl_convenio: 0, vl_material: 0, vl_medicamento: 0,
-      vl_taxa: 0, vl_diaria: 0, vl_gases: 0, found: false,
-    };
+    return normalizePriceLookup(data?.[0]);
   },
 
   async create(input: Partial<PriceTable>): Promise<PriceTable> {
