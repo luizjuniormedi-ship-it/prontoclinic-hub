@@ -55,6 +55,18 @@ BEGIN
     RAISE EXCEPTION 'Patient portal owner inherits another database role';
   END IF;
 
+  IF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns column_record
+    WHERE column_record.table_schema = 'public'
+      AND column_record.table_name = 'patients'
+      AND column_record.column_name = 'user_id'
+      AND column_record.data_type = 'uuid'
+      AND column_record.is_nullable = 'YES'
+  ) THEN
+    RAISE EXCEPTION 'patients.user_id UUID nullable contract is absent';
+  END IF;
+
   IF EXISTS (
     SELECT 1
     FROM pg_class relation_record

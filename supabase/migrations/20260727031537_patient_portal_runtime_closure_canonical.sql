@@ -40,7 +40,6 @@ BEGIN
     SELECT 1
     FROM information_schema.columns expected
     WHERE (expected.table_schema, expected.table_name, expected.column_name) IN (
-      ('public', 'patients', 'user_id'),
       ('public', 'patients', 'company_id'),
       ('public', 'patients', 'lg_ativo'),
       ('public', 'appointments', 'company_id'),
@@ -54,12 +53,15 @@ BEGIN
       ('public', 'appointments', 'status'),
       ('public', 'professional_schedules', 'day_of_week')
     )
-    HAVING count(*) <> 13
+    HAVING count(*) <> 12
   ) THEN
     RAISE EXCEPTION 'PATIENT_PORTAL_PREFLIGHT: canonical columns are missing';
   END IF;
 END
 $preflight$;
+
+ALTER TABLE public.patients
+  ADD COLUMN IF NOT EXISTS user_id UUID;
 
 DO $role$
 DECLARE
