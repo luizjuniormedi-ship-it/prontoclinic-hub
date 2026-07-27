@@ -4,7 +4,7 @@
  */
 
 import { memo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,14 +35,17 @@ import {
   Download,
   RefreshCw,
 } from "lucide-react";
-import { toast } from "sonner";
 import {
   tissService,
   type TissStatus,
   type TissXml,
 } from "@/services/tissService";
 import { insuranceCompanyService } from "@/services/insuranceService";
-import { downloadXml } from "./TissXmlPreview";
+import {
+  downloadTissXml,
+  formatTissCurrency,
+  toFiniteTissNumber,
+} from "./tissDisplay";
 
 function statusBadge(s: TissStatus): { label: string; cls: string; icon: typeof FileText } {
   const map: Record<TissStatus, { label: string; cls: string; icon: typeof FileText }> = {
@@ -74,11 +77,9 @@ interface TissRowProps {
   fatura: TissXml;
   onSelectXml: (xml: TissXml) => void;
   onOpenGlosa: (xml: TissXml) => void;
-  onSend: (id: number) => void;
-  isSending: boolean;
 }
 
-const TissRow = memo(function TissRow({ fatura, onSelectXml, onOpenGlosa, onSend, isSending }: TissRowProps) {
+const TissRow = memo(function TissRow({ fatura, onSelectXml, onOpenGlosa }: TissRowProps) {
   const sb = statusBadge(fatura.status);
   const Icon = sb.icon;
   const convenioNome =
@@ -101,15 +102,15 @@ const TissRow = memo(function TissRow({ fatura, onSelectXml, onOpenGlosa, onSend
         ) : "—"}
       </TableCell>
       <TableCell>
-        {(fatura.vl_informado || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+        {formatTissCurrency(fatura.vl_informado)}
       </TableCell>
       <TableCell>
-        {(fatura.vl_liberado || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+        {formatTissCurrency(fatura.vl_liberado)}
       </TableCell>
       <TableCell>
-        {(fatura.vl_glosa || 0) > 0 ? (
+        {(toFiniteTissNumber(fatura.vl_glosa) ?? 0) > 0 ? (
           <span className="text-orange-600 font-medium">
-            {(fatura.vl_glosa || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+            {formatTissCurrency(fatura.vl_glosa)}
           </span>
         ) : "—"}
       </TableCell>
@@ -130,12 +131,13 @@ const TissRow = memo(function TissRow({ fatura, onSelectXml, onOpenGlosa, onSend
           </Button>
           {fatura.status === "PENDENTE" && (
             <Button
-              size="sm" variant="default"
-              onClick={() => onSend(fatura.id)}
-              disabled={isSending}
-              title="Enviar operadora"
+              size="sm"
+              variant="outline"
+              disabled
+              title="Gateway não homologado"
             >
-              <Send className="h-3 w-3" />
+              <XCircle className="mr-1 h-3 w-3" />
+              Gateway não homologado
             </Button>
           )}
           {fatura.status === "GLOSADO" && (
@@ -150,7 +152,7 @@ const TissRow = memo(function TissRow({ fatura, onSelectXml, onOpenGlosa, onSend
           {fatura.bl_xml_enviado && (
             <Button
               size="sm" variant="ghost"
-              onClick={() => downloadXml(fatura)}
+              onClick={() => downloadTissXml(fatura)}
               title="Baixar XML"
             >
               <Download className="h-3 w-3" />
@@ -174,9 +176,13 @@ function TissLoteListImpl({
   onSelectXml,
   onOpenGlosa,
 }: TissLoteListProps) {
-  const queryClient = useQueryClient();
-
-  const { data: faturas, isLoading } = useQuery({
+  const {
+    data: faturas,
+    error: faturasError,
+    isError: isFaturasError,
+    isLoading,
+    refetch: refetchFaturas,
+  } = useQuery({
     queryKey: ["tiss-xml", companyId, mes, ano, filterStatus, filterConvenio],
     queryFn: () =>
       tissService.listFaturas(companyId, {
@@ -188,26 +194,24 @@ function TissLoteListImpl({
     enabled: !!companyId,
   });
 
-  const { data: convenios } = useQuery({
+  const {
+    data: convenios,
+    error: conveniosError,
+    isError: isConveniosError,
+    isLoading: isConveniosLoading,
+    refetch: refetchConvenios,
+  } = useQuery({
     queryKey: ["insurance-companies"],
     queryFn: () => insuranceCompanyService.getAll(),
   });
 
-  const sendMutation = useMutation({
-    mutationFn: (id: number) => tissService.sendToOperadora(id),
-    onSuccess: (r) => {
-      if (r.sent) {
-        toast.success(`Enviado! Protocolo: ${r.protocolo || "(sem protocolo)"}`);
-      } else {
-        toast.error("Envio rejeitado pela operadora");
-      }
-      queryClient.invalidateQueries({ queryKey: ["tiss-xml"] });
-    },
-    onError: (e: Error) => toast.error(`Erro: ${e.message}`),
-  });
-
   return (
     <div className="space-y-3">
+      {!companyId && (
+        <div role="alert" className="rounded border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          Empresa não identificada. A consulta de guias TISS está indisponível.
+        </div>
+      )}
       <Card>
         <CardContent className="pt-4">
           <div className="flex flex-wrap gap-2 items-end">
@@ -247,7 +251,9 @@ function TissLoteListImpl({
                 value={String(filterConvenio)}
                 onValueChange={(v) => setFilterConvenio(v === "ALL" ? "ALL" : Number(v))}
               >
-                <SelectTrigger className="w-48"><SelectValue placeholder="Todos" /></SelectTrigger>
+                <SelectTrigger className="w-48" disabled={isConveniosLoading || isConveniosError}>
+                  <SelectValue placeholder={isConveniosLoading ? "Carregando..." : "Todos"} />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">Todos</SelectItem>
                   {(convenios || []).map((c) => (
@@ -257,12 +263,22 @@ function TissLoteListImpl({
               </Select>
             </div>
           </div>
+          {isConveniosError && (
+            <div role="alert" className="mt-3 flex flex-wrap items-center gap-2 text-xs text-red-700">
+              <span>
+                Não foi possível carregar os convênios: {conveniosError instanceof Error ? conveniosError.message : "erro desconhecido"}.
+              </span>
+              <Button size="sm" variant="outline" onClick={() => refetchConvenios()}>
+                Tentar novamente
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
       <Card>
-        <CardContent className="p-0">
-          <Table>
+        <CardContent className="p-0 overflow-x-auto">
+          <Table className="min-w-[980px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Lote</TableHead>
@@ -284,6 +300,19 @@ function TissLoteListImpl({
                     Carregando...
                   </TableCell>
                 </TableRow>
+              ) : isFaturasError ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="py-8">
+                    <div role="alert" className="flex flex-col items-center gap-3 text-center text-red-700">
+                      <span>
+                        Não foi possível carregar as guias TISS: {faturasError instanceof Error ? faturasError.message : "erro desconhecido"}.
+                      </span>
+                      <Button size="sm" variant="outline" onClick={() => refetchFaturas()}>
+                        Tentar novamente
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
               ) : (faturas || []).length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
@@ -297,8 +326,6 @@ function TissLoteListImpl({
                     fatura={f}
                     onSelectXml={onSelectXml}
                     onOpenGlosa={onOpenGlosa}
-                    onSend={(id) => sendMutation.mutate(id)}
-                    isSending={sendMutation.isPending}
                   />
                 ))
               )}

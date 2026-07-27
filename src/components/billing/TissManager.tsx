@@ -1,7 +1,7 @@
 /**
  * TissManager — Orquestrador de faturamento eletronico TISS/XML
  *
- * Espelha SIGH.xml (544 registros) + SIGH.recurso_de_glosa
+ * Gerencia guias, lotes, retornos e recursos do dominio TISS.
  *
  * Sub-componentes:
  *   - TissStats.tsx       — totalizadores + graficos
@@ -13,7 +13,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
@@ -32,8 +32,13 @@ import { TissStats } from "./TissStats";
 import { TissLoteList } from "./TissLoteList";
 import { TissGuiaForm } from "./TissGuiaForm";
 import { TissXmlPreview } from "./TissXmlPreview";
+import {
+  formatTissCurrency,
+  formatTissInteger,
+} from "./tissDisplay";
 
 export function TissManager() {
+  const queryClient = useQueryClient();
   const { user } = useAuth();
   // companyId era acessado do useAuth legado; hoje vem do user.company_id
   const companyId = user?.company_id ?? "";
@@ -58,10 +63,28 @@ export function TissManager() {
 
   const generateMonthMutation = useMutation({
     mutationFn: () => tissService.gerarFaturaMensal(mes, ano, companyId),
-    onSuccess: (r) =>
-      toast.success(`Lote ${r.lote}: ${r.total_xmls} XMLs gerados, R$ ${r.vl_total.toFixed(2)}`),
+    onSuccess: async (r) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tiss-xml"] }),
+        queryClient.invalidateQueries({ queryKey: ["tiss-stats"] }),
+        queryClient.invalidateQueries({ queryKey: ["tiss-status-distribution"] }),
+      ]);
+      toast.success(
+        `Lote ${r.lote}: ${formatTissInteger(r.total_xmls)} XMLs gerados, ${formatTissCurrency(r.vl_total)}`,
+      );
+    },
     onError: (e: Error) => toast.error(`Erro: ${e.message}`),
   });
+
+  const handleGenerateMonth = () => {
+    const competence = `${String(mes).padStart(2, "0")}/${ano}`;
+    const confirmed = window.confirm(
+      `Confirmar geração idempotente da competência TISS ${competence}?`
+    );
+    if (confirmed) {
+      generateMonthMutation.mutate();
+    }
+  };
 
   const handleSelectXml = (xml: TissXml) => {
     setSelectedXml(xml);
@@ -74,24 +97,34 @@ export function TissManager() {
   };
 
   return (
-    <div className="space-y-4 p-6">
+    <div className="space-y-4 p-4 sm:p-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold">Faturamento TISS</h1>
-          <p className="text-muted-foreground">
-            XMLs de faturamento eletronico de convenios (espelha SIGH.xml)
+          <p className="text-muted-foreground break-words">
+            Guias e lotes eletrônicos de faturamento por convênio
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setProtocolDialogOpen(true)}>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <Button className="w-full sm:w-auto" variant="outline" onClick={() => setProtocolDialogOpen(true)}>
             <Settings2 className="h-4 w-4 mr-1" />Protocolos
           </Button>
-          <Button onClick={() => generateMonthMutation.mutate()} disabled={generateMonthMutation.isPending}>
+          <Button
+            className="w-full sm:w-auto"
+            onClick={handleGenerateMonth}
+            disabled={generateMonthMutation.isPending || !companyId}
+          >
             <RefreshCw className="h-4 w-4 mr-1" />
             {generateMonthMutation.isPending ? "Gerando..." : "Gerar Fatura do Mes"}
           </Button>
         </div>
       </div>
+
+      {!companyId && (
+        <div role="alert" className="rounded border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          Empresa não identificada. As operações TISS permanecem bloqueadas até a sessão ser restabelecida.
+        </div>
+      )}
 
       {/* Totalizadores + charts (sub-componente) */}
       <TissStats companyId={companyId} ano={ano} />
@@ -109,8 +142,8 @@ export function TissManager() {
         </Select>
       </div>
 
-      <Tabs defaultValue="guias" className="w-full">
-        <TabsList>
+      <Tabs defaultValue="guias" className="w-full min-w-0">
+        <TabsList className="w-full justify-start overflow-x-auto">
           <TabsTrigger value="guias">Guias TISS</TabsTrigger>
           <TabsTrigger value="charts">Graficos</TabsTrigger>
           <TabsTrigger value="glosas">Glosas</TabsTrigger>
