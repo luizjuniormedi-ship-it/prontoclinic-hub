@@ -86,6 +86,14 @@ DROP POLICY IF EXISTS "Users can read insurance_companies from their company"
   ON public.insurance_companies;
 DROP POLICY IF EXISTS "Admins and reception can manage insurance_companies"
   ON public.insurance_companies;
+DROP POLICY IF EXISTS insurance_companies_select
+  ON public.insurance_companies;
+DROP POLICY IF EXISTS insurance_companies_insert
+  ON public.insurance_companies;
+DROP POLICY IF EXISTS insurance_companies_update
+  ON public.insurance_companies;
+DROP POLICY IF EXISTS insurance_companies_delete
+  ON public.insurance_companies;
 DROP POLICY IF EXISTS insurance_companies_authenticated_select
   ON public.insurance_companies;
 DROP POLICY IF EXISTS insurance_companies_authenticated_insert

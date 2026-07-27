@@ -35,6 +35,20 @@ SELECT pg_temp.assert_true(
   'catálogo de convênios deve expor somente colunas operacionais'
 );
 SELECT pg_temp.assert_true(
+  NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'insurance_companies'
+      AND 'public' = ANY(roles)
+      AND (
+        COALESCE(qual, '') = 'true'
+        OR COALESCE(with_check, '') = 'true'
+      )
+  ),
+  'catalogo de convenios nao pode manter policy global permissiva'
+);
+SELECT pg_temp.assert_true(
   has_table_privilege('authenticated', 'public.services_catalog', 'SELECT')
   AND NOT has_table_privilege('authenticated', 'public.services_catalog', 'INSERT')
   AND NOT has_table_privilege('authenticated', 'public.services_catalog', 'UPDATE')
