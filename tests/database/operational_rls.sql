@@ -43,6 +43,24 @@ SELECT pg_temp.assert_true(
   'RPC de elegibilidade precisa de policies exclusivas para o owner restrito'
 );
 SELECT pg_temp.assert_true(
+  has_function_privilege(
+    'prontomedic_reception_rpc_owner',
+    'public.active_company_id()',
+    'EXECUTE'
+  )
+  AND has_function_privilege(
+    'prontomedic_reception_rpc_owner',
+    'public.active_unit_id()',
+    'EXECUTE'
+  )
+  AND has_function_privilege(
+    'prontomedic_reception_rpc_owner',
+    'public.can_access(text,text)',
+    'EXECUTE'
+  ),
+  'owner restrito da recepção precisa ler e validar o contexto ativo'
+);
+SELECT pg_temp.assert_true(
   has_column_privilege('authenticated', 'public.insurance_companies', 'id', 'SELECT')
   AND has_column_privilege('authenticated', 'public.insurance_companies', 'name', 'SELECT')
   AND NOT has_column_privilege('authenticated', 'public.insurance_companies', 'login_prestador', 'SELECT')
