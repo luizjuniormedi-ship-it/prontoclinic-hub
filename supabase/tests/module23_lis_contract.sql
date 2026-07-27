@@ -115,6 +115,47 @@ BEGIN
     RAISE EXCEPTION 'Legacy non-idempotent result RPC signature is still exposed';
   END IF;
 
+  IF to_regprocedure(
+       'public.m23_record_results_secure(bigint,jsonb,uuid)'
+     ) IS NULL
+     OR NOT EXISTS (
+       SELECT 1
+         FROM pg_proc function_row
+        WHERE function_row.oid =
+          'public.m23_record_results_secure(bigint,jsonb,uuid)'::REGPROCEDURE
+          AND function_row.proargnames =
+            ARRAY['p_order_item_id', 'p_results', 'p_equipment_id']::TEXT[]
+          AND NOT function_row.prosecdef
+     ) THEN
+    RAISE EXCEPTION 'Legacy equipment result RPC contract was not preserved';
+  END IF;
+
+  IF NOT has_function_privilege(
+       'app_prontomedic',
+       'public.m23_record_results_secure(bigint,jsonb,uuid)',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'anon',
+       'public.m23_record_results_secure(bigint,jsonb,uuid)',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'authenticated',
+       'public.m23_record_results_secure(bigint,jsonb,uuid)',
+       'EXECUTE'
+     ) THEN
+    RAISE EXCEPTION 'Unsafe legacy equipment result RPC ACL';
+  END IF;
+
+  SELECT pg_get_functiondef(
+    'public.m23_record_results_secure(bigint,jsonb,uuid)'::REGPROCEDURE
+  ) INTO v_definition;
+  IF v_definition NOT LIKE '%m23_private.record_results(%'
+     OR v_definition LIKE '%SECURITY DEFINER%' THEN
+    RAISE EXCEPTION 'Unexpected legacy equipment result RPC implementation';
+  END IF;
+
   FOREACH v_function IN ARRAY ARRAY[
     'private.m23_normalize_role(text)',
     'private.m23_require_actor(text[])'

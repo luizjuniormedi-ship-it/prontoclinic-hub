@@ -350,6 +350,7 @@ const RPC_PERMISSIONS = {
   m23_collect_specimen_secure: { module: 'laboratorio', action: 'can_create' },
   m23_transition_specimen_secure: { module: 'laboratorio', action: 'can_edit' },
   m23_record_results_secure: { module: 'laboratorio', action: 'can_create' },
+  m23_record_results_idempotent_secure: { module: 'laboratorio', action: 'can_create' },
   m23_validate_result_secure: { module: 'laboratorio', action: 'can_edit' },
   m23_acknowledge_critical_alert_secure: { module: 'laboratorio', action: 'can_edit' },
   m23_deliver_order_secure: { module: 'laboratorio', action: 'can_edit' },

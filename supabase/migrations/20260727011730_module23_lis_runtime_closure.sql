@@ -131,6 +131,9 @@ BEGIN
          'public.m23_record_qc_run_secure(uuid,text,text,text,numeric,numeric,numeric,numeric,text)'
        ) IS NULL
        OR to_regprocedure(
+         'public.m23_record_results_secure(bigint,jsonb,uuid)'
+       ) IS NULL
+       OR to_regprocedure(
          'm23_private.upsert_equipment(uuid,integer,jsonb)'
        ) IS NULL
        OR to_regprocedure(
@@ -140,6 +143,47 @@ BEGIN
        OR to_regclass('public.lab_quality_control_runs') IS NULL THEN
       RAISE EXCEPTION
         'Incomplete or unknown equipment/QC runtime contract is exposed';
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1
+        FROM pg_proc procedure_row
+       WHERE procedure_row.oid =
+         'public.m23_record_results_secure(bigint,jsonb,uuid)'::REGPROCEDURE
+         AND procedure_row.proargnames =
+           ARRAY['p_order_item_id', 'p_results', 'p_equipment_id']::TEXT[]
+         AND NOT procedure_row.prosecdef
+    ) THEN
+      RAISE EXCEPTION
+        'Legacy equipment result RPC contract changed unexpectedly';
+    END IF;
+
+    IF NOT has_function_privilege(
+         'app_prontomedic',
+         'public.m23_record_results_secure(bigint,jsonb,uuid)',
+         'EXECUTE'
+       )
+       OR has_function_privilege(
+         'anon',
+         'public.m23_record_results_secure(bigint,jsonb,uuid)',
+         'EXECUTE'
+       )
+       OR has_function_privilege(
+         'authenticated',
+         'public.m23_record_results_secure(bigint,jsonb,uuid)',
+         'EXECUTE'
+       ) THEN
+      RAISE EXCEPTION 'Unsafe legacy equipment result RPC ACL';
+    END IF;
+
+    SELECT pg_get_functiondef(
+      'public.m23_record_results_secure(bigint,jsonb,uuid)'::REGPROCEDURE
+    )
+      INTO v_definition;
+    IF v_definition NOT LIKE '%m23_private.record_results(%'
+       OR v_definition LIKE '%SECURITY DEFINER%' THEN
+      RAISE EXCEPTION
+        'Unexpected legacy equipment result RPC implementation';
     END IF;
 
     IF NOT EXISTS (
