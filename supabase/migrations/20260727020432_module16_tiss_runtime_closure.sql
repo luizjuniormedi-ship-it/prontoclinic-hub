@@ -2516,7 +2516,7 @@ BEGIN
     xml.status,
     xml.ds_motivo_rejeicao,
     xml.dt_envio,
-    xml.dt_retorno,
+    xml.dt_retorno::TIMESTAMPTZ,
     xml.dt_pagamento,
     xml.guide_id,
     xml.billing_account_id,
