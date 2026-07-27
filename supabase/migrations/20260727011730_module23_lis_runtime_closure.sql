@@ -1330,6 +1330,19 @@ AS $function$
   FROM normalized;
 $function$;
 
+CREATE OR REPLACE FUNCTION private.m23_effective_company_id()
+RETURNS UUID
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = pg_catalog, public
+AS $function$
+  SELECT COALESCE(
+    public.request_company_id(),
+    public.current_company_id()
+  );
+$function$;
+
 CREATE OR REPLACE FUNCTION private.m23_require_actor(p_allowed_roles TEXT[])
 RETURNS TABLE(user_id UUID, company_id UUID, role_name TEXT)
 LANGUAGE plpgsql
@@ -1367,7 +1380,7 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
 
-  IF company_id IS DISTINCT FROM public.current_company_id() THEN
+  IF company_id IS DISTINCT FROM private.m23_effective_company_id() THEN
     RAISE EXCEPTION 'JWT e perfil pertencem a empresas diferentes'
       USING ERRCODE = '42501';
   END IF;
@@ -1389,13 +1402,15 @@ AS $function$
       FROM public.user_profiles profile
      WHERE (profile.id = uid OR profile.user_id = uid)
        AND COALESCE(profile.lg_ativo, TRUE)
-       AND profile.company_id = public.current_company_id()
+       AND profile.company_id = private.m23_effective_company_id()
        AND private.m23_normalize_role(profile.role_name)
            IN ('admin', 'laboratorio', 'medico')
   );
 $function$;
 
 ALTER FUNCTION private.m23_normalize_role(TEXT)
+  OWNER TO prontomedic_lis_rpc_owner;
+ALTER FUNCTION private.m23_effective_company_id()
   OWNER TO prontomedic_lis_rpc_owner;
 ALTER FUNCTION private.m23_require_actor(TEXT[])
   OWNER TO prontomedic_lis_rpc_owner;
@@ -1410,6 +1425,10 @@ GRANT SELECT (id, user_id, company_id, role_name, lg_ativo)
 GRANT EXECUTE ON FUNCTION auth.uid()
   TO prontomedic_lis_rpc_owner;
 GRANT EXECUTE ON FUNCTION public.current_company_id()
+  TO prontomedic_lis_rpc_owner;
+GRANT EXECUTE ON FUNCTION public.request_company_id()
+  TO prontomedic_lis_rpc_owner;
+GRANT EXECUTE ON FUNCTION private.m23_effective_company_id()
   TO prontomedic_lis_rpc_owner;
 GRANT EXECUTE ON FUNCTION public.classificar_resultado_lab(NUMERIC, NUMERIC, NUMERIC)
   TO prontomedic_lis_rpc_owner;
@@ -1471,8 +1490,8 @@ CREATE POLICY m23_catalog_app_read
 CREATE POLICY m23_catalog_owner_all
   ON public.exames_lab_catalogo
   FOR ALL TO prontomedic_lis_rpc_owner
-  USING (company_id = public.current_company_id())
-  WITH CHECK (company_id = public.current_company_id());
+  USING (company_id = private.m23_effective_company_id())
+  WITH CHECK (company_id = private.m23_effective_company_id());
 
 CREATE POLICY m23_reference_authenticated_read
   ON public.exames_lab_valor_referencia
@@ -1485,8 +1504,8 @@ CREATE POLICY m23_reference_app_read
 CREATE POLICY m23_reference_owner_all
   ON public.exames_lab_valor_referencia
   FOR ALL TO prontomedic_lis_rpc_owner
-  USING (company_id = public.current_company_id())
-  WITH CHECK (company_id = public.current_company_id());
+  USING (company_id = private.m23_effective_company_id())
+  WITH CHECK (company_id = private.m23_effective_company_id());
 
 CREATE POLICY m23_order_authenticated_read
   ON public.exames_lab_pedido
@@ -1499,8 +1518,8 @@ CREATE POLICY m23_order_app_read
 CREATE POLICY m23_order_owner_all
   ON public.exames_lab_pedido
   FOR ALL TO prontomedic_lis_rpc_owner
-  USING (company_id = public.current_company_id())
-  WITH CHECK (company_id = public.current_company_id());
+  USING (company_id = private.m23_effective_company_id())
+  WITH CHECK (company_id = private.m23_effective_company_id());
 
 CREATE POLICY m23_item_authenticated_read
   ON public.exames_lab_pedido_itens
@@ -1513,8 +1532,8 @@ CREATE POLICY m23_item_app_read
 CREATE POLICY m23_item_owner_all
   ON public.exames_lab_pedido_itens
   FOR ALL TO prontomedic_lis_rpc_owner
-  USING (company_id = public.current_company_id())
-  WITH CHECK (company_id = public.current_company_id());
+  USING (company_id = private.m23_effective_company_id())
+  WITH CHECK (company_id = private.m23_effective_company_id());
 
 CREATE POLICY m23_result_authenticated_read
   ON public.exames_lab_resultado
@@ -1530,8 +1549,8 @@ CREATE POLICY m23_result_app_read
 CREATE POLICY m23_result_owner_all
   ON public.exames_lab_resultado
   FOR ALL TO prontomedic_lis_rpc_owner
-  USING (company_id = public.current_company_id())
-  WITH CHECK (company_id = public.current_company_id());
+  USING (company_id = private.m23_effective_company_id())
+  WITH CHECK (company_id = private.m23_effective_company_id());
 
 CREATE POLICY m23_alert_authenticated_read
   ON public.exames_lab_alerta_critico
@@ -1547,20 +1566,20 @@ CREATE POLICY m23_alert_app_read
 CREATE POLICY m23_alert_owner_all
   ON public.exames_lab_alerta_critico
   FOR ALL TO prontomedic_lis_rpc_owner
-  USING (company_id = public.current_company_id())
-  WITH CHECK (company_id = public.current_company_id());
+  USING (company_id = private.m23_effective_company_id())
+  WITH CHECK (company_id = private.m23_effective_company_id());
 
 CREATE POLICY m23_operation_owner_all
   ON public.lab_order_operation_requests
   FOR ALL TO prontomedic_lis_rpc_owner
-  USING (company_id = public.current_company_id())
-  WITH CHECK (company_id = public.current_company_id());
+  USING (company_id = private.m23_effective_company_id())
+  WITH CHECK (company_id = private.m23_effective_company_id());
 
 CREATE POLICY m23_result_operation_owner_all
   ON public.lab_result_operation_requests
   FOR ALL TO prontomedic_lis_rpc_owner
-  USING (company_id = public.current_company_id())
-  WITH CHECK (company_id = public.current_company_id());
+  USING (company_id = private.m23_effective_company_id())
+  WITH CHECK (company_id = private.m23_effective_company_id());
 
 DROP POLICY IF EXISTS m23_owner_profile_self_read ON public.user_profiles;
 CREATE POLICY m23_owner_profile_self_read
@@ -1575,7 +1594,7 @@ DROP POLICY IF EXISTS m23_owner_patient_demographics_read ON public.patients;
 CREATE POLICY m23_owner_patient_demographics_read
   ON public.patients
   FOR SELECT TO prontomedic_lis_rpc_owner
-  USING (company_id = public.current_company_id());
+  USING (company_id = private.m23_effective_company_id());
 
 REVOKE ALL ON
   public.exames_lab_catalogo,

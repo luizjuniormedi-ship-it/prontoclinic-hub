@@ -54,6 +54,30 @@ VALUES
   )
 ON CONFLICT (id) DO UPDATE SET lg_ativo = TRUE;
 
+INSERT INTO public.units (
+  id, company_id, cd_codigo, ds_nome, lg_principal, lg_ativo
+)
+VALUES
+  (
+    230001,
+    '23000000-0000-4000-8000-000000000001',
+    'LIS-A',
+    'LIS Synthetic Unit A',
+    TRUE,
+    TRUE
+  ),
+  (
+    230002,
+    '23000000-0000-4000-8000-000000000002',
+    'LIS-B',
+    'LIS Synthetic Unit B',
+    TRUE,
+    TRUE
+  )
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  lg_ativo = TRUE;
+
 INSERT INTO auth.users (
   id, email, encrypted_password, email_confirmed_at,
   raw_app_meta_data, raw_user_meta_data, created_at, updated_at
@@ -149,6 +173,7 @@ ON CONFLICT (id) DO UPDATE SET
 INSERT INTO public.patients (
   id,
   company_id,
+  unit_id,
   full_name,
   birth_date,
   sex
@@ -157,6 +182,7 @@ VALUES
   (
     230001,
     '23000000-0000-4000-8000-000000000001',
+    230001,
     'LIS Synthetic Patient A',
     DATE '1990-01-01',
     'F'
@@ -164,6 +190,7 @@ VALUES
   (
     230002,
     '23000000-0000-4000-8000-000000000002',
+    230002,
     'LIS Synthetic Patient B',
     DATE '1990-01-01',
     'M'
