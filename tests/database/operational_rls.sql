@@ -401,6 +401,15 @@ SELECT public.activate_application_context(
   '84000000-0000-0000-0000-000000000089',
   'Fixture operacional', 'test', 'psql'
 );
+SELECT pg_temp.assert_true(
+  (
+    SELECT actor.company_id =
+             '84000000-0000-0000-0000-000000000002'::UUID
+       AND actor.role_name = 'recepcao'
+    FROM public.get_scheduling_actor() AS actor
+  ),
+  'ator de agenda deve seguir o contexto ativo da segunda empresa'
+);
 INSERT INTO public.insurance_authorizations (
   id, company_id, unit_id, patient_id, status
 ) VALUES (

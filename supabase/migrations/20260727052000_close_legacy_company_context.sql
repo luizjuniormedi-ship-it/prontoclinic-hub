@@ -104,6 +104,43 @@ GRANT EXECUTE ON FUNCTION public.request_company_id()
      prontomedic_lis_rpc_owner,
      prontomedic_tiss_rpc_owner;
 
+-- Legacy scheduling RPCs consume this tuple. Resolve it from the selected AAL2
+-- access context instead of the single-company compatibility profile.
+CREATE OR REPLACE FUNCTION public.get_scheduling_actor()
+RETURNS TABLE(user_id UUID, company_id UUID, role_name TEXT)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+SET row_security = off
+AS $function$
+  SELECT
+    access_context.user_id,
+    membership.company_id,
+    lower(role_record.name)
+  FROM public.user_access_context AS access_context
+  JOIN public.memberships AS membership
+    ON membership.id = access_context.membership_id
+   AND membership.user_id = access_context.user_id
+   AND membership.status = 'active'
+  JOIN public.membership_roles AS membership_role
+    ON membership_role.membership_id = access_context.membership_id
+   AND membership_role.role_id = access_context.role_id
+  JOIN public.roles AS role_record
+    ON role_record.id = access_context.role_id
+   AND role_record.lg_ativo = TRUE
+  WHERE access_context.user_id = auth.uid()
+    AND access_context.session_id =
+      NULLIF(auth.jwt()->>'session_id', '')::UUID
+    AND public.current_application_session_is_active()
+  LIMIT 1;
+$function$;
+
+REVOKE ALL ON FUNCTION public.get_scheduling_actor()
+  FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_scheduling_actor()
+  TO authenticated, app_prontomedic, prontomedic_reception_rpc_owner;
+
 -- Policies installed for the direct backend role call these helpers. Keep the
 -- grants explicit because earlier closures revoke PUBLIC and portal access.
 GRANT EXECUTE ON FUNCTION public.active_company_id()
