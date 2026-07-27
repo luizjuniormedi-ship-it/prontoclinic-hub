@@ -7,24 +7,24 @@
  *   - Abas: Proximos / Passados
  *   - Filtros: status, periodo
  *   - Cancelar (com modal de confirmacao)
- *   - Reagendar (modal placeholder — clinical rule: cria novo + cancela antigo)
+ *   - Reagendar com persistencia atomica no compromisso existente
  *   - Confirmar presenca (se agendamento for hoje/amanha)
  *
- * Para esta versao a paciente eh o usuario logado (vinculado via
- * user_profiles.patient_id). A clinic pode expor isso direto no JWT
- * via claim custom ou via coluna na profiles.
+ * A autorização é resolvida exclusivamente no banco pelo vínculo
+ * patients.user_id -> auth.uid(). O cliente nunca informa tenant/paciente
+ * e todas as mutações atravessam RPCs específicas do portal.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Calendar, Clock, MapPin, User, X, RefreshCw, CheckCircle2,
-  AlertTriangle, Loader2, Filter, ChevronRight,
+  AlertTriangle, Loader2, Filter,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState, ErrorState } from "@/components/StateViews";
 import { AppointmentStatusBadge } from "@/components/StatusBadge";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -34,39 +34,26 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/lib/supabase";
 import {
-  appointmentsService,
-  professionalsLookup,
-  DbAppointment, DbProfessional,
-} from "@/services/appointmentsService";
+  patientPortalService,
+  type PatientPortalAppointment,
+} from "@/services/patientPortalService";
+import {
+  clinicDateKey,
+  diffClinicDays,
+} from "@/services/patientPortalDate";
 import type { AppointmentStatusForBadge } from "@/types/missing";
 
 type Filter = "todos" | "agendado" | "confirmado" | "atendido" | "cancelado" | "faltou";
 
-interface UserProfileWithPatient { id: string; patient_id?: string | null; }
-interface ErrorWithMessage { message?: string; }
-
-function startOfDay(iso: string): Date {
-  const d = new Date(iso + "T00:00:00");
-  return d;
-}
-
-function diffDays(a: Date, b: Date): number {
-  return Math.round((startOfDay(b.toISOString().slice(0, 10)).getTime() - a.getTime()) / 86400000);
-}
-
-function isSameOrFuture(date: string): boolean {
-  return startOfDay(date).getTime() >= startOfDay(new Date().toISOString().slice(0, 10)).getTime();
+function isSameOrFuture(date: string, now = new Date()): boolean {
+  return diffClinicDays(date, now) >= 0;
 }
 
 export default function MeusAgendamentosPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const { toast } = useToast();
-  const [appointments, setAppointments] = useState<DbAppointment[]>([]);
-  const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
+  const [appointments, setAppointments] = useState<PatientPortalAppointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("todos");
@@ -74,68 +61,33 @@ export default function MeusAgendamentosPage() {
   const [toDate, setToDate] = useState("");
 
   // Reschedule / Cancel state
-  const [cancelTarget, setCancelTarget] = useState<DbAppointment | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<PatientPortalAppointment | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelLoading, setCancelLoading] = useState(false);
 
-  const [rescheduleTarget, setRescheduleTarget] = useState<DbAppointment | null>(null);
+  const [rescheduleTarget, setRescheduleTarget] = useState<PatientPortalAppointment | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState("");
+  const [rescheduleTime, setRescheduleTime] = useState("");
+  const [rescheduleReason, setRescheduleReason] = useState("");
+  const [rescheduleLoading, setRescheduleLoading] = useState(false);
 
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
+  const loadAppointments = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      setAppointments(await patientPortalService.listAppointments());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao carregar agendamentos.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    (async () => {
-      try {
-        setLoading(true);
-        // 1) Resolve patient_id do usuario logado
-        let patientId: string | null = null;
-        if (user?.id) {
-          const { data: prof } = await supabase
-            .from("user_profiles")
-            .select("id")
-            .eq("id", user.id)
-            .maybeSingle();
-          // Tenta campo direto na user_profiles
-          if (prof && (prof as UserProfileWithPatient).patient_id) {
-            patientId = (prof as UserProfileWithPatient).patient_id ?? null;
-          } else if (user.email) {
-            // Fallback: tenta casar pelo e-mail
-            const { data: pat } = await supabase
-              .from("patients")
-              .select("id")
-              .eq("email", user.email)
-              .maybeSingle();
-            if (pat) patientId = pat.id as string;
-          }
-        }
-
-        if (!patientId) {
-          // Sem vinculo -> lista vazia mas nao erro
-          setAppointments([]);
-          setProfessionals([]);
-          return;
-        }
-
-        const [appts, profs] = await Promise.all([
-          supabase
-            .from("appointments")
-            .select("*")
-            .eq("patient_id", patientId)
-            .order("appointment_date", { ascending: false })
-            .order("start_time", { ascending: false })
-            .then((r) => (r.data ?? []) as DbAppointment[]),
-          professionalsLookup.getAll(),
-        ]);
-        setAppointments(appts);
-        setProfessionals(profs);
-      } catch (err) {
-        setError(err?.message ?? "Erro ao carregar agendamentos.");
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [user?.id, user?.email]);
-
-  const getProf = (id: string | null) => professionals.find((p) => p.id === id);
+    void loadAppointments();
+  }, [loadAppointments]);
 
   const filtered = useMemo(() => {
     return appointments.filter((a) => {
@@ -160,10 +112,8 @@ export default function MeusAgendamentosPage() {
     if (!cancelTarget) return;
     setCancelLoading(true);
     try {
-      await appointmentsService.updateStatus(cancelTarget.id, "cancelled", cancelReason || "Cancelado pelo paciente");
-      setAppointments((prev) =>
-        prev.map((a) => (a.id === cancelTarget.id ? { ...a, status: "cancelled" } : a)),
-      );
+      await patientPortalService.cancelAppointment(cancelTarget.id, cancelReason);
+      await loadAppointments();
       toast({ title: "Agendamento cancelado." });
       setCancelTarget(null);
       setCancelReason("");
@@ -174,13 +124,11 @@ export default function MeusAgendamentosPage() {
     }
   };
 
-  const handleConfirm = async (appt: DbAppointment) => {
+  const handleConfirm = async (appt: PatientPortalAppointment) => {
     setConfirmingId(appt.id);
     try {
-      await appointmentsService.updateStatus(appt.id, "confirmed");
-      setAppointments((prev) =>
-        prev.map((a) => (a.id === appt.id ? { ...a, status: "confirmed" } : a)),
-      );
+      await patientPortalService.confirmAppointment(appt.id);
+      await loadAppointments();
       toast({ title: "Presença confirmada! Até logo." });
     } catch (err) {
       toast({ title: "Erro ao confirmar", description: (err as Error).message, variant: "destructive" });
@@ -189,8 +137,45 @@ export default function MeusAgendamentosPage() {
     }
   };
 
+  const openReschedule = (appointment: PatientPortalAppointment) => {
+    setRescheduleTarget(appointment);
+    setRescheduleDate("");
+    setRescheduleTime(appointment.start_time.substring(0, 5));
+    setRescheduleReason("");
+  };
+
+  const closeReschedule = () => {
+    setRescheduleTarget(null);
+    setRescheduleDate("");
+    setRescheduleTime("");
+    setRescheduleReason("");
+  };
+
+  const handleReschedule = async () => {
+    if (!rescheduleTarget) return;
+    setRescheduleLoading(true);
+    try {
+      await patientPortalService.rescheduleAppointment(rescheduleTarget.id, {
+        appointmentDate: rescheduleDate,
+        startTime: rescheduleTime,
+        reason: rescheduleReason,
+      });
+      await loadAppointments();
+      toast({ title: "Agendamento reagendado." });
+      closeReschedule();
+    } catch (err) {
+      toast({
+        title: "Erro ao reagendar",
+        description: err instanceof Error ? err.message : "Não foi possível reagendar.",
+        variant: "destructive",
+      });
+    } finally {
+      setRescheduleLoading(false);
+    }
+  };
+
   if (loading) return <LoadingState message="Carregando seus agendamentos..." />;
-  if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
+  if (error) return <ErrorState message={error} onRetry={() => void loadAppointments()} />;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -259,14 +244,14 @@ export default function MeusAgendamentosPage() {
           ) : (
             <ul className="space-y-2">
               {upcoming.map((a) => {
-                const prof = getProf(a.professional_id);
-                const daysAway = diffDays(new Date(), startOfDay(a.appointment_date));
-                const canConfirm = daysAway <= 1 && (a.status === "scheduled" || a.status === "confirmed");
+                const daysAway = diffClinicDays(a.appointment_date);
+                const canConfirm = daysAway >= 0
+                  && daysAway <= 1
+                  && (a.status === "scheduled" || a.status === "confirmed");
                 return (
-                  <li key={a.id}>
+                  <li key={a.id} data-appointment-id={a.id}>
                     <AppointmentCard
                       appt={a}
-                      prof={prof}
                       actions={
                         <>
                           {canConfirm && a.status !== "confirmed" && (
@@ -288,7 +273,7 @@ export default function MeusAgendamentosPage() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => setRescheduleTarget(a)}
+                                onClick={() => openReschedule(a)}
                               >
                                 <RefreshCw className="mr-2 h-3.5 w-3.5" />
                                 Reagendar
@@ -324,22 +309,11 @@ export default function MeusAgendamentosPage() {
           ) : (
             <ul className="space-y-2">
               {past.map((a) => {
-                const prof = getProf(a.professional_id);
                 return (
                   <li key={a.id}>
                     <AppointmentCard
                       appt={a}
-                      prof={prof}
-                      actions={
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => a.patient_id && navigate(`/patients/${a.patient_id}`)}
-                        >
-                          Ver detalhes
-                          <ChevronRight className="ml-1 h-3.5 w-3.5" />
-                        </Button>
-                      }
+                      actions={null}
                     />
                   </li>
                 );
@@ -365,7 +339,7 @@ export default function MeusAgendamentosPage() {
           {cancelTarget && (
             <div className="rounded-md bg-muted/40 p-3 text-sm">
               <p><strong>Data:</strong> {cancelTarget.appointment_date} às {cancelTarget.start_time?.substring(0, 5)}</p>
-              <p><strong>Profissional:</strong> {getProf(cancelTarget.professional_id)?.full_name ?? "—"}</p>
+              <p><strong>Profissional:</strong> {cancelTarget.professional_name ?? "—"}</p>
             </div>
           )}
           <div className="space-y-1.5">
@@ -390,14 +364,13 @@ export default function MeusAgendamentosPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal de reagendamento — placeholder */}
-      <Dialog open={!!rescheduleTarget} onOpenChange={(o) => !o && setRescheduleTarget(null)}>
+      <Dialog open={!!rescheduleTarget} onOpenChange={(open) => !open && closeReschedule()}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Reagendar consulta</DialogTitle>
             <DialogDescription>
-              A clínica entrará em contato com horários disponíveis. Em breve, esta tela permitirá
-              escolher diretamente entre os slots livres.
+              Escolha um novo horário dentro da grade publicada do profissional.
+              A alteração será validada e gravada imediatamente.
             </DialogDescription>
           </DialogHeader>
           {rescheduleTarget && (
@@ -405,10 +378,56 @@ export default function MeusAgendamentosPage() {
               <p><strong>Atual:</strong> {rescheduleTarget.appointment_date} às {rescheduleTarget.start_time?.substring(0, 5)}</p>
             </div>
           )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="reschedule-date">Nova data</Label>
+              <Input
+                id="reschedule-date"
+                type="date"
+                min={clinicDateKey()}
+                value={rescheduleDate}
+                onChange={(event) => setRescheduleDate(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="reschedule-time">Novo horário</Label>
+              <Input
+                id="reschedule-time"
+                type="time"
+                value={rescheduleTime}
+                onChange={(event) => setRescheduleTime(event.target.value)}
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="reschedule-reason">Motivo</Label>
+            <Textarea
+              id="reschedule-reason"
+              value={rescheduleReason}
+              onChange={(event) => setRescheduleReason(event.target.value)}
+              placeholder="Informe por que precisa alterar o horário."
+              rows={3}
+            />
+          </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRescheduleTarget(null)}>Fechar</Button>
-            <Button onClick={() => { setRescheduleTarget(null); toast({ title: "Solicitação enviada à recepção." }); }}>
-              Solicitar reagendamento
+            <Button
+              variant="outline"
+              onClick={closeReschedule}
+              disabled={rescheduleLoading}
+            >
+              Voltar
+            </Button>
+            <Button
+              onClick={handleReschedule}
+              disabled={
+                rescheduleLoading
+                || !rescheduleDate
+                || !rescheduleTime
+                || rescheduleReason.trim().length < 3
+              }
+            >
+              {rescheduleLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Confirmar reagendamento
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -418,10 +437,9 @@ export default function MeusAgendamentosPage() {
 }
 
 function AppointmentCard({
-  appt, prof, actions,
+  appt, actions,
 }: {
-  appt: DbAppointment;
-  prof: DbProfessional | undefined;
+  appt: PatientPortalAppointment;
   actions: React.ReactNode;
 }) {
   return (
@@ -434,37 +452,35 @@ function AppointmentCard({
             </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-semibold text-sm">
+                <time
+                  dateTime={appt.appointment_date}
+                  className="font-semibold text-sm"
+                >
                   {new Date(appt.appointment_date + "T00:00:00").toLocaleDateString("pt-BR", {
                     weekday: "short",
                     day: "2-digit",
                     month: "short",
                   })}
-                </span>
+                </time>
                 <Badge variant="outline" className="font-mono">
                   {appt.start_time?.substring(0, 5)}
                 </Badge>
                 <AppointmentStatusBadge status={appt.status as unknown as AppointmentStatusForBadge} />
               </div>
               <div className="mt-1 text-sm text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
-                {prof && (
+                {appt.professional_name && (
                   <span className="flex items-center gap-1">
                     <User className="h-3 w-3" />
-                    Dr(a). {prof.full_name}
+                    Dr(a). {appt.professional_name}
                   </span>
                 )}
-                {appt.unit_id && (
+                {appt.unit_name && (
                   <span className="flex items-center gap-1">
                     <MapPin className="h-3 w-3" />
-                    Unidade {appt.unit_id.slice(0, 6)}
+                    {appt.unit_name}
                   </span>
                 )}
               </div>
-              {appt.notes && (
-                <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
-                  Obs.: {appt.notes}
-                </p>
-              )}
             </div>
           </div>
           <div className="flex flex-wrap gap-2 shrink-0">{actions}</div>
