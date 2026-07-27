@@ -205,7 +205,20 @@ DECLARE
 BEGIN
   IF NEW.company_id IS NULL
      OR NEW.unit_id IS NULL
-     OR NOT public.org_can_access_unit(NEW.company_id, NEW.unit_id) THEN
+     OR (
+       auth.uid() IS NOT NULL
+       AND NOT public.org_can_access_unit(NEW.company_id, NEW.unit_id)
+     )
+     OR (
+       auth.uid() IS NULL
+       AND NOT EXISTS (
+         SELECT 1
+         FROM public.units AS unit_record
+         WHERE unit_record.id = NEW.unit_id
+           AND unit_record.company_id = NEW.company_id
+           AND unit_record.lg_ativo = TRUE
+       )
+     ) THEN
     RAISE EXCEPTION
       'Empresa e unidade do registro de convenio sao invalidas ou inacessiveis'
       USING ERRCODE = '23514';

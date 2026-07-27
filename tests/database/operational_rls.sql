@@ -197,7 +197,8 @@ SELECT pg_temp.assert_true(
     SELECT prosecdef = FALSE
        AND pg_get_functiondef(p.oid)
              LIKE '%public.org_can_access_unit(NEW.company_id, NEW.unit_id)%'
-       AND pg_get_functiondef(p.oid) NOT LIKE '%FROM public.units%'
+       AND pg_get_functiondef(p.oid)
+             LIKE '%auth.uid() IS NOT NULL%'
     FROM pg_proc p
     WHERE p.oid = 'public.enforce_insurance_record_scope()'::regprocedure
   ),
@@ -337,13 +338,10 @@ INSERT INTO public.insurance_authorizations (
   '84000000-0000-0000-0000-000000000001',
   840001, 840020, 'pendente'
 );
-INSERT INTO public.insurance_authorization_attachments (
-  id, company_id, authorization_id, storage_path, file_name
-) VALUES (
-  '84000000-0000-0000-0000-000000000034',
-  '84000000-0000-0000-0000-000000000001',
+SELECT public.add_insurance_authorization_attachment_secure(
   '84000000-0000-0000-0000-000000000031',
-  'authorizations/a1.pdf', 'a1.pdf'
+  'authorizations/a1.pdf',
+  'a1.pdf'
 );
 INSERT INTO public.insurance_eligibility_checks (
   id, company_id, unit_id, patient_id, status
@@ -367,13 +365,10 @@ INSERT INTO public.insurance_authorizations (
   '84000000-0000-0000-0000-000000000001',
   840002, 840021, 'pendente'
 );
-INSERT INTO public.insurance_authorization_attachments (
-  id, company_id, authorization_id, storage_path, file_name
-) VALUES (
-  '84000000-0000-0000-0000-000000000035',
-  '84000000-0000-0000-0000-000000000001',
+SELECT public.add_insurance_authorization_attachment_secure(
   '84000000-0000-0000-0000-000000000032',
-  'authorizations/a2.pdf', 'a2.pdf'
+  'authorizations/a2.pdf',
+  'a2.pdf'
 );
 INSERT INTO public.insurance_eligibility_checks (
   id, company_id, unit_id, patient_id, status
@@ -397,13 +392,10 @@ INSERT INTO public.insurance_authorizations (
   '84000000-0000-0000-0000-000000000002',
   840003, 840022, 'pendente'
 );
-INSERT INTO public.insurance_authorization_attachments (
-  id, company_id, authorization_id, storage_path, file_name
-) VALUES (
-  '84000000-0000-0000-0000-000000000036',
-  '84000000-0000-0000-0000-000000000002',
+SELECT public.add_insurance_authorization_attachment_secure(
   '84000000-0000-0000-0000-000000000033',
-  'authorizations/b1.pdf', 'b1.pdf'
+  'authorizations/b1.pdf',
+  'b1.pdf'
 );
 INSERT INTO public.insurance_eligibility_checks (
   id, company_id, unit_id, patient_id, status
