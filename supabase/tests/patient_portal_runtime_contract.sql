@@ -80,6 +80,19 @@ BEGIN
       'appointments.duration_minutes INTEGER nullable contract is absent';
   END IF;
 
+  IF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns column_record
+    WHERE column_record.table_schema = 'public'
+      AND column_record.table_name = 'appointments'
+      AND column_record.column_name = 'lg_confirmado'
+      AND column_record.data_type = 'boolean'
+      AND column_record.is_nullable = 'NO'
+  ) THEN
+    RAISE EXCEPTION
+      'appointments.lg_confirmado BOOLEAN non-null contract is absent';
+  END IF;
+
   IF EXISTS (
     SELECT 1
     FROM pg_class relation_record
