@@ -6,6 +6,7 @@ vi.mock("@/lib/supabase", () => {
     supabase: {
       auth: { getUser: vi.fn() },
       from: vi.fn(),
+      rpc: vi.fn(),
     },
   };
 });
@@ -46,8 +47,18 @@ describe("callCenterService", () => {
     const result = await callCenterService.listContacts();
 
     expect(supabase.from).toHaveBeenCalledWith("scheduling_contact_logs");
+    expect(chain.select).toHaveBeenCalledWith(expect.stringContaining("id, company_id, patient_id"));
+    expect(chain.select).toHaveBeenCalledWith(expect.not.stringContaining("select *"));
     expect(result[0].patient_name).toBe("Maria Souza");
     expect(result[0].patient_phone).toBe("21999999999");
+  });
+
+  it("materializa a fila de confirmações pelo RPC seguro somente quando solicitado", async () => {
+    (supabase.rpc as any).mockResolvedValue({ data: 4, error: null });
+
+    await expect(callCenterService.materializeConfirmationQueue(3)).resolves.toBe(4);
+    expect(supabase.rpc).toHaveBeenCalledWith("refresh_confirmation_queue_secure", { p_days_ahead: 3 });
+    expect(supabase.rpc).toHaveBeenCalledTimes(1);
   });
 
   it("cria contato e tarefa quando proxima acao é informada", async () => {

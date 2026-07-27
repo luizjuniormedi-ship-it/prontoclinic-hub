@@ -97,7 +97,7 @@ async function currentActor() {
 }
 
 export const callCenterService = {
-  async refreshConfirmationQueue(daysAhead = 3): Promise<number> {
+  async materializeConfirmationQueue(daysAhead = 3): Promise<number> {
     const { data, error } = await supabase.rpc("refresh_confirmation_queue_secure", { p_days_ahead: daysAhead });
     if (error) throw new Error(`Erro ao atualizar fila de confirmação: ${error.message}`);
     return Number(data || 0);
@@ -121,7 +121,7 @@ export const callCenterService = {
   async listContacts(limit = 100): Promise<CallCenterContactLog[]> {
     const { data, error } = await supabase
       .from("scheduling_contact_logs")
-      .select("*, patients:patient_id(full_name, cpf, phone)")
+      .select("id, company_id, patient_id, appointment_id, operator_id, channel, direction, contact_reason, result, notes, next_action, next_action_at, created_at, updated_at, patients:patient_id(full_name, cpf, phone)")
       .order("created_at", { ascending: false })
       .limit(limit);
 
