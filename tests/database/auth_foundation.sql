@@ -56,6 +56,24 @@ SELECT pg_temp.assert_true(
   'role_permissions must enforce unique (company_id, role_id, module)'
 );
 SELECT pg_temp.assert_true(
+  NOT EXISTS (
+    SELECT 1
+    FROM pg_index index_record
+    WHERE index_record.indrelid = 'public.role_permissions'::regclass
+      AND index_record.indisunique
+      AND (
+        SELECT array_agg(attribute_record.attname ORDER BY key.ordinality)
+        FROM unnest(index_record.indkey::SMALLINT[])
+          WITH ORDINALITY AS key(attnum, ordinality)
+        JOIN pg_attribute attribute_record
+          ON attribute_record.attrelid = index_record.indrelid
+         AND attribute_record.attnum = key.attnum
+        WHERE key.ordinality <= index_record.indnkeyatts
+      ) = ARRAY['role_id', 'module']::NAME[]
+  ),
+  'legacy global unique (role_id, module) must be absent'
+);
+SELECT pg_temp.assert_true(
   pg_get_function_result('public.log_data_access(text,text,text,jsonb)'::regprocedure) = 'bigint',
   'log_data_access must return the persisted BIGINT audit id'
 );

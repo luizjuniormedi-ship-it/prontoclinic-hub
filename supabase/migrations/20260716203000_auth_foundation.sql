@@ -133,6 +133,7 @@ ALTER TABLE public.role_permissions
 DO $$
 DECLARE
   v_constraint RECORD;
+  v_index RECORD;
 BEGIN
   -- Remove apenas uniques legadas exatamente sobre (role_id,module).
   FOR v_constraint IN
@@ -149,6 +150,44 @@ BEGIN
       ) = ARRAY['role_id', 'module']::name[]
   LOOP
     EXECUTE format('ALTER TABLE public.role_permissions DROP CONSTRAINT %I', v_constraint.conname);
+  END LOOP;
+
+  -- Remove também uniques legadas independentes, sem constraint associada,
+  -- exatamente sobre (role_id,module). Elas impedem permissões por empresa.
+  FOR v_index IN
+    SELECT
+      index_namespace.nspname AS schema_name,
+      index_relation.relname AS index_name
+    FROM pg_index index_record
+    JOIN pg_class index_relation
+      ON index_relation.oid = index_record.indexrelid
+    JOIN pg_namespace index_namespace
+      ON index_namespace.oid = index_relation.relnamespace
+    WHERE index_record.indrelid = 'public.role_permissions'::regclass
+      AND index_record.indisunique
+      AND NOT index_record.indisprimary
+      AND index_record.indpred IS NULL
+      AND index_record.indexprs IS NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint constraint_record
+        WHERE constraint_record.conindid = index_record.indexrelid
+      )
+      AND (
+        SELECT array_agg(attribute_record.attname ORDER BY key.ordinality)
+        FROM unnest(index_record.indkey::SMALLINT[])
+          WITH ORDINALITY AS key(attnum, ordinality)
+        JOIN pg_attribute attribute_record
+          ON attribute_record.attrelid = index_record.indrelid
+         AND attribute_record.attnum = key.attnum
+        WHERE key.ordinality <= index_record.indnkeyatts
+      ) = ARRAY['role_id', 'module']::NAME[]
+  LOOP
+    EXECUTE format(
+      'DROP INDEX %I.%I',
+      v_index.schema_name,
+      v_index.index_name
+    );
   END LOOP;
 END;
 $$;
