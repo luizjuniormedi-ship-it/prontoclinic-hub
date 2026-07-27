@@ -247,7 +247,16 @@ SET LOCAL request.jwt.claims = '{"sub":"a0000000-0000-0000-0000-000000000001","r
 SELECT public.activate_application_context(
   'aa000000-0000-0000-0000-000000000001',
   (SELECT id FROM public.roles WHERE name = 'admin'),
-  (SELECT id FROM public.units WHERE cd_codigo = 'AUTH-A'),
+  (
+    SELECT (access_option ->> 'unit_id')::INTEGER
+    FROM jsonb_array_elements(
+      public.list_authorized_access_contexts()
+    ) access_option
+    WHERE access_option ->> 'company_id' =
+      '10000000-0000-0000-0000-000000000001'
+      AND access_option ->> 'unit_id' IS NOT NULL
+    LIMIT 1
+  ),
   'aa000000-0000-0000-0000-000000000077',
   'Teste auth foundation',
   'psql',
