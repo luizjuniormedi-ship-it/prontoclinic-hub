@@ -266,8 +266,9 @@ UNION ALL
 SELECT '84000000-0000-0000-0000-000000000001'::UUID, r.id, 'agenda', TRUE, TRUE, TRUE, TRUE, FALSE
 FROM public.roles r WHERE r.name = 'admin'
 UNION ALL
-SELECT '84000000-0000-0000-0000-000000000002'::UUID, r.id, 'pacientes', TRUE, TRUE, TRUE, FALSE, FALSE
-FROM public.roles r WHERE r.name = 'recepcao';
+SELECT '84000000-0000-0000-0000-000000000002'::UUID, r.id, m.module, TRUE, TRUE, TRUE, FALSE, FALSE
+FROM public.roles r CROSS JOIN (VALUES ('pacientes'), ('recepcao')) m(module)
+WHERE r.name = 'recepcao';
 
 INSERT INTO public.professionals (id, company_id, full_name, lg_ativo) VALUES
   (840010, '84000000-0000-0000-0000-000000000001', 'Profissional A', TRUE),
