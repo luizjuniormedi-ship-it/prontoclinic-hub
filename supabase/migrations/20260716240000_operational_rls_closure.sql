@@ -858,7 +858,6 @@ BEGIN
   FROM public.patients p
   WHERE p.id = p_patient_id
     AND p.company_id = v_company_id
-    AND p.unit_id = v_unit_id
     AND p.lg_ativo = TRUE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Paciente não encontrado no contexto ativo'

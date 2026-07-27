@@ -241,7 +241,10 @@ SELECT pg_temp.activate_context(
 SELECT pg_temp.assert_true(public.active_unit_id() = 910001, 'unidade A1 deve ficar ativa');
 SELECT pg_temp.assert_true(public.can_access('patients', 'view'), 'recepção deve visualizar patients');
 SELECT pg_temp.assert_true(NOT public.can_access('patients', 'edit'), 'ação não concedida deve falhar fechada');
-SELECT pg_temp.assert_true((SELECT count(*) FROM public.patients) = 1, 'patients deve filtrar empresa e unidade A1');
+SELECT pg_temp.assert_true(
+  (SELECT array_agg(id ORDER BY id) FROM public.patients) = ARRAY[930001, 930002]::BIGINT[],
+  'patients deve compartilhar o cadastro mestre dentro da empresa A'
+);
 SELECT pg_temp.assert_true((SELECT count(*) FROM public.appointments) = 1, 'appointments deve filtrar empresa e unidade A1');
 SELECT pg_temp.assert_true((SELECT count(*) FROM public.medical_records) = 1, 'medical_records deve filtrar empresa e unidade A1');
 SELECT pg_temp.assert_true(NOT EXISTS (SELECT 1 FROM public.patients WHERE company_id = '32000000-0000-0000-0000-000000000002'), 'outra empresa não pode vazar');
@@ -274,7 +277,10 @@ SELECT pg_temp.activate_context(
   910002
 );
 SELECT pg_temp.assert_true(public.active_unit_id() = 910002, 'troca válida para A2 deve funcionar');
-SELECT pg_temp.assert_true((SELECT id FROM public.patients) = 930002, 'contexto A2 deve ver apenas paciente A2');
+SELECT pg_temp.assert_true(
+  (SELECT array_agg(id ORDER BY id) FROM public.patients) = ARRAY[930001, 930002]::BIGINT[],
+  'contexto A2 deve ver o cadastro mestre da empresa A'
+);
 
 SELECT pg_temp.activate_context(
   'd1000000-0000-0000-0000-000000000002',
