@@ -400,7 +400,7 @@ VALUES
   (
     '16000000-0000-4000-8000-000000000011',
     'tiss-billing-a@example.invalid',
-    crypt('Synthetic-Only-Password-123!', gen_salt('bf')),
+    crypt(gen_random_uuid()::TEXT, gen_salt('bf')),
     NOW(),
     '{"provider":"email","providers":["email"]}',
     '{"full_name":"TISS Billing A"}',
@@ -410,7 +410,7 @@ VALUES
   (
     '16000000-0000-4000-8000-000000000021',
     'tiss-billing-b@example.invalid',
-    crypt('Synthetic-Only-Password-123!', gen_salt('bf')),
+    crypt(gen_random_uuid()::TEXT, gen_salt('bf')),
     NOW(),
     '{"provider":"email","providers":["email"]}',
     '{"full_name":"TISS Billing B"}',
@@ -420,7 +420,7 @@ VALUES
   (
     '16000000-0000-4000-8000-000000000031',
     'tiss-viewer-a@example.invalid',
-    crypt('Synthetic-Only-Password-123!', gen_salt('bf')),
+    crypt(gen_random_uuid()::TEXT, gen_salt('bf')),
     NOW(),
     '{"provider":"email","providers":["email"]}',
     '{"full_name":"TISS Viewer A"}',
@@ -430,7 +430,7 @@ VALUES
   (
     '16000000-0000-4000-8000-000000000041',
     'tiss-reception-a@example.invalid',
-    crypt('Synthetic-Only-Password-123!', gen_salt('bf')),
+    crypt(gen_random_uuid()::TEXT, gen_salt('bf')),
     NOW(),
     '{"provider":"email","providers":["email"]}',
     '{"full_name":"TISS Reception A"}',
@@ -440,7 +440,7 @@ VALUES
   (
     '16000000-0000-4000-8000-000000000051',
     'tiss-physician-a@example.invalid',
-    crypt('Synthetic-Only-Password-123!', gen_salt('bf')),
+    crypt(gen_random_uuid()::TEXT, gen_salt('bf')),
     NOW(),
     '{"provider":"email","providers":["email"]}',
     '{"full_name":"TISS Physician A"}',
@@ -450,7 +450,7 @@ VALUES
   (
     '16000000-0000-4000-8000-000000000061',
     'tiss-patient-a@example.invalid',
-    crypt('Synthetic-Only-Password-123!', gen_salt('bf')),
+    crypt(gen_random_uuid()::TEXT, gen_salt('bf')),
     NOW(),
     '{"provider":"email","providers":["email"]}',
     '{"full_name":"TISS Patient A"}',

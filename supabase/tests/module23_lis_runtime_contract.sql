@@ -86,7 +86,7 @@ VALUES
   (
     '23000000-0000-4000-8000-000000000011',
     'lis-lab-a@example.invalid',
-    crypt('Synthetic-Only-Password-123!', gen_salt('bf')),
+    crypt(gen_random_uuid()::TEXT, gen_salt('bf')),
     NOW(),
     '{"provider":"email","providers":["email"]}',
     '{"full_name":"LIS Lab A"}',
@@ -96,7 +96,7 @@ VALUES
   (
     '23000000-0000-4000-8000-000000000012',
     'lis-lab-accent-a@example.invalid',
-    crypt('Synthetic-Only-Password-123!', gen_salt('bf')),
+    crypt(gen_random_uuid()::TEXT, gen_salt('bf')),
     NOW(),
     '{"provider":"email","providers":["email"]}',
     '{"full_name":"LIS Lab Accent A"}',
@@ -106,7 +106,7 @@ VALUES
   (
     '23000000-0000-4000-8000-000000000013',
     'lis-reception-a@example.invalid',
-    crypt('Synthetic-Only-Password-123!', gen_salt('bf')),
+    crypt(gen_random_uuid()::TEXT, gen_salt('bf')),
     NOW(),
     '{"provider":"email","providers":["email"]}',
     '{"full_name":"LIS Reception A"}',
@@ -116,7 +116,7 @@ VALUES
   (
     '23000000-0000-4000-8000-000000000021',
     'lis-lab-b@example.invalid',
-    crypt('Synthetic-Only-Password-123!', gen_salt('bf')),
+    crypt(gen_random_uuid()::TEXT, gen_salt('bf')),
     NOW(),
     '{"provider":"email","providers":["email"]}',
     '{"full_name":"LIS Lab B"}',
