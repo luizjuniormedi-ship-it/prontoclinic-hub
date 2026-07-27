@@ -7,7 +7,6 @@
 
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { PageHeader } from "@/components/PageHeader";
 import { TriagePanel } from "@/components/nursing/TriagePanel";
 import { QueueDisplay } from "@/components/nursing/QueueDisplay";
 
@@ -37,11 +36,7 @@ export default function NursingTriagePage(): JSX.Element {
   }
 
   return (
-    <div className="container mx-auto p-4 md:p-6 space-y-4">
-      <PageHeader
-        title="Triagem de Enfermagem"
-        description="Classificação Manchester + NEWS2 — sinais vitais, antropometria e fila específica"
-      />
+    <div className="container mx-auto p-4 md:p-6">
       <TriagePanel companyId={companyId} />
     </div>
   );

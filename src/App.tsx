@@ -99,6 +99,7 @@ const MeusAgendamentosPage = lazy(() => import("@/pages/MeusAgendamentosPage"));
 const ShortcutsHelp = lazy(() => import("@/pages/ShortcutsHelp").then((m) => ({ default: m.ShortcutsHelp })));
 const PharmacyPage = lazy(() => import("@/pages/PharmacyPage"));
 const NursingTriagePage = lazy(() => import("@/pages/NursingTriagePage"));
+const NursingQueuePage = lazy(() => import("@/pages/NursingQueuePage"));
 const NursingCarePage = lazy(() => import("@/pages/NursingCarePage"));
 const BiDashboardPage = lazy(() => import("@/pages/BiDashboardPage"));
 const BiMetasPage = lazy(() => import("@/pages/BiMetasPage"));
@@ -249,7 +250,7 @@ const App = () => (
 
             {/* Nursing / Triage */}
             <Route path="/nursing/triage" element={<AppLayout><ProtectedRoute path="/nursing"><LazyRoute><NursingTriagePage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/nursing/queue" element={<AppLayout><ProtectedRoute path="/nursing"><LazyRoute><NursingTriagePage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/nursing/queue" element={<AppLayout><ProtectedRoute path="/nursing"><LazyRoute><NursingQueuePage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/nursing/care" element={<AppLayout><ProtectedRoute path="/nursing"><LazyRoute><NursingCarePage /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* BI / Indicadores */}
