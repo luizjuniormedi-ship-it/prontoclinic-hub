@@ -12,6 +12,9 @@ BEGIN
       AND NOT rolinherit
       AND NOT rolbypassrls
       AND NOT rolsuper
+      AND NOT rolcreatedb
+      AND NOT rolcreaterole
+      AND NOT rolreplication
   ) THEN
     RAISE EXCEPTION 'Module 15 restricted owner is not hardened';
   END IF;
@@ -50,28 +53,83 @@ BEGIN
   IF NOT has_table_privilege(
        'prontomedic_reception_rpc_owner',
        'public.insurance_authorizations',
-       'SELECT,INSERT,UPDATE'
+       'SELECT'
+     )
+     OR NOT has_table_privilege(
+       'prontomedic_reception_rpc_owner',
+       'public.insurance_authorizations',
+       'INSERT'
+     )
+     OR NOT has_table_privilege(
+       'prontomedic_reception_rpc_owner',
+       'public.insurance_authorizations',
+       'UPDATE'
      )
      OR has_table_privilege(
        'prontomedic_reception_rpc_owner',
        'public.insurance_authorizations',
-       'DELETE,TRUNCATE,TRIGGER'
+       'DELETE'
+     )
+     OR has_table_privilege(
+       'prontomedic_reception_rpc_owner',
+       'public.insurance_authorizations',
+       'TRUNCATE'
+     )
+     OR has_table_privilege(
+       'prontomedic_reception_rpc_owner',
+       'public.insurance_authorizations',
+       'TRIGGER'
      )
      OR NOT has_table_privilege(
        'prontomedic_reception_rpc_owner',
        'public.insurance_authorization_attachments',
-       'SELECT,INSERT'
+       'SELECT'
+     )
+     OR NOT has_table_privilege(
+       'prontomedic_reception_rpc_owner',
+       'public.insurance_authorization_attachments',
+       'INSERT'
      )
      OR has_table_privilege(
        'prontomedic_reception_rpc_owner',
        'public.insurance_authorization_attachments',
-       'UPDATE,DELETE,TRUNCATE,TRIGGER'
+       'UPDATE'
+     )
+     OR has_table_privilege(
+       'prontomedic_reception_rpc_owner',
+       'public.insurance_authorization_attachments',
+       'DELETE'
+     )
+     OR has_table_privilege(
+       'prontomedic_reception_rpc_owner',
+       'public.insurance_authorization_attachments',
+       'TRUNCATE'
+     )
+     OR has_table_privilege(
+       'prontomedic_reception_rpc_owner',
+       'public.insurance_authorization_attachments',
+       'TRIGGER'
      ) THEN
     RAISE EXCEPTION 'Module 15 restricted owner table ACL is invalid';
   END IF;
 
   IF NOT has_function_privilege(
        'prontomedic_reception_rpc_owner',
+       'public.m15_can_operate_authorizations()',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'authenticated',
+       'public.m15_can_operate_authorizations()',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'app_prontomedic',
+       'public.m15_can_operate_authorizations()',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'anon',
        'public.m15_can_operate_authorizations()',
        'EXECUTE'
      ) THEN
@@ -116,38 +174,86 @@ BEGIN
     RAISE EXCEPTION 'Module 15 FORCE RLS contract is incomplete';
   END IF;
 
-  IF (
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'insurance_authorizations'
+      AND policyname = 'm15_authorizations_reception_owner_select'
+      AND cmd = 'SELECT'
+      AND roles = ARRAY['prontomedic_reception_rpc_owner']::NAME[]
+      AND qual ILIKE '%active_company_id%'
+      AND qual ILIKE '%active_unit_id%'
+      AND qual ILIKE '%org_can_access_unit%'
+      AND qual ILIKE '%m15_can_operate_authorizations%'
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'insurance_authorizations'
+      AND policyname = 'm15_authorizations_reception_owner_insert'
+      AND cmd = 'INSERT'
+      AND roles = ARRAY['prontomedic_reception_rpc_owner']::NAME[]
+      AND with_check ILIKE '%active_company_id%'
+      AND with_check ILIKE '%active_unit_id%'
+      AND with_check ILIKE '%org_can_access_unit%'
+      AND with_check ILIKE '%m15_can_operate_authorizations%'
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'insurance_authorizations'
+      AND policyname = 'm15_authorizations_reception_owner_update'
+      AND cmd = 'UPDATE'
+      AND roles = ARRAY['prontomedic_reception_rpc_owner']::NAME[]
+      AND qual ILIKE '%active_company_id%'
+      AND qual ILIKE '%active_unit_id%'
+      AND qual ILIKE '%org_can_access_unit%'
+      AND qual ILIKE '%m15_can_operate_authorizations%'
+      AND with_check ILIKE '%active_company_id%'
+      AND with_check ILIKE '%active_unit_id%'
+      AND with_check ILIKE '%org_can_access_unit%'
+      AND with_check ILIKE '%m15_can_operate_authorizations%'
+  ) OR (
     SELECT count(*)
     FROM pg_policies
     WHERE schemaname = 'public'
       AND tablename = 'insurance_authorizations'
-      AND policyname IN (
-        'm15_authorizations_reception_owner_select',
-        'm15_authorizations_reception_owner_insert',
-        'm15_authorizations_reception_owner_update'
-      )
-      AND roles = ARRAY['prontomedic_reception_rpc_owner']::NAME[]
-      AND COALESCE(qual, with_check, '') ILIKE '%active_company_id%'
-      AND COALESCE(qual, with_check, '') ILIKE '%active_unit_id%'
-      AND COALESCE(qual, with_check, '') ILIKE '%org_can_access_unit%'
-      AND COALESCE(qual, with_check, '') ILIKE '%m15_can_operate_authorizations%'
+      AND 'prontomedic_reception_rpc_owner' = ANY (roles)
   ) <> 3 THEN
     RAISE EXCEPTION 'Module 15 authorization owner policies are incomplete';
   END IF;
 
-  IF (
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'insurance_authorization_attachments'
+      AND policyname =
+        'm15_authorization_attachments_reception_owner_select'
+      AND cmd = 'SELECT'
+      AND roles = ARRAY['prontomedic_reception_rpc_owner']::NAME[]
+      AND qual ILIKE '%active_company_id%'
+      AND qual ILIKE '%active_unit_id%'
+      AND qual ILIKE '%m15_can_operate_authorizations%'
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'insurance_authorization_attachments'
+      AND policyname =
+        'm15_authorization_attachments_reception_owner_insert'
+      AND cmd = 'INSERT'
+      AND roles = ARRAY['prontomedic_reception_rpc_owner']::NAME[]
+      AND with_check ILIKE '%active_company_id%'
+      AND with_check ILIKE '%active_unit_id%'
+      AND with_check ILIKE '%m15_can_operate_authorizations%'
+  ) OR (
     SELECT count(*)
     FROM pg_policies
     WHERE schemaname = 'public'
       AND tablename = 'insurance_authorization_attachments'
-      AND policyname IN (
-        'm15_authorization_attachments_reception_owner_select',
-        'm15_authorization_attachments_reception_owner_insert'
-      )
-      AND roles = ARRAY['prontomedic_reception_rpc_owner']::NAME[]
-      AND COALESCE(qual, with_check, '') ILIKE '%active_company_id%'
-      AND COALESCE(qual, with_check, '') ILIKE '%active_unit_id%'
-      AND COALESCE(qual, with_check, '') ILIKE '%m15_can_operate_authorizations%'
+      AND 'prontomedic_reception_rpc_owner' = ANY (roles)
   ) <> 2 THEN
     RAISE EXCEPTION 'Module 15 attachment owner policies are incomplete';
   END IF;

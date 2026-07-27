@@ -31,6 +31,8 @@ GRANT SELECT
   ON public.appointments, public.patients, public.professionals
   TO prontomedic_reception_rpc_owner;
 
+REVOKE ALL ON FUNCTION public.m15_can_operate_authorizations()
+  FROM PUBLIC, anon, authenticated, app_prontomedic;
 GRANT EXECUTE ON FUNCTION public.m15_can_operate_authorizations()
   TO prontomedic_reception_rpc_owner;
 GRANT EXECUTE ON FUNCTION public.get_scheduling_actor()
