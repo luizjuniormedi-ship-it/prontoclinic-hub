@@ -19,7 +19,12 @@ const envSchema = z.object({
     .refine(
       (u) => {
         const { hostname } = new URL(u);
-        return hostname.endsWith("supabase.co") || hostname === "localhost" || hostname === "127.0.0.1" || hostname === "191.252.196.6" || hostname === "vps68804.publiccloud.com.br";
+        return hostname.endsWith("supabase.co")
+          || hostname === "localhost"
+          || hostname === "127.0.0.1"
+          || hostname === "191.252.196.6"
+          || hostname === "vps68804.publiccloud.com.br"
+          || hostname === "prontomedic.191-252-196-6.sslip.io";
       },
       "VITE_SUPABASE_URL deve apontar para um projeto Supabase ou servidor local"
     ),
