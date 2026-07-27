@@ -363,6 +363,18 @@ FOR EACH ROW EXECUTE FUNCTION public.enforce_insurance_record_scope();
 ALTER TABLE public.insurance_authorizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.insurance_eligibility_checks ENABLE ROW LEVEL SECURITY;
 
+-- Policies nativas anteriores bloqueavam escrita e filtravam leitura apenas
+-- por empresa. Remova somente os nomes conhecidos antes de instalar o escopo
+-- de unidade; qualquer policy adicional continua bloqueando a migration.
+DROP POLICY IF EXISTS m15_authorizations_insert
+  ON public.insurance_authorizations;
+DROP POLICY IF EXISTS m15_authorizations_select
+  ON public.insurance_authorizations;
+DROP POLICY IF EXISTS m15_authorizations_update
+  ON public.insurance_authorizations;
+DROP POLICY IF EXISTS insurance_eligibility_select_tenant
+  ON public.insurance_eligibility_checks;
+
 DO $$
 DECLARE
   v_policy RECORD;
