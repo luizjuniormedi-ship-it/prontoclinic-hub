@@ -1,6 +1,23 @@
 -- Módulo 1: fundação canônica de identidade, RBAC, RLS e auditoria.
 -- Esta migration é incremental: não reescreve o histórico já aplicado em produção.
 
+CREATE SCHEMA IF NOT EXISTS auth;
+
+CREATE OR REPLACE FUNCTION auth.jwt()
+RETURNS JSONB
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog
+AS $function$
+  SELECT COALESCE(
+    NULLIF(current_setting('request.jwt.claims', TRUE), '')::JSONB,
+    '{}'::JSONB
+  );
+$function$;
+
+REVOKE ALL ON FUNCTION auth.jwt() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION auth.jwt() TO authenticated, app_prontomedic;
+
 -- ---------------------------------------------------------------------------
 -- Papéis e matriz de permissões por empresa
 -- ---------------------------------------------------------------------------
