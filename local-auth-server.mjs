@@ -237,6 +237,15 @@ const RPC_PERMISSIONS = {
   finalize_attendance_secure: { module: 'prontuario', action: 'can_create' },
   update_reception_authorization_secure: { module: 'recepcao', action: 'can_edit' },
   update_reception_eligibility_secure: { module: 'recepcao', action: 'can_edit' },
+  m23_upsert_exam_catalog_secure: { module: 'laboratorio', action: 'can_edit' },
+  m23_upsert_reference_range_secure: { module: 'laboratorio', action: 'can_edit' },
+  m23_create_lab_order_secure: { module: 'laboratorio', action: 'can_create' },
+  m23_collect_specimen_secure: { module: 'laboratorio', action: 'can_create' },
+  m23_transition_specimen_secure: { module: 'laboratorio', action: 'can_edit' },
+  m23_record_results_secure: { module: 'laboratorio', action: 'can_create' },
+  m23_validate_result_secure: { module: 'laboratorio', action: 'can_edit' },
+  m23_acknowledge_critical_alert_secure: { module: 'laboratorio', action: 'can_edit' },
+  m23_deliver_order_secure: { module: 'laboratorio', action: 'can_edit' },
 };
 
 async function authorizeRpc(profile, functionName) {

@@ -10,7 +10,7 @@
  * Requisitos: WCAG AA (labels, aria-describedby, foco visível)
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,12 +31,13 @@ import {
   valorReferencia,
   classificar,
   type LabResultadoTipo,
-  type ResultadoLab,
   type ValorReferencia,
 } from "@/services/lisService";
 import { useToast } from "@/components/ui/use-toast";
 
 interface ParametrosState {
+  id?: number;
+  cd_valor_referencia?: number;
   ds_parametro: string;
   vl_resultado: string;
   ds_unidade: string;
@@ -79,6 +80,10 @@ export function LabResultForm({
   const [equipamento, setEquipamento] = useState("");
   const [loteReagente, setLoteReagente] = useState("");
   const [hl7Raw, setHl7Raw] = useState("");
+  const resultOperationRef = useRef<{
+    fingerprint: string;
+    operationId: string;
+  } | null>(null);
 
   // Carregar valores de referência do exame
   const { data: referencias } = useQuery({
@@ -94,48 +99,63 @@ export function LabResultForm({
     enabled: !!cdItemPedido,
   });
 
-  // Inicializar parâmetros a partir de referencias
+  // Inicializar uma única vez após referências e resultados estarem disponíveis.
   useEffect(() => {
-    if (!referencias) return;
+    if (!referencias || !resultadosExistentes) return;
     if (parametros.length > 0) return; // já inicializado
-    const inicial: ParametrosState[] = referencias.map((r: ValorReferencia) => ({
-      ds_parametro: r.ds_parametro,
-      vl_resultado: "",
-      ds_unidade: r.ds_unidade ?? "",
-      vl_minimo_referencia: r.vl_minimo?.toString() ?? "",
-      vl_maximo_referencia: r.vl_maximo?.toString() ?? "",
-      ds_observacao: "",
-    }));
+    const inicial: ParametrosState[] = referencias.map((r: ValorReferencia) => {
+      const existente = resultadosExistentes.find(
+        (resultadoExistente) => resultadoExistente.ds_parametro === r.ds_parametro,
+      );
+      return {
+        id: existente?.id,
+        cd_valor_referencia:
+          existente?.cd_valor_referencia ?? r.id,
+        ds_parametro: r.ds_parametro,
+        vl_resultado:
+          existente?.vl_resultado?.toString()
+          ?? existente?.vl_resultado_texto
+          ?? "",
+        ds_unidade: existente?.ds_unidade ?? r.ds_unidade ?? "",
+        vl_minimo_referencia:
+          existente?.vl_minimo_referencia?.toString()
+          ?? r.vl_minimo?.toString()
+          ?? "",
+        vl_maximo_referencia:
+          existente?.vl_maximo_referencia?.toString()
+          ?? r.vl_maximo?.toString()
+          ?? "",
+        ds_observacao: existente?.ds_observacao ?? "",
+      };
+    });
+    const existentesSemReferencia: ParametrosState[] = referencias.length === 0
+      ? resultadosExistentes.map((existente) => ({
+        id: existente.id,
+        cd_valor_referencia: existente.cd_valor_referencia ?? undefined,
+        ds_parametro: existente.ds_parametro,
+        vl_resultado:
+          existente.vl_resultado?.toString()
+          ?? existente.vl_resultado_texto
+          ?? "",
+        ds_unidade: existente.ds_unidade ?? "",
+        vl_minimo_referencia:
+          existente.vl_minimo_referencia?.toString() ?? "",
+        vl_maximo_referencia:
+          existente.vl_maximo_referencia?.toString() ?? "",
+        ds_observacao: existente.ds_observacao ?? "",
+      }))
+      : [];
     setParametros(inicial.length > 0 ? inicial : [{
-      ds_parametro: "Resultado",
-      vl_resultado: "",
-      ds_unidade: "",
-      vl_minimo_referencia: "",
-      vl_maximo_referencia: "",
-      ds_observacao: "",
-    }]);
-  }, [referencias, parametros.length]);
-
-  // Pré-popular com resultados existentes (modo edição)
-  useEffect(() => {
-    if (!resultadosExistentes || resultadosExistentes.length === 0) return;
-    if (parametros.length === 0) return;
-    setParametros((prev) =>
-      prev.map((p) => {
-        const existente = resultadosExistentes.find(
-          (r: ResultadoLab) => r.ds_parametro === p.ds_parametro,
-        );
-        if (!existente) return p;
-        return {
-          ...p,
-          vl_resultado: existente.vl_resultado?.toString() ?? existente.vl_resultado_texto ?? "",
-          ds_unidade: existente.ds_unidade ?? p.ds_unidade,
-          ds_observacao: existente.ds_observacao ?? "",
-        };
+      ...(existentesSemReferencia[0] ?? {
+        ds_parametro: "Resultado",
+        vl_resultado: "",
+        ds_unidade: "",
+        vl_minimo_referencia: "",
+        vl_maximo_referencia: "",
+        ds_observacao: "",
       }),
-    );
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resultadosExistentes]);
+    }, ...existentesSemReferencia.slice(1)]);
+  }, [referencias, resultadosExistentes, parametros.length]);
 
   // Calcular classificação em tempo real
   const classificacoes = useMemo<Array<{ idx: number; tipo: LabResultadoTipo | null }>>(() => {
@@ -183,18 +203,34 @@ export function LabResultForm({
       const rows = parametros
         .filter((p) => p.ds_parametro && p.vl_resultado !== "")
         .map((p) => {
-          const v = p.vl_resultado === "" ? null : Number(p.vl_resultado);
-          const min = p.vl_minimo_referencia === "" ? null : Number(p.vl_minimo_referencia);
-          const max = p.vl_maximo_referencia === "" ? null : Number(p.vl_maximo_referencia);
+          const parsedValue = p.vl_resultado === "" ? null : Number(p.vl_resultado);
+          const parsedMin = p.vl_minimo_referencia === ""
+            ? null
+            : Number(p.vl_minimo_referencia);
+          const parsedMax = p.vl_maximo_referencia === ""
+            ? null
+            : Number(p.vl_maximo_referencia);
+          const v = parsedValue !== null && Number.isFinite(parsedValue)
+            ? parsedValue
+            : null;
+          const min = parsedMin !== null && Number.isFinite(parsedMin)
+            ? parsedMin
+            : null;
+          const max = parsedMax !== null && Number.isFinite(parsedMax)
+            ? parsedMax
+            : null;
           return {
+            id: p.id,
+            cd_valor_referencia: p.cd_valor_referencia,
             cd_item_pedido: cdItemPedido,
             ds_parametro: p.ds_parametro,
             vl_resultado: v,
-            vl_resultado_texto: p.vl_resultado && Number.isNaN(Number(p.vl_resultado)) ? p.vl_resultado : null,
+            vl_resultado_texto: p.vl_resultado && v === null
+              ? p.vl_resultado
+              : null,
             ds_unidade: p.ds_unidade || null,
             vl_minimo_referencia: min,
             vl_maximo_referencia: max,
-            tp_resultado: classificar(v, min, max),
             cd_equipamento: equipamento || null,
             cd_lote_reagente: loteReagente || null,
             cd_usuario_laboratorio: userId || null,
@@ -203,28 +239,43 @@ export function LabResultForm({
           };
         });
       if (rows.length === 0) throw new Error("Preencha ao menos um parâmetro");
-      const { error } = await (await import("@/lib/supabase")).supabase
-        .from("exames_lab_resultado")
-        .insert(rows);
-      if (error) throw error;
+      const fingerprint = JSON.stringify({
+        cdItemPedido,
+        rows,
+      });
+      if (resultOperationRef.current?.fingerprint !== fingerprint) {
+        if (!globalThis.crypto?.randomUUID) {
+          throw new Error("Gerador seguro de identificador indisponível");
+        }
+        resultOperationRef.current = {
+          fingerprint,
+          operationId: globalThis.crypto.randomUUID(),
+        };
+      }
+      const savedResults = await resultado.inserirLote(
+        cdItemPedido,
+        rows.map(({ cd_item_pedido: _itemId, ...row }) => row),
+        { operationId: resultOperationRef.current.operationId },
+      );
       // 2. Liberar item se solicitado
       if (liberar) {
         await resultado.liberarItem(cdItemPedido);
-      } else {
-        // Marcar como EM_ANALISE se ainda não estiver
-        await (await import("@/lib/supabase")).supabase
-          .from("exames_lab_pedido_itens")
-          .update({ tp_status: "EM_ANALISE" })
-          .eq("id", cdItemPedido);
       }
+      return savedResults;
     },
-    onSuccess: (_, liberar) => {
+    onSuccess: (savedResults, liberar) => {
+      resultOperationRef.current = null;
       queryClient.invalidateQueries({ queryKey: ["lab-resultado-item", cdItemPedido] });
       queryClient.invalidateQueries({ queryKey: ["lab-alertas-pendentes"] });
       queryClient.invalidateQueries({ queryKey: ["lab-pedidos"] });
+      const hasServerCriticalResult = savedResults.some(
+        (savedResult) =>
+          savedResult.tp_resultado === "CRITICO_BAIXO"
+          || savedResult.tp_resultado === "CRITICO_ALTO",
+      );
       toast({
         title: liberar ? "Resultado salvo e liberado" : "Resultado salvo",
-        description: temCritico
+        description: hasServerCriticalResult
           ? "Valores críticos detectados. Alerta gerado automaticamente."
           : undefined,
       });
@@ -255,7 +306,7 @@ export function LabResultForm({
           <CardDescription>Metadados da análise</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <Label htmlFor="equipamento">Equipamento (ID)</Label>
               <Input
@@ -298,9 +349,9 @@ export function LabResultForm({
                 return (
                   <div
                     key={idx}
-                    className="grid grid-cols-12 gap-2 items-end border-b pb-3"
+                    className="grid grid-cols-1 gap-2 border-b pb-3 sm:grid-cols-12 sm:items-end"
                   >
-                    <div className="col-span-3">
+                    <div className="sm:col-span-3">
                       <Label htmlFor={`param-${idx}`}>Parâmetro</Label>
                       <Input
                         id={`param-${idx}`}
@@ -314,7 +365,7 @@ export function LabResultForm({
                         }
                       />
                     </div>
-                    <div className="col-span-2">
+                    <div className="sm:col-span-2">
                       <Label htmlFor={`vl-${idx}`}>Valor</Label>
                       <Input
                         id={`vl-${idx}`}
@@ -331,7 +382,7 @@ export function LabResultForm({
                         aria-describedby={`ref-${idx}`}
                       />
                     </div>
-                    <div className="col-span-1">
+                    <div className="sm:col-span-1">
                       <Label htmlFor={`un-${idx}`}>Un.</Label>
                       <Input
                         id={`un-${idx}`}
@@ -345,7 +396,7 @@ export function LabResultForm({
                         }
                       />
                     </div>
-                    <div className="col-span-2">
+                    <div className="sm:col-span-2">
                       <Label htmlFor={`min-${idx}`}>Mín.</Label>
                       <Input
                         id={`min-${idx}`}
@@ -363,7 +414,7 @@ export function LabResultForm({
                         }
                       />
                     </div>
-                    <div className="col-span-2">
+                    <div className="sm:col-span-2">
                       <Label htmlFor={`max-${idx}`}>Máx.</Label>
                       <Input
                         id={`max-${idx}`}
@@ -381,12 +432,12 @@ export function LabResultForm({
                         }
                       />
                     </div>
-                    <div className="col-span-2 flex items-end">
+                    <div className="flex items-end sm:col-span-2">
                       <Badge className={b.cls} id={`ref-${idx}`}>
                         {b.label}
                       </Badge>
                     </div>
-                    <div className="col-span-12">
+                    <div className="sm:col-span-12">
                       <Label htmlFor={`obs-${idx}`}>Observação</Label>
                       <Input
                         id={`obs-${idx}`}
@@ -436,7 +487,7 @@ export function LabResultForm({
         </CardContent>
       </Card>
 
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button variant="outline" onClick={onCancel}>
           Cancelar
         </Button>

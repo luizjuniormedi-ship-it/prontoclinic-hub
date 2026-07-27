@@ -81,8 +81,91 @@ export interface ExameCatalogo {
   updated_at: string;
 }
 
+function normalizeNullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+
+  const normalized = typeof value === "string"
+    ? value.trim().replace(",", ".")
+    : value;
+  const parsed = Number(normalized);
+
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeExameCatalogo(row: Record<string, unknown>): ExameCatalogo {
+  return {
+    ...(row as unknown as ExameCatalogo),
+    nr_prazo_dias: normalizeNullableNumber(row.nr_prazo_dias) ?? 0,
+    vl_particular: normalizeNullableNumber(row.vl_particular),
+    vl_convenio: normalizeNullableNumber(row.vl_convenio),
+  };
+}
+
+function normalizeValorReferencia(row: Record<string, unknown>): ValorReferencia {
+  return {
+    ...(row as unknown as ValorReferencia),
+    vl_minimo: normalizeNullableNumber(row.vl_minimo),
+    vl_maximo: normalizeNullableNumber(row.vl_maximo),
+    nr_idade_min: normalizeNullableNumber(row.nr_idade_min) ?? 0,
+    nr_idade_max: normalizeNullableNumber(row.nr_idade_max) ?? 120,
+  };
+}
+
+function normalizeResultadoLab(row: Record<string, unknown>): ResultadoLab {
+  return {
+    ...(row as unknown as ResultadoLab),
+    vl_resultado: normalizeNullableNumber(row.vl_resultado),
+    vl_minimo_referencia: normalizeNullableNumber(row.vl_minimo_referencia),
+    vl_maximo_referencia: normalizeNullableNumber(row.vl_maximo_referencia),
+  };
+}
+
+function normalizeAlertaCritico(row: Record<string, unknown>): AlertaCritico {
+  return {
+    ...(row as unknown as AlertaCritico),
+    vl_resultado: normalizeNullableNumber(row.vl_resultado),
+  };
+}
+
+function makeOperationId(): string {
+  if (!globalThis.crypto?.randomUUID) {
+    throw new Error("Gerador seguro de identificador indisponível");
+  }
+  return globalThis.crypto.randomUUID();
+}
+
+export interface LisMutationOptions {
+  operationId?: string;
+}
+
+function resolveOperationId(options: LisMutationOptions = {}): string {
+  if (options.operationId === undefined) return makeOperationId();
+
+  const operationId = options.operationId.trim();
+  if (!operationId) {
+    throw new Error("Identificador da operação não pode ser vazio");
+  }
+  return operationId;
+}
+
+function omitClientResultClassification(
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  const serverClassifiedValue = { ...value };
+  delete serverClassifiedValue.tp_resultado;
+  return serverClassifiedValue;
+}
+
+function asRecord(value: unknown, operation: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`Resposta inválida da operação ${operation}`);
+  }
+  return value as Record<string, unknown>;
+}
+
 export interface ValorReferencia {
   id: number;
+  company_id?: string;
   cd_exame: number;
   ds_parametro: string;
   vl_minimo?: number | null;
@@ -136,6 +219,7 @@ export interface PedidoItem {
 
 export interface ResultadoLab {
   id: number;
+  company_id?: string;
   cd_item_pedido: number;
   cd_valor_referencia?: number | null;
   ds_parametro: string;
@@ -164,14 +248,18 @@ export interface AlertaCritico {
   ds_parametro?: string | null;
   vl_resultado?: number | null;
   vl_referencia?: string | null;
+  tp_status?: "PENDENTE" | "COMUNICADO" | "RESOLVIDO";
   lg_comunicado: boolean;
   dt_comunicacao?: string | null;
   cd_usuario_comunicou?: string | null;
   ds_forma_comunicacao?: string | null;
+  dt_resolucao?: string | null;
+  ds_motivo_resolucao?: string | null;
   created_at: string;
   // Joins
   paciente_nome?: string;
   medico_nome?: string;
+  resultado?: ResultadoLab | null;
 }
 
 export interface CatalogoFilters {
@@ -361,7 +449,9 @@ export const catalogo = {
 
     const { data, error } = await q;
     if (error) throw error;
-    return (data || []) as ExameCatalogo[];
+    return (data || []).map((row) =>
+      normalizeExameCatalogo(row as Record<string, unknown>),
+    );
   },
 
   async getById(id: number): Promise<ExameCatalogo | null> {
@@ -371,35 +461,31 @@ export const catalogo = {
       .eq("id", id)
       .maybeSingle();
     if (error) throw error;
-    return (data as ExameCatalogo) ?? null;
+    return data
+      ? normalizeExameCatalogo(data as Record<string, unknown>)
+      : null;
   },
 
   async create(input: Omit<ExameCatalogo, "id" | "created_at" | "updated_at">): Promise<ExameCatalogo> {
-    const { data, error } = await supabase
-      .from("exames_lab_catalogo")
-      .insert(input)
-      .select()
-      .single();
+    const { data, error } = await supabase.rpc("m23_upsert_exam_catalog_secure", {
+      p_exam: input,
+    });
     if (error) throw error;
-    return data as ExameCatalogo;
+    return normalizeExameCatalogo(asRecord(data, "m23_upsert_exam_catalog_secure"));
   },
 
   async update(id: number, patch: Partial<ExameCatalogo>): Promise<ExameCatalogo> {
-    const { data, error } = await supabase
-      .from("exames_lab_catalogo")
-      .update(patch)
-      .eq("id", id)
-      .select()
-      .single();
+    const { data, error } = await supabase.rpc("m23_upsert_exam_catalog_secure", {
+      p_exam: { ...patch, id },
+    });
     if (error) throw error;
-    return data as ExameCatalogo;
+    return normalizeExameCatalogo(asRecord(data, "m23_upsert_exam_catalog_secure"));
   },
 
   async inactivate(id: number): Promise<void> {
-    const { error } = await supabase
-      .from("exames_lab_catalogo")
-      .update({ lg_ativo: false })
-      .eq("id", id);
+    const { error } = await supabase.rpc("m23_upsert_exam_catalog_secure", {
+      p_exam: { id, lg_ativo: false },
+    });
     if (error) throw error;
   },
 };
@@ -415,17 +501,19 @@ export const valorReferencia = {
       .eq("lg_ativo", true)
       .order("ds_parametro");
     if (error) throw error;
-    return (data || []) as ValorReferencia[];
+    return (data || []).map((row) =>
+      normalizeValorReferencia(row as Record<string, unknown>),
+    );
   },
 
   async create(input: Omit<ValorReferencia, "id" | "created_at">): Promise<ValorReferencia> {
-    const { data, error } = await supabase
-      .from("exames_lab_valor_referencia")
-      .insert(input)
-      .select()
-      .single();
+    const { data, error } = await supabase.rpc("m23_upsert_reference_range_secure", {
+      p_reference: input,
+    });
     if (error) throw error;
-    return data as ValorReferencia;
+    return normalizeValorReferencia(
+      asRecord(data, "m23_upsert_reference_range_secure"),
+    );
   },
 };
 
@@ -437,9 +525,9 @@ export const pedido = {
       .from("exames_lab_pedido")
       .select(
         `*,
-        paciente:patients!exames_lab_pedido_cd_paciente_fkey(full_name),
-        medico:professionals!exames_lab_pedido_cd_medico_fkey(full_name),
-        itens:exames_lab_pedido_itens(count)`,
+        paciente:patients!lab_order_company_patient_fk(full_name),
+        medico:professionals!lab_order_company_professional_fk(full_name),
+        itens:exames_lab_pedido_itens!lab_item_company_order_fk(count)`,
       )
       .eq("company_id", companyId)
       .order("dt_pedido", { ascending: false });
@@ -480,8 +568,8 @@ export const pedido = {
       .from("exames_lab_pedido")
       .select(
         `*,
-        paciente:patients!exames_lab_pedido_cd_paciente_fkey(full_name, birth_date, sex),
-        medico:professionals!exames_lab_pedido_cd_medico_fkey(full_name)`,
+        paciente:patients!lab_order_company_patient_fk(full_name, birth_date, sex),
+        medico:professionals!lab_order_company_professional_fk(full_name)`,
       )
       .eq("id", id)
       .maybeSingle();
@@ -492,8 +580,8 @@ export const pedido = {
       .from("exames_lab_pedido_itens")
       .select(
         `*,
-        exame:exames_lab_catalogo!exames_lab_pedido_itens_cd_exame_fkey(ds_sigla, ds_exame),
-        resultados:exames_lab_resultado(*)`,
+        exame:exames_lab_catalogo!lab_item_company_exam_fk(ds_sigla, ds_exame),
+        resultados:exames_lab_resultado!lab_result_company_item_fk(*)`,
       )
       .eq("cd_pedido", id);
     if (e2) throw e2;
@@ -506,7 +594,11 @@ export const pedido = {
           ...(it as unknown as PedidoItem),
           exame_sigla: exame?.ds_sigla,
           exame_nome: exame?.ds_exame,
-          resultados: (it.resultados as ResultadoLab[]) || [],
+          resultados: Array.isArray(it.resultados)
+            ? it.resultados.map((row) =>
+              normalizeResultadoLab(row as Record<string, unknown>),
+            )
+            : [],
         };
       }),
     };
@@ -523,44 +615,32 @@ export const pedido = {
     ds_observacoes?: string;
     cd_lab_externo?: string;
     itens: Array<{ cd_exame: number; ds_observacao?: string }>;
-  }): Promise<{ pedido_id: number; itens_ids: number[] }> {
+  }, options: LisMutationOptions = {}): Promise<{ pedido_id: number; itens_ids: number[] }> {
     if (!input.itens || input.itens.length === 0) {
       throw new Error("Pedido deve conter ao menos um exame");
     }
 
-    // 1. Criar pedido (header)
-    const { data: pedido, error: e1 } = await supabase
-      .from("exames_lab_pedido")
-      .insert({
-        company_id: input.company_id,
-        cd_paciente: input.cd_paciente,
-        cd_medico: input.cd_medico,
-        cd_appointment: input.cd_appointment,
+    const { itens, ...orderInput } = input;
+    const { data, error } = await supabase.rpc("m23_create_lab_order_secure", {
+      p_operation_id: resolveOperationId(options),
+      p_order: {
+        ...orderInput,
         cd_tipo_atendimento: input.cd_tipo_atendimento ?? "AMBULATORIAL",
         tp_prioridade: input.tp_prioridade ?? "ROTINA",
-        ds_hipotese_diagnostica: input.ds_hipotese_diagnostica,
-        ds_observacoes: input.ds_observacoes,
-        cd_lab_externo: input.cd_lab_externo,
-        tp_status: "PENDENTE",
-      })
-      .select()
-      .single();
-    if (e1) throw e1;
+      },
+      p_items: itens,
+    });
+    if (error) throw error;
 
-    // 2. Inserir itens
-    const itensInput = input.itens.map((it) => ({
-      cd_pedido: pedido.id,
-      cd_exame: it.cd_exame,
-      ds_observacao: it.ds_observacao,
-      tp_status: "PENDENTE",
-    }));
-    const { data: itens, error: e2 } = await supabase
-      .from("exames_lab_pedido_itens")
-      .insert(itensInput)
-      .select("id");
-    if (e2) throw e2;
-
-    return { pedido_id: pedido.id, itens_ids: itens?.map((i) => i.id) ?? [] };
+    const result = asRecord(data, "m23_create_lab_order_secure");
+    const pedidoId = Number(result.pedido_id);
+    const itensIds = Array.isArray(result.itens_ids)
+      ? result.itens_ids.map(Number).filter(Number.isFinite)
+      : [];
+    if (!Number.isFinite(pedidoId) || itensIds.length !== itens.length) {
+      throw new Error("Resposta inválida ao criar pedido laboratorial");
+    }
+    return { pedido_id: pedidoId, itens_ids: itensIds };
   },
 
   async atualizarStatus(
@@ -568,26 +648,26 @@ export const pedido = {
     status: LabPedidoStatus,
     opts: { dt_coleta?: string; dt_liberacao?: string } = {},
   ): Promise<void> {
-    const patch: Record<string, unknown> = { tp_status: status };
-    if (status === "COLETADO" && !opts.dt_coleta) patch.dt_coleta = new Date().toISOString();
-    if (status === "LIBERADO" && !opts.dt_liberacao) patch.dt_liberacao = new Date().toISOString();
-    if (opts.dt_coleta) patch.dt_coleta = opts.dt_coleta;
-    if (opts.dt_liberacao) patch.dt_liberacao = opts.dt_liberacao;
-
-    const { error } = await supabase.from("exames_lab_pedido").update(patch).eq("id", id);
+    void opts;
+    const rpcName = status === "ENTREGUE"
+      ? "m23_deliver_order_secure"
+      : "m23_transition_specimen_secure";
+    const rpcArgs = status === "ENTREGUE"
+      ? { p_order_id: id }
+      : { p_order_id: id, p_status: status };
+    const { error } = await supabase.rpc(rpcName, rpcArgs);
     if (error) throw error;
   },
 
-  async marcarColetado(itemId: number, amostraId?: string): Promise<void> {
-    const patch: Record<string, unknown> = {
-      tp_status: "COLETADO",
-      dt_coleta: new Date().toISOString(),
-    };
-    if (amostraId) patch.ds_amostra_id = amostraId;
-    const { error } = await supabase
-      .from("exames_lab_pedido_itens")
-      .update(patch)
-      .eq("id", itemId);
+  async marcarColetado(itemId: number, amostraId: string): Promise<void> {
+    const normalizedSampleId = amostraId.trim();
+    if (!normalizedSampleId) {
+      throw new Error("Identificador da amostra é obrigatório");
+    }
+    const { error } = await supabase.rpc("m23_collect_specimen_secure", {
+      p_item_id: itemId,
+      p_sample_id: normalizedSampleId,
+    });
     if (error) throw error;
   },
 };
@@ -595,52 +675,76 @@ export const pedido = {
 // ── Resultados ───────────────────────────────────────────────────────────────
 
 export const resultado = {
-  async inserir(input: Omit<ResultadoLab, "id" | "created_at" | "dt_resultado"> & { dt_resultado?: string }): Promise<ResultadoLab> {
-    const { data, error } = await supabase
-      .from("exames_lab_resultado")
-      .insert({ ...input, dt_resultado: input.dt_resultado ?? new Date().toISOString() })
-      .select()
-      .single();
+  async inserir(
+    input: Omit<
+      ResultadoLab,
+      "id" | "created_at" | "dt_resultado" | "tp_resultado"
+    > & { id?: number; dt_resultado?: string },
+    options: LisMutationOptions = {},
+  ): Promise<ResultadoLab> {
+    const payload = omitClientResultClassification({
+      ...input,
+      dt_resultado: input.dt_resultado ?? new Date().toISOString(),
+    } as Record<string, unknown>);
+    const { data, error } = await supabase.rpc("m23_record_results_secure", {
+      p_item_id: input.cd_item_pedido,
+      p_results: [payload],
+      p_operation_id: resolveOperationId(options),
+    });
     if (error) throw error;
-
-    // Se resultado for crítico, registrar alerta (trigger também registra, mas
-    // fazemos aqui para garantir idempotência e também popular ds_observacao)
-    if (data.tp_resultado === "CRITICO_BAIXO" || data.tp_resultado === "CRITICO_ALTO") {
-      // No-op: trigger fn_gerar_alerta_critico já cuida
+    if (!Array.isArray(data) || !data[0]) {
+      throw new Error("Resposta inválida ao registrar resultado laboratorial");
     }
-    return data as ResultadoLab;
+    return normalizeResultadoLab(data[0] as Record<string, unknown>);
   },
 
   async inserirLote(
     cdItemPedido: number,
     parametros: Array<{
+      id?: number;
       ds_parametro: string;
       vl_resultado: number | null;
+      vl_resultado_texto?: string | null;
       ds_unidade?: string;
-      vl_minimo_referencia?: number;
-      vl_maximo_referencia?: number;
+      vl_minimo_referencia?: number | null;
+      vl_maximo_referencia?: number | null;
+      cd_equipamento?: string | null;
+      cd_lote_reagente?: string | null;
+      cd_usuario_laboratorio?: string | null;
       ds_observacao?: string;
+      ds_hl7_message?: string | null;
     }>,
+    options: LisMutationOptions = {},
   ): Promise<ResultadoLab[]> {
     if (parametros.length === 0) return [];
 
     const rows = parametros.map((p) => ({
-      cd_item_pedido: cdItemPedido,
+      ...(p.id !== undefined ? { id: p.id } : {}),
       ds_parametro: p.ds_parametro,
       vl_resultado: p.vl_resultado,
+      vl_resultado_texto: p.vl_resultado_texto ?? null,
       ds_unidade: p.ds_unidade,
       vl_minimo_referencia: p.vl_minimo_referencia ?? null,
       vl_maximo_referencia: p.vl_maximo_referencia ?? null,
-      tp_resultado: classificar(p.vl_resultado, p.vl_minimo_referencia, p.vl_maximo_referencia),
+      cd_equipamento: p.cd_equipamento ?? null,
+      cd_lote_reagente: p.cd_lote_reagente ?? null,
+      cd_usuario_laboratorio: p.cd_usuario_laboratorio ?? null,
       ds_observacao: p.ds_observacao,
+      ds_hl7_message: p.ds_hl7_message ?? null,
     }));
 
-    const { data, error } = await supabase
-      .from("exames_lab_resultado")
-      .insert(rows)
-      .select();
+    const { data, error } = await supabase.rpc("m23_record_results_secure", {
+      p_item_id: cdItemPedido,
+      p_results: rows,
+      p_operation_id: resolveOperationId(options),
+    });
     if (error) throw error;
-    return (data || []) as ResultadoLab[];
+    if (!Array.isArray(data)) {
+      throw new Error("Resposta inválida ao registrar resultados laboratoriais");
+    }
+    return data.map((row) =>
+      normalizeResultadoLab(row as Record<string, unknown>),
+    );
   },
 
   async listarPorItem(cdItemPedido: number): Promise<ResultadoLab[]> {
@@ -650,32 +754,16 @@ export const resultado = {
       .eq("cd_item_pedido", cdItemPedido)
       .order("ds_parametro");
     if (error) throw error;
-    return (data || []) as ResultadoLab[];
+    return (data || []).map((row) =>
+      normalizeResultadoLab(row as Record<string, unknown>),
+    );
   },
 
   async liberarItem(itemId: number): Promise<void> {
-    const { error } = await supabase
-      .from("exames_lab_pedido_itens")
-      .update({ tp_status: "LIBERADO", dt_liberacao: new Date().toISOString() })
-      .eq("id", itemId);
+    const { error } = await supabase.rpc("m23_validate_result_secure", {
+      p_item_id: itemId,
+    });
     if (error) throw error;
-
-    // Verificar se todos os itens do pedido estão LIBERADOS
-    const { data: item } = await supabase
-      .from("exames_lab_pedido_itens")
-      .select("cd_pedido")
-      .eq("id", itemId)
-      .maybeSingle();
-    if (item) {
-      const { data: todos } = await supabase
-        .from("exames_lab_pedido_itens")
-        .select("tp_status")
-        .eq("cd_pedido", item.cd_pedido);
-      const todosLiberados = (todos || []).every((i) => i.tp_status === "LIBERADO");
-      if (todosLiberados) {
-        await pedido.atualizarStatus(item.cd_pedido, "LIBERADO");
-      }
-    }
   },
 };
 
@@ -687,9 +775,11 @@ export const alerta = {
       .from("exames_lab_alerta_critico")
       .select(
         `*,
-        paciente:patients!exames_lab_alerta_critico_cd_paciente_fkey(full_name),
-        medico:professionals!exames_lab_alerta_critico_cd_medico_fkey(full_name)`,
+        resultado:exames_lab_resultado!lab_alert_company_result_fk(*),
+        paciente:patients!lab_alert_company_patient_fk(full_name),
+        medico:professionals!lab_alert_company_professional_fk(full_name)`,
       )
+      .eq("tp_status", "PENDENTE")
       .eq("lg_comunicado", false)
       .order("dt_alerta", { ascending: false });
     if (companyId) {
@@ -700,10 +790,14 @@ export const alerta = {
     return (data || []).map((row: Record<string, unknown>) => {
       const paciente = row.paciente as { full_name?: string } | null;
       const medico = row.medico as { full_name?: string } | null;
+      const resultado = row.resultado;
       return {
-        ...(row as unknown as AlertaCritico),
+        ...normalizeAlertaCritico(row),
         paciente_nome: paciente?.full_name,
         medico_nome: medico?.full_name,
+        resultado: resultado && typeof resultado === "object" && !Array.isArray(resultado)
+          ? normalizeResultadoLab(resultado as Record<string, unknown>)
+          : null,
       };
     });
   },
@@ -711,17 +805,12 @@ export const alerta = {
   async comunicar(
     id: number,
     forma: FormaComunicacao,
-    usuarioId: string,
+    _usuarioId: string,
   ): Promise<void> {
-    const { error } = await supabase
-      .from("exames_lab_alerta_critico")
-      .update({
-        lg_comunicado: true,
-        dt_comunicacao: new Date().toISOString(),
-        cd_usuario_comunicou: usuarioId,
-        ds_forma_comunicacao: forma,
-      })
-      .eq("id", id);
+    const { error } = await supabase.rpc("m23_acknowledge_critical_alert_secure", {
+      p_alert_id: id,
+      p_channel: forma,
+    });
     if (error) throw error;
   },
 
@@ -732,7 +821,9 @@ export const alerta = {
       .eq("cd_paciente", cdPaciente)
       .order("dt_alerta", { ascending: false });
     if (error) throw error;
-    return (data || []) as AlertaCritico[];
+    return (data || []).map((row) =>
+      normalizeAlertaCritico(row as Record<string, unknown>),
+    );
   },
 };
 
@@ -776,7 +867,7 @@ export async function getRelatorio(
   // Itens e categorias
   const { data: itens } = await supabase
     .from("exames_lab_pedido_itens")
-    .select(`cd_exame, exame:exames_lab_catalogo!exames_lab_pedido_itens_cd_exame_fkey(ds_sigla, ds_exame, ds_categoria)`)
+    .select(`cd_exame, exame:exames_lab_catalogo!lab_item_company_exam_fk(ds_sigla, ds_exame, ds_categoria)`)
     .in("cd_pedido", (pedidos || []).map((p) => p.id));
   const total_exames = itens?.length ?? 0;
 
@@ -805,6 +896,7 @@ export async function getRelatorio(
   const { count: pendentes } = await supabase
     .from("exames_lab_alerta_critico")
     .select("id", { count: "exact", head: true })
+    .eq("tp_status", "PENDENTE")
     .eq("lg_comunicado", false);
 
   return {

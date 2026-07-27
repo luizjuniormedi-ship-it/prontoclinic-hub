@@ -64,6 +64,8 @@ import {
   FileText,
   AlertTriangle,
   Trash2,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { LabResultForm } from "./LabResultForm";
 import { CriticalAlertsBanner } from "./CriticalAlertsBanner";
@@ -82,6 +84,8 @@ import {
 } from "@/services/lisService";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/components/ui/use-toast";
+import { formatCurrency } from "@/utils/formatters";
+import { EmptyState, ErrorState, LoadingState } from "@/components/StateViews";
 
 function statusBadge(status: LabPedidoStatus): { label: string; cls: string } {
   const map: Record<LabPedidoStatus, { label: string; cls: string }> = {
@@ -127,7 +131,13 @@ export function LabOrdersManager() {
   const [resultadoItem, setResultadoItem] = useState<{ cdItemPedido: number; cdExame: number; dsExame: string } | null>(null);
 
   // Catálogo
-  const { data: catalogoData, isLoading: loadingCatalogo } = useQuery({
+  const {
+    data: catalogoData,
+    error: catalogoError,
+    isError: catalogoIsError,
+    isLoading: loadingCatalogo,
+    refetch: refetchCatalogo,
+  } = useQuery({
     queryKey: ["lab-catalogo", companyId, searchTerm, filterCategoria, filterMaterial],
     queryFn: () =>
       catalogo.getAll(companyId!, {
@@ -140,7 +150,13 @@ export function LabOrdersManager() {
   });
 
   // Pedidos
-  const { data: pedidosData, isLoading: loadingPedidos } = useQuery({
+  const {
+    data: pedidosData,
+    error: pedidosError,
+    isError: pedidosIsError,
+    isLoading: loadingPedidos,
+    refetch: refetchPedidos,
+  } = useQuery({
     queryKey: ["lab-pedidos", companyId, filterStatus, filterDataInicio, filterDataFim],
     queryFn: () =>
       pedidoService.listar(companyId!, {
@@ -190,14 +206,6 @@ export function LabOrdersManager() {
     onError: (e: Error) => toast({ title: "Erro ao atualizar", description: e.message, variant: "destructive" }),
   });
 
-  const marcarColetadoMutation = useMutation({
-    mutationFn: (id: number) => pedidoService.atualizarStatus(id, "COLETADO"),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["lab-pedidos"] });
-      toast({ title: "Pedido marcado como coletado" });
-    },
-  });
-
   const iniciarAnaliseMutation = useMutation({
     mutationFn: (id: number) => pedidoService.atualizarStatus(id, "EM_ANALISE"),
     onSuccess: () => {
@@ -213,6 +221,12 @@ export function LabOrdersManager() {
       toast({ title: "Pedido cancelado" });
     },
   });
+
+  if (!companyId) {
+    return (
+      <ErrorState message="Não foi possível identificar a empresa vinculada à sessão." />
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -230,24 +244,24 @@ export function LabOrdersManager() {
         </CardHeader>
         <CardContent>
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-5">
-              <TabsTrigger value="pedidos">
+            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-5">
+              <TabsTrigger value="pedidos" className="min-h-10 text-xs sm:text-sm">
                 <ListOrdered className="h-4 w-4 mr-2" />
                 Pedidos
               </TabsTrigger>
-              <TabsTrigger value="catalogo">
+              <TabsTrigger value="catalogo" className="min-h-10 text-xs sm:text-sm">
                 <TestTube className="h-4 w-4 mr-2" />
                 Catálogo
               </TabsTrigger>
-              <TabsTrigger value="coleta">
+              <TabsTrigger value="coleta" className="min-h-10 text-xs sm:text-sm">
                 <Syringe className="h-4 w-4 mr-2" />
                 Coleta
               </TabsTrigger>
-              <TabsTrigger value="resultados">
+              <TabsTrigger value="resultados" className="min-h-10 text-xs sm:text-sm">
                 <FileText className="h-4 w-4 mr-2" />
                 Resultados
               </TabsTrigger>
-              <TabsTrigger value="alertas">
+              <TabsTrigger value="alertas" className="col-span-2 min-h-10 text-xs sm:col-span-1 sm:text-sm">
                 <AlertTriangle className="h-4 w-4 mr-2" />
                 Alertas
                 {alertas && alertas.length > 0 && (
@@ -304,11 +318,18 @@ export function LabOrdersManager() {
               </div>
 
               {loadingPedidos ? (
-                <p className="text-sm text-muted-foreground">Carregando...</p>
+                <LoadingState message="Carregando pedidos laboratoriais..." />
+              ) : pedidosIsError ? (
+                <ErrorState
+                  message={pedidosError?.message || "Não foi possível carregar os pedidos laboratoriais."}
+                  onRetry={() => void refetchPedidos()}
+                />
               ) : filteredPedidos.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-8 text-center">
-                  Nenhum pedido encontrado.
-                </p>
+                <EmptyState
+                  icon={ListOrdered}
+                  title="Nenhum pedido encontrado"
+                  description="Ajuste os filtros ou crie um novo pedido laboratorial."
+                />
               ) : (
                 <Table>
                   <TableHeader>
@@ -347,9 +368,9 @@ export function LabOrdersManager() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => marcarColetadoMutation.mutate(p.id)}
+                                onClick={() => setActiveTab("coleta")}
                               >
-                                Coletar
+                                Registrar coleta
                               </Button>
                             )}
                             {p.tp_status === "COLETADO" && (
@@ -433,11 +454,18 @@ export function LabOrdersManager() {
               </div>
 
               {loadingCatalogo ? (
-                <p className="text-sm text-muted-foreground">Carregando...</p>
+                <LoadingState message="Carregando catálogo de exames..." />
+              ) : catalogoIsError ? (
+                <ErrorState
+                  message={catalogoError?.message || "Não foi possível carregar o catálogo de exames."}
+                  onRetry={() => void refetchCatalogo()}
+                />
               ) : filteredCatalogo.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-8 text-center">
-                  Nenhum exame no catálogo.
-                </p>
+                <EmptyState
+                  icon={TestTube}
+                  title="Nenhum exame no catálogo"
+                  description="Ajuste os filtros ou cadastre o primeiro exame."
+                />
               ) : (
                 <Table>
                   <TableHeader>
@@ -466,7 +494,9 @@ export function LabOrdersManager() {
                         <TableCell className="font-mono text-xs">{c.cd_loinc ?? "—"}</TableCell>
                         <TableCell>{c.nr_prazo_dias}d</TableCell>
                         <TableCell>
-                          {c.vl_particular ? `R$ ${c.vl_particular.toFixed(2)}` : "—"}
+                          {c.vl_particular === null || c.vl_particular === undefined
+                            ? "—"
+                            : formatCurrency(c.vl_particular)}
                         </TableCell>
                         <TableCell className="text-right">
                           <Button
@@ -544,6 +574,9 @@ export function LabOrdersManager() {
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Resultado — {resultadoItem.dsExame}</DialogTitle>
+              <DialogDescription>
+                Registre os parâmetros do item selecionado e libere somente após conferência.
+              </DialogDescription>
             </DialogHeader>
             <LabResultForm
               cdItemPedido={resultadoItem.cdItemPedido}
@@ -567,8 +600,16 @@ export function LabOrdersManager() {
 function ColetaTab({ companyId }: { companyId: string }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
+  const [sampleIds, setSampleIds] = useState<Record<number, string>>({});
 
-  const { data: pedidosColeta, isLoading } = useQuery({
+  const {
+    data: pedidosColeta,
+    error,
+    isError,
+    isLoading,
+    refetch,
+  } = useQuery({
     queryKey: ["lab-pedidos-coleta", companyId],
     queryFn: () =>
       pedidoService.listar(companyId, {
@@ -577,59 +618,201 @@ function ColetaTab({ companyId }: { companyId: string }) {
     enabled: !!companyId,
   });
 
-  const marcarColetado = useMutation({
-    mutationFn: (id: number) => pedidoService.atualizarStatus(id, "COLETADO"),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["lab-pedidos-coleta"] });
-      toast({ title: "Marcado como coletado" });
-    },
+  const {
+    data: selectedOrder,
+    error: selectedOrderError,
+    isError: selectedOrderIsError,
+    isLoading: selectedOrderIsLoading,
+    refetch: refetchSelectedOrder,
+  } = useQuery({
+    queryKey: ["lab-pedido-coleta-detail", selectedOrderId],
+    queryFn: () => pedidoService.getById(selectedOrderId!),
+    enabled: selectedOrderId !== null,
   });
 
-  if (isLoading) return <p className="text-sm text-muted-foreground">Carregando...</p>;
+  const marcarColetado = useMutation({
+    mutationFn: ({ itemId, sampleId }: { itemId: number; sampleId: string }) =>
+      pedidoService.marcarColetado(itemId, sampleId),
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ["lab-pedidos-coleta"] });
+      queryClient.invalidateQueries({ queryKey: ["lab-pedidos"] });
+      await queryClient.invalidateQueries({
+        queryKey: ["lab-pedido-coleta-detail", selectedOrderId],
+      });
+      toast({ title: "Amostra coletada e identificada" });
+    },
+    onError: (mutationError: Error) =>
+      toast({
+        title: "Erro ao registrar coleta",
+        description: mutationError.message,
+        variant: "destructive",
+      }),
+  });
+
+  if (isLoading) return <LoadingState message="Carregando pedidos para coleta..." />;
+  if (isError) {
+    return (
+      <ErrorState
+        message={error?.message || "Não foi possível carregar a fila de coleta."}
+        onRetry={() => void refetch()}
+      />
+    );
+  }
   if (!pedidosColeta || pedidosColeta.length === 0) {
-    return <p className="text-sm text-muted-foreground py-8 text-center">Nenhum pedido aguardando coleta.</p>;
+    return (
+      <EmptyState
+        icon={Syringe}
+        title="Nenhum pedido aguardando coleta"
+      />
+    );
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Pedido</TableHead>
-          <TableHead>Paciente</TableHead>
-          <TableHead>Exames</TableHead>
-          <TableHead>Prioridade</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead className="text-right">Ações</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {pedidosColeta.map((p: PedidoLab) => {
-          const sb = statusBadge(p.tp_status);
-          return (
-            <TableRow key={p.id}>
-              <TableCell>#{p.id}</TableCell>
-              <TableCell>{p.paciente_nome}</TableCell>
-              <TableCell>{p.itens_count}</TableCell>
-              <TableCell>
-                <Badge className={prioridadeBadge(p.tp_prioridade).cls}>
-                  {p.tp_prioridade}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                <Badge className={sb.cls}>{sb.label}</Badge>
-              </TableCell>
-              <TableCell className="text-right">
-                {p.tp_status === "PENDENTE" && (
-                  <Button size="sm" onClick={() => marcarColetado.mutate(p.id)}>
-                    Confirmar coleta
-                  </Button>
-                )}
-              </TableCell>
+    <div className="space-y-4">
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Pedido</TableHead>
+              <TableHead>Paciente</TableHead>
+              <TableHead>Exames</TableHead>
+              <TableHead>Prioridade</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Ações</TableHead>
             </TableRow>
-          );
-        })}
-      </TableBody>
-    </Table>
+          </TableHeader>
+          <TableBody>
+            {pedidosColeta.map((p: PedidoLab) => {
+              const sb = statusBadge(p.tp_status);
+              return (
+                <TableRow key={p.id}>
+                  <TableCell>#{p.id}</TableCell>
+                  <TableCell>{p.paciente_nome}</TableCell>
+                  <TableCell>{p.itens_count}</TableCell>
+                  <TableCell>
+                    <Badge className={prioridadeBadge(p.tp_prioridade).cls}>
+                      {p.tp_prioridade}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge className={sb.cls}>{sb.label}</Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setSampleIds({});
+                        setSelectedOrderId(p.id);
+                      }}
+                    >
+                      {p.tp_status === "PENDENTE"
+                        ? "Registrar amostras"
+                        : "Revisar amostras"}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+
+      <Dialog
+        open={selectedOrderId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedOrderId(null);
+            setSampleIds({});
+          }
+        }}
+      >
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Coleta do pedido #{selectedOrderId}</DialogTitle>
+            <DialogDescription>
+              Identifique cada amostra antes de confirmar a coleta. O código não
+              poderá ser alterado depois do registro.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedOrderIsLoading ? (
+            <LoadingState message="Carregando itens para coleta..." />
+          ) : selectedOrderIsError ? (
+            <ErrorState
+              message={
+                selectedOrderError?.message ||
+                "Não foi possível carregar os itens para coleta."
+              }
+              onRetry={() => void refetchSelectedOrder()}
+            />
+          ) : !selectedOrder || selectedOrder.itens.length === 0 ? (
+            <EmptyState
+              icon={TestTube}
+              title="Pedido sem itens para coleta"
+            />
+          ) : (
+            <div className="divide-y rounded-md border">
+              {selectedOrder.itens.map((item) => {
+                const collected = item.tp_status !== "PENDENTE";
+                const sampleId = collected
+                  ? item.ds_amostra_id ?? ""
+                  : sampleIds[item.id] ?? "";
+                return (
+                  <div key={item.id} className="space-y-3 p-3">
+                    <div>
+                      <p className="font-medium">
+                        {item.exame_nome ||
+                          item.exame_sigla ||
+                          `Exame #${item.cd_exame}`}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Item #{item.id} • {statusBadge(item.tp_status).label}
+                      </p>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+                      <div className="space-y-1">
+                        <Label htmlFor={`sample-${item.id}`}>
+                          Identificador da amostra
+                        </Label>
+                        <Input
+                          id={`sample-${item.id}`}
+                          maxLength={50}
+                          required
+                          disabled={collected}
+                          value={sampleId}
+                          onChange={(event) =>
+                            setSampleIds((current) => ({
+                              ...current,
+                              [item.id]: event.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+                      <Button
+                        size="sm"
+                        disabled={
+                          collected ||
+                          marcarColetado.isPending ||
+                          sampleId.trim().length === 0
+                        }
+                        onClick={() =>
+                          marcarColetado.mutate({
+                            itemId: item.id,
+                            sampleId: sampleId.trim(),
+                          })
+                        }
+                      >
+                        {collected ? "Coleta registrada" : "Confirmar coleta"}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 
@@ -641,7 +824,13 @@ function ResultadosTab({
   companyId: string;
   onOpenItem: (item: { id: number; cd_exame: number; exame_nome?: string; exame_sigla?: string }) => void;
 }) {
-  const { data: pedidos, isLoading } = useQuery({
+  const {
+    data: pedidos,
+    error,
+    isError,
+    isLoading,
+    refetch,
+  } = useQuery({
     queryKey: ["lab-pedidos-analise", companyId],
     queryFn: () =>
       pedidoService.listar(companyId, {
@@ -650,46 +839,122 @@ function ResultadosTab({
     enabled: !!companyId,
   });
 
-  if (isLoading) return <p className="text-sm text-muted-foreground">Carregando...</p>;
+  if (isLoading) return <LoadingState message="Carregando pedidos em análise..." />;
+  if (isError) {
+    return (
+      <ErrorState
+        message={error?.message || "Não foi possível carregar os pedidos em análise."}
+        onRetry={() => void refetch()}
+      />
+    );
+  }
   if (!pedidos || pedidos.length === 0) {
-    return <p className="text-sm text-muted-foreground py-8 text-center">Nenhum pedido em análise.</p>;
+    return (
+      <EmptyState
+        icon={FileText}
+        title="Nenhum pedido em análise"
+      />
+    );
   }
 
   return (
     <div className="space-y-3">
       {pedidos.map((p) => (
-        <Card key={p.id}>
-          <CardHeader>
-            <CardTitle className="text-base">
-              Pedido #{p.id} — {p.paciente_nome}
-            </CardTitle>
-            <CardDescription>
-              {p.itens_count} exame(s) • {p.medico_nome} •{" "}
-              {new Date(p.dt_pedido).toLocaleString("pt-BR")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Abra o pedido para inserir resultados de cada item individualmente.
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-2"
-              onClick={() =>
-                onOpenItem({
-                  id: 0,
-                  cd_exame: 0,
-                  exame_nome: `Pedido #${p.id} (clique em cada item)`,
-                })
-              }
-            >
-              Ver itens
-            </Button>
-          </CardContent>
-        </Card>
+        <ResultadoPedidoCard key={p.id} pedido={p} onOpenItem={onOpenItem} />
       ))}
     </div>
+  );
+}
+
+function ResultadoPedidoCard({
+  pedido,
+  onOpenItem,
+}: {
+  pedido: PedidoLab;
+  onOpenItem: (item: { id: number; cd_exame: number; exame_nome?: string; exame_sigla?: string }) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const {
+    data: detail,
+    error,
+    isError,
+    isLoading,
+    refetch,
+  } = useQuery({
+    queryKey: ["lab-pedido-detail", pedido.id],
+    queryFn: () => pedidoService.getById(pedido.id),
+    enabled: expanded,
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">
+          Pedido #{pedido.id} — {pedido.paciente_nome}
+        </CardTitle>
+        <CardDescription>
+          {pedido.itens_count} exame(s) • {pedido.medico_nome} •{" "}
+          {new Date(pedido.dt_pedido).toLocaleString("pt-BR")}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Button
+          variant="outline"
+          size="sm"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? (
+            <ChevronDown className="h-4 w-4 mr-2" />
+          ) : (
+            <ChevronRight className="h-4 w-4 mr-2" />
+          )}
+          {expanded ? "Ocultar itens" : "Ver itens"}
+        </Button>
+
+        {expanded && (
+          isLoading ? (
+            <LoadingState message="Carregando itens do pedido..." />
+          ) : isError ? (
+            <ErrorState
+              message={error?.message || "Não foi possível carregar os itens do pedido."}
+              onRetry={() => void refetch()}
+            />
+          ) : !detail || detail.itens.length === 0 ? (
+            <EmptyState
+              icon={TestTube}
+              title="Pedido sem itens"
+              description="Este pedido não pode receber resultados."
+            />
+          ) : (
+            <div className="divide-y rounded-md border">
+              {detail.itens.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex flex-wrap items-center justify-between gap-3 p-3"
+                >
+                  <div>
+                    <p className="font-medium">
+                      {item.exame_nome || item.exame_sigla || `Exame #${item.cd_exame}`}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Item #{item.id} • {statusBadge(item.tp_status).label}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => onOpenItem(item)}
+                    disabled={item.tp_status === "LIBERADO" || item.tp_status === "CANCELADO"}
+                  >
+                    Inserir resultado
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -698,7 +963,13 @@ function AlertasTab({ userId }: { userId?: string }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: alertas, isLoading } = useQuery({
+  const {
+    data: alertas,
+    error,
+    isError,
+    isLoading,
+    refetch,
+  } = useQuery({
     queryKey: ["lab-alertas-pendentes", userId],
     queryFn: () => alertaService.listarPendentes(),
   });
@@ -712,9 +983,22 @@ function AlertasTab({ userId }: { userId?: string }) {
     },
   });
 
-  if (isLoading) return <p className="text-sm text-muted-foreground">Carregando...</p>;
+  if (isLoading) return <LoadingState message="Carregando alertas críticos..." />;
+  if (isError) {
+    return (
+      <ErrorState
+        message={error?.message || "Não foi possível carregar os alertas críticos."}
+        onRetry={() => void refetch()}
+      />
+    );
+  }
   if (!alertas || alertas.length === 0) {
-    return <p className="text-sm text-muted-foreground py-8 text-center">Nenhum alerta crítico pendente.</p>;
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title="Nenhum alerta crítico pendente"
+      />
+    );
   }
 
   return (
@@ -781,21 +1065,43 @@ function CatalogoFormModal({
   const [prazo, setPrazo] = useState(editing?.nr_prazo_dias ?? 3);
   const [vlParticular, setVlParticular] = useState<string>(editing?.vl_particular?.toString() ?? "");
   const [vlConvenio, setVlConvenio] = useState<string>(editing?.vl_convenio?.toString() ?? "");
+  const [validationError, setValidationError] = useState("");
+
+  const parseOptionalPrice = (value: string): number | null | undefined => {
+    const normalized = value.trim().replace(",", ".");
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+  };
 
   const handleSubmit = () => {
-    if (!dsExame || !dsSigla) return;
+    const privatePrice = parseOptionalPrice(vlParticular);
+    const insurancePrice = parseOptionalPrice(vlConvenio);
+    if (dsExame.trim().length < 2 || !dsSigla.trim()) {
+      setValidationError("Informe uma sigla e um nome de exame com pelo menos 2 caracteres.");
+      return;
+    }
+    if (!Number.isInteger(prazo) || prazo < 0 || prazo > 32767) {
+      setValidationError("O prazo deve ser um número inteiro entre 0 e 32767 dias.");
+      return;
+    }
+    if (privatePrice === undefined || insurancePrice === undefined) {
+      setValidationError("Os valores devem ser números maiores ou iguais a zero.");
+      return;
+    }
+    setValidationError("");
     onSubmit({
       company_id: companyId,
-      ds_exame: dsExame,
-      ds_sigla: dsSigla.toUpperCase(),
-      cd_tuss: cdTuss || null,
-      cd_loinc: cdLoinc || null,
+      ds_exame: dsExame.trim(),
+      ds_sigla: dsSigla.trim().toUpperCase(),
+      cd_tuss: cdTuss.trim() || null,
+      cd_loinc: cdLoinc.trim() || null,
       ds_categoria: categoria,
       ds_material: material,
-      ds_metodo: metodo || null,
+      ds_metodo: metodo.trim() || null,
       nr_prazo_dias: prazo,
-      vl_particular: vlParticular ? Number(vlParticular) : null,
-      vl_convenio: vlConvenio ? Number(vlConvenio) : null,
+      vl_particular: privatePrice,
+      vl_convenio: insurancePrice,
       lg_ativo: true,
       cd_origem_sigh: null,
     });
@@ -808,14 +1114,22 @@ function CatalogoFormModal({
           <DialogTitle>{editing ? "Editar exame" : "Novo exame"}</DialogTitle>
           <DialogDescription>Catálogo de exames laboratoriais</DialogDescription>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <Label>Sigla*</Label>
-            <Input value={dsSigla} onChange={(e) => setDsSigla(e.target.value.toUpperCase())} />
+            <Label htmlFor="lab-exam-code">Sigla*</Label>
+            <Input
+              id="lab-exam-code"
+              value={dsSigla}
+              onChange={(e) => setDsSigla(e.target.value.toUpperCase())}
+            />
           </div>
           <div>
-            <Label>Exame*</Label>
-            <Input value={dsExame} onChange={(e) => setDsExame(e.target.value)} />
+            <Label htmlFor="lab-exam-name">Exame*</Label>
+            <Input
+              id="lab-exam-name"
+              value={dsExame}
+              onChange={(e) => setDsExame(e.target.value)}
+            />
           </div>
           <div>
             <Label>Categoria</Label>
@@ -852,32 +1166,45 @@ function CatalogoFormModal({
             <Input value={metodo} onChange={(e) => setMetodo(e.target.value)} />
           </div>
           <div>
-            <Label>Prazo (dias)</Label>
+            <Label htmlFor="lab-exam-deadline">Prazo (dias)</Label>
             <Input
+              id="lab-exam-deadline"
               type="number"
+              min={0}
+              max={32767}
+              step={1}
               value={prazo}
               onChange={(e) => setPrazo(Number(e.target.value))}
             />
           </div>
           <div>
-            <Label>Valor Particular (R$)</Label>
+            <Label htmlFor="lab-exam-private-price">Valor Particular (R$)</Label>
             <Input
+              id="lab-exam-private-price"
               type="number"
+              min={0}
               step="0.01"
               value={vlParticular}
               onChange={(e) => setVlParticular(e.target.value)}
             />
           </div>
           <div>
-            <Label>Valor Convênio (R$)</Label>
+            <Label htmlFor="lab-exam-insurance-price">Valor Convênio (R$)</Label>
             <Input
+              id="lab-exam-insurance-price"
               type="number"
+              min={0}
               step="0.01"
               value={vlConvenio}
               onChange={(e) => setVlConvenio(e.target.value)}
             />
           </div>
         </div>
+        {validationError && (
+          <p className="text-sm text-destructive" role="alert">
+            {validationError}
+          </p>
+        )}
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
           <Button onClick={handleSubmit}>{editing ? "Atualizar" : "Cadastrar"}</Button>
