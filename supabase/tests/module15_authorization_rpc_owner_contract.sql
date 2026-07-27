@@ -78,6 +78,22 @@ BEGIN
     RAISE EXCEPTION 'Module 15 permission helper is unavailable to the owner';
   END IF;
 
+  IF position(
+       'Autorizacao indisponivel no contexto atual'
+       IN pg_get_functiondef(
+         'public.transition_insurance_authorization_secure(uuid,text,text,text,text,date,integer,integer,text)'::REGPROCEDURE
+       )
+     ) = 0
+     OR position(
+       'ERRCODE = ''42501'''
+       IN pg_get_functiondef(
+         'public.transition_insurance_authorization_secure(uuid,text,text,text,text,date,integer,integer,text)'::REGPROCEDURE
+       )
+     ) = 0 THEN
+    RAISE EXCEPTION
+      'Module 15 transition RPC does not fail closed with SQLSTATE 42501';
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1
     FROM pg_class AS relation
