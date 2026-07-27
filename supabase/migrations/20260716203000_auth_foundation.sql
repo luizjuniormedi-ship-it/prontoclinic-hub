@@ -3,6 +3,20 @@
 
 CREATE SCHEMA IF NOT EXISTS auth;
 
+DO $role$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    CREATE ROLE service_role
+      NOLOGIN
+      NOINHERIT
+      NOCREATEDB
+      NOCREATEROLE
+      NOSUPERUSER
+      NOBYPASSRLS;
+  END IF;
+END
+$role$;
+
 CREATE OR REPLACE FUNCTION auth.jwt()
 RETURNS JSONB
 LANGUAGE sql
