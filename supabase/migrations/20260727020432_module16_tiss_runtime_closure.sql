@@ -1129,11 +1129,42 @@ REVOKE ALL ON SEQUENCE
   FROM PUBLIC, anon, authenticated, app_prontomedic,
        prontomedic_tiss_gateway;
 
+CREATE OR REPLACE VIEW public.vw_tiss_glosas_pendentes
+WITH (security_invoker = TRUE) AS
+SELECT
+  glosa.id,
+  glosa.company_id,
+  glosa.cd_tiss_xml,
+  xml.cd_convenio,
+  insurance.name AS convenio_name,
+  xml.ds_protocolo,
+  xml.dt_fatura,
+  xml.vl_informado,
+  xml.vl_glosa,
+  glosa.cd_glosa_code,
+  glosa.ds_motivo,
+  glosa.vl_glosa AS vl_glosa_item,
+  glosa.dt_glosa,
+  glosa.lg_recurso_enviado,
+  glosa.ds_status_recurso,
+  EXTRACT(DAY FROM NOW() - glosa.dt_glosa)::INTEGER AS dias_desde_glosa
+FROM public.tiss_glosas glosa
+JOIN public.tiss_xml xml
+  ON xml.id = glosa.cd_tiss_xml
+ AND xml.company_id = glosa.company_id
+LEFT JOIN public.insurance_companies insurance
+  ON insurance.id = xml.cd_convenio
+ AND insurance.company_id = xml.company_id
+WHERE glosa.ds_status_recurso IN ('PENDENTE', 'ENVIADO')
+  AND xml.lg_deletado = FALSE;
+
 ALTER VIEW public.vw_tiss_glosas_pendentes
   SET (security_invoker = TRUE);
 REVOKE ALL ON public.vw_tiss_glosas_pendentes FROM PUBLIC, anon;
 REVOKE ALL ON public.vw_tiss_glosas_pendentes
   FROM authenticated, app_prontomedic, prontomedic_tiss_gateway;
+COMMENT ON VIEW public.vw_tiss_glosas_pendentes
+  IS 'Legacy tenant-scoped TISS denial view; direct client access is revoked.';
 
 CREATE OR REPLACE FUNCTION public.m16_company_id()
 RETURNS UUID
