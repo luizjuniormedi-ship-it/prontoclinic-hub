@@ -89,6 +89,13 @@ VALUES
   ('71000000-0000-0000-0000-000000000044', 7101),
   ('72000000-0000-0000-0000-000000000044', 7201);
 
+SELECT CASE
+  WHEN to_regclass('vault.decrypted_secrets') IS NULL THEN 'false'
+  ELSE 'true'
+END AS draft_vault_available
+\gset
+
+\if :draft_vault_available
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM vault.decrypted_secrets WHERE name = 'secure_clinical_drafts_key') THEN
@@ -100,6 +107,40 @@ BEGIN
   END IF;
 END;
 $$;
+\else
+SELECT pg_temp.assert_true(
+  NOT has_function_privilege(
+    'authenticated',
+    'public.save_secure_clinical_draft(uuid,uuid,uuid,integer,text,text,jsonb,integer)',
+    'EXECUTE'
+  )
+  AND NOT has_function_privilege(
+    'authenticated',
+    'public.get_secure_clinical_draft(uuid,uuid,uuid)',
+    'EXECUTE'
+  )
+  AND NOT has_function_privilege(
+    'authenticated',
+    'public.list_secure_clinical_drafts(uuid,uuid)',
+    'EXECUTE'
+  )
+  AND NOT has_function_privilege(
+    'authenticated',
+    'public.delete_secure_clinical_draft(uuid,uuid,uuid)',
+    'EXECUTE'
+  ),
+  'draft RPCs must fail closed when Supabase Vault is unavailable'
+);
+DO $vault_unavailable$
+BEGIN
+  PERFORM public.secure_clinical_draft_key();
+  RAISE EXCEPTION
+    'SESSIONS_DRAFTS_ASSERTION_FAILED: unavailable Vault did not fail closed';
+EXCEPTION
+  WHEN object_not_in_prerequisite_state THEN NULL;
+END
+$vault_unavailable$;
+\endif
 
 CREATE TEMP TABLE test_session_context (
   session_id uuid NOT NULL,
@@ -151,6 +192,7 @@ SELECT pg_temp.assert_true(
 
 SET LOCAL request.jwt.claims = '{"sub":"71000000-0000-0000-0000-000000000011","role":"authenticated","aal":"aal2","session_id":"71000000-0000-0000-0000-000000000099"}';
 
+\if :draft_vault_available
 WITH saved AS (
   SELECT public.save_secure_clinical_draft(
     (SELECT session_id FROM test_session_context),
@@ -181,6 +223,7 @@ SELECT pg_temp.assert_true(
   )->'content'->>'anamnesis') = 'segredo clínico inequívoco',
   'authorized owner must decrypt its draft through RPC');
 RESET ROLE;
+\endif
 
 -- Outra sessão GoTrue do mesmo usuário não pode reutilizar a sessão da aplicação.
 SET LOCAL ROLE authenticated;
@@ -202,6 +245,7 @@ SELECT pg_temp.assert_true(
     (SELECT session_id FROM test_session_context),
     (SELECT client_device_id FROM test_session_context)
   ), 'application session must be bound to its user');
+\if :draft_vault_available
 DO $$
 BEGIN
   PERFORM public.get_secure_clinical_draft(
@@ -213,6 +257,7 @@ BEGIN
 EXCEPTION WHEN insufficient_privilege THEN NULL;
 END;
 $$;
+\endif
 RESET ROLE;
 
 -- Revogação individual bloqueia imediatamente o contexto da aplicação.
@@ -239,6 +284,7 @@ SELECT pg_temp.assert_true(
 RESET ROLE;
 
 -- Expiração é parte do contrato e não depende de limpeza física imediata.
+\if :draft_vault_available
 UPDATE public.secure_clinical_drafts
 SET created_at = now() - interval '2 seconds',
     expires_at = now() - interval '1 second'
@@ -248,5 +294,6 @@ SELECT pg_temp.assert_true(
     SELECT 1 FROM public.secure_clinical_drafts
     WHERE id = (SELECT draft_id FROM test_session_context) AND expires_at > now()
   ), 'expired draft must no longer be active');
+\endif
 
 ROLLBACK;
