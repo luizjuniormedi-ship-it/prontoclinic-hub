@@ -170,9 +170,10 @@ jobs:
           PGPASSWORD: postgres
         run: |
           E2E_PASSWORD=$(openssl rand -hex 24)
+          export E2E_PASSWORD
           echo "::add-mask::$E2E_PASSWORD"
           echo "E2E_PASSWORD=$E2E_PASSWORD" >> "$GITHUB_ENV"
-          psql -v ON_ERROR_STOP=1 -v "e2e_password=$E2E_PASSWORD" \
+          psql -X -v ON_ERROR_STOP=1 \
             -h localhost -p 54322 -U postgres -d migrations_first \
             -f scripts/seed-e2e-users.sql >/dev/null
           echo "LOCAL_E2E_JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"

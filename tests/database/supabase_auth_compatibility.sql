@@ -12,6 +12,15 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
     CREATE ROLE service_role NOLOGIN BYPASSRLS;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'supabase_auth_admin') THEN
+    CREATE ROLE supabase_auth_admin NOLOGIN BYPASSRLS;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'supabase_admin') THEN
+    CREATE ROLE supabase_admin NOLOGIN BYPASSRLS;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_prontomedic') THEN
+    CREATE ROLE app_prontomedic NOLOGIN NOINHERIT NOBYPASSRLS;
+  END IF;
 END
 $$;
 
@@ -39,14 +48,14 @@ CREATE TABLE IF NOT EXISTS auth.refresh_tokens (
   token UUID PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   parent UUID,
-  session_id UUID,
+  session_jti UUID,
   revoked BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE auth.refresh_tokens ADD COLUMN IF NOT EXISTS parent UUID;
-ALTER TABLE auth.refresh_tokens ADD COLUMN IF NOT EXISTS session_id UUID;
+ALTER TABLE auth.refresh_tokens ADD COLUMN IF NOT EXISTS session_jti UUID;
 
 CREATE INDEX IF NOT EXISTS idx_auth_refresh_tokens_user
   ON auth.refresh_tokens(user_id, revoked);

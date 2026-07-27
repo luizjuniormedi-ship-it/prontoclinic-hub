@@ -41,18 +41,26 @@ const pool = new Pool({
   user: PGUSER,
   password: process.env.PGPASSWORD,
   database: PGDATABASE,
+  max: Number(process.env.LOCAL_AUTH_POOL_MAX || 10),
+  connectionTimeoutMillis: Number(process.env.LOCAL_AUTH_POOL_TIMEOUT_MS || 5000),
 });
+
+async function queryAsAuthenticatedInTransaction(client, payload, text, values = []) {
+  await client.query(
+    `SELECT set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claims', $2, true)`,
+    [payload.sub, JSON.stringify(payload)],
+  );
+  await client.query('SET LOCAL ROLE authenticated');
+  const result = await client.query(text, values);
+  await client.query('RESET ROLE');
+  return result;
+}
 
 async function queryAsAuthenticated(payload, text, values = []) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query(
-      `SELECT set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claims', $2, true)`,
-      [payload.sub, JSON.stringify(payload)],
-    );
-    await client.query('SET LOCAL ROLE authenticated');
-    const result = await client.query(text, values);
+    const result = await queryAsAuthenticatedInTransaction(client, payload, text, values);
     await client.query('COMMIT');
     return result;
   } catch (error) {
@@ -112,11 +120,12 @@ async function verifyPassword(email, password) {
   return user;
 }
 
-async function getUserProfile(userId) {
-  const res = await pool.query(
+async function getUserProfile(payload) {
+  const res = await queryAsAuthenticated(
+    payload,
     `SELECT id, full_name, email, role_name, company_id, primary_unit_id, lg_ativo
      FROM public.user_profiles WHERE id = $1`,
-    [userId]
+    [payload.sub],
   );
   return res.rows[0] || null;
 }
@@ -129,6 +138,14 @@ const REFERENCE_TABLES = new Set([
   'bairros', 'cbos', 'cids', 'cid', 'municipios', 'profissoes',
   'countries', 'states', 'racas', 'etnias', 'nacionalidades',
 ]);
+
+const SHARED_CATALOG_ACCESS = Object.freeze({
+  companies: { readModules: [], writeModule: 'admin' },
+  units: { readModules: [], writeModule: 'admin' },
+  insurance_companies: { readModules: ['recepcao', 'faturamento'], writeModule: 'faturamento' },
+  insurance_plans: { readModules: ['recepcao', 'faturamento'], writeModule: 'faturamento' },
+  payment_sources: { readModules: ['recepcao', 'faturamento'], writeModule: 'faturamento' },
+});
 
 function tableToModule(table) {
   const t = table.toLowerCase();
@@ -168,45 +185,109 @@ function tableToModule(table) {
   return REFERENCE_TABLES.has(t) ? null : '__unmapped__';
 }
 
-const METHOD_TO_ACTION = { GET: 'can_view', HEAD: 'can_view', POST: 'can_create', PATCH: 'can_edit', PUT: 'can_edit', DELETE: 'can_delete' };
+const METHOD_TO_ACTION = { GET: 'view', HEAD: 'view', POST: 'create', PATCH: 'edit', PUT: 'edit', DELETE: 'delete' };
 const IDENT = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 const isIdentifier = (value) => IDENT.test(value);
 const quoteIdent = (value) => `"${value}"`;
 
-
-// cache de permissÃµes por role (evita query a cada request)
-const permCache = new Map();
-async function loadRolePerms(role) {
-  if (permCache.has(role)) return permCache.get(role);
-  const r = await pool.query(
-    `SELECT rp.module, rp.can_view, rp.can_create, rp.can_edit, rp.can_delete
-       FROM role_permissions rp JOIN roles ro ON ro.id = rp.role_id
-      WHERE ro.name = $1`, [role]);
-  const m = {};
-  for (const row of r.rows) m[row.module] = row;
-  permCache.set(role, m);
-  return m;
+function parseSelectProjection(selectParam) {
+  if (!selectParam) return null;
+  if (selectParam === '*') return '*';
+  const withoutAliasEmbeds = selectParam.replace(/,?\s*\w+:\w+\([^)]*\)/g, '');
+  const withoutEmbeds = withoutAliasEmbeds.replace(/,?\s*\w+\([^)]*\)/g, '');
+  const rawColumns = withoutEmbeds.split(',').map((column) => column.trim()).filter(Boolean);
+  for (const column of rawColumns) {
+    if (!isIdentifier(column)) {
+      const error = new Error(`coluna invalida no select: ${column}`);
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+  return rawColumns.length > 0 ? rawColumns.map(quoteIdent).join(', ') : null;
 }
 
-/** Retorna {ok:true} ou {ok:false, reason}. Somente admin tem bypass total. */
-async function authorize(profile, table, method) {
+
+async function getActiveAccessContext(payload) {
+  const result = await queryAsAuthenticated(
+    payload,
+    `SELECT m.company_id, ctx.unit_id, r.name AS role_name
+       FROM public.user_access_context ctx
+       JOIN public.memberships m
+         ON m.id = ctx.membership_id
+        AND m.user_id = ctx.user_id
+        AND m.status = 'active'
+       JOIN public.membership_roles mr
+         ON mr.membership_id = ctx.membership_id
+        AND mr.role_id = ctx.role_id
+       JOIN public.roles r
+         ON r.id = ctx.role_id
+        AND r.lg_ativo = true
+      WHERE ctx.user_id = $1
+        AND ctx.session_id = $2::uuid
+        AND m.company_id = public.active_company_id()
+        AND ctx.unit_id IS NOT DISTINCT FROM public.active_unit_id()
+      LIMIT 1`,
+    [payload.sub, payload.session_id],
+  );
+  return result.rows[0] || null;
+}
+
+async function canAccess(payload, module, action) {
+  const result = await queryAsAuthenticated(
+    payload,
+    `SELECT public.active_company_id() AS company_id,
+            public.can_access($1, $2) AS allowed`,
+    [module, action],
+  );
+  return Boolean(result.rows[0]?.company_id && result.rows[0]?.allowed);
+}
+
+function permissionAction(action) {
+  return {
+    can_view: 'view',
+    can_create: 'create',
+    can_edit: 'edit',
+    can_delete: 'delete',
+    can_export: 'export',
+  }[action] || action;
+}
+
+/** Retorna {ok:true} ou {ok:false, reason} usando o contexto ativo da sessão. */
+async function authorize(profile, table, method, payload) {
   if (!profile) return { ok: false, reason: 'sem perfil' };
   if (!profile.lg_ativo) return { ok: false, reason: 'usuÃ¡rio inativo' };
-  const role = (profile.role_name || '').toLowerCase();
-  if (role === 'admin') return { ok: true };
+  const context = await getActiveAccessContext(payload);
+  if (!context) return { ok: false, reason: 'contexto de acesso inativo' };
+  const action = METHOD_TO_ACTION[method] || 'view';
+  const sharedCatalog = SHARED_CATALOG_ACCESS[table.toLowerCase()];
+  if (sharedCatalog) {
+    if (action === 'view') {
+      if (sharedCatalog.readModules.length === 0) return { ok: true };
+      for (const readModule of sharedCatalog.readModules) {
+        if (await canAccess(payload, readModule, 'view')) return { ok: true };
+      }
+      return { ok: false, reason: `contexto ativo nao pode consultar o catalogo '${table}'` };
+    }
+    if (!(await canAccess(payload, sharedCatalog.writeModule, action))) {
+      return {
+        ok: false,
+        reason: `contexto ativo nao pode '${action}' no catalogo '${table}'`,
+      };
+    }
+    return { ok: true };
+  }
   const module = tableToModule(table);
   if (module === '__unmapped__') {
     return { ok: false, reason: `tabela '${table}' nao esta explicitamente autorizada` };
   }
   if (module === null) {
-    // tabelas de referÃªncia: leitura liberada, escrita sÃ³ admin (jÃ¡ retornou acima)
-    return METHOD_TO_ACTION[method] === 'can_view' ? { ok: true } : { ok: false, reason: 'escrita em tabela de referÃªncia exige admin' };
+    return METHOD_TO_ACTION[method] === 'view'
+      ? { ok: true }
+      : { ok: false, reason: 'escrita em tabela de referencia nao autorizada pelo gateway' };
   }
-  const perms = await loadRolePerms(role);
-  const rule = perms[module];
-  if (!rule) return { ok: false, reason: `role '${role}' sem acesso ao mÃ³dulo '${module}'` };
-  const action = METHOD_TO_ACTION[method] || 'can_view';
-  if (!rule[action]) return { ok: false, reason: `role '${role}' nÃ£o pode '${action}' em '${module}'` };
+  if (!(await canAccess(payload, module, action))) {
+    return { ok: false, reason: `contexto ativo nao pode '${action}' em '${module}'` };
+  }
   return { ok: true };
 }
 
@@ -256,8 +337,6 @@ const RPC_PERMISSIONS = {
   ensure_tiss_guide_for_checkin_secure: { module: 'recepcao', action: 'can_create' },
   ensure_financial_receivable_for_checkin_secure: { module: 'recepcao', action: 'can_create' },
   finalize_attendance_secure: { module: 'prontuario', action: 'can_create' },
-  update_reception_authorization_secure: { module: 'recepcao', action: 'can_edit' },
-  update_reception_eligibility_secure: { module: 'recepcao', action: 'can_edit' },
   tiss_get_stats: { module: 'faturamento', action: 'can_view' },
   m16_generate_monthly_batch_secure: { module: 'faturamento', action: 'can_edit' },
   m16_persist_xml_secure: { module: 'faturamento', action: 'can_edit' },
@@ -276,6 +355,7 @@ const RPC_PERMISSIONS = {
   list_application_devices: { scope: 'self' },
   revoke_application_device: { scope: 'self' },
   log_data_access: { scope: 'self' },
+  request_anonymize_patient: { module: 'auditoria', action: 'can_edit' },
   criar_sala_telemedicina: { module: 'telemedicina', action: 'can_create' },
   detectar_alertas_bi: { module: 'bi', action: 'can_edit' },
   gerar_senha_triagem: { module: 'enfermagem', action: 'can_create' },
@@ -291,21 +371,18 @@ const RPC_PERMISSIONS = {
   m23_deliver_order_secure: { module: 'laboratorio', action: 'can_edit' },
 };
 
-async function authorizeRpc(profile, functionName) {
+async function authorizeRpc(profile, functionName, payload) {
   const required = RPC_PERMISSIONS[functionName];
   if (!required) return { ok: false, reason: `RPC '${functionName}' nao autorizada` };
   if (!profile || !profile.lg_ativo) return { ok: false, reason: 'usuario invalido/inativo' };
   if (required.scope === 'self') return { ok: true };
 
-  const role = (profile.role_name || '').toLowerCase();
-  if (role === 'admin') {
-    return { ok: true };
+  if (!await getActiveAccessContext(payload)) {
+    return { ok: false, reason: 'contexto de acesso inativo' };
   }
-
-  const permissions = await loadRolePerms(role);
-  const rule = permissions[required.module];
-  if (!rule?.[required.action]) {
-    return { ok: false, reason: `role '${role}' nao pode '${required.action}' em '${required.module}'` };
+  const action = permissionAction(required.action);
+  if (!(await canAccess(payload, required.module, action))) {
+    return { ok: false, reason: `contexto ativo nao pode '${action}' em '${required.module}'` };
   }
   return { ok: true };
 }
@@ -411,8 +488,8 @@ const server = createServer(async (req, res) => {
     if (!hPayload || !hPayload.sub) { res.writeHead(401); res.end(); return; }
     // valida nome de tabela (anti-injection) e permissÃ£o
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(table)) { res.writeHead(400); res.end(); return; }
-    const hProfile = await getUserProfile(hPayload.sub);
-    const hDecision = await authorize(hProfile, table, 'GET');
+    const hProfile = await getUserProfile(hPayload);
+    const hDecision = await authorize(hProfile, table, 'GET', hPayload);
     if (!hDecision.ok) { res.writeHead(403); res.end(); return; }
     try {
       const countResult = await queryAsAuthenticated(
@@ -443,7 +520,7 @@ const server = createServer(async (req, res) => {
           `UPDATE auth.refresh_tokens
               SET revoked = true, updated_at = now()
             WHERE token = $1 AND revoked = false
-          RETURNING user_id, session_id`,
+          RETURNING user_id, session_jti`,
           [tokenValue],
         );
         if (rt.rows.length === 0) {
@@ -451,10 +528,9 @@ const server = createServer(async (req, res) => {
           return json(res, { error: 'invalid refresh token', error_description: 'Token expired or revoked' }, 401);
         }
         const userRes = await client.query(
-          `SELECT u.*
-             FROM auth.users u
-             JOIN public.user_profiles p ON p.id = u.id
-            WHERE u.id = $1 AND p.lg_ativo IS TRUE`,
+          `SELECT *
+             FROM auth.users
+            WHERE id = $1`,
           [rt.rows[0].user_id],
         );
         if (userRes.rows.length === 0) {
@@ -463,11 +539,25 @@ const server = createServer(async (req, res) => {
         }
         const u = userRes.rows[0];
         const now = Math.floor(Date.now() / 1000);
-        const sessionId = rt.rows[0].session_id || randomUUID();
-        const accessToken = signJwt({ sub: u.id, email: u.email, role: 'authenticated', aud: 'authenticated', aal: 'aal2', session_id: sessionId, iat: now, exp: now + 3600, app_metadata: u.raw_app_meta_data, user_metadata: u.raw_user_meta_data });
+        const sessionId = rt.rows[0].session_jti || randomUUID();
+        const nextPayload = { sub: u.id, email: u.email, role: 'authenticated', aud: 'authenticated', aal: 'aal2', session_id: sessionId, iat: now, exp: now + 3600, app_metadata: u.raw_app_meta_data, user_metadata: u.raw_user_meta_data };
+        const profileResult = await queryAsAuthenticatedInTransaction(
+          client,
+          nextPayload,
+          `SELECT id, full_name, email, role_name, company_id, primary_unit_id, lg_ativo
+             FROM public.user_profiles
+            WHERE id = $1`,
+          [u.id],
+        );
+        const profile = profileResult.rows[0] || null;
+        if (!profile?.lg_ativo) {
+          await client.query('ROLLBACK');
+          return json(res, { error: 'invalid refresh token', error_description: 'User inactive or missing' }, 401);
+        }
+        const accessToken = signJwt(nextPayload);
         const newRefreshToken = randomUUID();
         await client.query(
-          'INSERT INTO auth.refresh_tokens (token, user_id, parent, session_id) VALUES ($1, $2, $3, $4)',
+          'INSERT INTO auth.refresh_tokens (token, user_id, parent, session_jti) VALUES ($1, $2, $3, $4)',
           [newRefreshToken, u.id, tokenValue, sessionId],
         );
         await client.query('COMMIT');
@@ -501,7 +591,8 @@ const server = createServer(async (req, res) => {
       loginAttempts.delete(attemptKey);
       const now = Math.floor(Date.now() / 1000);
       const sessionId = randomUUID();
-      const accessToken = signJwt({
+      const refreshToken = randomUUID();
+      const loginPayload = {
         sub: user.id,
         email: user.email,
         role: 'authenticated',
@@ -512,11 +603,16 @@ const server = createServer(async (req, res) => {
         exp: now + 3600,
         app_metadata: user.raw_app_meta_data,
         user_metadata: user.raw_user_meta_data,
-      });
-      const refreshToken = randomUUID();
+      };
+      const profile = await getUserProfile(loginPayload);
+      if (!profile?.lg_ativo) {
+        recordLoginFailure(attemptKey);
+        return json(res, { error: 'invalid_grant', error_description: 'Invalid login credentials' }, 400);
+      }
+      const accessToken = signJwt(loginPayload);
       // Save refresh token
       await pool.query(
-        `INSERT INTO auth.refresh_tokens (token, user_id, session_id) VALUES ($1, $2, $3)`,
+        `INSERT INTO auth.refresh_tokens (token, user_id, session_jti) VALUES ($1, $2, $3)`,
         [refreshToken, user.id, sessionId]
       );
       return json(res, {
@@ -542,17 +638,18 @@ const server = createServer(async (req, res) => {
       const auth = req.headers.authorization?.replace('Bearer ', '');
       const payload = verifyJwt(auth);
       if (!payload) return json(res, { error: 'unauthorized' }, 401);
+      const profile = await getUserProfile(payload);
+      if (!profile?.lg_ativo) return json(res, { error: 'user not found' }, 404);
       const userRes = await pool.query(
-        `SELECT u.*
-           FROM auth.users u
-           JOIN public.user_profiles p ON p.id = u.id
-          WHERE u.id = $1 AND p.lg_ativo IS TRUE`,
+        `SELECT *
+           FROM auth.users
+          WHERE id = $1`,
         [payload.sub],
       );
       if (userRes.rows.length === 0) return json(res, { error: 'user not found' }, 404);
       const u = userRes.rows[0];
       return json(res, {
-        id: u.id, aud: u.aud, role: u.role, email: u.email,
+        id: u.id, aud: 'authenticated', role: 'authenticated', email: u.email,
         email_confirmed_at: u.email_confirmed_at,
         app_metadata: u.raw_app_meta_data,
         user_metadata: u.raw_user_meta_data,
@@ -585,14 +682,14 @@ const server = createServer(async (req, res) => {
       const auth = req.headers.authorization?.replace('Bearer ', '');
       const payload = verifyJwt(auth);
       if (!payload || !payload.sub) return json(res, { error: 'unauthorized', message: 'JWT vÃ¡lido obrigatÃ³rio' }, 401);
-      const profile = await getUserProfile(payload.sub);
+      const profile = await getUserProfile(payload);
       if (!profile || !profile.lg_ativo) return json(res, { error: 'forbidden', message: 'usuÃ¡rio invÃ¡lido/inativo' }, 403);
       const fnName = decodeURIComponent(path.replace('/rest/v1/rpc/', '').split('?')[0]);
       const IDENT = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
       if (!IDENT.test(fnName)) {
         return json(res, { error: 'bad_request', message: `funÃ§Ã£o RPC invÃ¡lida: ${fnName}` }, 400);
       }
-      const rpcDecision = await authorizeRpc(profile, fnName);
+      const rpcDecision = await authorizeRpc(profile, fnName, payload);
       if (!rpcDecision.ok) {
         return json(res, { error: 'forbidden', message: rpcDecision.reason }, 403);
       }
@@ -643,32 +740,16 @@ const server = createServer(async (req, res) => {
       if (!payload || !payload.sub) return json(res, { error: 'unauthorized', message: 'JWT vÃ¡lido obrigatÃ³rio' }, 401);
 
       // Enforcement RBAC: role Ã— mÃ³dulo Ã— aÃ§Ã£o
-      const profile = await getUserProfile(payload.sub);
+      const profile = await getUserProfile(payload);
       const isSelfProfileRead =
         req.method === 'GET' &&
         table === 'user_profiles' &&
         url.searchParams.get('id') === `eq.${payload.sub}`;
-      const decision = isSelfProfileRead ? { ok: true } : await authorize(profile, table, req.method);
+      const decision = isSelfProfileRead ? { ok: true } : await authorize(profile, table, req.method, payload);
       if (!decision.ok) return json(res, { error: 'forbidden', message: decision.reason }, 403);
       if (req.method === 'GET') {
         // Parse select columns (strip embedded relations like "payment_source:payment_sources(name,type)")
-        const selectParam = url.searchParams.get('select');
-        let columns = '*';
-        if (selectParam && selectParam !== '*') {
-          // Remove embedded relations: alias:table(cols) e table(cols)
-          const withoutAliasEmbeds = selectParam.replace(/,?\s*\w+:\w+\([^)]*\)/g, '');
-          const withoutEmbeds = withoutAliasEmbeds.replace(/,?\s*\w+\([^)]*\)/g, '');
-          const rawCols = withoutEmbeds.split(',').map(c => c.trim()).filter(c => c.length > 0);
-          // SEGURANÃ‡A: cada coluna DEVE ser um identificador SQL simples (anti SQL-injection).
-          // Rejeita subqueries, parÃªnteses, espaÃ§os, aspas, operadores â€” bloqueia select=id,(SELECT ...).
-          for (const col of rawCols) {
-            if (!isIdentifier(col)) {
-              return json(res, { error: 'bad_request', message: `coluna invÃ¡lida no select: ${col}` }, 400);
-            }
-          }
-          const safe = rawCols.map(quoteIdent).join(', ');
-          columns = safe || '*';
-        }
+        const columns = parseSelectProjection(url.searchParams.get('select')) || '*';
 
         let query = `SELECT ${columns} FROM public."${table}"`;
         const conditions = [];
@@ -840,13 +921,15 @@ const server = createServer(async (req, res) => {
         const vals = Object.values(body);
         const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
         const columns = keys.map(quoteIdent).join(', ');
+        const returningProjection = parseSelectProjection(url.searchParams.get('select'));
+        const returningClause = returningProjection ? ` RETURNING ${returningProjection}` : '';
         try {
           const result = await queryAsAuthenticated(payload,
-            `INSERT INTO public."${table}" (${columns}) VALUES (${placeholders}) RETURNING *`,
+            `INSERT INTO public."${table}" (${columns}) VALUES (${placeholders})${returningClause}`,
             vals
           );
           const prefer = req.headers.prefer || '';
-          if (prefer.includes('return=representation')) {
+          if (prefer.includes('return=representation') && returningProjection) {
             return json(res, result.rows[0], 201);
           }
           return json(res, {}, 201);
@@ -870,12 +953,14 @@ const server = createServer(async (req, res) => {
         const idParam = url.searchParams.get('id');
         const id = idParam?.replace('eq.', '');
         if (!id) return json(res, { error: 'id required for PATCH' }, 400);
+        const returningProjection = parseSelectProjection(url.searchParams.get('select'));
+        const returningClause = returningProjection ? ` RETURNING ${returningProjection}` : '';
         try {
           const result = await queryAsAuthenticated(payload,
-            `UPDATE public."${table}" SET ${setClause} WHERE id = $${keys.length + 1} RETURNING *`,
+            `UPDATE public."${table}" SET ${setClause} WHERE id = $${keys.length + 1}${returningClause}`,
             [...vals, id]
           );
-          return json(res, result.rows[0] || {});
+          return json(res, returningProjection ? (result.rows[0] || {}) : {});
         } catch (e) {
           return json(res, { error: e.message, message: e.message }, 400);
         }

@@ -259,7 +259,7 @@ END;
 $$;
 
 SELECT pg_temp.assert_true(
-  public.log_data_access('user_profiles', 'self', 'SELECT', '{}'::jsonb) > 0,
+  public.log_data_access('user_profiles', 'self', 'VIEW_RECORD', '{}'::jsonb) > 0,
   'log_data_access must return the persisted audit id'
 );
 SELECT pg_temp.assert_true(

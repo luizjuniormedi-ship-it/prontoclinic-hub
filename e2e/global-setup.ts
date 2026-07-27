@@ -37,18 +37,54 @@ export default async function globalSetup(config: FullConfig) {
   }
 
   if (isLocalAuth) {
-    execFileSync(
-      'psql',
-      [
-        '-v',
-        'ON_ERROR_STOP=1',
-        '-v',
-        `e2e_password=${E2E_PASSWORD}`,
-        '-f',
-        resolve(process.cwd(), 'scripts/seed-e2e-users.sql'),
-      ],
-      { env: process.env, stdio: 'ignore' },
-    );
+    const requiredDatabaseEnv = ['PGHOST', 'PGPORT', 'PGDATABASE', 'PGUSER'] as const;
+    const missingDatabaseEnv = requiredDatabaseEnv.filter((name) => !process.env[name]);
+    if (missingDatabaseEnv.length > 0) {
+      throw new Error(
+        `[global-setup] Ambiente PostgreSQL local incompleto: ${missingDatabaseEnv.join(', ')}`
+      );
+    }
+    const databaseHost = process.env.PGHOST!.trim().toLowerCase();
+    const databaseName = process.env.PGDATABASE!.trim();
+    const localDatabaseHosts = new Set(['127.0.0.1', 'localhost', '::1']);
+    const disposableDatabaseName =
+      /(^|[_-])(e2e|test)([_-]|$)/i.test(databaseName) ||
+      /^migrations_(first|second)$/i.test(databaseName);
+    if (!localDatabaseHosts.has(databaseHost) || !disposableDatabaseName) {
+      throw new Error(
+        '[global-setup] Seed recusado: use apenas PostgreSQL local e banco descartável E2E/test.'
+      );
+    }
+
+    try {
+      execFileSync(
+        'psql',
+        [
+          '-X',
+          '-v',
+          'ON_ERROR_STOP=1',
+          '-f',
+          resolve(process.cwd(), 'scripts/seed-e2e-users.sql'),
+        ],
+        {
+          env: {
+            ...process.env,
+            E2E_PASSWORD,
+            PGCONNECT_TIMEOUT: process.env.PGCONNECT_TIMEOUT || '5',
+          },
+          stdio: ['ignore', 'pipe', 'pipe'],
+          timeout: 45_000,
+        },
+      );
+    } catch (error) {
+      const stderr = error instanceof Error && 'stderr' in error
+        ? String((error as Error & { stderr?: Buffer }).stderr || '')
+        : '';
+      const safeDetails = stderr.replaceAll(E2E_PASSWORD, '<redacted>').trim();
+      throw new Error(
+        `[global-setup] Falha restaurando fixtures locais.${safeDetails ? ` ${safeDetails}` : ''}`,
+      );
+    }
     console.log('[global-setup] Local auth OK — fixtures E2E restauradas no PostgreSQL.');
     return;
   }

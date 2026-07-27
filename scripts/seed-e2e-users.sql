@@ -1,13 +1,17 @@
 -- Seed local idempotente para Playwright/E2E.
 -- Nao usar em producao. Nao altera usuarios migrados do DataSIGH.
 -- Uso:
---   psql -v e2e_password='<senha temporaria>' -f scripts/seed-e2e-users.sql
+--   $env:E2E_PASSWORD='<senha temporaria>'
+--   psql -X -v ON_ERROR_STOP=1 -f scripts/seed-e2e-users.sql
 
+\getenv e2e_password E2E_PASSWORD
 \if :{?e2e_password}
 \else
-  \echo 'Variavel psql obrigatoria ausente: -v e2e_password=<senha temporaria>'
+  \echo 'Variavel de ambiente obrigatoria ausente: E2E_PASSWORD'
   \quit 1
 \endif
+
+BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
@@ -55,26 +59,18 @@ seed_users(id, email, full_name, role_name) AS (
 ),
 upsert_auth AS (
   INSERT INTO auth.users (
-    instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
-    raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
-    confirmation_token, email_change, email_change_token_new, recovery_token
+    id, email, encrypted_password, email_confirmed_at,
+    raw_app_meta_data, raw_user_meta_data, created_at, updated_at
   )
   SELECT
-    '00000000-0000-0000-0000-000000000000',
     su.id,
-    'authenticated',
-    'authenticated',
     su.email,
     crypt(:'e2e_password', gen_salt('bf')),
     now(),
     '{"provider":"email","providers":["email"],"e2e":true}'::jsonb,
     jsonb_build_object('full_name', su.full_name, 'role', su.role_name, 'e2e', true),
     now(),
-    now(),
-    '',
-    '',
-    '',
-    ''
+    now()
   FROM seed_users su
   ON CONFLICT (id) DO UPDATE SET
     email = EXCLUDED.email,
@@ -315,3 +311,5 @@ ON CONFLICT (id) DO UPDATE SET
   lg_confirmado = EXCLUDED.lg_confirmado,
   lg_checkin = EXCLUDED.lg_checkin,
   notes = EXCLUDED.notes;
+
+COMMIT;

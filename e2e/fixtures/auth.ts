@@ -29,6 +29,32 @@ export const test = base.extend<{
       await page.getByRole('textbox', { name: 'Senha' }).fill(creds.password);
       await page.getByRole('button', { name: /entrar/i }).click();
       await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
+
+      const contextRequired = page.getByRole('heading', {
+        name: /selecione seu contexto de acesso/i
+      });
+      const contextSelector = page.getByRole('button', {
+        name: /selecionar empresa, unidade e perfil/i
+      });
+      await expect(contextSelector).toBeEnabled({ timeout: 10000 });
+      const expectedRole = {
+        admin: /admin|administrador/i,
+        doctor: /medico|médico/i,
+        reception: /recepcao|recepção/i,
+        patient: /paciente/i,
+      }[role];
+      const expectedContext = /empresa e2e.*unidade e2e a/i;
+      if ((await contextSelector.textContent())?.includes('Selecionar contexto')) {
+        await contextSelector.click();
+        const option = page.getByRole('menuitem')
+          .filter({ hasText: expectedContext })
+          .filter({ hasText: expectedRole });
+        await expect(option).toHaveCount(1);
+        await option.click();
+        await expect(contextRequired).toHaveCount(0, { timeout: 10000 });
+      }
+      await expect(contextSelector).toContainText(expectedContext);
+      await expect(contextSelector).toContainText(expectedRole);
     });
   }
 });

@@ -53,6 +53,7 @@ describe("local auth server security invariants", () => {
       "list_application_devices",
       "revoke_application_device",
       "log_data_access",
+      "request_anonymize_patient",
       "criar_sala_telemedicina",
       "detectar_alertas_bi",
       "gerar_senha_triagem",
@@ -90,6 +91,8 @@ describe("local auth server security invariants", () => {
       "registrar_movimentacao_estoque",
       "set_access_context",
       "set_professional_schedule_grid_status_secure",
+      "update_reception_authorization_secure",
+      "update_reception_eligibility_secure",
       "upsert_professional_schedule_grid_secure",
     ];
 
@@ -110,7 +113,7 @@ describe("local auth server security invariants", () => {
     expect(source).toContain("UPDATE auth.refresh_tokens");
     expect(source).toContain("SET revoked = true");
     expect(source).toContain("RETURNING user_id");
-    expect(source).toContain("INSERT INTO auth.refresh_tokens (token, user_id, parent, session_id)");
+    expect(source).toContain("INSERT INTO auth.refresh_tokens (token, user_id, parent, session_jti)");
   });
 
   it("limita o corpo HTTP e revoga sessoes no logout", () => {
@@ -137,9 +140,26 @@ describe("local auth server security invariants", () => {
     expect(source).toContain("queryAsAuthenticated(payload, query, values)");
   });
 
-  it("nao concede bypass total a cargos administrativos secundarios", () => {
-    expect(source).toContain("if (role === 'admin') return { ok: true };");
-    expect(source).not.toContain("role === 'admin' || role === 'adm_medicos'");
-    expect(source).not.toContain("role === 'admin' || role === 'diretoria'");
+  it("autoriza pelo contexto ativo e sem bypass estatico de administrador", () => {
+    expect(source).toContain("getActiveAccessContext(payload)");
+    expect(source).toContain("public.can_access($1, $2)");
+    expect(source).not.toContain("if (role === 'admin') return { ok: true };");
+    expect(source).not.toContain("const permCache = new Map()");
+  });
+
+  it("permite leitura contextual dos catalogos compartilhados sem liberar escrita", () => {
+    expect(source).toContain("const SHARED_CATALOG_ACCESS");
+    expect(source).toContain("companies: { readModules: [], writeModule: 'admin' }");
+    expect(source).toContain(
+      "insurance_companies: { readModules: ['recepcao', 'faturamento'], writeModule: 'faturamento' }",
+    );
+    expect(source).toContain("sharedCatalog.readModules");
+    expect(source).toContain("sharedCatalog.writeModule");
+  });
+
+  it("reutiliza a conexao da transacao durante a rotacao de refresh", () => {
+    expect(source).toContain("queryAsAuthenticatedInTransaction(");
+    expect(source).toContain("connectionTimeoutMillis");
+    expect(source).not.toContain("const profile = await getUserProfile(nextPayload)");
   });
 });
