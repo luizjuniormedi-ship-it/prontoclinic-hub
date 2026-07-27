@@ -7,8 +7,9 @@ authed.describe.serial('Recepção — operação básica', () => {
   });
 
   authed('abre a recepção com indicadores e fila do dia', async ({ page }) => {
-    await expect(page.getByRole('heading', { name: /^recepção$/i })).toBeVisible();
-    await expect(page.getByText(/pacientes agendados hoje/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: /entrada do paciente/i })).toBeVisible();
+    await expect(page.getByText(/pacientes hoje/i)).toBeVisible();
+    await expect(page.getByText(/recepção carregada parcialmente/i)).toHaveCount(0);
     await expect(page.getByText(/aguardando chegada/i)).toBeVisible();
     await expect(page.getByText(/sala de espera/i)).toBeVisible();
     await expect(page.getByText('Em Atendimento', { exact: true })).toBeVisible();

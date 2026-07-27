@@ -29,6 +29,50 @@ vi.mock("@/lib/supabase", () => {
 
 import { supabase } from "@/lib/supabase";
 
+describe("insuranceService — projeção segura", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("não solicita credenciais de portal ao listar convênios", async () => {
+    const selectSpy = vi.fn().mockReturnThis();
+    const chain: any = {
+      select: selectSpy,
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+    };
+    (chain as any).then = (resolve: any) => resolve({ data: [], error: null });
+    (supabase.from as any).mockReturnValue(chain);
+
+    await insuranceCompanyService.getAll();
+
+    const projection = selectSpy.mock.calls[0]?.[0];
+    expect(projection).not.toBe("*");
+    expect(projection).not.toContain("login_prestador");
+    expect(projection).not.toContain("senha_prestador");
+    expect(projection).toContain("id");
+    expect(projection).toContain("name");
+  });
+
+  it("lista planos sem depender de relacionamento embutido da operadora", async () => {
+    const selectSpy = vi.fn().mockReturnThis();
+    const chain: any = {
+      select: selectSpy,
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+    };
+    (chain as any).then = (resolve: any) => resolve({ data: [], error: null });
+    (supabase.from as any).mockReturnValue(chain);
+
+    await insurancePlanService.getAll();
+
+    const projection = selectSpy.mock.calls[0]?.[0];
+    expect(projection).not.toBe("*");
+    expect(projection).not.toContain("insurance_companies");
+    expect(projection).toContain("insurance_company_id");
+  });
+});
+
 describe("insuranceService — search (LIKE injection safe)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -196,7 +240,7 @@ describe("insuranceService — getById (insuranceCompany)", () => {
     expect(result).toBeNull();
   });
 
-  it("retorna convênio + payment_source quando existe", async () => {
+  it("retorna o convênio operacional quando existe", async () => {
     const fakeRow = {
       id: 1,
       name: "SulAmérica",

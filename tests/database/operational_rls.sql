@@ -12,9 +12,36 @@ $$;
 
 SELECT pg_temp.assert_true(
   (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.professional_schedules'::regclass)
-  AND (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.insurance_authorizations'::regclass)
-  AND (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.insurance_eligibility_checks'::regclass),
+  AND (SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid = 'public.appointments'::regclass)
+  AND (SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid = 'public.insurance_authorizations'::regclass)
+  AND (SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid = 'public.insurance_authorization_events'::regclass)
+  AND (SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid = 'public.insurance_authorization_attachments'::regclass)
+  AND (SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid = 'public.insurance_eligibility_checks'::regclass)
+  AND (SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid = 'public.insurance_companies'::regclass)
+  AND (SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid = 'public.services_catalog'::regclass),
   'tabelas operacionais precisam de RLS'
+);
+SELECT pg_temp.assert_true(
+  has_column_privilege('authenticated', 'public.insurance_companies', 'id', 'SELECT')
+  AND has_column_privilege('authenticated', 'public.insurance_companies', 'name', 'SELECT')
+  AND NOT has_column_privilege('authenticated', 'public.insurance_companies', 'login_prestador', 'SELECT')
+  AND NOT has_column_privilege('authenticated', 'public.insurance_companies', 'senha_prestador', 'SELECT')
+  AND NOT has_table_privilege('authenticated', 'public.insurance_companies', 'SELECT')
+  AND NOT has_table_privilege('authenticated', 'public.insurance_companies', 'TRUNCATE')
+  AND NOT has_table_privilege('anon', 'public.insurance_companies', 'SELECT')
+  AND NOT has_column_privilege('prontomedic_tiss_rpc_owner', 'public.insurance_companies', 'login_prestador', 'SELECT')
+  AND NOT has_column_privilege('prontomedic_tiss_rpc_owner', 'public.insurance_companies', 'senha_prestador', 'SELECT')
+  AND has_column_privilege('prontomedic_tiss_rpc_owner', 'public.insurance_companies', 'name', 'SELECT'),
+  'catálogo de convênios deve expor somente colunas operacionais'
+);
+SELECT pg_temp.assert_true(
+  has_table_privilege('authenticated', 'public.services_catalog', 'SELECT')
+  AND NOT has_table_privilege('authenticated', 'public.services_catalog', 'INSERT')
+  AND NOT has_table_privilege('authenticated', 'public.services_catalog', 'UPDATE')
+  AND NOT has_table_privilege('authenticated', 'public.services_catalog', 'DELETE')
+  AND NOT has_table_privilege('authenticated', 'public.services_catalog', 'TRUNCATE')
+  AND NOT has_table_privilege('app_prontomedic', 'public.services_catalog', 'INSERT'),
+  'catálogo de serviços deve ser estritamente somente leitura'
 );
 SELECT pg_temp.assert_true(
   NOT has_function_privilege('anon', 'public.get_professional_available_slots(bigint,date,integer,integer)', 'EXECUTE'),
@@ -45,9 +72,9 @@ SELECT pg_temp.assert_true(
 );
 SELECT pg_temp.assert_true(
   NOT has_function_privilege('anon', 'public.get_reception_checkin_readiness(bigint)', 'EXECUTE')
-  AND NOT has_function_privilege('anon', 'public.perform_reception_checkin_secure(bigint,text,text)', 'EXECUTE')
+  AND NOT has_function_privilege('anon', 'public.perform_reception_checkin_secure(uuid,bigint,text,text)', 'EXECUTE')
   AND has_function_privilege('authenticated', 'public.get_reception_checkin_readiness(bigint)', 'EXECUTE')
-  AND has_function_privilege('authenticated', 'public.perform_reception_checkin_secure(bigint,text,text)', 'EXECUTE'),
+  AND has_function_privilege('authenticated', 'public.perform_reception_checkin_secure(uuid,bigint,text,text)', 'EXECUTE'),
   'RPCs de check-in devem ser exclusivas de authenticated'
 );
 SELECT pg_temp.assert_true(
@@ -65,6 +92,11 @@ SELECT pg_temp.assert_true(
     'EXECUTE'
   ),
   'writers de convênio não podem ser executáveis por PUBLIC/anon'
+);
+SELECT pg_temp.assert_true(
+  NOT has_function_privilege('authenticated', 'public.update_reception_authorization_secure(uuid,text,text,text,text,date,integer,text)', 'EXECUTE')
+  AND NOT has_function_privilege('authenticated', 'public.update_reception_eligibility_secure(uuid,text,text,text)', 'EXECUTE'),
+  'RPCs legadas de recepção precisam permanecer revogadas'
 );
 SELECT pg_temp.assert_true(
   NOT has_function_privilege(
@@ -180,15 +212,18 @@ INSERT INTO public.professionals (id, company_id, full_name, lg_ativo) VALUES
   (840011, '84000000-0000-0000-0000-000000000002', 'Profissional B', TRUE);
 INSERT INTO public.insurance_companies (
   id, company_id, name, lg_ativo, lg_matric_obrigatorio,
-  lg_autorizac_obrigatorio, lg_val_matricula
+  lg_autorizac_obrigatorio, lg_val_matricula, login_prestador, senha_prestador
 ) VALUES
-  (840030, '84000000-0000-0000-0000-000000000001', 'Convênio A', TRUE, TRUE, TRUE, TRUE),
-  (840031, '84000000-0000-0000-0000-000000000002', 'Convênio B', TRUE, TRUE, TRUE, TRUE);
+  (840030, '84000000-0000-0000-0000-000000000001', 'Convênio A', TRUE, TRUE, TRUE, TRUE, 'portal-a', 'segredo-a'),
+  (840031, '84000000-0000-0000-0000-000000000002', 'Convênio B', TRUE, TRUE, TRUE, TRUE, 'portal-b', 'segredo-b');
 INSERT INTO public.insurance_plans (
   id, company_id, insurance_company_id, name, lg_ativo
 ) VALUES
   (840040, '84000000-0000-0000-0000-000000000001', 840030, 'Plano A', TRUE),
   (840041, '84000000-0000-0000-0000-000000000002', 840031, 'Plano B', TRUE);
+INSERT INTO public.services_catalog (id, company_id, code, name, lg_ativo) VALUES
+  (840060, '84000000-0000-0000-0000-000000000001', 'SRV-A', 'Serviço A', TRUE),
+  (840061, '84000000-0000-0000-0000-000000000002', 'SRV-B', 'Serviço B', TRUE);
 DO $$
 BEGIN
   BEGIN
@@ -233,10 +268,27 @@ INSERT INTO public.insurance_authorizations (id, company_id, unit_id, patient_id
   ('84000000-0000-0000-0000-000000000031', '84000000-0000-0000-0000-000000000001', 840001, 840020, 'pendente'),
   ('84000000-0000-0000-0000-000000000032', '84000000-0000-0000-0000-000000000001', 840002, 840021, 'pendente'),
   ('84000000-0000-0000-0000-000000000033', '84000000-0000-0000-0000-000000000002', 840003, 840022, 'pendente');
+INSERT INTO public.insurance_authorization_attachments (
+  id, company_id, authorization_id, storage_path, file_name
+) VALUES
+  ('84000000-0000-0000-0000-000000000034', '84000000-0000-0000-0000-000000000001',
+   '84000000-0000-0000-0000-000000000031', 'authorizations/a1.pdf', 'a1.pdf'),
+  ('84000000-0000-0000-0000-000000000035', '84000000-0000-0000-0000-000000000001',
+   '84000000-0000-0000-0000-000000000032', 'authorizations/a2.pdf', 'a2.pdf'),
+  ('84000000-0000-0000-0000-000000000036', '84000000-0000-0000-0000-000000000002',
+   '84000000-0000-0000-0000-000000000033', 'authorizations/b1.pdf', 'b1.pdf');
+
+-- O trigger de eventos roda como owner restrito e a policy FORCE RLS exige o
+-- tenant explícito. A fixture deve exercitar esse contrato, não contorná-lo.
+SET LOCAL request.jwt.claim.company_id = '84000000-0000-0000-0000-000000000001';
 INSERT INTO public.insurance_eligibility_checks (id, company_id, unit_id, patient_id, status) VALUES
   ('84000000-0000-0000-0000-000000000041', '84000000-0000-0000-0000-000000000001', 840001, 840020, 'pendente'),
-  ('84000000-0000-0000-0000-000000000042', '84000000-0000-0000-0000-000000000001', 840002, 840021, 'pendente'),
+  ('84000000-0000-0000-0000-000000000042', '84000000-0000-0000-0000-000000000001', 840002, 840021, 'pendente');
+
+SET LOCAL request.jwt.claim.company_id = '84000000-0000-0000-0000-000000000002';
+INSERT INTO public.insurance_eligibility_checks (id, company_id, unit_id, patient_id, status) VALUES
   ('84000000-0000-0000-0000-000000000043', '84000000-0000-0000-0000-000000000002', 840003, 840022, 'pendente');
+RESET request.jwt.claim.company_id;
 
 INSERT INTO public.appointments (
   id, company_id, unit_id, patient_id, professional_id,
@@ -282,10 +334,47 @@ SELECT pg_temp.assert_true(
   (SELECT array_agg(id ORDER BY id) FROM public.insurance_plans) = ARRAY[840040],
   'planos devem ser filtrados pela empresa do contexto ativo'
 );
+SELECT pg_temp.assert_true(
+  (SELECT array_agg(id ORDER BY id) FROM public.insurance_companies) = ARRAY[840030],
+  'convênios devem ser filtrados pela empresa do contexto ativo'
+);
+SELECT pg_temp.assert_true(
+  (SELECT array_agg(id ORDER BY id) FROM public.services_catalog) = ARRAY[840060::BIGINT],
+  'serviços devem ser filtrados pela empresa do contexto ativo'
+);
+DO $$
+BEGIN
+  BEGIN
+    PERFORM login_prestador, senha_prestador
+    FROM public.insurance_companies
+    LIMIT 1;
+    RAISE EXCEPTION 'credenciais de portal ficaram visíveis ao navegador';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+END;
+$$;
 
 SELECT pg_temp.assert_true((SELECT count(*) FROM public.professional_schedules) = 1, 'escala deve filtrar unidade ativa');
 SELECT pg_temp.assert_true((SELECT count(*) FROM public.insurance_authorizations) = 1, 'autorizações devem filtrar unidade ativa');
+SELECT pg_temp.assert_true(
+  (SELECT array_agg(DISTINCT authorization_id ORDER BY authorization_id)
+   FROM public.insurance_authorization_events)
+    = ARRAY['84000000-0000-0000-0000-000000000031'::UUID],
+  'eventos de autorização devem filtrar a unidade ativa'
+);
+SELECT pg_temp.assert_true(
+  (SELECT array_agg(authorization_id ORDER BY authorization_id)
+   FROM public.insurance_authorization_attachments)
+    = ARRAY['84000000-0000-0000-0000-000000000031'::UUID],
+  'anexos de autorização devem filtrar a unidade ativa'
+);
 SELECT pg_temp.assert_true((SELECT count(*) FROM public.insurance_eligibility_checks) = 1, 'elegibilidades devem filtrar unidade ativa');
+SELECT pg_temp.assert_true(
+  (SELECT array_agg(eligibility_check_id ORDER BY eligibility_check_id)
+   FROM public.insurance_eligibility_events)
+    = ARRAY['84000000-0000-0000-0000-000000000041'::UUID],
+  'eventos de elegibilidade devem filtrar a unidade ativa'
+);
 SELECT pg_temp.assert_true(
   (SELECT count(*) FROM public.get_professional_available_slots(840010, DATE '2026-07-18', 30, NULL)) = 2,
   'RPC deve retornar somente slots da unidade ativa'
@@ -295,11 +384,13 @@ SELECT pg_temp.assert_true(
   'RPC não pode vazar profissional de outra empresa'
 );
 
-SELECT public.update_reception_authorization_secure(
-  '84000000-0000-0000-0000-000000000031', 'solicitada', 'PROTO-A1', NULL, NULL, NULL, NULL, NULL
+SELECT public.transition_insurance_authorization_secure(
+  '84000000-0000-0000-0000-000000000031', 'solicitada', 'PROTO-A1',
+  NULL, NULL, NULL, NULL, NULL, NULL
 );
-SELECT public.update_reception_eligibility_secure(
-  '84000000-0000-0000-0000-000000000041', 'em_analise', 'ELIG-A1', NULL
+SELECT public.update_insurance_eligibility_check_secure(
+  '84000000-0000-0000-0000-000000000041', 'em_analise', NULL, 'ELIG-A1',
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 );
 SELECT pg_temp.assert_true(
   (SELECT protocol_number = 'PROTO-A1' FROM public.insurance_authorizations WHERE id = '84000000-0000-0000-0000-000000000031')
@@ -380,15 +471,17 @@ $$;
 DO $$
 BEGIN
   BEGIN
-    PERFORM public.update_reception_authorization_secure(
-      '84000000-0000-0000-0000-000000000032', 'solicitada', 'VAZAMENTO', NULL, NULL, NULL, NULL, NULL
+    PERFORM public.transition_insurance_authorization_secure(
+      '84000000-0000-0000-0000-000000000032', 'solicitada', 'VAZAMENTO',
+      NULL, NULL, NULL, NULL, NULL, NULL
     );
     RAISE EXCEPTION 'writer de autorização aceitou outra unidade';
   EXCEPTION WHEN insufficient_privilege OR no_data_found THEN NULL;
   END;
   BEGIN
-    PERFORM public.update_reception_eligibility_secure(
-      '84000000-0000-0000-0000-000000000042', 'em_analise', 'VAZAMENTO', NULL
+    PERFORM public.update_insurance_eligibility_check_secure(
+      '84000000-0000-0000-0000-000000000042', 'em_analise', NULL, 'VAZAMENTO',
+      NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
     );
     RAISE EXCEPTION 'writer de elegibilidade aceitou outra unidade';
   EXCEPTION WHEN insufficient_privilege OR no_data_found THEN NULL;
@@ -418,8 +511,9 @@ SELECT pg_temp.assert_true(
 DO $$
 BEGIN
   BEGIN
-    PERFORM public.update_reception_authorization_secure(
-      '84000000-0000-0000-0000-000000000031', 'solicitada', 'AAL1', NULL, NULL, NULL, NULL, NULL
+    PERFORM public.transition_insurance_authorization_secure(
+      '84000000-0000-0000-0000-000000000031', 'solicitada', 'AAL1',
+      NULL, NULL, NULL, NULL, NULL, NULL
     );
     RAISE EXCEPTION 'writer de autorização aceitou AAL1';
   EXCEPTION WHEN insufficient_privilege OR no_data_found THEN NULL;
