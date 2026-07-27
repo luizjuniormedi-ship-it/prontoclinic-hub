@@ -192,4 +192,46 @@ REVOKE ALL ON FUNCTION public.org_can_access_unit(UUID, INTEGER)
 GRANT EXECUTE ON FUNCTION public.org_can_access_unit(UUID, INTEGER)
   TO authenticated, app_prontomedic, prontomedic_reception_rpc_owner;
 
+-- The insurance scope trigger must not require direct SELECT on units from the
+-- authenticated role. Route unit validation through the restricted
+-- organizational wrapper while retaining invoker rights for permission checks.
+CREATE OR REPLACE FUNCTION public.enforce_insurance_record_scope()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp
+AS $function$
+DECLARE
+  v_action TEXT := CASE TG_OP WHEN 'INSERT' THEN 'create' ELSE 'edit' END;
+BEGIN
+  IF NEW.company_id IS NULL
+     OR NEW.unit_id IS NULL
+     OR NOT public.org_can_access_unit(NEW.company_id, NEW.unit_id) THEN
+    RAISE EXCEPTION
+      'Empresa e unidade do registro de convenio sao invalidas ou inacessiveis'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF auth.uid() IS NOT NULL AND (
+    NEW.company_id IS DISTINCT FROM public.active_company_id()
+    OR NEW.unit_id IS DISTINCT FROM public.active_unit_id()
+    OR NOT (
+      public.can_access('recepcao', v_action)
+      OR public.can_access('faturamento', v_action)
+      OR (TG_OP = 'INSERT' AND public.can_access('agenda', 'create'))
+    )
+  ) THEN
+    RAISE EXCEPTION
+      'Registro de convenio fora do contexto ativo ou sem permissao'
+      USING ERRCODE = '42501';
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.enforce_insurance_record_scope()
+  FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.enforce_insurance_record_scope()
+  TO authenticated, app_prontomedic;
+
 COMMIT;

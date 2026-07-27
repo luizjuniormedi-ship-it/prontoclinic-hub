@@ -192,6 +192,17 @@ SELECT pg_temp.assert_true(
      AND tgname = 'trg_insurance_eligibility_scope'),
   'triggers de escopo precisam cobrir qualquer UPDATE'
 );
+SELECT pg_temp.assert_true(
+  (
+    SELECT prosecdef = FALSE
+       AND pg_get_functiondef(p.oid)
+             LIKE '%public.org_can_access_unit(NEW.company_id, NEW.unit_id)%'
+       AND pg_get_functiondef(p.oid) NOT LIKE '%FROM public.units%'
+    FROM pg_proc p
+    WHERE p.oid = 'public.enforce_insurance_record_scope()'::regprocedure
+  ),
+  'trigger de convenio deve validar unidade pelo wrapper restrito'
+);
 
 INSERT INTO public.companies (id, name, lg_ativo) VALUES
   ('84000000-0000-0000-0000-000000000001', 'Operacional A', TRUE),
