@@ -22,6 +22,27 @@ SELECT pg_temp.assert_true(
   'tabelas operacionais precisam de RLS'
 );
 SELECT pg_temp.assert_true(
+  EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'insurance_eligibility_checks'
+      AND policyname = 'insurance_eligibility_reception_owner_select'
+      AND cmd = 'SELECT'
+      AND roles = ARRAY['prontomedic_reception_rpc_owner']::NAME[]
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'insurance_eligibility_checks'
+      AND policyname = 'insurance_eligibility_reception_owner_update'
+      AND cmd = 'UPDATE'
+      AND roles = ARRAY['prontomedic_reception_rpc_owner']::NAME[]
+  ),
+  'RPC de elegibilidade precisa de policies exclusivas para o owner restrito'
+);
+SELECT pg_temp.assert_true(
   has_column_privilege('authenticated', 'public.insurance_companies', 'id', 'SELECT')
   AND has_column_privilege('authenticated', 'public.insurance_companies', 'name', 'SELECT')
   AND NOT has_column_privilege('authenticated', 'public.insurance_companies', 'login_prestador', 'SELECT')

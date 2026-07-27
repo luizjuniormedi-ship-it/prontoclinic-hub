@@ -229,6 +229,42 @@ REVOKE ALL ON FUNCTION public.org_can_access_unit(UUID, INTEGER)
 GRANT EXECUTE ON FUNCTION public.org_can_access_unit(UUID, INTEGER)
   TO authenticated, app_prontomedic, prontomedic_reception_rpc_owner;
 
+-- Eligibility writers run as a restricted NOLOGIN/NOBYPASSRLS owner. Since
+-- the table uses FORCE RLS, that owner needs explicit policies for the secure
+-- RPC to lock and update only the row selected by the persisted tenant/unit
+-- context. Authenticated callers do not inherit these policies.
+DROP POLICY IF EXISTS insurance_eligibility_reception_owner_select
+  ON public.insurance_eligibility_checks;
+CREATE POLICY insurance_eligibility_reception_owner_select
+  ON public.insurance_eligibility_checks
+  FOR SELECT
+  TO prontomedic_reception_rpc_owner
+  USING (
+    company_id = public.active_company_id()
+    AND unit_id = public.active_unit_id()
+    AND public.org_can_access_unit(company_id, unit_id)
+    AND public.m14_can_operate_eligibility(unit_id)
+  );
+
+DROP POLICY IF EXISTS insurance_eligibility_reception_owner_update
+  ON public.insurance_eligibility_checks;
+CREATE POLICY insurance_eligibility_reception_owner_update
+  ON public.insurance_eligibility_checks
+  FOR UPDATE
+  TO prontomedic_reception_rpc_owner
+  USING (
+    company_id = public.active_company_id()
+    AND unit_id = public.active_unit_id()
+    AND public.org_can_access_unit(company_id, unit_id)
+    AND public.m14_can_operate_eligibility(unit_id)
+  )
+  WITH CHECK (
+    company_id = public.active_company_id()
+    AND unit_id = public.active_unit_id()
+    AND public.org_can_access_unit(company_id, unit_id)
+    AND public.m14_can_operate_eligibility(unit_id)
+  );
+
 -- The insurance scope trigger must not require direct SELECT on units from the
 -- authenticated role. Route unit validation through the restricted
 -- organizational wrapper while retaining invoker rights for permission checks.
