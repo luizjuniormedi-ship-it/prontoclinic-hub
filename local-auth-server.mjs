@@ -12,6 +12,7 @@
 import { createServer } from 'http';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import pg from 'pg';
+import { parseSelectProjection } from './local-auth-projection.mjs';
 const { Pool } = pg;
 
 const LOCAL_AUTH_MODE = process.env.LOCAL_AUTH_MODE;
@@ -189,23 +190,6 @@ const METHOD_TO_ACTION = { GET: 'view', HEAD: 'view', POST: 'create', PATCH: 'ed
 const IDENT = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 const isIdentifier = (value) => IDENT.test(value);
 const quoteIdent = (value) => `"${value}"`;
-
-function parseSelectProjection(selectParam) {
-  if (!selectParam) return null;
-  if (selectParam === '*') return '*';
-  const withoutAliasEmbeds = selectParam.replace(/,?\s*\w+:\w+\([^)]*\)/g, '');
-  const withoutEmbeds = withoutAliasEmbeds.replace(/,?\s*\w+\([^)]*\)/g, '');
-  const rawColumns = withoutEmbeds.split(',').map((column) => column.trim()).filter(Boolean);
-  for (const column of rawColumns) {
-    if (!isIdentifier(column)) {
-      const error = new Error(`coluna invalida no select: ${column}`);
-      error.statusCode = 400;
-      throw error;
-    }
-  }
-  return rawColumns.length > 0 ? rawColumns.map(quoteIdent).join(', ') : null;
-}
-
 
 async function getActiveAccessContext(payload) {
   const result = await queryAsAuthenticated(
