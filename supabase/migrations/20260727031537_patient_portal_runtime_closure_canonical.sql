@@ -45,32 +45,6 @@ ALTER TABLE public.patients
 ALTER TABLE public.appointments
   ADD COLUMN IF NOT EXISTS duration_minutes INTEGER;
 
-ALTER TABLE public.appointments
-  ADD COLUMN IF NOT EXISTS lg_confirmado BOOLEAN NOT NULL DEFAULT FALSE;
-
-ALTER TABLE public.appointments
-  ALTER COLUMN lg_confirmado SET DEFAULT FALSE;
-
-UPDATE public.appointments appointment
-   SET lg_confirmado = CASE
-     WHEN lower(COALESCE(appointment.status, '')) IN (
-       'confirmed',
-       'confirmado'
-     ) THEN TRUE
-     ELSE FALSE
-   END
- WHERE appointment.lg_confirmado IS NULL
-    OR (
-      appointment.lg_confirmado IS FALSE
-      AND lower(COALESCE(appointment.status, '')) IN (
-        'confirmed',
-        'confirmado'
-      )
-    );
-
-ALTER TABLE public.appointments
-  ALTER COLUMN lg_confirmado SET NOT NULL;
-
 DO $column_preflight$
 BEGIN
   IF EXISTS (
@@ -640,10 +614,11 @@ BEGIN
     TRUE
   );
 
+  -- status is canonical; the production baseline does not require the legacy
+  -- lg_confirmado mirror used by older scheduling schemas.
   IF p_operation = 'confirm' THEN
     UPDATE public.appointments appointment
        SET status = 'confirmed',
-           lg_confirmado = TRUE,
            updated_at = clock_timestamp()
      WHERE appointment.id = p_appointment_id
        AND appointment.company_id = p_company_id
@@ -652,7 +627,6 @@ BEGIN
   ELSIF p_operation = 'cancel' THEN
     UPDATE public.appointments appointment
        SET status = 'cancelled',
-           lg_confirmado = FALSE,
            updated_at = clock_timestamp()
      WHERE appointment.id = p_appointment_id
        AND appointment.company_id = p_company_id
@@ -665,7 +639,6 @@ BEGIN
            end_time = p_new_end_time,
            duration_minutes = p_duration_minutes,
            status = 'scheduled',
-           lg_confirmado = FALSE,
            updated_at = clock_timestamp()
      WHERE appointment.id = p_appointment_id
        AND appointment.company_id = p_company_id
