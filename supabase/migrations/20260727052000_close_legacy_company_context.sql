@@ -250,4 +250,38 @@ REVOKE ALL ON FUNCTION public.enforce_insurance_record_scope()
 GRANT EXECUTE ON FUNCTION public.enforce_insurance_record_scope()
   TO authenticated, app_prontomedic;
 
+-- Attachment writes are exposed only through the secure Module 15 RPC. The
+-- trigger validates the parent authorization against the persisted active
+-- context without nesting the organizational SECURITY DEFINER wrapper.
+CREATE OR REPLACE FUNCTION public.insurance_attachment_scope_guard()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+  v_company_id UUID := public.active_company_id();
+  v_unit_id INTEGER := public.active_unit_id();
+BEGIN
+  IF v_company_id IS NULL
+     OR v_unit_id IS NULL
+     OR NOT EXISTS (
+       SELECT 1
+       FROM public.insurance_authorizations AS authorization_record
+       WHERE authorization_record.id = NEW.authorization_id
+         AND authorization_record.company_id = v_company_id
+         AND authorization_record.unit_id = v_unit_id
+     ) THEN
+    RAISE EXCEPTION
+      'Authorization attachment is outside the active tenant/unit'
+      USING ERRCODE = '42501';
+  END IF;
+
+  NEW.company_id := v_company_id;
+  RETURN NEW;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.insurance_attachment_scope_guard()
+  FROM PUBLIC, anon, authenticated, app_prontomedic;
+
 COMMIT;

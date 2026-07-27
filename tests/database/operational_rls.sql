@@ -204,6 +204,21 @@ SELECT pg_temp.assert_true(
   ),
   'trigger de convenio deve validar unidade pelo wrapper restrito'
 );
+SELECT pg_temp.assert_true(
+  (
+    SELECT prosecdef = FALSE
+       AND pg_get_functiondef(p.oid) LIKE '%public.active_company_id()%'
+       AND pg_get_functiondef(p.oid) LIKE '%public.active_unit_id()%'
+       AND NOT has_function_privilege(
+         'authenticated',
+         p.oid,
+         'EXECUTE'
+       )
+    FROM pg_proc p
+    WHERE p.oid = 'public.insurance_attachment_scope_guard()'::regprocedure
+  ),
+  'trigger de anexo deve usar contexto ativo sem exposicao direta'
+);
 
 INSERT INTO public.companies (id, name, lg_ativo) VALUES
   ('84000000-0000-0000-0000-000000000001', 'Operacional A', TRUE),
