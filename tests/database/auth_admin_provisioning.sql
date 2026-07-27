@@ -174,20 +174,30 @@ BEGIN
      OR public.current_context_is_company_admin(v_other_company) IS DISTINCT FROM FALSE THEN
     RAISE EXCEPTION 'ASSERTION_FAILED: autorização administrativa não respeita o contexto da sessão';
   END IF;
-  IF public.current_company_id() IS DISTINCT FROM v_company
-     OR public.is_admin(v_user) IS DISTINCT FROM TRUE
-     OR public.is_staff(v_user) IS DISTINCT FROM TRUE THEN
-    RAISE EXCEPTION 'ASSERTION_FAILED: helpers administrativos ignoraram o contexto ativo';
+  IF public.current_company_id() IS DISTINCT FROM v_company THEN
+    RAISE EXCEPTION 'ASSERTION_FAILED: current_company_id ignorou o contexto ativo';
+  END IF;
+  IF public.is_admin(v_user) IS DISTINCT FROM TRUE THEN
+    RAISE EXCEPTION 'ASSERTION_FAILED: is_admin ignorou o papel administrativo ativo';
+  END IF;
+  IF public.is_staff(v_user) IS DISTINCT FROM TRUE THEN
+    RAISE EXCEPTION 'ASSERTION_FAILED: is_staff ignorou o contexto ativo';
   END IF;
   UPDATE public.application_sessions
   SET idle_expires_at = created_at
   WHERE user_id = v_user
     AND gotrue_session_id = '83000000-0000-0000-0000-000000000099';
-  IF public.current_context_is_company_admin(v_company) IS DISTINCT FROM FALSE
-     OR public.current_company_id() IS NOT NULL
-     OR public.is_admin(v_user) IS DISTINCT FROM FALSE
-     OR public.is_staff(v_user) IS DISTINCT FROM FALSE THEN
-    RAISE EXCEPTION 'ASSERTION_FAILED: sessão expirada autorizou helpers de compatibilidade';
+  IF public.current_context_is_company_admin(v_company) IS DISTINCT FROM FALSE THEN
+    RAISE EXCEPTION 'ASSERTION_FAILED: sessão expirada autorizou admin contextual';
+  END IF;
+  IF public.current_company_id() IS NOT NULL THEN
+    RAISE EXCEPTION 'ASSERTION_FAILED: sessão expirada expôs empresa ativa';
+  END IF;
+  IF public.is_admin(v_user) IS DISTINCT FROM FALSE THEN
+    RAISE EXCEPTION 'ASSERTION_FAILED: sessão expirada autorizou is_admin';
+  END IF;
+  IF public.is_staff(v_user) IS DISTINCT FROM FALSE THEN
+    RAISE EXCEPTION 'ASSERTION_FAILED: sessão expirada autorizou is_staff';
   END IF;
   UPDATE public.application_sessions
   SET idle_expires_at = NOW() + INTERVAL '30 minutes'

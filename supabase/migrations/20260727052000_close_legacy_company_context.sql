@@ -28,6 +28,43 @@ $function$;
 COMMENT ON FUNCTION public.current_company_id() IS
   'Returns the company from the active application session; fails closed for missing, expired, revoked or ambiguous contexts.';
 
+CREATE OR REPLACE FUNCTION public.is_admin(p_user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+SET row_security = off
+AS $function$
+  SELECT COALESCE(
+    p_user_id = auth.uid()
+    AND public.current_application_session_is_active()
+    AND public.current_context_is_company_admin(public.active_company_id()),
+    FALSE
+  );
+$function$;
+
+CREATE OR REPLACE FUNCTION public.is_staff(p_user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+SET row_security = off
+AS $function$
+  SELECT COALESCE(
+    p_user_id = auth.uid()
+    AND public.current_application_session_is_active()
+    AND public.active_company_id() IS NOT NULL,
+    FALSE
+  );
+$function$;
+
+COMMENT ON FUNCTION public.is_admin(UUID) IS
+  'Validates the administrative role selected in the active AAL2 application context.';
+COMMENT ON FUNCTION public.is_staff(UUID) IS
+  'Validates identity and an active application context before granting staff compatibility.';
+
 -- The local gateway executes client queries with SET LOCAL ROLE authenticated.
 -- NOINHERIT keeps the application connection privileged only after that
 -- explicit role switch.
@@ -52,6 +89,13 @@ ALTER FUNCTION public.request_company_id() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.current_company_id() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.current_company_id()
   TO authenticated, app_prontomedic, prontomedic_reception_rpc_owner;
+
+REVOKE ALL ON FUNCTION public.is_admin(UUID) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.is_staff(UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.is_admin(UUID)
+  TO authenticated, app_prontomedic;
+GRANT EXECUTE ON FUNCTION public.is_staff(UUID)
+  TO authenticated, app_prontomedic;
 
 REVOKE ALL ON FUNCTION public.request_company_id() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.request_company_id()
