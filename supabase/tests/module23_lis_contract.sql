@@ -392,6 +392,16 @@ BEGIN
          'm23_record_qc_run_secure'
        )
   ) THEN
+    IF NOT EXISTS (
+      SELECT 1
+        FROM public.prontomedic_deployment_migrations
+       WHERE filename =
+         '20260724160543_module23_laboratory_lis_hardening.sql'
+    ) THEN
+      RAISE EXCEPTION
+        'Equipment/QC runtime lacks its canonical migration ledger';
+    END IF;
+
     IF to_regprocedure(
          'public.m23_upsert_equipment_secure(uuid,integer,jsonb)'
        ) IS NULL
@@ -469,6 +479,47 @@ BEGIN
         RAISE EXCEPTION 'Unsafe equipment/QC private function: %', v_function;
       END IF;
     END LOOP;
+
+    SELECT pg_get_functiondef(
+      'public.m23_upsert_equipment_secure(uuid,integer,jsonb)'::REGPROCEDURE
+    )
+      INTO v_definition;
+    IF v_definition NOT LIKE
+         '%m23_private.upsert_equipment(p_equipment_id, p_unit_id, p_payload)%'
+       OR v_definition LIKE '%SECURITY DEFINER%' THEN
+      RAISE EXCEPTION 'Unexpected public equipment wrapper implementation';
+    END IF;
+
+    SELECT pg_get_functiondef(
+      'public.m23_record_qc_run_secure(uuid,text,text,text,numeric,numeric,numeric,numeric,text)'::REGPROCEDURE
+    )
+      INTO v_definition;
+    IF v_definition NOT LIKE '%m23_private.record_qc_run(%'
+       OR v_definition LIKE '%SECURITY DEFINER%' THEN
+      RAISE EXCEPTION 'Unexpected public QC wrapper implementation';
+    END IF;
+
+    SELECT pg_get_functiondef(
+      'm23_private.upsert_equipment(uuid,integer,jsonb)'::REGPROCEDURE
+    )
+      INTO v_definition;
+    IF v_definition NOT LIKE '%INSERT INTO public.lab_equipment%'
+       OR v_definition NOT LIKE '%UPDATE public.lab_equipment%'
+       OR v_definition NOT LIKE '%private.org_can_access_unit_runtime%'
+       OR v_definition NOT LIKE '%m23_private.can(''edit''%' THEN
+      RAISE EXCEPTION 'Unexpected private equipment implementation';
+    END IF;
+
+    SELECT pg_get_functiondef(
+      'm23_private.record_qc_run(uuid,text,text,text,numeric,numeric,numeric,numeric,text)'::REGPROCEDURE
+    )
+      INTO v_definition;
+    IF v_definition NOT LIKE '%INSERT INTO public.lab_quality_control_runs%'
+       OR v_definition NOT LIKE '%private.org_can_access_unit_runtime%'
+       OR v_definition NOT LIKE '%m23_private.can(''create''%'
+       OR v_definition NOT LIKE '%OUT_OF_CONTROL%' THEN
+      RAISE EXCEPTION 'Unexpected private QC implementation';
+    END IF;
   END IF;
 END;
 $contract$;
