@@ -224,6 +224,10 @@ describe("lgpdService — requestEsquecimento", () => {
     );
     expect(result.solicitacao.tipo).toBe("ESQUECIMENTO");
     expect(result.anonimizacao).toBeDefined();
+    expect(supabase.rpc).toHaveBeenCalledWith("request_anonymize_patient", {
+      p_paciente_id: 1,
+      p_motivo: "EXERCICIO_DIREITO_ESQUECIMENTO",
+    });
   });
 
   it("rejeita motivo inválido", async () => {
