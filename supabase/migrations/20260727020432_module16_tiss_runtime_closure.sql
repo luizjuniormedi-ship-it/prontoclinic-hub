@@ -738,7 +738,7 @@ SET search_path = pg_catalog, public
 AS $function$
 DECLARE
   v_active_company UUID := public.active_company_id();
-  v_claim_company UUID := public.request_company_id();
+  v_claim_company UUID;
   v_claim_role TEXT;
 BEGIN
   v_claim_role := COALESCE(
@@ -747,9 +747,20 @@ BEGIN
   );
 
   IF v_claim_role = 'prontomedic_tiss_gateway' THEN
+    v_claim_company := COALESCE(
+      NULLIF(
+        current_setting('request.jwt.claim.company_id', TRUE),
+        ''
+      )::UUID,
+      (
+        NULLIF(current_setting('request.jwt.claims', TRUE), '')::JSONB
+        ->> 'company_id'
+      )::UUID
+    );
     RETURN v_claim_company;
   END IF;
 
+  v_claim_company := public.request_company_id();
   IF v_active_company IS NOT NULL
      AND v_claim_company IS NOT NULL
      AND v_active_company IS DISTINCT FROM v_claim_company THEN
