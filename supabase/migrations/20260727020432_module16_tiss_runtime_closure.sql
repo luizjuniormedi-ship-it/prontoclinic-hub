@@ -1159,6 +1159,8 @@ WHERE glosa.ds_status_recurso IN ('PENDENTE', 'ENVIADO')
   AND xml.lg_deletado = FALSE;
 
 ALTER VIEW public.vw_tiss_glosas_pendentes
+  OWNER TO prontomedic_tiss_rpc_owner;
+ALTER VIEW public.vw_tiss_glosas_pendentes
   SET (security_invoker = TRUE);
 REVOKE ALL ON public.vw_tiss_glosas_pendentes FROM PUBLIC, anon;
 REVOKE ALL ON public.vw_tiss_glosas_pendentes

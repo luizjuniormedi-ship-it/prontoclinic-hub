@@ -63,13 +63,41 @@ BEGIN
     END IF;
   END LOOP;
 
+  IF to_regclass('public.vw_tiss_glosas_pendentes') IS NULL
+     OR NOT EXISTS (
+       SELECT 1
+         FROM pg_class relation
+         JOIN pg_namespace namespace
+           ON namespace.oid = relation.relnamespace
+         JOIN pg_roles owner_role
+           ON owner_role.oid = relation.relowner
+        WHERE namespace.nspname = 'public'
+          AND relation.relname = 'vw_tiss_glosas_pendentes'
+          AND relation.relkind = 'v'
+          AND owner_role.rolname = 'prontomedic_tiss_rpc_owner'
+          AND COALESCE(relation.reloptions, ARRAY[]::TEXT[])
+              @> ARRAY['security_invoker=true']::TEXT[]
+     ) THEN
+    RAISE EXCEPTION 'Secured legacy TISS view contract is missing';
+  END IF;
+
   IF has_table_privilege(
+       'anon',
+       'public.vw_tiss_glosas_pendentes',
+       'SELECT'
+     )
+     OR has_table_privilege(
        'authenticated',
        'public.vw_tiss_glosas_pendentes',
        'SELECT'
      )
      OR has_table_privilege(
        'app_prontomedic',
+       'public.vw_tiss_glosas_pendentes',
+       'SELECT'
+     )
+     OR has_table_privilege(
+       'prontomedic_tiss_gateway',
        'public.vw_tiss_glosas_pendentes',
        'SELECT'
      ) THEN
