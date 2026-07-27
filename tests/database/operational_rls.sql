@@ -60,14 +60,40 @@ SELECT pg_temp.assert_true(
   'anon não pode executar nenhuma função SECURITY DEFINER pública'
 );
 SELECT pg_temp.assert_true(
-  NOT has_function_privilege('anon', 'public.get_dicom_exam_by_appointment(bigint)', 'EXECUTE')
-  AND NOT has_function_privilege('anon', 'public.publish_dicom_report(bigint,boolean,uuid)', 'EXECUTE')
-  AND NOT has_function_privilege(
-    'anon',
-    'public.queue_notification(uuid,varchar,varchar,bigint,varchar,varchar,varchar,varchar,varchar,jsonb,bigint,bigint,timestamptz,boolean)',
-    'EXECUTE'
+  COALESCE(
+    NOT has_function_privilege(
+      'anon',
+      to_regprocedure('public.get_dicom_exam_by_appointment(bigint)'),
+      'EXECUTE'
+    ),
+    TRUE
   )
-  AND NOT has_function_privilege('anon', 'public.criar_sala_telemedicina(bigint)', 'EXECUTE'),
+  AND COALESCE(
+    NOT has_function_privilege(
+      'anon',
+      to_regprocedure('public.publish_dicom_report(bigint,boolean,uuid)'),
+      'EXECUTE'
+    ),
+    TRUE
+  )
+  AND COALESCE(
+    NOT has_function_privilege(
+      'anon',
+      to_regprocedure(
+        'public.queue_notification(uuid,varchar,varchar,bigint,varchar,varchar,varchar,varchar,varchar,jsonb,bigint,bigint,timestamptz,boolean)'
+      ),
+      'EXECUTE'
+    ),
+    TRUE
+  )
+  AND COALESCE(
+    NOT has_function_privilege(
+      'anon',
+      to_regprocedure('public.criar_sala_telemedicina(bigint)'),
+      'EXECUTE'
+    ),
+    TRUE
+  ),
   'RPCs legadas privilegiadas devem permanecer fechadas para anon'
 );
 SELECT pg_temp.assert_true(
