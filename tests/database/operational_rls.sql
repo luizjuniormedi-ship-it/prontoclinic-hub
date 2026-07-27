@@ -290,31 +290,113 @@ BEGIN
 EXCEPTION WHEN check_violation THEN NULL;
 END;
 $$;
-INSERT INTO public.insurance_authorizations (id, company_id, unit_id, patient_id, status) VALUES
-  ('84000000-0000-0000-0000-000000000031', '84000000-0000-0000-0000-000000000001', 840001, 840020, 'pendente'),
-  ('84000000-0000-0000-0000-000000000032', '84000000-0000-0000-0000-000000000001', 840002, 840021, 'pendente'),
-  ('84000000-0000-0000-0000-000000000033', '84000000-0000-0000-0000-000000000002', 840003, 840022, 'pendente');
+SELECT set_config(
+  'request.jwt.claim.sub',
+  '84000000-0000-0000-0000-000000000010',
+  TRUE
+);
+SELECT set_config('request.jwt.claim.aal', 'aal2', TRUE);
+SELECT set_config(
+  'request.jwt.claims',
+  '{"sub":"84000000-0000-0000-0000-000000000010","role":"authenticated","aal":"aal2","session_id":"84000000-0000-0000-0000-000000000098"}',
+  TRUE
+);
+SET LOCAL ROLE authenticated;
+
+SELECT public.activate_application_context(
+  '84000000-0000-0000-0000-000000000020',
+  (SELECT id FROM public.roles WHERE name = 'recepcao'),
+  840001,
+  '84000000-0000-0000-0000-000000000089',
+  'Fixture operacional', 'test', 'psql'
+);
+INSERT INTO public.insurance_authorizations (
+  id, company_id, unit_id, patient_id, status
+) VALUES (
+  '84000000-0000-0000-0000-000000000031',
+  '84000000-0000-0000-0000-000000000001',
+  840001, 840020, 'pendente'
+);
 INSERT INTO public.insurance_authorization_attachments (
   id, company_id, authorization_id, storage_path, file_name
-) VALUES
-  ('84000000-0000-0000-0000-000000000034', '84000000-0000-0000-0000-000000000001',
-   '84000000-0000-0000-0000-000000000031', 'authorizations/a1.pdf', 'a1.pdf'),
-  ('84000000-0000-0000-0000-000000000035', '84000000-0000-0000-0000-000000000001',
-   '84000000-0000-0000-0000-000000000032', 'authorizations/a2.pdf', 'a2.pdf'),
-  ('84000000-0000-0000-0000-000000000036', '84000000-0000-0000-0000-000000000002',
-   '84000000-0000-0000-0000-000000000033', 'authorizations/b1.pdf', 'b1.pdf');
+) VALUES (
+  '84000000-0000-0000-0000-000000000034',
+  '84000000-0000-0000-0000-000000000001',
+  '84000000-0000-0000-0000-000000000031',
+  'authorizations/a1.pdf', 'a1.pdf'
+);
+INSERT INTO public.insurance_eligibility_checks (
+  id, company_id, unit_id, patient_id, status
+) VALUES (
+  '84000000-0000-0000-0000-000000000041',
+  '84000000-0000-0000-0000-000000000001',
+  840001, 840020, 'pendente'
+);
 
--- O trigger de eventos roda como owner restrito e a policy FORCE RLS exige o
--- tenant explícito. A fixture deve exercitar esse contrato, não contorná-lo.
-SET LOCAL request.jwt.claim.company_id = '84000000-0000-0000-0000-000000000001';
-INSERT INTO public.insurance_eligibility_checks (id, company_id, unit_id, patient_id, status) VALUES
-  ('84000000-0000-0000-0000-000000000041', '84000000-0000-0000-0000-000000000001', 840001, 840020, 'pendente'),
-  ('84000000-0000-0000-0000-000000000042', '84000000-0000-0000-0000-000000000001', 840002, 840021, 'pendente');
+SELECT public.activate_application_context(
+  '84000000-0000-0000-0000-000000000020',
+  (SELECT id FROM public.roles WHERE name = 'recepcao'),
+  840002,
+  '84000000-0000-0000-0000-000000000089',
+  'Fixture operacional', 'test', 'psql'
+);
+INSERT INTO public.insurance_authorizations (
+  id, company_id, unit_id, patient_id, status
+) VALUES (
+  '84000000-0000-0000-0000-000000000032',
+  '84000000-0000-0000-0000-000000000001',
+  840002, 840021, 'pendente'
+);
+INSERT INTO public.insurance_authorization_attachments (
+  id, company_id, authorization_id, storage_path, file_name
+) VALUES (
+  '84000000-0000-0000-0000-000000000035',
+  '84000000-0000-0000-0000-000000000001',
+  '84000000-0000-0000-0000-000000000032',
+  'authorizations/a2.pdf', 'a2.pdf'
+);
+INSERT INTO public.insurance_eligibility_checks (
+  id, company_id, unit_id, patient_id, status
+) VALUES (
+  '84000000-0000-0000-0000-000000000042',
+  '84000000-0000-0000-0000-000000000001',
+  840002, 840021, 'pendente'
+);
 
-SET LOCAL request.jwt.claim.company_id = '84000000-0000-0000-0000-000000000002';
-INSERT INTO public.insurance_eligibility_checks (id, company_id, unit_id, patient_id, status) VALUES
-  ('84000000-0000-0000-0000-000000000043', '84000000-0000-0000-0000-000000000002', 840003, 840022, 'pendente');
-RESET request.jwt.claim.company_id;
+SELECT public.activate_application_context(
+  '84000000-0000-0000-0000-000000000021',
+  (SELECT id FROM public.roles WHERE name = 'recepcao'),
+  840003,
+  '84000000-0000-0000-0000-000000000089',
+  'Fixture operacional', 'test', 'psql'
+);
+INSERT INTO public.insurance_authorizations (
+  id, company_id, unit_id, patient_id, status
+) VALUES (
+  '84000000-0000-0000-0000-000000000033',
+  '84000000-0000-0000-0000-000000000002',
+  840003, 840022, 'pendente'
+);
+INSERT INTO public.insurance_authorization_attachments (
+  id, company_id, authorization_id, storage_path, file_name
+) VALUES (
+  '84000000-0000-0000-0000-000000000036',
+  '84000000-0000-0000-0000-000000000002',
+  '84000000-0000-0000-0000-000000000033',
+  'authorizations/b1.pdf', 'b1.pdf'
+);
+INSERT INTO public.insurance_eligibility_checks (
+  id, company_id, unit_id, patient_id, status
+) VALUES (
+  '84000000-0000-0000-0000-000000000043',
+  '84000000-0000-0000-0000-000000000002',
+  840003, 840022, 'pendente'
+);
+
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '', TRUE);
+SELECT set_config('request.jwt.claim.aal', '', TRUE);
+SELECT set_config('request.jwt.claims', '', TRUE);
 
 INSERT INTO public.appointments (
   id, company_id, unit_id, patient_id, professional_id,
