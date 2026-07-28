@@ -4,6 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 const PASSWORD = E2E_PASSWORD;
 const UNIT_A = /Empresa E2E · Unidade E2E A admin/;
+const UNIT_A_RECEPTION = /Empresa E2E · Unidade E2E A recepcao/;
 const UNIT_B = /Empresa E2E · Unidade E2E B admin/;
 const RECORD_MARKER = 'Queixa E2E persistida fase 0/1';
 
@@ -53,6 +54,30 @@ test.describe('Gate fase 0/1', () => {
     'Gate stateful canônico: a fixture compartilhada é consumida uma única vez',
   );
 
+  test('recepção não contorna o workflow pela transição direta da Agenda', async ({ page }) => {
+    await page.goto('/login');
+    await page.getByLabel('E-mail').fill('recepcao@prontomedic.test');
+    await page.getByRole('textbox', { name: 'Senha' }).fill(PASSWORD);
+    await page.getByRole('button', { name: /^entrar$/i }).click();
+    await expect(page).not.toHaveURL(/\/login/, { timeout: 10_000 });
+    await selectContext(page, UNIT_A_RECEPTION);
+
+    const blockedDirectWaiting = await authenticatedFetch(
+      page,
+      '/rest/v1/rpc/update_appointment_status_secure',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          p_appointment_id: 91001,
+          p_new_status: 'waiting',
+          p_reason: 'Tentativa direta fora do workflow E2E',
+        }),
+      },
+    );
+    expect(blockedDirectWaiting.status, blockedDirectWaiting.body).toBe(403);
+    expect(JSON.parse(blockedDirectWaiting.body)).toMatchObject({ code: '42501' });
+  });
+
   test('contexto, RLS A/B, recepção, atendimento, prontuário e Axe', async ({ page }) => {
     await page.goto('/login');
     await assertAccessible(page, 'login');
@@ -99,21 +124,6 @@ test.describe('Gate fase 0/1', () => {
     await page.goto('/reception');
     await expect(page.getByText('Paciente E2E A')).toBeVisible();
     await expect(page.getByText('Paciente E2E B')).toBeHidden();
-    const blockedDirectWaiting = await authenticatedFetch(
-      page,
-      '/rest/v1/rpc/update_appointment_status_secure',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          p_appointment_id: 91001,
-          p_new_status: 'waiting',
-          p_reason: 'Tentativa direta fora do workflow E2E',
-        }),
-      },
-    );
-    expect(blockedDirectWaiting.status, blockedDirectWaiting.body).toBe(403);
-    expect(JSON.parse(blockedDirectWaiting.body)).toMatchObject({ code: '42501' });
-
     const patientA = page.getByText('Paciente E2E A').locator('xpath=ancestor::*[contains(@class,"rounded-lg") or contains(@class,"border")][1]');
     await patientA.getByRole('button', { name: 'Check-in' }).click();
     const checkinDialog = page.getByRole('dialog', { name: 'Entrada do paciente' });
