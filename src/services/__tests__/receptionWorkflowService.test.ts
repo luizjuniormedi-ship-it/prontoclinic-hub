@@ -368,6 +368,13 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
     ),
     "utf8",
   );
+  const privateTransitionCoreMigration = readFileSync(
+    resolve(
+      process.cwd(),
+      "supabase/migrations/20260728193000_reception_private_schedule_transition_core.sql",
+    ),
+    "utf8",
+  );
 
   it("não autoriza por current_user nem concede escrita financeira ao runtime", () => {
     expect(migration).not.toMatch(/current_user\s*=\s*'app_prontomedic'/i);
@@ -514,6 +521,18 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
     );
     expect(waitingFailClosedMigration).toMatch(
       /v_waiting_transition[\s\S]*AND NOT v_waiting_authorized/,
+    );
+    expect(privateTransitionCoreMigration).toMatch(
+      /p_new_status = 'waiting'[\s\S]*NOT p_reception_workflow[\s\S]*ERRCODE = '42501'/,
+    );
+    expect(privateTransitionCoreMigration).toMatch(
+      /public\.update_appointment_status_secure[\s\S]*private\.transition_appointment_status_core\([\s\S]*FALSE/,
+    );
+    expect(privateTransitionCoreMigration).toMatch(
+      /private\.transition_reception_appointment_to_waiting[\s\S]*private\.transition_appointment_status_core\([\s\S]*TRUE/,
+    );
+    expect(privateTransitionCoreMigration).toMatch(
+      /REVOKE ALL ON FUNCTION private\.transition_appointment_status_core/,
     );
   });
 
