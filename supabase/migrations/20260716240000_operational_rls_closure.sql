@@ -89,7 +89,8 @@ BEGIN
         'professional_schedules_select_context',
         'professional_schedules_insert_context',
         'professional_schedules_update_context',
-        'professional_schedules_delete_context'
+        'professional_schedules_delete_context',
+        'patient_portal_owner_schedule_read'
       )
   LOOP
     RAISE EXCEPTION 'OPERATIONAL_RLS_UNKNOWN_POLICY: public.professional_schedules.%',
