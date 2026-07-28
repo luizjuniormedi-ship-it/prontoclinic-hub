@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState, ErrorState } from "@/components/StateViews";
@@ -694,7 +694,9 @@ export default function ReceptionPage() {
       </div>
 
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-base">Fila de recepção</CardTitle></CardHeader>
+        <CardHeader className="pb-2">
+          <h2 className="text-base font-semibold">Fila de recepção</h2>
+        </CardHeader>
         <CardContent className="space-y-2">
           {queueItems.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma senha emitida para esta unidade hoje.</p> : queueItems.map((ticket) => {
             const label = formatReceptionQueueTicketLabel(ticket);
@@ -715,7 +717,12 @@ export default function ReceptionPage() {
       </Card>
 
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-base"><Volume2 className="h-4 w-4 text-primary" />Painel de chamadas</CardTitle></CardHeader>
+        <CardHeader className="pb-2">
+          <h2 className="flex items-center gap-2 text-base font-semibold">
+            <Volume2 className="h-4 w-4 text-primary" />
+            Painel de chamadas
+          </h2>
+        </CardHeader>
         <CardContent className="space-y-3" aria-live="polite">
           <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
             <StatusCard icon={<Clock className="h-4 w-4" />} label="Aguardando" count={queueSummary.waiting} color="text-primary" bg="bg-primary/5 border-primary/20" />
