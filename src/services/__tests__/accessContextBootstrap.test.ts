@@ -70,4 +70,20 @@ describe("initializeAccessContext", () => {
     await expect(initializeAccessContext()).resolves.toBeNull();
     expect(authSessionService.activate).not.toHaveBeenCalled();
   });
+
+  it("restaura o mesmo contexto quando IDs numéricos foram serializados como texto", async () => {
+    const unitOption = { ...option, roleId: 7, unitId: 91001 };
+    vi.mocked(accessContextService.listAuthorized).mockResolvedValue([unitOption]);
+    vi.mocked(readStoredAccessContext).mockReturnValue({
+      ...unitOption,
+      roleId: "7",
+      unitId: "91001",
+    } as unknown as Partial<AccessContextOption>);
+
+    await expect(initializeAccessContext()).resolves.toEqual(unitOption);
+    expect(authSessionService.activate).toHaveBeenCalledWith(expect.objectContaining({
+      roleId: 7,
+      unitId: 91001,
+    }));
+  });
 });

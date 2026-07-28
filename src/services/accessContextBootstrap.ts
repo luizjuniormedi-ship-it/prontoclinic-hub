@@ -7,10 +7,15 @@ import {
   writeStoredAccessContext,
 } from "@/services/applicationSessionStorage";
 
+function sameIdentifier(left: string | number | null, right: string | number | null | undefined): boolean {
+  if (left == null || right == null) return left == null && right == null;
+  return String(left) === String(right);
+}
+
 function sameContext(left: AccessContextOption, right: Partial<AccessContextOption>): boolean {
-  return left.membershipId === right.membershipId
-    && left.roleId === right.roleId
-    && left.unitId === right.unitId;
+  return sameIdentifier(left.membershipId, right.membershipId)
+    && sameIdentifier(left.roleId, right.roleId)
+    && sameIdentifier(left.unitId, right.unitId);
 }
 
 export async function activateAccessContext(option: AccessContextOption): Promise<void> {
