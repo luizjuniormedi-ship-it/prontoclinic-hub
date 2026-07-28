@@ -1,0 +1,17 @@
+{
+  "taskId": "module-11-reception",
+  "module": 11,
+  "baseCommit": "660872f9554900f7307f47dedc84aaf68330c324",
+  "paths": [
+    "src/pages/ReceptionPage.tsx",
+    "src/components/patients",
+    "src/services/reception",
+    "supabase/migrations"
+  ],
+  "sharedPaths": [
+    "src/App.tsx",
+    "package.json",
+    "package-lock.json"
+  ],
+  "status": "active"
+}

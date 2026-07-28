@@ -1,0 +1,37 @@
+name: Integration Guard
+
+on:
+  pull_request:
+    branches: [main, release/operational-closure-20260727]
+
+concurrency:
+  group: prontomedic-integration-${{ github.base_ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  task-scope:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Require task manifest changed by this PR
+        shell: bash
+        run: |
+          if ! git diff --name-only "origin/${{ github.base_ref }}...${{ github.sha }}" |
+            grep -qx '.coordination/task.json'; then
+            echo "::error::.coordination/task.json must be updated for this PR."
+            exit 1
+          fi
+      - name: Validate changed files against task claim
+        run: >
+          node scripts/validate-task-scope.mjs
+          --manifest ".coordination/task.json"
+          --base "origin/${{ github.base_ref }}"
+          --head "${{ github.sha }}"

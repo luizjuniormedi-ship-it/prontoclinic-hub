@@ -57,6 +57,8 @@
     "local:health": "powershell -ExecutionPolicy Bypass -File scripts/health-local.ps1",
     "secret:scan": "powershell -ExecutionPolicy Bypass -File scripts/secret-scan.ps1",
     "secret:scan:staged": "powershell -ExecutionPolicy Bypass -File scripts/secret-scan.ps1 --staged",
+    "task:status": "powershell -ExecutionPolicy Bypass -File scripts/coordination.ps1 Status",
+    "task:scope": "node scripts/validate-task-scope.mjs",
     "validate": "npm run lint && npm run type-check && npm run test && npm run build && npm run secret:scan"
   },
   "dependencies": {

@@ -1,0 +1,17 @@
+{
+  "taskId": "conflict-free-orchestration",
+  "module": 1,
+  "baseCommit": "660872f9554900f7307f47dedc84aaf68330c324",
+  "paths": [
+    ".coordination",
+    "docs/DEVELOPMENT_ORCHESTRATION.md",
+    "scripts/coordination.ps1",
+    "scripts/validate-task-scope.mjs"
+  ],
+  "sharedPaths": [
+    ".github/workflows",
+    "CONTRIBUTING.md",
+    "package.json"
+  ],
+  "status": "active"
+}
