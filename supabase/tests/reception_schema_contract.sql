@@ -19,6 +19,14 @@ DECLARE
     'get_reception_exception_capability'
   ];
 BEGIN
+  IF NOT has_table_privilege('authenticated', 'public.price_tables', 'SELECT') THEN
+    RAISE EXCEPTION 'Recepcao autenticada nao consegue consultar a tabela de precos';
+  END IF;
+
+  IF has_table_privilege('anon', 'public.price_tables', 'SELECT') THEN
+    RAISE EXCEPTION 'Tabela de precos exposta ao papel anonimo';
+  END IF;
+
   FOREACH required_name IN ARRAY required_tables LOOP
     SELECT c.relkind INTO relation_kind
     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
