@@ -46,12 +46,7 @@ BEGIN
    FOR UPDATE;
 
   IF NOT FOUND THEN
-    RAISE EXCEPTION
-      'Reception appointment not found in active context [role=%, appointment_cap=%, company_cap=%, unit_cap=%]',
-      current_user,
-      current_setting('app.reception.appointment_id', TRUE),
-      current_setting('app.reception.company_id', TRUE),
-      current_setting('app.reception.unit_id', TRUE);
+    RAISE EXCEPTION 'Reception appointment not found in active context';
   END IF;
 
   IF NOT public.can_transition_appointment_status(v_old.status, 'waiting') THEN

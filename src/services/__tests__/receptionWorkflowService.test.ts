@@ -340,6 +340,13 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
     ),
     "utf8",
   );
+  const appointmentLockPolicyMigration = readFileSync(
+    resolve(
+      process.cwd(),
+      "supabase/migrations/20260728180000_reception_appointment_lock_policy.sql",
+    ),
+    "utf8",
+  );
 
   it("não autoriza por current_user nem concede escrita financeira ao runtime", () => {
     expect(migration).not.toMatch(/current_user\s*=\s*'app_prontomedic'/i);
@@ -441,6 +448,15 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
     );
     expect(appointmentTransactionCapabilityMigration).not.toMatch(
       /FOR (SELECT|UPDATE) TO (authenticated|app_prontomedic)/,
+    );
+    expect(appointmentLockPolicyMigration).toMatch(
+      /FOR ALL TO prontomedic_reception_rpc_owner/,
+    );
+    expect(appointmentLockPolicyMigration).toContain(
+      "current_setting('app.reception.appointment_id', TRUE)",
+    );
+    expect(appointmentLockPolicyMigration).not.toMatch(
+      /FOR ALL TO (authenticated|app_prontomedic)/,
     );
   });
 
