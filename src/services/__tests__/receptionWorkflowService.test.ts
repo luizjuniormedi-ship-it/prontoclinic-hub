@@ -347,6 +347,13 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
     ),
     "utf8",
   );
+  const canonicalScheduleTransitionMigration = readFileSync(
+    resolve(
+      process.cwd(),
+      "supabase/migrations/20260728183000_reception_use_canonical_schedule_transition.sql",
+    ),
+    "utf8",
+  );
 
   it("não autoriza por current_user nem concede escrita financeira ao runtime", () => {
     expect(migration).not.toMatch(/current_user\s*=\s*'app_prontomedic'/i);
@@ -457,6 +464,18 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
     );
     expect(appointmentLockPolicyMigration).not.toMatch(
       /FOR ALL TO (authenticated|app_prontomedic)/,
+    );
+    expect(canonicalScheduleTransitionMigration).toMatch(
+      /v_reception_waiting BOOLEAN[\s\S]*p_new_status = 'waiting'[\s\S]*public\.can_access\('recepcao', 'edit'\)/,
+    );
+    expect(canonicalScheduleTransitionMigration).toMatch(
+      /private\.reception_mark_appointment_waiting[\s\S]*public\.update_appointment_status_secure\([\s\S]*'waiting'/,
+    );
+    expect(canonicalScheduleTransitionMigration).toMatch(
+      /DROP POLICY IF EXISTS appointments_reception_rpc_lock/,
+    );
+    expect(canonicalScheduleTransitionMigration).toMatch(
+      /REVOKE UPDATE \(status, notes, updated_at\) ON public\.appointments[\s\S]*FROM prontomedic_reception_rpc_owner/,
     );
   });
 
