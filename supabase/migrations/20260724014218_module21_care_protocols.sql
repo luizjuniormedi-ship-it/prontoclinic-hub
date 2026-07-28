@@ -34,9 +34,6 @@ BEGIN
   IF to_regprocedure('private.current_company_id()') IS NULL THEN
     RAISE EXCEPTION 'M21 requires private.current_company_id()';
   END IF;
-  IF to_regprocedure('public.request_company_id()') IS NULL THEN
-    RAISE EXCEPTION 'M21 requires public.request_company_id()';
-  END IF;
   IF to_regclass('public.unit_access') IS NULL THEN
     RAISE EXCEPTION 'M21 requires public.unit_access';
   END IF;
