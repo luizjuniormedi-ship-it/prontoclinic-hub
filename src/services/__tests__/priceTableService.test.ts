@@ -30,6 +30,31 @@ describe("priceTableService — findPrice", () => {
     vi.clearAllMocks();
   });
 
+  it("normaliza o registro composto retornado pelo PostgREST", async () => {
+    (supabase.rpc as any).mockResolvedValue({
+      data: "(150.00,0.00,12.50,3.25,1.00,0.00,0.00,t)",
+      error: null,
+    });
+
+    await expect(
+      priceTableService.findPrice(
+        91001,
+        91001,
+        null,
+        "eeeeeeee-1000-4000-8000-000000000001",
+      ),
+    ).resolves.toEqual({
+      vl_particular: 150,
+      vl_convenio: 0,
+      vl_material: 12.5,
+      vl_medicamento: 3.25,
+      vl_taxa: 1,
+      vl_diaria: 0,
+      vl_gases: 0,
+      found: true,
+    });
+  });
+
   it("retorna preço específico do convênio (RPC find_price)", async () => {
     (supabase.rpc as any).mockResolvedValue({
       data: [

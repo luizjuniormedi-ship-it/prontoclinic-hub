@@ -72,6 +72,24 @@ function normalizeMoney(value: unknown): number {
 }
 
 function normalizePriceLookup(value: unknown): PriceLookup {
+  if (typeof value === "string") {
+    const record = value.trim();
+    if (record.startsWith("(") && record.endsWith(")")) {
+      const fields = record.slice(1, -1).split(",");
+      if (fields.length === 8) {
+        return {
+          vl_particular: normalizeMoney(fields[0]),
+          vl_convenio: normalizeMoney(fields[1]),
+          vl_material: normalizeMoney(fields[2]),
+          vl_medicamento: normalizeMoney(fields[3]),
+          vl_taxa: normalizeMoney(fields[4]),
+          vl_diaria: normalizeMoney(fields[5]),
+          vl_gases: normalizeMoney(fields[6]),
+          found: fields[7] === "t" || fields[7] === "true",
+        };
+      }
+    }
+  }
   if (!value || typeof value !== "object") return { ...EMPTY_PRICE_LOOKUP };
   const row = value as Record<string, unknown>;
   return {
@@ -164,7 +182,7 @@ export const priceTableService = {
       console.warn("find_price RPC falhou, retornando 0:", error);
       return { ...EMPTY_PRICE_LOOKUP };
     }
-    return normalizePriceLookup(data?.[0]);
+    return normalizePriceLookup(Array.isArray(data) ? data[0] : data);
   },
 
   async create(input: Partial<PriceTable>): Promise<PriceTable> {
