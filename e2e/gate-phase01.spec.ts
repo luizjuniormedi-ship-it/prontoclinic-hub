@@ -168,7 +168,7 @@ test.describe('Gate fase 0/1', () => {
     await page.goto('/records');
     const isolatedRecordRead = await authenticatedFetch(
       page,
-      '/rest/v1/medical_records?select=id,complaint&appointment_id=eq.91001',
+      '/rest/v1/medical_records?select=id&appointment_id=eq.91001',
       { method: 'GET' },
     );
     expect(isolatedRecordRead.status, isolatedRecordRead.body).toBe(200);
