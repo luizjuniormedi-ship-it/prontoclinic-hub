@@ -1474,5 +1474,25 @@ BEGIN
 END
 $workflow_context_contract$;
 
+DO $workflow_actor_context_contract$
+DECLARE
+  v_definition TEXT;
+BEGIN
+  SELECT pg_get_functiondef(
+    'private.m11_assert_actor(uuid,integer,text[])'::REGPROCEDURE
+  ) INTO v_definition;
+
+  IF position('current_company_id()' IN v_definition) = 0 THEN
+    RAISE EXCEPTION
+      'Workflow actor does not validate the application tenant';
+  END IF;
+  IF position('request.jwt.claim.company_id' IN v_definition) > 0
+     OR position('claims->>''company_id''' IN v_definition) > 0 THEN
+    RAISE EXCEPTION
+      'Workflow actor still depends on a noncanonical JWT company claim';
+  END IF;
+END
+$workflow_actor_context_contract$;
+
 ROLLBACK;
 \echo RECEPTION_RUNTIME_SECURITY_PASS
