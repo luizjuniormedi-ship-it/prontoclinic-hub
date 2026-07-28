@@ -1447,5 +1447,24 @@ BEGIN
 END
 $cross_tenant_side_effects$;
 
+DO $workflow_context_contract$
+DECLARE
+  v_definition TEXT;
+BEGIN
+  SELECT pg_get_functiondef(
+    'private.m11_start_workflow(bigint,text,jsonb)'::REGPROCEDURE
+  ) INTO v_definition;
+
+  IF position('current_company_id()' IN v_definition) = 0 THEN
+    RAISE EXCEPTION
+      'Workflow start does not resolve tenant from application context';
+  END IF;
+  IF position('request.jwt.claim.company_id' IN v_definition) > 0 THEN
+    RAISE EXCEPTION
+      'Workflow start still depends on a noncanonical JWT company claim';
+  END IF;
+END
+$workflow_context_contract$;
+
 ROLLBACK;
 \echo RECEPTION_RUNTIME_SECURITY_PASS
