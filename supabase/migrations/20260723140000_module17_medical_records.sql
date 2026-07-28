@@ -470,7 +470,13 @@ DROP POLICY IF EXISTS m17_medical_record_revisions_select ON public.medical_reco
 CREATE POLICY m17_medical_record_revisions_select ON public.medical_record_revisions FOR SELECT TO authenticated
 USING (
   company_id = public.active_company_id()
-  AND unit_id = public.active_unit_id()
+  AND EXISTS (
+    SELECT 1
+    FROM public.medical_records AS medical_record
+    WHERE medical_record.id = medical_record_id
+      AND medical_record.company_id = public.active_company_id()
+      AND medical_record.unit_id = public.active_unit_id()
+  )
   AND (
     public.can_access('medical_records', 'view')
     OR public.can_access('prontuario', 'view')
