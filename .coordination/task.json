@@ -1,20 +1,14 @@
 {
-  "taskId": "module-09-schedule-runtime",
-  "module": 9,
-  "baseCommit": "642e83b48801bab73a8acb09fa5671e8334c14a1",
+  "taskId": "integration-modules-09-13",
+  "module": 13,
+  "baseCommit": "df79248c06569cb920bf22a82cafd050887269a1",
   "paths": [
-    "e2e/agendamento.spec.ts",
-    "src/components/schedule",
-    "src/pages/__tests__/schedulePatientMapper.test.ts",
-    "src/pages/SchedulePage.tsx",
-    "src/services/__tests__/appointmentsService.test.ts",
-    "src/services/__tests__/scheduleGridsService.test.ts",
-    "src/services/appointmentsService.ts",
-    "src/services/scheduleGridsService.ts",
-    "src/services/schedulingOperationsService.ts"
+    "src/components/price-table/PriceTableEditor.tsx",
+    "src/components/schedule/NewAppointmentDialog.tsx",
+    "src/components/schedule/__tests__/NewAppointmentDialog.test.tsx",
+    "src/services/__tests__/priceTableService.test.ts",
+    "src/services/priceTableService.ts"
   ],
-  "sharedPaths": [
-    "src/App.tsx"
-  ],
+  "sharedPaths": [],
   "status": "active"
 }

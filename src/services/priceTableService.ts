@@ -86,6 +86,36 @@ function normalizePriceLookup(value: unknown): PriceLookup {
   };
 }
 
+function normalizePersistedMoney(value: unknown, field: string): number {
+  if (value === null || value === undefined) return 0;
+  const normalized = typeof value === "string"
+    ? value.trim().replace(",", ".")
+    : value;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`Contrato inválido em price_tables.${field}`);
+  }
+  return Math.round(parsed * 100) / 100;
+}
+
+function normalizePriceTable(value: unknown): PriceTable {
+  const row = value as Record<string, unknown>;
+  return {
+    ...(row as unknown as PriceTable),
+    vl_particular: normalizePersistedMoney(row.vl_particular, "vl_particular"),
+    vl_convenio: normalizePersistedMoney(row.vl_convenio, "vl_convenio"),
+    vl_material: normalizePersistedMoney(row.vl_material, "vl_material"),
+    vl_medicamento: normalizePersistedMoney(row.vl_medicamento, "vl_medicamento"),
+    vl_taxa: normalizePersistedMoney(row.vl_taxa, "vl_taxa"),
+    vl_diaria: normalizePersistedMoney(row.vl_diaria, "vl_diaria"),
+    vl_gases: normalizePersistedMoney(row.vl_gases, "vl_gases"),
+    percentual_acrescimo: normalizePersistedMoney(
+      row.percentual_acrescimo,
+      "percentual_acrescimo",
+    ),
+  };
+}
+
 export const priceTableService = {
   async getAll(filters?: {
     serviceId?: number;
@@ -107,7 +137,7 @@ export const priceTableService = {
 
     const { data, error } = await q;
     if (error) throw new Error(`Erro: ${error.message}`);
-    return data || [];
+    return (data || []).map(normalizePriceTable);
   },
 
   async count(): Promise<number> {
@@ -144,7 +174,7 @@ export const priceTableService = {
       .select()
       .single();
     if (error) throw new Error(`Erro ao criar preco: ${error.message}`);
-    return data;
+    return normalizePriceTable(data);
   },
 
   async update(id: number, input: Partial<PriceTable>): Promise<PriceTable> {
@@ -155,7 +185,7 @@ export const priceTableService = {
       .select()
       .single();
     if (error) throw new Error(`Erro: ${error.message}`);
-    return data;
+    return normalizePriceTable(data);
   },
 
   async delete(id: number): Promise<void> {
@@ -169,6 +199,6 @@ export const priceTableService = {
       .insert(inputs)
       .select();
     if (error) throw new Error(`Erro no bulk: ${error.message}`);
-    return data || [];
+    return (data || []).map(normalizePriceTable);
   },
 };

@@ -31,7 +31,7 @@ export function PriceTableEditor() {
   const [lookupResult, setLookupResult] = useState<any>(null);
   const queryClient = useQueryClient();
 
-  const { data: prices, isLoading } = useQuery({
+  const { data: prices, isLoading, isError, error } = useQuery({
     queryKey: ["price-tables"],
     queryFn: () => priceTableService.getAll(),
   });
@@ -248,6 +248,13 @@ export function PriceTableEditor() {
             <TableBody>
               {isLoading ? (
                 <TableRow><TableCell colSpan={10} className="text-center py-8">Carregando...</TableCell></TableRow>
+              ) : isError ? (
+                <TableRow>
+                  <TableCell colSpan={10} role="alert" className="text-center py-8 text-destructive">
+                    Não foi possível carregar a tabela de preços:{" "}
+                    {error instanceof Error ? error.message : "erro desconhecido"}
+                  </TableCell>
+                </TableRow>
               ) : filtered.length === 0 ? (
                 <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Nenhuma regra. Crie a primeira.</TableCell></TableRow>
               ) : (

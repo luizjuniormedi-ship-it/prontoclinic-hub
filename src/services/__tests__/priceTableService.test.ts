@@ -179,6 +179,65 @@ describe("priceTableService — getAll com filtros", () => {
     expect(eqSpy).toHaveBeenCalledWith("service_id", 5);
   });
 
+  it("normaliza todas as colunas monetárias antes de entregar dados à UI", async () => {
+    const chain: any = {
+      select: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+    };
+    (chain as any).then = (resolve: any) =>
+      resolve({
+        data: [
+          {
+            id: 10,
+            vl_particular: "120.50",
+            vl_convenio: "99,90",
+            vl_material: null,
+            vl_medicamento: "0",
+            vl_taxa: "1.25",
+            vl_diaria: "10",
+            vl_gases: 2.345,
+            percentual_acrescimo: "7.555",
+          },
+        ],
+        error: null,
+      });
+    (supabase.from as any).mockReturnValue(chain);
+
+    const [result] = await priceTableService.getAll();
+
+    expect(result).toMatchObject({
+      id: 10,
+      vl_particular: 120.5,
+      vl_convenio: 99.9,
+      vl_material: 0,
+      vl_medicamento: 0,
+      vl_taxa: 1.25,
+      vl_diaria: 10,
+      vl_gases: 2.35,
+      percentual_acrescimo: 7.56,
+    });
+    expect(() => result.vl_particular.toFixed(2)).not.toThrow();
+  });
+
+  it("falha fechado quando preço persistido é inválido", async () => {
+    const chain: any = {
+      select: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+    };
+    (chain as any).then = (resolve: any) =>
+      resolve({
+        data: [{ id: 10, vl_particular: "inválido" }],
+        error: null,
+      });
+    (supabase.from as any).mockReturnValue(chain);
+
+    await expect(priceTableService.getAll()).rejects.toThrow(
+      "Contrato inválido em price_tables.vl_particular",
+    );
+  });
+
   it("aplica filtro planId null com .is (particular)", async () => {
     const isSpy = vi.fn().mockReturnThis();
     const chain: any = {
