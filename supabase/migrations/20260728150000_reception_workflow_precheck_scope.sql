@@ -14,7 +14,7 @@ DECLARE
   v_company UUID;
   v_actor UUID;
   v_precheck JSONB;
-  v_unit_id BIGINT;
+  v_unit_id INTEGER;
   v_patient_id BIGINT;
   v_workflow public.reception_checkin_workflows;
   v_hash TEXT;
@@ -44,7 +44,7 @@ BEGIN
   );
 
   v_precheck := public.get_reception_precheckin_context(p_appointment_id);
-  v_unit_id := NULLIF(v_precheck->>'unit_id', '')::BIGINT;
+  v_unit_id := NULLIF(v_precheck->>'unit_id', '')::INTEGER;
   v_patient_id := NULLIF(v_precheck->>'patient_id', '')::BIGINT;
   IF NULLIF(v_precheck->>'appointment_id', '')::BIGINT
        IS DISTINCT FROM p_appointment_id THEN
