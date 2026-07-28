@@ -290,7 +290,7 @@ SELECT r.id, modules.module,
   r.name IN ('admin','gestor','auditor','financeiro')
 FROM public.roles r
 CROSS JOIN (VALUES ('dashboard'),('patients'),('schedule'),('callcenter'),('reception'),('records'),('attendance'),('encounters'),('nursing'),('billing'),('financial'),('dicom'),('audit'),('admin')) AS modules(module)
-ON CONFLICT (role_id, module) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 CREATE OR REPLACE FUNCTION private.is_module_admin()
 RETURNS BOOLEAN

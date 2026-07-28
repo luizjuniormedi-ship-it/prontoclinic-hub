@@ -73,13 +73,7 @@ JOIN (
     ('farmacia', 'revisao_farmaceutica', TRUE, TRUE, TRUE)
 ) AS matrix(role_name, module, can_view, can_create, can_edit)
   ON matrix.role_name = r.name
-ON CONFLICT (role_id, module) DO UPDATE
-SET can_view = EXCLUDED.can_view,
-    can_create = EXCLUDED.can_create,
-    can_edit = EXCLUDED.can_edit,
-    can_delete = FALSE,
-    can_export = FALSE,
-    updated_at = NOW();
+ON CONFLICT DO NOTHING;
 
 UPDATE public.role_permissions rp
 SET can_view = FALSE,

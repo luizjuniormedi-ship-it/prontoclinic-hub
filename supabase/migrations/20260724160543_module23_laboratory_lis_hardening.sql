@@ -40,13 +40,7 @@ SELECT
   r.name IN ('admin', 'laboratorio', 'medico', 'gestor')
 FROM public.roles r
 WHERE r.name IN ('admin', 'laboratorio', 'diagnostico', 'medico', 'gestor')
-ON CONFLICT (role_id, module) DO UPDATE
-SET can_view = EXCLUDED.can_view,
-    can_create = EXCLUDED.can_create,
-    can_edit = EXCLUDED.can_edit,
-    can_delete = FALSE,
-    can_export = EXCLUDED.can_export,
-    updated_at = NOW();
+ON CONFLICT DO NOTHING;
 
 UPDATE public.role_permissions rp
 SET can_view = FALSE,

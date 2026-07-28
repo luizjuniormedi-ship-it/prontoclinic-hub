@@ -79,13 +79,7 @@ JOIN (
     ('tecnico_enfermagem', 'protocolos_execucao')
 ) AS matrix(role_name, module)
   ON matrix.role_name = r.name
-ON CONFLICT (role_id, module) DO UPDATE
-SET can_view = TRUE,
-    can_create = TRUE,
-    can_edit = TRUE,
-    can_delete = FALSE,
-    can_export = FALSE,
-    updated_at = NOW();
+ON CONFLICT DO NOTHING;
 
 UPDATE public.role_permissions rp
 SET can_view = FALSE,

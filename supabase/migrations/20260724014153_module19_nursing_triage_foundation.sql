@@ -87,13 +87,7 @@ INSERT INTO public.role_permissions (
 SELECT r.id, 'triagem_clinica', TRUE, TRUE, TRUE, FALSE, FALSE
 FROM public.roles r
 WHERE r.name IN ('admin', 'gestor', 'medico', 'enfermagem', 'tecnico_enfermagem')
-ON CONFLICT (role_id, module) DO UPDATE
-SET can_view = EXCLUDED.can_view,
-    can_create = EXCLUDED.can_create,
-    can_edit = EXCLUDED.can_edit,
-    can_delete = FALSE,
-    can_export = FALSE,
-    updated_at = NOW();
+ON CONFLICT DO NOTHING;
 
 UPDATE public.role_permissions rp
 SET can_view = FALSE,
