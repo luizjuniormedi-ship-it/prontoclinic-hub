@@ -375,6 +375,13 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
     ),
     "utf8",
   );
+  const recreatedTransitionEntrypointsMigration = readFileSync(
+    resolve(
+      process.cwd(),
+      "supabase/migrations/20260728194500_reception_recreate_schedule_entrypoints.sql",
+    ),
+    "utf8",
+  );
 
   it("não autoriza por current_user nem concede escrita financeira ao runtime", () => {
     expect(migration).not.toMatch(/current_user\s*=\s*'app_prontomedic'/i);
@@ -533,6 +540,15 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
     );
     expect(privateTransitionCoreMigration).toMatch(
       /REVOKE ALL ON FUNCTION private\.transition_appointment_status_core/,
+    );
+    expect(recreatedTransitionEntrypointsMigration).toMatch(
+      /DROP FUNCTION public\.update_appointment_status_secure/,
+    );
+    expect(recreatedTransitionEntrypointsMigration).toMatch(
+      /IF p_new_status = 'waiting'[\s\S]*ERRCODE = '42501'/,
+    );
+    expect(recreatedTransitionEntrypointsMigration).toMatch(
+      /pg_get_functiondef\([\s\S]*Public schedule transition did not retain the waiting veto/,
     );
   });
 
