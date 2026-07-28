@@ -153,6 +153,9 @@ describe("local auth server security invariants", () => {
     expect(source).toContain(
       "insurance_companies: { readModules: ['recepcao', 'faturamento'], writeModule: 'faturamento' }",
     );
+    expect(source).toContain(
+      "lgpd_termos: { readModules: ['recepcao', 'auditoria'], writeModule: 'auditoria' }",
+    );
     expect(source).toContain("sharedCatalog.readModules");
     expect(source).toContain("sharedCatalog.writeModule");
   });

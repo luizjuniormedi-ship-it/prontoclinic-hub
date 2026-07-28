@@ -146,6 +146,7 @@ const SHARED_CATALOG_ACCESS = Object.freeze({
   insurance_companies: { readModules: ['recepcao', 'faturamento'], writeModule: 'faturamento' },
   insurance_plans: { readModules: ['recepcao', 'faturamento'], writeModule: 'faturamento' },
   payment_sources: { readModules: ['recepcao', 'faturamento'], writeModule: 'faturamento' },
+  lgpd_termos: { readModules: ['recepcao', 'auditoria'], writeModule: 'auditoria' },
 });
 
 function tableToModule(table) {
