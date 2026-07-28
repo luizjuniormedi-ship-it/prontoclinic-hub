@@ -36,11 +36,23 @@ BEGIN
   )
   INTO v_capability_definition;
 
-  IF v_capability_definition NOT LIKE
-    '%private.reception_actor_can_access_unit%'
+  IF v_capability_definition NOT LIKE '%public.active_company_id()%'
+     OR v_capability_definition NOT LIKE '%public.active_unit_id()%'
   THEN
     RAISE EXCEPTION
-      'Reception exception capability bypasses the reception unit boundary';
+      'Reception exception capability bypasses the active unit boundary';
+  END IF;
+
+  IF (
+    SELECT qual
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'appointments'
+      AND policyname = 'appointments_reception_rpc_select'
+  ) NOT LIKE '%active_unit_id()%'
+  THEN
+    RAISE EXCEPTION
+      'Reception appointment owner policy bypasses the active unit boundary';
   END IF;
 
   IF has_function_privilege(

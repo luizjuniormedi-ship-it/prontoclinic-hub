@@ -3,6 +3,16 @@
 
 BEGIN;
 
+DROP POLICY IF EXISTS appointments_reception_rpc_select
+  ON public.appointments;
+CREATE POLICY appointments_reception_rpc_select
+  ON public.appointments
+  FOR SELECT TO prontomedic_reception_rpc_owner
+  USING (
+    company_id = public.active_company_id()
+    AND unit_id = public.active_unit_id()
+  );
+
 CREATE OR REPLACE FUNCTION public.get_reception_exception_capability(
   p_appointment_id BIGINT
 )
@@ -27,11 +37,9 @@ BEGIN
   FROM public.appointments appointment
   WHERE appointment.id = p_appointment_id
     AND appointment.company_id = v_actor.company_id
+    AND appointment.company_id = public.active_company_id()
     AND appointment.unit_id IS NOT NULL
-    AND private.reception_actor_can_access_unit(
-      appointment.company_id,
-      appointment.unit_id
-    );
+    AND appointment.unit_id = public.active_unit_id();
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Agendamento fora do escopo da recepcao';
   END IF;
