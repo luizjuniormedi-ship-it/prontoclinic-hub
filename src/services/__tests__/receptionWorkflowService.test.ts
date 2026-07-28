@@ -326,6 +326,13 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
     ),
     "utf8",
   );
+  const appointmentActiveContextMigration = readFileSync(
+    resolve(
+      process.cwd(),
+      "supabase/migrations/20260728170000_reception_appointment_active_context.sql",
+    ),
+    "utf8",
+  );
 
   it("não autoriza por current_user nem concede escrita financeira ao runtime", () => {
     expect(migration).not.toMatch(/current_user\s*=\s*'app_prontomedic'/i);
@@ -397,6 +404,18 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
     );
     expect(appointmentRpcReadScopeMigration).not.toMatch(
       /FOR SELECT TO (authenticated|app_prontomedic)/,
+    );
+    expect(appointmentActiveContextMigration).toMatch(
+      /FOR SELECT TO prontomedic_reception_rpc_owner[\s\S]*company_id = public\.active_company_id\(\)[\s\S]*unit_id = public\.active_unit_id\(\)/,
+    );
+    expect(appointmentActiveContextMigration).toMatch(
+      /FOR UPDATE TO prontomedic_reception_rpc_owner[\s\S]*WITH CHECK[\s\S]*unit_id = public\.active_unit_id\(\)/,
+    );
+    expect(appointmentActiveContextMigration).not.toContain(
+      "reception_actor_can_access_unit",
+    );
+    expect(appointmentActiveContextMigration).not.toMatch(
+      /FOR (SELECT|UPDATE) TO (authenticated|app_prontomedic)/,
     );
   });
 
