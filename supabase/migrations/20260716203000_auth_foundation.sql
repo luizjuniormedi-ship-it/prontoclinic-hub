@@ -450,7 +450,13 @@ BEGIN
       'module2_roles_select',
       'module2_role_permissions_admin',
       'module2_role_permissions_select',
-      'app_imaging_user_profile_self'
+      'app_imaging_user_profile_self',
+      'module_roles_admin',
+      'module_roles_select',
+      'module_role_permissions_admin',
+      'module_role_permissions_select',
+      'm11_reception_owner_profiles_read',
+      'm23_owner_profile_self_read'
     );
 
   IF v_unknown_policies IS NOT NULL THEN
