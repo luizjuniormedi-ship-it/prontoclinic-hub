@@ -50,6 +50,11 @@ const envSchema = z.object({
   VITE_S3_REGION: z.string().default("us-east-1"),
   VITE_ENABLE_TELEMEDICINE: z.string().transform((v) => v === "true").default("false"),
   VITE_ENABLE_WHATSAPP: z.string().transform((v) => v === "true").default("false"),
+  VITE_ENABLE_MODULE_19: z.string().transform((v) => v === "true").default("false"),
+  VITE_ENABLE_MODULE_20: z.string().transform((v) => v === "true").default("false"),
+  VITE_ENABLE_MODULE_21: z.string().transform((v) => v === "true").default("false"),
+  VITE_ENABLE_MODULE_22: z.string().transform((v) => v === "true").default("false"),
+  VITE_ENABLE_MODULE_23: z.string().transform((v) => v === "true").default("false"),
   VITE_ORTHANC_URL: z.string().url().optional(),
   VITE_ORTHANC_USER: z.string().min(4).optional(),
   VITE_ORTHANC_PASS: z
@@ -84,4 +89,9 @@ export const isStaging = env.VITE_APP_ENV === "staging";
 export const features = {
   telemedicine: env.VITE_ENABLE_TELEMEDICINE,
   whatsapp: env.VITE_ENABLE_WHATSAPP,
+  module19: env.VITE_ENABLE_MODULE_19,
+  module20: env.VITE_ENABLE_MODULE_20,
+  module21: env.VITE_ENABLE_MODULE_21,
+  module22: env.VITE_ENABLE_MODULE_22,
+  module23: env.VITE_ENABLE_MODULE_23,
 } as const;

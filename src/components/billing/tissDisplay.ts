@@ -50,6 +50,27 @@ export function formatTissDateTime(value: unknown): string {
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("pt-BR");
 }
 
+export function formatTissErrorMessage(error: unknown): string {
+  if (!error || typeof error !== "object") {
+    return "Erro desconhecido ao processar TISS.";
+  }
+
+  const payload = error as {
+    code?: unknown;
+    message?: unknown;
+    details?: unknown;
+  };
+  const parts = [payload.message, payload.details]
+    .filter((value): value is string => typeof value === "string" && value.trim() !== "")
+    .map((value) => value.trim());
+
+  if (typeof payload.code === "string" && payload.code.trim() !== "") {
+    parts.push(`(código ${payload.code.trim()})`);
+  }
+
+  return parts.join(" ") || "Erro desconhecido ao processar TISS.";
+}
+
 export function downloadTissXml(fatura: TissXml) {
   if (!fatura.bl_xml_enviado) return;
 

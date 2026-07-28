@@ -1,0 +1,35 @@
+import { expect } from "@playwright/test";
+import { test as authed } from "./fixtures/auth";
+
+authed.describe("M9 visão longitudinal do paciente @readonly", () => {
+  authed("abre a timeline pelo perfil e preserva os modos de visualização", async ({
+    page,
+    loginAs,
+  }) => {
+    await loginAs("admin");
+    await page.goto("/patients");
+    const firstPatient = page.getByRole("row").filter({ has: page.getByRole("cell") }).first();
+    await expect(firstPatient).toBeVisible();
+    await firstPatient.click();
+    await page.getByRole("tab", { name: /agendamentos/i }).click();
+
+    await expect(page.getByRole("heading", { name: /agendamentos do paciente/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /linha do tempo/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^lista$/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /calendário/i })).toBeVisible();
+    await expect(page.getByText(/pagamento:/i)).toHaveCount(0);
+  });
+
+  authed("recepção abre o resumo sem navegar para prontuário clínico", async ({
+    page,
+    loginAs,
+  }) => {
+    await loginAs("reception");
+    await page.goto("/reception");
+    const patientButton = page.getByRole("button", { name: /ver agendamentos de/i }).first();
+    await expect(patientButton).toBeVisible();
+    await patientButton.click();
+    await expect(page.getByText(/visão longitudinal|agendamentos/i).first()).toBeVisible();
+    await expect(page.getByText(/pagamento:/i)).toHaveCount(0);
+  });
+});

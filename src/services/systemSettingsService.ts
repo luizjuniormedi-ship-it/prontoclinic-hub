@@ -15,14 +15,14 @@ export interface SystemSetting {
   updated_at: string;
 }
 
-function parseValue(v: string | null, type: string): string | number | boolean | null {
+export function parseSettingValue(v: string | null, type: string): string | number | boolean | null {
   if (v === null || v === undefined) return null;
   if (type === "number") return Number(v);
   if (type === "boolean") return v === "true" || v === "1";
   return v;
 }
 
-function serializeValue(v: string | number | boolean | null): string | null {
+export function serializeSettingValue(v: string | number | boolean | null): string | null {
   if (v === null || v === undefined) return null;
   if (typeof v === "boolean") return v ? "true" : "false";
   return String(v);
@@ -47,7 +47,7 @@ export const systemSettingsService = {
     if (error) throw new Error(`Erro: ${error.message}`);
     const out: Record<string, string | number | boolean | null> = {};
     for (const row of (data ?? []) as { key: string; value: string | null; data_type: string }[]) {
-      out[row.key] = parseValue(row.value, row.data_type);
+      out[row.key] = parseSettingValue(row.value, row.data_type);
     }
     return out;
   },
@@ -63,7 +63,7 @@ export const systemSettingsService = {
     if (existing && (existing as { id: number }).id) {
       const { error } = await supabase
         .from("system_settings")
-        .update({ value: serializeValue(value), updated_at: new Date().toISOString() })
+        .update({ value: serializeSettingValue(value), updated_at: new Date().toISOString() })
         .eq("id", (existing as { id: number }).id);
       if (error) throw new Error(`Erro ao salvar: ${error.message}`);
     } else {
@@ -73,7 +73,7 @@ export const systemSettingsService = {
         .insert({
           category,
           key,
-          value: serializeValue(value),
+          value: serializeSettingValue(value),
           data_type: type,
         });
       if (error) throw new Error(`Erro ao criar: ${error.message}`);
