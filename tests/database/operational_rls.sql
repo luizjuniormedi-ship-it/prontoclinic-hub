@@ -499,6 +499,25 @@ INSERT INTO public.insurance_eligibility_checks (
     840003, 840022, 'pendente'
   );
 
+INSERT INTO public.insurance_eligibility_events (
+  company_id, eligibility_check_id, event_type, to_status, payload
+) VALUES
+  (
+    '84000000-0000-0000-0000-000000000001',
+    '84000000-0000-0000-0000-000000000041',
+    'created', 'pendente', '{}'::JSONB
+  ),
+  (
+    '84000000-0000-0000-0000-000000000001',
+    '84000000-0000-0000-0000-000000000042',
+    'created', 'pendente', '{}'::JSONB
+  ),
+  (
+    '84000000-0000-0000-0000-000000000002',
+    '84000000-0000-0000-0000-000000000043',
+    'created', 'pendente', '{}'::JSONB
+  );
+
 ALTER TABLE public.insurance_eligibility_checks
   ENABLE TRIGGER trg_insurance_eligibility_event;
 
