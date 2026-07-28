@@ -1,13 +1,10 @@
 {
-  "taskId": "integration-modules-09-13",
-  "module": 13,
-  "baseCommit": "df79248c06569cb920bf22a82cafd050887269a1",
+  "taskId": "module-11-fail-closed-checkin",
+  "module": 11,
+  "baseCommit": "5631ebbd12955574e7a9e50f959f651873027f4a",
   "paths": [
-    "src/components/price-table/PriceTableEditor.tsx",
-    "src/components/schedule/NewAppointmentDialog.tsx",
-    "src/components/schedule/__tests__/NewAppointmentDialog.test.tsx",
-    "src/services/__tests__/priceTableService.test.ts",
-    "src/services/priceTableService.ts"
+    "src/pages/__tests__/ReceptionPage.test.tsx",
+    "src/pages/ReceptionPage.tsx"
   ],
   "sharedPaths": [],
   "status": "active"

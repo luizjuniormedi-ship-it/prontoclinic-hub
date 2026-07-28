@@ -34,7 +34,7 @@ import { receptionExceptionReasonLength } from "@/config/receptionPermissions";
 import { AUTHORIZATION_STATUSES } from "@/services/insuranceAuthorizationService";
 import { ELIGIBILITY_STATUSES, type EligibilityStatus } from "@/services/insuranceEligibilityService";
 
-interface PatientRow { id: string; full_name: string; cpf: string | null; birth_date: string | null; phone: string | null; allergies: string | null; clinical_alerts?: string | null; insurance_plan_id: string | null; }
+export interface PatientRow { id: string; full_name: string; cpf: string | null; birth_date: string | null; phone: string | null; allergies: string | null; clinical_alerts?: string | null; insurance_plan_id: string | null; }
 
 interface CheckinHandoffReceipt {
   appointmentId: string;
@@ -60,6 +60,50 @@ function parseCatalogAmount(value: unknown, label: string): number {
     throw new Error(`Tabela de preços inválida: ${label}`);
   }
   return parsed;
+}
+
+export function resolveReceptionPayer(
+  patient: PatientRow | undefined,
+  insurancePlans: InsurancePlan[],
+  insuranceCompanies: InsuranceCompany[],
+  insuranceCatalogReady: boolean,
+): {
+  plan: InsurancePlan | null;
+  insurer: InsuranceCompany | null;
+  billingType: "particular" | "convenio";
+} {
+  if (!patient) {
+    throw new Error("Cadastro do paciente indisponível. O check-in foi bloqueado.");
+  }
+  if (!patient.insurance_plan_id) {
+    return { plan: null, insurer: null, billingType: "particular" };
+  }
+  if (!insuranceCatalogReady) {
+    throw new Error(
+      "Não foi possível carregar convênios e planos. O pagador não pode ser definido com segurança.",
+    );
+  }
+  const plan = insurancePlans.find(
+    (item) => String(item.id) === String(patient.insurance_plan_id),
+  );
+  if (!plan) {
+    throw new Error("Plano do paciente não foi encontrado. O check-in foi bloqueado.");
+  }
+  const insurer = insuranceCompanies.find(
+    (item) => item.id === plan.insurance_company_id,
+  );
+  if (!insurer) {
+    throw new Error("Convênio do paciente não foi encontrado. O check-in foi bloqueado.");
+  }
+  return { plan, insurer, billingType: "convenio" };
+}
+
+export function assertReceptionPriceFound(found: boolean): void {
+  if (!found) {
+    throw new Error(
+      "Preço não cadastrado para este atendimento. A pré-conta não pode ser aberta com valor presumido.",
+    );
+  }
 }
 
 function createWorkflowKey(appointmentId: string): string {
@@ -252,21 +296,38 @@ export default function ReceptionPage() {
     try {
       setCheckingIn(true); setCheckinTarget(appointment); setReadiness(null); setCanReleaseByException(false); setExceptionReason(""); setPriority("normal");
       const patient = patients.find((item) => item.id === appointment.patientId);
-      if (patient?.insurance_plan_id && !insuranceCatalogReady) {
+      const {
+        plan,
+        insurer,
+        billingType: resolvedBillingType,
+      } = resolveReceptionPayer(
+        patient,
+        insurancePlans,
+        insuranceCompanies,
+        insuranceCatalogReady,
+      );
+      const isInsurance = resolvedBillingType === "convenio";
+      const sourceAppointment = dbAppointments.find((item) => item.id === appointment.id);
+      const serviceId = Number(sourceAppointment?.service_id);
+      const appointmentTypeId = Number(sourceAppointment?.appointment_type_id);
+      if (
+        !sourceAppointment
+        || !Number.isSafeInteger(serviceId)
+        || serviceId <= 0
+        || !Number.isSafeInteger(appointmentTypeId)
+        || appointmentTypeId <= 0
+      ) {
         throw new Error(
-          "Não foi possível carregar convênios e planos. O pagador não pode ser definido com segurança.",
+          "Agendamento sem serviço ou tipo válido. O preço não pode ser determinado.",
         );
       }
-      const plan = insurancePlans.find((item) => String(item.id) === String(patient?.insurance_plan_id || ""));
-      const insurer = insuranceCompanies.find((item) => item.id === plan?.insurance_company_id);
-      const isInsurance = Boolean(plan && insurer);
-      const sourceAppointment = dbAppointments.find((item) => item.id === appointment.id);
       const priceLookup = await priceTableService.findPrice(
-        Number(sourceAppointment?.service_id) || 0,
-        Number(sourceAppointment?.appointment_type_id) || 0,
+        serviceId,
+        appointmentTypeId,
         plan?.id ? Number(plan.id) : null,
         sourceAppointment?.company_id || user?.company_id || null,
       );
+      assertReceptionPriceFound(priceLookup.found);
       const estimatedAmount = Math.max(
         0,
         (isInsurance
