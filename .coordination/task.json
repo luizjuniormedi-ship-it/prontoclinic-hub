@@ -1,17 +1,13 @@
 {
-  "taskId": "conflict-free-orchestration",
-  "module": 1,
-  "baseCommit": "660872f9554900f7307f47dedc84aaf68330c324",
+  "taskId": "module-13-price-contract",
+  "module": 13,
+  "baseCommit": "df79248c06569cb920bf22a82cafd050887269a1",
   "paths": [
-    ".coordination",
-    "docs/DEVELOPMENT_ORCHESTRATION.md",
-    "scripts/coordination.ps1",
-    "scripts/validate-task-scope.mjs"
+    "src/components/price-table/__tests__",
+    "src/components/price-table/PriceTableEditor.tsx",
+    "src/services/__tests__/priceTableService.test.ts",
+    "src/services/priceTableService.ts"
   ],
-  "sharedPaths": [
-    ".github/workflows",
-    "CONTRIBUTING.md",
-    "package.json"
-  ],
+  "sharedPaths": [],
   "status": "active"
 }
