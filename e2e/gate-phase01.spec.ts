@@ -99,6 +99,21 @@ test.describe('Gate fase 0/1', () => {
     await page.goto('/reception');
     await expect(page.getByText('Paciente E2E A')).toBeVisible();
     await expect(page.getByText('Paciente E2E B')).toBeHidden();
+    const blockedDirectWaiting = await authenticatedFetch(
+      page,
+      '/rest/v1/rpc/update_appointment_status_secure',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          p_appointment_id: 91001,
+          p_new_status: 'waiting',
+          p_reason: 'Tentativa direta fora do workflow E2E',
+        }),
+      },
+    );
+    expect(blockedDirectWaiting.status, blockedDirectWaiting.body).toBe(403);
+    expect(JSON.parse(blockedDirectWaiting.body)).toMatchObject({ code: '42501' });
+
     const patientA = page.getByText('Paciente E2E A').locator('xpath=ancestor::*[contains(@class,"rounded-lg") or contains(@class,"border")][1]');
     await patientA.getByRole('button', { name: 'Check-in' }).click();
     const checkinDialog = page.getByRole('dialog', { name: 'Entrada do paciente' });

@@ -354,6 +354,13 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
     ),
     "utf8",
   );
+  const canonicalTransitionGuardMigration = readFileSync(
+    resolve(
+      process.cwd(),
+      "supabase/migrations/20260728190000_reception_canonical_transition_guard.sql",
+    ),
+    "utf8",
+  );
 
   it("não autoriza por current_user nem concede escrita financeira ao runtime", () => {
     expect(migration).not.toMatch(/current_user\s*=\s*'app_prontomedic'/i);
@@ -476,6 +483,24 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
     );
     expect(canonicalScheduleTransitionMigration).toMatch(
       /REVOKE UPDATE \(status, notes, updated_at\) ON public\.appointments[\s\S]*FROM prontomedic_reception_rpc_owner/,
+    );
+    expect(canonicalTransitionGuardMigration).toMatch(
+      /private\.reception_waiting_transition_authorized\(p_appointment_id\)/,
+    );
+    expect(canonicalTransitionGuardMigration).toMatch(
+      /workflow\.status = 'in_progress'[\s\S]*workflow\.current_step = 'checkin'/,
+    );
+    expect(canonicalTransitionGuardMigration).toMatch(
+      /workflow\.billing_account_id IS NOT NULL/,
+    );
+    expect(canonicalTransitionGuardMigration).toMatch(
+      /checkin_record\.status = 'checked_in'[\s\S]*checkin_record\.created_by = auth\.uid\(\)/,
+    );
+    expect(canonicalTransitionGuardMigration).toMatch(
+      /JOIN public\.reception_queue_tickets ticket/,
+    );
+    expect(canonicalTransitionGuardMigration).not.toMatch(
+      /p_new_status = 'waiting'\s+AND public\.can_access\('recepcao', 'edit'\)/,
     );
   });
 
