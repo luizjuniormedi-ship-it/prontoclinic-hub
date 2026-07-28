@@ -189,11 +189,12 @@ SELECT
   card_number,
   status,
   protocol_number,
-  checked_at,
-  checked_by,
   result_detail,
   source,
+  checked_at,
+  checked_by,
   created_at,
+  updated_at,
   unit_id,
   request_channel,
   valid_from,
@@ -211,8 +212,7 @@ SELECT
   exception_granted_at,
   block_reason,
   blocked_by,
-  blocked_at,
-  updated_at
+  blocked_at
 FROM public.insurance_eligibility_checks;
 
 CREATE OR REPLACE FUNCTION public.create_insurance_eligibility_check_secure(
