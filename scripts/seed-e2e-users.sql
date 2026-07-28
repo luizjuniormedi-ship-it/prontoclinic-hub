@@ -312,6 +312,10 @@ ON CONFLICT (id) DO UPDATE SET
   company_id = EXCLUDED.company_id,
   unit_id = EXCLUDED.unit_id,
   full_name = EXCLUDED.full_name,
+  cpf = EXCLUDED.cpf,
+  birth_date = EXCLUDED.birth_date,
+  phone = EXCLUDED.phone,
+  registration_status = 'complete',
   status = 'active',
   lg_ativo = TRUE;
 

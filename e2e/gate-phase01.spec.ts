@@ -98,8 +98,11 @@ test.describe('Gate fase 0/1', () => {
     await expect(page.getByText('Paciente E2E B')).toBeHidden();
     const patientA = page.getByText('Paciente E2E A').locator('xpath=ancestor::*[contains(@class,"rounded-lg") or contains(@class,"border")][1]');
     await patientA.getByRole('button', { name: 'Check-in' }).click();
-    await expect(page.getByRole('dialog', { name: 'Entrada do paciente' })).toBeVisible();
-    await expect(page.getByText('Paciente liberado para check-in')).toBeVisible();
+    const checkinDialog = page.getByRole('dialog', { name: 'Entrada do paciente' });
+    await expect(checkinDialog).toBeVisible();
+    await expect(checkinDialog.getByText('Paciente liberado para check-in')).toBeVisible({
+      timeout: 15_000,
+    });
     await page.getByRole('button', { name: 'Confirmar entrada e abrir conta' }).click();
     await expect(page.getByText(/^Entrada concluída · Senha C\d{3}$/).first()).toBeVisible();
     await expect(page.getByRole('dialog', { name: 'Entrada do paciente' })).toBeHidden();
