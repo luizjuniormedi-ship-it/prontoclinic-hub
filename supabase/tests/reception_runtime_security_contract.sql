@@ -1463,6 +1463,14 @@ BEGIN
     RAISE EXCEPTION
       'Workflow start still depends on a noncanonical JWT company claim';
   END IF;
+  IF position('get_reception_precheckin_context' IN v_definition) = 0 THEN
+    RAISE EXCEPTION
+      'Workflow start does not derive appointment scope from canonical precheck';
+  END IF;
+  IF position('FROM public.appointments' IN v_definition) > 0 THEN
+    RAISE EXCEPTION
+      'Workflow start still reads appointments directly under the RPC owner';
+  END IF;
 END
 $workflow_context_contract$;
 
