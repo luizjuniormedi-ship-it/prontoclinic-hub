@@ -319,6 +319,13 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
     ),
     "utf8",
   );
+  const appointmentRpcReadScopeMigration = readFileSync(
+    resolve(
+      process.cwd(),
+      "supabase/migrations/20260728163000_reception_appointment_rpc_read_scope.sql",
+    ),
+    "utf8",
+  );
 
   it("não autoriza por current_user nem concede escrita financeira ao runtime", () => {
     expect(migration).not.toMatch(/current_user\s*=\s*'app_prontomedic'/i);
@@ -375,6 +382,21 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
     );
     expect(workflowScopeMigration).not.toMatch(
       /SELECT \* INTO v_appointment\s+FROM public\.appointments/i,
+    );
+  });
+
+  it("permite ao RPC bloquear somente o agendamento da empresa e unidade ativas", () => {
+    expect(appointmentRpcReadScopeMigration).toContain(
+      "FOR SELECT TO prontomedic_reception_rpc_owner",
+    );
+    expect(appointmentRpcReadScopeMigration).toContain(
+      "company_id = public.current_company_id()",
+    );
+    expect(appointmentRpcReadScopeMigration).toContain(
+      "private.reception_actor_can_access_unit(company_id, unit_id)",
+    );
+    expect(appointmentRpcReadScopeMigration).not.toMatch(
+      /FOR SELECT TO (authenticated|app_prontomedic)/,
     );
   });
 
