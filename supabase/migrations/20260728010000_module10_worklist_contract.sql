@@ -130,6 +130,81 @@ CREATE TABLE IF NOT EXISTS public.dicom_worklist_queue (
     UNIQUE (company_id, imaging_order_item_id)
 );
 
+ALTER TABLE public.imaging_orders
+  ADD COLUMN IF NOT EXISTS appointment_id BIGINT
+    REFERENCES public.appointments(id) ON DELETE RESTRICT;
+
+UPDATE public.imaging_orders
+SET appointment_id = scheduling_id
+WHERE appointment_id IS NULL
+  AND scheduling_id IS NOT NULL;
+
+ALTER TABLE public.imaging_order_items
+  ADD COLUMN IF NOT EXISTS company_id UUID
+    REFERENCES public.companies(id) ON DELETE RESTRICT,
+  ADD COLUMN IF NOT EXISTS unit_id INTEGER
+    REFERENCES public.units(id) ON DELETE RESTRICT,
+  ADD COLUMN IF NOT EXISTS service_id BIGINT
+    REFERENCES public.services_catalog(id) ON DELETE RESTRICT;
+
+UPDATE public.imaging_order_items AS item
+SET company_id = imaging_order.company_id,
+    unit_id = imaging_order.unit_id
+FROM public.imaging_orders AS imaging_order
+WHERE imaging_order.id = item.imaging_order_id
+  AND (item.company_id IS NULL OR item.unit_id IS NULL);
+
+DO $contract$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM public.dicom_worklist_queue
+    WHERE imaging_order_item_id IS NOT NULL
+      AND imaging_order_item_id::TEXT !~
+        '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+  ) THEN
+    RAISE EXCEPTION
+      'Module 10 cannot convert non-UUID imaging_order_item_id values';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.dicom_worklist_queue
+    WHERE patient_id IS NOT NULL
+      AND patient_id::TEXT !~ '^[0-9]+$'
+  ) THEN
+    RAISE EXCEPTION
+      'Module 10 cannot convert non-numeric patient_id values';
+  END IF;
+END
+$contract$;
+
+ALTER TABLE public.dicom_worklist_queue
+  ALTER COLUMN imaging_order_item_id TYPE UUID
+    USING NULLIF(imaging_order_item_id::TEXT, '')::UUID,
+  ALTER COLUMN patient_id TYPE BIGINT
+    USING NULLIF(patient_id::TEXT, '')::BIGINT,
+  ADD COLUMN IF NOT EXISTS appointment_id BIGINT
+    REFERENCES public.appointments(id) ON DELETE RESTRICT,
+  ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(120);
+
+UPDATE public.dicom_worklist_queue AS queue
+SET appointment_id = imaging_order.appointment_id,
+    idempotency_key = COALESCE(
+      queue.idempotency_key,
+      'legacy:' || queue.id::TEXT
+    )
+FROM public.imaging_order_items AS item
+JOIN public.imaging_orders AS imaging_order
+  ON imaging_order.id = item.imaging_order_id
+WHERE item.id = queue.imaging_order_item_id
+  AND (queue.appointment_id IS NULL OR queue.idempotency_key IS NULL);
+
+CREATE UNIQUE INDEX IF NOT EXISTS imaging_orders_company_appointment_uq
+  ON public.imaging_orders(company_id, appointment_id);
+CREATE UNIQUE INDEX IF NOT EXISTS dicom_worklist_queue_company_item_uq
+  ON public.dicom_worklist_queue(company_id, imaging_order_item_id);
+
 DO $preflight$
 DECLARE
   v_table TEXT;
