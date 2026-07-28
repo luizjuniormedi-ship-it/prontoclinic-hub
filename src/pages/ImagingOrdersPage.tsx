@@ -194,16 +194,15 @@ export default function ImagingOrdersPage() {
     setDetailOpen(true);
   };
 
-  const releaseToWorklist = async (item: ImagingOrderItem, order: ImagingOrder) => {
+  const releaseToWorklist = async (_item: ImagingOrderItem, order: ImagingOrder) => {
     try {
-      const { data: patient } = await supabase
-        .from('patients').select('id, full_name, birth_date, sex, cpf')
-        .eq('id', order.patient_id).single();
-      if (!patient) throw new Error("Paciente não encontrado");
-
-      await worklistQueueService.createFromOrderItem(item, order, patient);
-      await dicomIntegrationService.syncOrderStatus(order.id);
-      toast({ title: "Item liberado para worklist" });
+      const appointmentId = order.appointment_id ?? order.scheduling_id;
+      if (!appointmentId) throw new Error("Pedido sem agendamento vinculado");
+      await worklistQueueService.releaseAppointment(
+        appointmentId,
+        `imaging-order:${order.id}`,
+      );
+      toast({ title: "Pedido liberado para worklist" });
 
       const items = await imagingOrderItemsService.listByOrder(order.id);
       setDetailItems(items);
@@ -218,16 +217,13 @@ export default function ImagingOrdersPage() {
     if (eligible.length === 0) { toast({ title: "Nenhum item elegível para liberação" }); return; }
 
     try {
-      const { data: patient } = await supabase
-        .from('patients').select('id, full_name, birth_date, sex, cpf')
-        .eq('id', order.patient_id).single();
-      if (!patient) throw new Error("Paciente não encontrado");
-
-      for (const item of eligible) {
-        await worklistQueueService.createFromOrderItem(item, order, patient);
-      }
-      await dicomIntegrationService.syncOrderStatus(order.id);
-      toast({ title: `${eligible.length} item(ns) liberado(s) para worklist` });
+      const appointmentId = order.appointment_id ?? order.scheduling_id;
+      if (!appointmentId) throw new Error("Pedido sem agendamento vinculado");
+      const released = await worklistQueueService.releaseAppointment(
+        appointmentId,
+        `imaging-order:${order.id}`,
+      );
+      toast({ title: `${released.length} item(ns) liberado(s) para worklist` });
 
       const items = await imagingOrderItemsService.listByOrder(order.id);
       setDetailItems(items);

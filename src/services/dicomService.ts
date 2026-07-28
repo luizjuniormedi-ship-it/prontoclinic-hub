@@ -1018,6 +1018,31 @@ export const modalitiesService = {
 import type { WorklistQueueStatus, DicomWorklistItem as DicomWorklistItemAlias } from "@/types/dicom";
 
 export const worklistQueueServiceRaw = {
+  async releaseAppointment(
+    appointmentId: string | number,
+    idempotencyKey: string,
+  ): Promise<DicomWorklistItemAlias[]> {
+    const parsedAppointmentId = Number(appointmentId);
+    if (!Number.isSafeInteger(parsedAppointmentId) || parsedAppointmentId <= 0) {
+      throw new Error("Agendamento inválido para liberação da worklist");
+    }
+    if (!/^[A-Za-z0-9._:-]{8,120}$/.test(idempotencyKey)) {
+      throw new Error("Chave de idempotência inválida para a worklist");
+    }
+    const { data, error } = await supabase.rpc(
+      "release_appointment_to_worklist_secure",
+      {
+        p_appointment_id: parsedAppointmentId,
+        p_idempotency_key: idempotencyKey,
+      },
+    );
+    if (error) throw new Error(`Erro ao liberar worklist: ${error.message}`);
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new Error("A liberação não retornou itens da worklist");
+    }
+    return data as unknown as DicomWorklistItemAlias[];
+  },
+
   async list(filters?: { status?: string }): Promise<DicomWorklistItemAlias[]> {
     let q = supabase
       .from("dicom_worklist_queue")
@@ -1059,36 +1084,6 @@ export const worklistQueueServiceRaw = {
     if (error) throw error;
   },
 
-  async createFromOrderItem(
-    item: import("@/types/dicom").ImagingOrderItem,
-    order: import("@/types/dicom").ImagingOrder,
-    patient: { id: string; full_name: string; birth_date?: string; sex?: string; cpf?: string }
-  ): Promise<DicomWorklistItemAlias> {
-    const { data, error } = await supabase
-      .from("dicom_worklist_queue")
-      .insert({
-        imaging_order_item_id: item.id,
-        patient_id: order.patient_id,
-        patient_name: patient.full_name,
-        patient_birth_date: patient.birth_date,
-        patient_sex: patient.sex,
-        patient_identifier: patient.cpf,
-        accession_number: order.accession_number,
-        requested_procedure_description: item.exam_name,
-        requested_procedure_id: item.requested_procedure_id,
-        scheduled_procedure_step_id: item.scheduled_procedure_step_id,
-        modality_type: item.modality_type,
-        scheduled_station_aetitle: item.station_aetitle,
-        scheduled_datetime: item.scheduled_datetime,
-        referring_physician_name: order.referring_physician_name,
-        status: "pending" as WorklistQueueStatus,
-        exported_to_worklist: false,
-      })
-      .select()
-      .single();
-    if (error) throw error;
-    return data as unknown as DicomWorklistItemAlias;
-  },
 };
 
 // ── Imaging Order Items Service ────────────────────────────────────
@@ -1110,9 +1105,14 @@ export const imagingOrderItemsServiceReal = {
   },
 
   async create(payload: Partial<ImagingOrderItem>): Promise<ImagingOrderItem> {
+    const {
+      scheduled_date: _scheduledDate,
+      scheduled_time: _scheduledTime,
+      ...canonicalPayload
+    } = payload;
     const { data, error } = await supabase
       .from("imaging_order_items")
-      .insert(payload)
+      .insert(canonicalPayload)
       .select()
       .single();
     if (error) throw error;
@@ -1148,18 +1148,41 @@ export const imagingOrdersServiceReal = {
       return {
         ...(r as unknown as ImagingOrder),
         patient_name: patient?.full_name,
+        scheduling_id: r.appointment_id
+          ? String(r.appointment_id)
+          : undefined,
       } as ImagingOrder;
     });
   },
 
   async create(payload: Partial<ImagingOrder>): Promise<ImagingOrder> {
+    const {
+      scheduling_id: schedulingId,
+      encounter_id: _encounterId,
+      ...canonicalPayload
+    } = payload;
+    const appointmentId = schedulingId ? Number(schedulingId) : undefined;
+    if (
+      appointmentId !== undefined
+      && (!Number.isSafeInteger(appointmentId) || appointmentId <= 0)
+    ) {
+      throw new Error("Agendamento inválido para o pedido de imagem");
+    }
     const { data, error } = await supabase
       .from("imaging_orders")
-      .insert(payload)
+      .insert({
+        ...canonicalPayload,
+        appointment_id: appointmentId,
+      })
       .select()
       .single();
     if (error) throw error;
-    return data as unknown as ImagingOrder;
+    return {
+      ...(data as unknown as ImagingOrder),
+      scheduling_id: data.appointment_id
+        ? String(data.appointment_id)
+        : undefined,
+    };
   },
 };
 
