@@ -361,6 +361,13 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
     ),
     "utf8",
   );
+  const waitingFailClosedMigration = readFileSync(
+    resolve(
+      process.cwd(),
+      "supabase/migrations/20260728191500_reception_waiting_transition_fail_closed.sql",
+    ),
+    "utf8",
+  );
 
   it("não autoriza por current_user nem concede escrita financeira ao runtime", () => {
     expect(migration).not.toMatch(/current_user\s*=\s*'app_prontomedic'/i);
@@ -501,6 +508,12 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
     );
     expect(canonicalTransitionGuardMigration).not.toMatch(
       /p_new_status = 'waiting'\s+AND public\.can_access\('recepcao', 'edit'\)/,
+    );
+    expect(waitingFailClosedMigration).toMatch(
+      /p_new_status <> 'waiting'[\s\S]*public\.can_access\('agenda', 'edit'\)[\s\S]*OR v_waiting_authorized/,
+    );
+    expect(waitingFailClosedMigration).toMatch(
+      /v_waiting_transition[\s\S]*AND NOT v_waiting_authorized/,
     );
   });
 
