@@ -4,6 +4,7 @@ DECLARE
   v_update_definition TEXT;
   v_queue_definition TEXT;
   v_checkin_definition TEXT;
+  v_capability_definition TEXT;
   v_role RECORD;
 BEGIN
   IF has_function_privilege(
@@ -28,6 +29,18 @@ BEGIN
     'EXECUTE'
   ) THEN
     RAISE EXCEPTION 'Reception exception capability ACL is invalid';
+  END IF;
+
+  SELECT pg_get_functiondef(
+    'public.get_reception_exception_capability(bigint)'::regprocedure
+  )
+  INTO v_capability_definition;
+
+  IF v_capability_definition NOT LIKE
+    '%private.reception_actor_can_access_unit%'
+  THEN
+    RAISE EXCEPTION
+      'Reception exception capability bypasses the reception unit boundary';
   END IF;
 
   IF has_function_privilege(
