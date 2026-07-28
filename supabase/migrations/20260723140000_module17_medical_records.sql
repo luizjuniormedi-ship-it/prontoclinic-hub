@@ -383,31 +383,111 @@ BEGIN
 END $$;
 
 DROP POLICY IF EXISTS m17_medical_records_select ON public.medical_records;
-CREATE POLICY m17_medical_records_select ON public.medical_records FOR SELECT TO authenticated USING (company_id = public.m17_company_id());
+CREATE POLICY m17_medical_records_select ON public.medical_records FOR SELECT TO authenticated
+USING (
+  company_id = public.active_company_id()
+  AND unit_id = public.active_unit_id()
+  AND (
+    public.can_access('medical_records', 'view')
+    OR public.can_access('prontuario', 'view')
+  )
+);
 DROP POLICY IF EXISTS m17_medical_records_insert ON public.medical_records;
-CREATE POLICY m17_medical_records_insert ON public.medical_records FOR INSERT TO authenticated WITH CHECK (company_id = public.m17_company_id() AND public.m17_can_edit_records());
+CREATE POLICY m17_medical_records_insert ON public.medical_records FOR INSERT TO authenticated
+WITH CHECK (
+  company_id = public.active_company_id()
+  AND unit_id = public.active_unit_id()
+  AND public.m17_can_edit_records()
+  AND (
+    public.can_access('medical_records', 'create')
+    OR public.can_access('prontuario', 'create')
+  )
+);
 DROP POLICY IF EXISTS m17_medical_records_update ON public.medical_records;
-CREATE POLICY m17_medical_records_update ON public.medical_records FOR UPDATE TO authenticated USING (company_id = public.m17_company_id() AND status = 'DRAFT' AND public.m17_can_edit_records()) WITH CHECK (company_id = public.m17_company_id());
+CREATE POLICY m17_medical_records_update ON public.medical_records FOR UPDATE TO authenticated
+USING (
+  company_id = public.active_company_id()
+  AND unit_id = public.active_unit_id()
+  AND status = 'DRAFT'
+  AND public.m17_can_edit_records()
+  AND (
+    public.can_access('medical_records', 'edit')
+    OR public.can_access('prontuario', 'edit')
+  )
+)
+WITH CHECK (
+  company_id = public.active_company_id()
+  AND unit_id = public.active_unit_id()
+);
 DROP POLICY IF EXISTS m17_medical_records_delete ON public.medical_records;
-CREATE POLICY m17_medical_records_delete ON public.medical_records FOR DELETE TO authenticated USING (company_id = public.m17_company_id() AND status = 'DRAFT' AND public.m17_can_edit_records());
+CREATE POLICY m17_medical_records_delete ON public.medical_records FOR DELETE TO authenticated
+USING (
+  company_id = public.active_company_id()
+  AND unit_id = public.active_unit_id()
+  AND status = 'DRAFT'
+  AND public.m17_can_edit_records()
+  AND (
+    public.can_access('medical_records', 'delete')
+    OR public.can_access('prontuario', 'delete')
+  )
+);
 
 DO $$
 DECLARE r RECORD;
 BEGIN
   FOR r IN SELECT unnest(ARRAY['patient_clinical_problems','patient_allergies']) AS table_name LOOP
     EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', 'm17_' || r.table_name || '_select', r.table_name);
-    EXECUTE format('CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (company_id = public.m17_company_id())', 'm17_' || r.table_name || '_select', r.table_name);
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (
+        company_id = public.active_company_id()
+        AND unit_id = public.active_unit_id()
+        AND (
+          public.can_access(''medical_records'', ''view'')
+          OR public.can_access(''prontuario'', ''view'')
+        )
+      )',
+      'm17_' || r.table_name || '_select',
+      r.table_name
+    );
     EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', 'm17_' || r.table_name || '_write', r.table_name);
-    EXECUTE format('CREATE POLICY %I ON public.%I FOR ALL TO authenticated USING (company_id = public.m17_company_id() AND public.m17_can_edit_records()) WITH CHECK (company_id = public.m17_company_id() AND public.m17_can_edit_records())', 'm17_' || r.table_name || '_write', r.table_name);
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I FOR ALL TO authenticated USING (
+        company_id = public.active_company_id()
+        AND unit_id = public.active_unit_id()
+        AND public.m17_can_edit_records()
+      ) WITH CHECK (
+        company_id = public.active_company_id()
+        AND unit_id = public.active_unit_id()
+        AND public.m17_can_edit_records()
+      )',
+      'm17_' || r.table_name || '_write',
+      r.table_name
+    );
   END LOOP;
 END $$;
 
 DROP POLICY IF EXISTS m17_medical_record_revisions_select ON public.medical_record_revisions;
-CREATE POLICY m17_medical_record_revisions_select ON public.medical_record_revisions FOR SELECT TO authenticated USING (company_id = public.m17_company_id());
+CREATE POLICY m17_medical_record_revisions_select ON public.medical_record_revisions FOR SELECT TO authenticated
+USING (
+  company_id = public.active_company_id()
+  AND unit_id = public.active_unit_id()
+  AND (
+    public.can_access('medical_records', 'view')
+    OR public.can_access('prontuario', 'view')
+  )
+);
 DROP POLICY IF EXISTS m17_medical_record_revisions_insert ON public.medical_record_revisions;
 REVOKE INSERT ON public.medical_record_revisions FROM authenticated;
 DROP POLICY IF EXISTS m17_medical_record_access_events_select ON public.medical_record_access_events;
-CREATE POLICY m17_medical_record_access_events_select ON public.medical_record_access_events FOR SELECT TO authenticated USING (company_id = public.m17_company_id());
+CREATE POLICY m17_medical_record_access_events_select ON public.medical_record_access_events FOR SELECT TO authenticated
+USING (
+  company_id = public.active_company_id()
+  AND unit_id = public.active_unit_id()
+  AND (
+    public.can_access('medical_records', 'view')
+    OR public.can_access('prontuario', 'view')
+  )
+);
 DROP POLICY IF EXISTS m17_medical_record_access_events_insert ON public.medical_record_access_events;
 REVOKE INSERT ON public.medical_record_access_events FROM authenticated;
 
