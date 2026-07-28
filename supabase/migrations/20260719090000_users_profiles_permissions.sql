@@ -274,8 +274,8 @@ VALUES
 ON CONFLICT (module, action) DO NOTHING;
 
 -- Matriz compatível com a tela atual: uma linha por perfil e módulo.
-INSERT INTO public.role_permissions (role_id, module, can_view, can_create, can_edit, can_delete, can_export)
-SELECT r.id, modules.module,
+INSERT INTO public.role_permissions (role_id, company_id, module, can_view, can_create, can_edit, can_delete, can_export)
+SELECT r.id, c.id, modules.module,
   r.name = 'admin'
   OR (r.name IN ('gestor') AND modules.module IN ('dashboard','patients','schedule','reception','billing','financial','audit'))
   OR (r.name IN ('recepcao','supervisor_recepcao') AND modules.module IN ('dashboard','patients','schedule','reception','callcenter'))
@@ -289,6 +289,7 @@ SELECT r.id, modules.module,
   r.name = 'admin',
   r.name IN ('admin','gestor','auditor','financeiro')
 FROM public.roles r
+CROSS JOIN public.companies c
 CROSS JOIN (VALUES ('dashboard'),('patients'),('schedule'),('callcenter'),('reception'),('records'),('attendance'),('encounters'),('nursing'),('billing'),('financial'),('dicom'),('audit'),('admin')) AS modules(module)
 ON CONFLICT DO NOTHING;
 

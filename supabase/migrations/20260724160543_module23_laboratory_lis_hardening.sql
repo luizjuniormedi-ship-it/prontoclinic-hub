@@ -28,10 +28,11 @@ VALUES
 ON CONFLICT (module, action) DO NOTHING;
 
 INSERT INTO public.role_permissions (
-  role_id, module, can_view, can_create, can_edit, can_delete, can_export
+  role_id, company_id, module, can_view, can_create, can_edit, can_delete, can_export
 )
 SELECT
   r.id,
+  c.id,
   'laboratorio',
   TRUE,
   r.name IN ('admin', 'laboratorio', 'diagnostico'),
@@ -39,6 +40,7 @@ SELECT
   FALSE,
   r.name IN ('admin', 'laboratorio', 'medico', 'gestor')
 FROM public.roles r
+CROSS JOIN public.companies c
 WHERE r.name IN ('admin', 'laboratorio', 'diagnostico', 'medico', 'gestor')
 ON CONFLICT DO NOTHING;
 

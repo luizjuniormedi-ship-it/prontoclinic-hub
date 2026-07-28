@@ -55,10 +55,11 @@ VALUES
 ON CONFLICT (module, action) DO NOTHING;
 
 INSERT INTO public.role_permissions (
-  role_id, module, can_view, can_create, can_edit, can_delete, can_export
+  role_id, company_id, module, can_view, can_create, can_edit, can_delete, can_export
 )
-SELECT r.id, matrix.module, TRUE, TRUE, TRUE, FALSE, FALSE
+SELECT r.id, c.id, matrix.module, TRUE, TRUE, TRUE, FALSE, FALSE
 FROM public.roles r
+CROSS JOIN public.companies c
 JOIN (
   VALUES
     ('admin', 'solicitacoes_exames'),

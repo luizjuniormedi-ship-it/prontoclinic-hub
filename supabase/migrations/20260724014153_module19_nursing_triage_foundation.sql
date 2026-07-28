@@ -82,10 +82,11 @@ VALUES
 ON CONFLICT (module, action) DO NOTHING;
 
 INSERT INTO public.role_permissions (
-  role_id, module, can_view, can_create, can_edit, can_delete, can_export
+  role_id, company_id, module, can_view, can_create, can_edit, can_delete, can_export
 )
-SELECT r.id, 'triagem_clinica', TRUE, TRUE, TRUE, FALSE, FALSE
+SELECT r.id, c.id, 'triagem_clinica', TRUE, TRUE, TRUE, FALSE, FALSE
 FROM public.roles r
+CROSS JOIN public.companies c
 WHERE r.name IN ('admin', 'gestor', 'medico', 'enfermagem', 'tecnico_enfermagem')
 ON CONFLICT DO NOTHING;
 
