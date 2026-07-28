@@ -243,6 +243,48 @@ INSERT INTO public.appointment_types (id, company_id, name, default_duration, ca
 VALUES (91001, 'eeeeeeee-1000-4000-8000-000000000001', 'Consulta E2E', 30, 'consulta', TRUE)
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, lg_ativo = TRUE;
 
+INSERT INTO public.services_catalog (id, company_id, code, name, price, lg_ativo)
+VALUES (
+  91001,
+  'eeeeeeee-1000-4000-8000-000000000001',
+  'E2E-CONSULTA',
+  'Consulta clínica E2E',
+  150.00,
+  TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  code = EXCLUDED.code,
+  name = EXCLUDED.name,
+  price = EXCLUDED.price,
+  lg_ativo = TRUE;
+
+INSERT INTO public.price_tables (
+  id, company_id, appointment_type_id, service_id, insurance_plan_id,
+  dt_inicio, dt_fim, vl_particular, vl_convenio, active
+) VALUES (
+  91001,
+  'eeeeeeee-1000-4000-8000-000000000001',
+  91001,
+  91001,
+  NULL,
+  CURRENT_DATE - 1,
+  NULL,
+  150.00,
+  0.00,
+  TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  appointment_type_id = EXCLUDED.appointment_type_id,
+  service_id = EXCLUDED.service_id,
+  insurance_plan_id = NULL,
+  dt_inicio = EXCLUDED.dt_inicio,
+  dt_fim = NULL,
+  vl_particular = EXCLUDED.vl_particular,
+  vl_convenio = EXCLUDED.vl_convenio,
+  active = TRUE;
+
 INSERT INTO public.professionals (
   id, company_id, user_id, full_name, crm, specialty, email, lg_ativo
 ) VALUES (
@@ -283,17 +325,17 @@ DELETE FROM public.medical_records WHERE appointment_id IN (91001, 91002);
 
 INSERT INTO public.appointments (
   id, company_id, unit_id, patient_id, professional_id, specialty_id,
-  appointment_type_id, appointment_date, start_time, end_time, status,
+  service_id, appointment_type_id, appointment_date, start_time, end_time, status,
   tp_status, lg_confirmado, lg_checkin, notes
 ) VALUES
 (
   91001, 'eeeeeeee-1000-4000-8000-000000000001', 91001,
-  91001, 91001, 91001, 91001, CURRENT_DATE, TIME '14:00', TIME '14:30',
+  91001, 91001, 91001, 91001, 91001, CURRENT_DATE, TIME '14:00', TIME '14:30',
   'scheduled', 'agendado', TRUE, FALSE, 'Fixture fase 0/1'
 ),
 (
   91002, 'eeeeeeee-1000-4000-8000-000000000001', 91002,
-  91002, 91001, 91001, 91001, CURRENT_DATE, TIME '15:00', TIME '15:30',
+  91002, 91001, 91001, 91001, 91001, CURRENT_DATE, TIME '15:00', TIME '15:30',
   'scheduled', 'agendado', TRUE, FALSE, 'Fixture de isolamento da unidade B'
 )
 ON CONFLICT (id) DO UPDATE SET
@@ -302,6 +344,7 @@ ON CONFLICT (id) DO UPDATE SET
   patient_id = EXCLUDED.patient_id,
   professional_id = EXCLUDED.professional_id,
   specialty_id = EXCLUDED.specialty_id,
+  service_id = EXCLUDED.service_id,
   appointment_type_id = EXCLUDED.appointment_type_id,
   appointment_date = EXCLUDED.appointment_date,
   start_time = EXCLUDED.start_time,
