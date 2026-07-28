@@ -11,7 +11,7 @@ const RECORD_MARKER = 'Queixa E2E persistida fase 0/1';
 async function assertAccessible(page: Page, label: string) {
   const closeNotification = page.getByRole('button', { name: 'Fechar notificação' });
   if (await closeNotification.isVisible().catch(() => false)) {
-    await closeNotification.click();
+    await closeNotification.click({ force: true });
     await expect(closeNotification).toBeHidden();
   }
   await page.evaluate(() => {
@@ -135,6 +135,7 @@ test.describe('Gate fase 0/1', () => {
     await expect(page.getByText(/^Entrada concluída · Senha C\d{3}$/).first()).toBeVisible();
     await expect(page.getByRole('dialog', { name: 'Entrada do paciente' })).toBeHidden();
     await expect(page).toHaveURL(/\/reception/);
+    await page.getByRole('button', { name: 'Fechar', exact: true }).click();
     await assertAccessible(page, 'recepção após check-in');
 
     const waitingA = page.getByText('Paciente E2E A').locator('xpath=ancestor::*[contains(@class,"rounded-lg") or contains(@class,"border")][1]');
