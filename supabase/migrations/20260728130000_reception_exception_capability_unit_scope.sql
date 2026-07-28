@@ -3,43 +3,6 @@
 
 BEGIN;
 
-CREATE OR REPLACE FUNCTION private.reception_actor_has_selected_unit(
-  p_company_id UUID,
-  p_unit_id INTEGER
-)
-RETURNS BOOLEAN
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = pg_catalog, public, auth
-SET row_security = off
-AS $function$
-  SELECT p_company_id IS NOT NULL
-    AND p_unit_id IS NOT NULL
-    AND public.current_application_session_is_active()
-    AND EXISTS (
-      SELECT 1
-      FROM public.user_access_context access_context
-      JOIN public.memberships membership
-        ON membership.id = access_context.membership_id
-       AND membership.user_id = access_context.user_id
-       AND membership.status = 'active'
-      WHERE access_context.user_id = auth.uid()
-        AND access_context.session_id =
-          NULLIF(auth.jwt()->>'session_id', '')::UUID
-        AND membership.company_id = p_company_id
-        AND access_context.unit_id = p_unit_id
-    );
-$function$;
-
-ALTER FUNCTION private.reception_actor_has_selected_unit(UUID, INTEGER)
-  OWNER TO prontomedic_reception_rpc_owner;
-
-REVOKE ALL ON FUNCTION private.reception_actor_has_selected_unit(UUID, INTEGER)
-  FROM PUBLIC, anon, authenticated, app_prontomedic;
-GRANT EXECUTE ON FUNCTION private.reception_actor_has_selected_unit(UUID, INTEGER)
-  TO prontomedic_reception_rpc_owner;
-
 DROP POLICY IF EXISTS appointments_reception_rpc_select
   ON public.appointments;
 CREATE POLICY appointments_reception_rpc_select
@@ -60,6 +23,7 @@ SET search_path = pg_catalog, public, private
 AS $function$
 DECLARE
   v_actor RECORD;
+  v_precheck JSONB;
   v_unit_id INTEGER;
   v_allowed BOOLEAN;
 BEGIN
@@ -68,17 +32,14 @@ BEGIN
     RAISE EXCEPTION 'Usuario autenticado sem perfil operacional';
   END IF;
 
-  SELECT appointment.unit_id
-  INTO v_unit_id
-  FROM public.appointments appointment
-  WHERE appointment.id = p_appointment_id
-    AND appointment.company_id = v_actor.company_id
-    AND appointment.unit_id IS NOT NULL
-    AND private.reception_actor_has_selected_unit(
-      appointment.company_id,
-      appointment.unit_id
-    );
-  IF NOT FOUND THEN
+  IF v_actor.company_id IS DISTINCT FROM public.current_company_id() THEN
+    RAISE EXCEPTION 'Empresa ativa fora do escopo da recepcao';
+  END IF;
+
+  v_precheck := public.get_reception_precheckin_context(p_appointment_id);
+  v_unit_id := NULLIF(v_precheck->>'unit_id', '')::INTEGER;
+  IF v_unit_id IS NULL
+     OR v_unit_id IS DISTINCT FROM public.active_unit_id() THEN
     RAISE EXCEPTION 'Agendamento fora do escopo da recepcao';
   END IF;
 

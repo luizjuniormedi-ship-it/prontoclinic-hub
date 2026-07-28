@@ -37,7 +37,9 @@ BEGIN
   INTO v_capability_definition;
 
   IF v_capability_definition NOT LIKE
-    '%private.reception_actor_has_selected_unit%'
+    '%public.get_reception_precheckin_context%'
+     OR v_capability_definition NOT LIKE
+    '%public.active_unit_id%'
   THEN
     RAISE EXCEPTION
       'Reception exception capability bypasses the active unit boundary';
