@@ -312,6 +312,13 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
     resolve(process.cwd(), "src/services/receptionWorkflowService.ts"),
     "utf8",
   );
+  const workflowScopeMigration = readFileSync(
+    resolve(
+      process.cwd(),
+      "supabase/migrations/20260728160000_reception_checkin_workflow_scope.sql",
+    ),
+    "utf8",
+  );
 
   it("não autoriza por current_user nem concede escrita financeira ao runtime", () => {
     expect(migration).not.toMatch(/current_user\s*=\s*'app_prontomedic'/i);
@@ -357,6 +364,18 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
     expect(serviceSource).not.toContain("record_reception_payment_secure");
     expect(serviceSource).not.toContain("paidAmount");
     expect(migration.toLowerCase()).not.toContain("datasigh");
+  });
+
+  it("finaliza o check-in no escopo imutável do workflow autorizado", () => {
+    expect(workflowScopeMigration).toContain(
+      "v_appointment.id := v_workflow.appointment_id",
+    );
+    expect(workflowScopeMigration).toContain(
+      "v_appointment.company_id := v_workflow.company_id",
+    );
+    expect(workflowScopeMigration).not.toMatch(
+      /SELECT \* INTO v_appointment\s+FROM public\.appointments/i,
+    );
   });
 
   it("permite à recepção preparar artefatos sem conceder baixa financeira", () => {
