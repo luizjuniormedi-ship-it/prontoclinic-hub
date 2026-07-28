@@ -131,9 +131,15 @@ try {
 
   if ($Action -eq "Verify") {
     $manifest = Join-Path $current.worktree ".coordination/task.json"
-    & node (Join-Path $current.worktree "scripts/validate-task-scope.mjs") `
-      --manifest $manifest --base $current.baseCommit --head HEAD --worktree
-    if ($LASTEXITCODE -ne 0) { throw "Task scope validation failed." }
+    Push-Location $current.worktree
+    try {
+      & node (Join-Path $repoRoot "scripts/validate-task-scope.mjs") `
+        --manifest $manifest --base $current.baseCommit --head HEAD --worktree
+      if ($LASTEXITCODE -ne 0) { throw "Task scope validation failed." }
+    }
+    finally {
+      Pop-Location
+    }
     Write-Output "Task verified: $TaskId"
     return
   }

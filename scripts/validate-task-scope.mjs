@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { relative, resolve } from "node:path";
 
 const args = process.argv.slice(2);
 const valueFor = (name, fallback) => {
@@ -31,6 +32,7 @@ if (manifest.status !== "active") {
 
 const normalize = (input) =>
   input.replaceAll("\\", "/").replace(/^\.\/+/, "").replace(/\/+$/, "");
+const manifestRepoPath = normalize(relative(process.cwd(), resolve(manifestPath)));
 const roots = [...manifest.paths, ...manifest.sharedPaths].map(normalize);
 if (roots.some((root) => !root || root === "." || root === "..")) {
   console.error("Task paths must be explicit repository paths.");
@@ -59,7 +61,7 @@ const untrackedFiles = includeWorktree
       .filter(Boolean)
   : [];
 const changed = [...new Set([...diffFiles, ...untrackedFiles])].filter(
-  (file) => file !== normalize(manifestPath),
+  (file) => file !== manifestRepoPath,
 );
 
 const allowed = (file) =>
