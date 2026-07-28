@@ -139,6 +139,35 @@ describe("appointmentsService — getByDate (filtro por data)", () => {
     expect(result).toHaveLength(1);
     expect(result[0].appointment_date).toBe("2026-06-23");
   });
+
+  it("filtra a agenda operacional por data e unidade", async () => {
+    const rows = [makeAppointment({ id: "a1", unit_id: "9" })];
+    const query = {
+      select: vi.fn(),
+      eq: vi.fn(),
+      order: vi.fn(),
+      then: undefined as unknown,
+    };
+    query.select.mockReturnValue(query);
+    query.eq.mockReturnValue(query);
+    query.order
+      .mockReturnValueOnce(query)
+      .mockResolvedValueOnce({ data: rows, error: null });
+    (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue(query);
+
+    const result = await appointmentsService.getByDateForUnit("2026-06-23", 9);
+
+    expect(query.eq).toHaveBeenCalledWith("appointment_date", "2026-06-23");
+    expect(query.eq).toHaveBeenCalledWith("unit_id", 9);
+    expect(result).toEqual(rows);
+  });
+
+  it("rejeita agenda operacional sem unidade válida", async () => {
+    await expect(
+      appointmentsService.getByDateForUnit("2026-06-23", 0),
+    ).rejects.toThrow("Unidade operacional inválida");
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
 });
 
 describe("appointmentsService — getPatientLastCompleted (filtro por patient_id e status)", () => {

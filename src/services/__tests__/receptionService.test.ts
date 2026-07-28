@@ -292,17 +292,30 @@ describe("receptionService — contrato local dos RPCs de check-in", () => {
 
   it("inclui issued_unit_id na leitura da fila", async () => {
     const rows = [queueTicket({ unit_id: 9, issued_unit_id: 2 })];
-    const limit = vi.fn().mockResolvedValue({ data: rows, error: null });
-    const order = vi.fn().mockReturnValue({ limit });
-    const eq = vi.fn().mockReturnValue({ order });
-    const select = vi.fn().mockReturnValue({ eq });
-    vi.mocked(supabase.from).mockReturnValue({ select } as never);
+    const query = {
+      select: vi.fn(),
+      eq: vi.fn(),
+      order: vi.fn(),
+      limit: vi.fn().mockResolvedValue({ data: rows, error: null }),
+    };
+    query.select.mockReturnValue(query);
+    query.eq.mockReturnValue(query);
+    query.order.mockReturnValue(query);
+    vi.mocked(supabase.from).mockReturnValue(query as never);
 
-    const result = await receptionService.listQueue(undefined, "2026-07-26");
+    const result = await receptionService.listQueue(9, "2026-07-26");
 
     expect(supabase.from).toHaveBeenCalledWith("reception_queue_tickets");
-    expect(select).toHaveBeenCalledWith(expect.stringContaining("issued_unit_id"));
-    expect(eq).toHaveBeenCalledWith("ticket_date", "2026-07-26");
+    expect(query.select).toHaveBeenCalledWith(expect.stringContaining("issued_unit_id"));
+    expect(query.eq).toHaveBeenCalledWith("ticket_date", "2026-07-26");
+    expect(query.eq).toHaveBeenCalledWith("unit_id", 9);
     expect(result[0].issued_unit_id).toBe(2);
+  });
+
+  it("rejeita leitura da fila sem unidade operacional válida", async () => {
+    await expect(receptionService.listQueue(0, "2026-07-26")).rejects.toThrow(
+      "Unidade operacional inválida",
+    );
+    expect(supabase.from).not.toHaveBeenCalled();
   });
 });

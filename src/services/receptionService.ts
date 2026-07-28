@@ -122,14 +122,17 @@ export const receptionService = {
     if (error) throw new Error(`Erro ao realizar check-in: ${error.message}`);
     return data as CheckinResult;
   },
-  async listQueue(unitId?: number, date = localDateKey()): Promise<ReceptionQueueTicket[]> {
-    let query = supabase
+  async listQueue(unitId: number, date = localDateKey()): Promise<ReceptionQueueTicket[]> {
+    if (!Number.isInteger(unitId) || unitId <= 0) {
+      throw new Error("Unidade operacional inválida");
+    }
+    const query = supabase
       .from("reception_queue_tickets")
       .select("id,unit_id,issued_unit_id,patient_id,appointment_id,prefix,number,priority,sector,status,ticket_date,issued_at,called_at,completed_at,transferred_at,transferred_to_unit_id,sla_minutes,sla_due_at")
       .eq("ticket_date", date)
+      .eq("unit_id", unitId)
       .order("issued_at", { ascending: true })
       .limit(200);
-    if (unitId != null) query = query.eq("unit_id", unitId);
     const { data, error } = await query;
     if (error) throw new Error(`Erro ao listar fila de recepção: ${error.message}`);
     return (data || []) as ReceptionQueueTicket[];
@@ -138,18 +141,19 @@ export const receptionService = {
     const { error } = await supabase.rpc("transition_reception_queue_ticket_secure", { p_ticket_id: ticketId, p_to_status: status, p_reason: reason || null, p_destination_unit_id: destinationUnitId ?? null });
     if (error) throw new Error(`Erro ao atualizar fila de recepção: ${error.message}`);
   },
-  async listPending(unitId?: number): Promise<ReceptionPendingItem[]> {
-    let appointmentIds: number[] | null = null;
-    if (unitId != null) {
-      const appointments = await supabase
-        .from("appointments")
-        .select("id")
-        .eq("unit_id", unitId);
-      if (appointments.error) {
-        throw new Error(`Erro ao delimitar pendências por unidade: ${appointments.error.message}`);
-      }
-      appointmentIds = ((appointments.data || []) as AppointmentIdRow[]).map((row) => Number(row.id));
+  async listPending(unitId: number): Promise<ReceptionPendingItem[]> {
+    if (!Number.isInteger(unitId) || unitId <= 0) {
+      throw new Error("Unidade operacional inválida");
     }
+    const appointments = await supabase
+      .from("appointments")
+      .select("id")
+      .eq("unit_id", unitId);
+    if (appointments.error) {
+      throw new Error(`Erro ao delimitar pendências por unidade: ${appointments.error.message}`);
+    }
+    const appointmentIds = ((appointments.data || []) as AppointmentIdRow[]).map((row) => Number(row.id));
+    if (appointmentIds.length === 0) return [];
 
     let authorizationQuery = supabase
       .from("reception_authorizations")
@@ -164,11 +168,8 @@ export const receptionService = {
       .order("created_at")
       .limit(200);
 
-    if (appointmentIds != null) {
-      if (appointmentIds.length === 0) return [];
-      authorizationQuery = authorizationQuery.in("appointment_id", appointmentIds);
-      eligibilityQuery = eligibilityQuery.eq("unit_id", unitId);
-    }
+    authorizationQuery = authorizationQuery.in("appointment_id", appointmentIds);
+    eligibilityQuery = eligibilityQuery.eq("unit_id", unitId);
 
     const [auth, eligibility] = await Promise.all([
       authorizationQuery,

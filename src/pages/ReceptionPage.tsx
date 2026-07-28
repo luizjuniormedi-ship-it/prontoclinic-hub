@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Check, Clock, UserCheck, Play, AlertTriangle, Search, Stethoscope, PhoneCall, RotateCcw, ArrowRightLeft, Volume2, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,7 @@ import { ReceptionPatientAppointmentsSheet } from "@/components/patients/Recepti
 import { receptionExceptionReasonLength } from "@/config/receptionPermissions";
 import { AUTHORIZATION_STATUSES } from "@/services/insuranceAuthorizationService";
 import { ELIGIBILITY_STATUSES, type EligibilityStatus } from "@/services/insuranceEligibilityService";
+import { withTimeout } from "@/utils/asyncTimeout";
 
 export interface PatientRow { id: string; full_name: string; cpf: string | null; birth_date: string | null; phone: string | null; allergies: string | null; clinical_alerts?: string | null; insurance_plan_id: string | null; }
 
@@ -240,23 +241,33 @@ export default function ReceptionPage() {
   const { allowed: canOpenBilling } = usePermissionGate("/billing-accounts");
   const { allowed: canOpenFinancial } = usePermissionGate("/financial");
   const { user } = useAuth();
-  const unitId = user?.primary_unit_id ? Number(user.primary_unit_id) : undefined;
+  const parsedUnitId = user?.primary_unit_id ? Number(user.primary_unit_id) : Number.NaN;
+  const unitId = Number.isInteger(parsedUnitId) && parsedUnitId > 0 ? parsedUnitId : null;
+  const loadSequence = useRef(0);
   const exceptionReasonLength = receptionExceptionReasonLength(exceptionReason);
 
   const loadAll = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     try {
       setLoading(true); setError(null); setWarnings([]);
       setInsuranceCatalogReady(false);
-      const appts = await appointmentsService.getByDate(today);
+      if (unitId === null) {
+        throw new Error("Selecione uma unidade operacional válida para abrir a recepção.");
+      }
+      const appts = await withTimeout(
+        appointmentsService.getByDateForUnit(today, unitId),
+        15_000,
+        "A agenda da recepção não respondeu no prazo. Tente novamente.",
+      );
       const results = await Promise.allSettled([
-        professionalsLookup.getAll(),
-        specialtiesLookup.getAll(),
-        appointmentTypesLookup.getAll(),
-        receptionService.listPending(unitId),
-        receptionService.listQueue(unitId, today),
-        unitsService.getAll(true),
-        insuranceCompanyService.getAll(),
-        insurancePlanService.getAll(),
+        withTimeout(professionalsLookup.getAll(), 15_000, "Profissionais não responderam no prazo."),
+        withTimeout(specialtiesLookup.getAll(), 15_000, "Especialidades não responderam no prazo."),
+        withTimeout(appointmentTypesLookup.getAll(), 15_000, "Tipos de agendamento não responderam no prazo."),
+        withTimeout(receptionService.listPending(unitId), 15_000, "Pendências não responderam no prazo."),
+        withTimeout(receptionService.listQueue(unitId, today), 15_000, "Fila não respondeu no prazo."),
+        withTimeout(unitsService.getAll(true), 15_000, "Unidades não responderam no prazo."),
+        withTimeout(insuranceCompanyService.getAll(), 15_000, "Convênios não responderam no prazo."),
+        withTimeout(insurancePlanService.getAll(), 15_000, "Planos não responderam no prazo."),
       ]);
       const partialWarnings: string[] = [];
       const profs = settledValue(results[0], [] as DbProfessional[], "profissionais", partialWarnings);
@@ -272,7 +283,11 @@ export default function ReceptionPage() {
       const patientIds = [...new Set(appts.map((a) => a.patient_id).filter(Boolean))];
       let pats: PatientRow[] = [];
       if (patientIds.length > 0) {
-        const { data, error: patientsError } = await supabase.from("patients").select("id, full_name, cpf, birth_date, phone, allergies, clinical_alerts, insurance_plan_id").in("id", patientIds);
+        const { data, error: patientsError } = await withTimeout(
+          supabase.from("patients").select("id, full_name, cpf, birth_date, phone, allergies, clinical_alerts, insurance_plan_id").in("id", patientIds),
+          15_000,
+          "O cadastro dos pacientes não respondeu no prazo. O check-in foi bloqueado.",
+        );
         if (patientsError) {
           throw new Error("Não foi possível carregar o cadastro dos pacientes. O check-in foi bloqueado.");
         }
@@ -282,6 +297,7 @@ export default function ReceptionPage() {
           throw new Error("Um ou mais agendamentos possuem paciente indisponível. O check-in foi bloqueado.");
         }
       }
+      if (sequence !== loadSequence.current) return;
       setProfessionals(profs); setSpecialties(specs); setAppointmentTypes(types); setPatients(pats); setDbAppointments(appts);
       setPendingItems(pendingRows); setQueueItems(queueRows); setQueueUnits(units);
       setInsuranceCompanies(insurers); setInsurancePlans(plans);
@@ -289,11 +305,17 @@ export default function ReceptionPage() {
         results[6].status === "fulfilled" && results[7].status === "fulfilled",
       );
       setWarnings(partialWarnings);
-    } catch (err) { setError(friendlyError(err, "Carregar recepção")); }
-    finally { setLoading(false); }
+    } catch (err) {
+      if (sequence === loadSequence.current) setError(friendlyError(err, "Carregar recepção"));
+    } finally {
+      if (sequence === loadSequence.current) setLoading(false);
+    }
   }, [today, unitId]);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => {
+    void loadAll();
+    return () => { loadSequence.current += 1; };
+  }, [loadAll]);
 
   const appointments = useMemo(() => dbAppointments.map((db) => toDisplayAppointment(db, patients, professionals, specialties, appointmentTypes)), [dbAppointments, patients, professionals, specialties, appointmentTypes]);
   const queueSummary = useMemo(() => ({

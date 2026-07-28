@@ -269,6 +269,22 @@ export const appointmentsService = {
     return this.getByDateRange(date, date);
   },
 
+  async getByDateForUnit(date: string, unitId: number): Promise<DbAppointment[]> {
+    if (!Number.isInteger(unitId) || unitId <= 0) {
+      throw new Error('Unidade operacional inválida.');
+    }
+
+    const { data, error } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('appointment_date', date)
+      .eq('unit_id', unitId)
+      .order('start_time')
+      .order('id');
+    if (error) throw new Error(`Erro ao buscar agendamentos da unidade: ${error.message}`);
+    return (data || []) as DbAppointment[];
+  },
+
   async create(input: AppointmentCreateInput): Promise<DbAppointment> {
     const { data, error } = await supabase.rpc('create_appointment_with_requirements_secure', {
       p_patient_id: requiredBigIntParam(input.patient_id, 'Paciente'),
