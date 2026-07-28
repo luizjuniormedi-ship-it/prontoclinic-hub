@@ -391,7 +391,10 @@ BEGIN
         'insurance_authorizations_update_unit',
         'insurance_eligibility_select_unit',
         'insurance_eligibility_insert_unit',
-        'insurance_eligibility_update_unit'
+        'insurance_eligibility_update_unit',
+        'insurance_eligibility_reception_owner',
+        'insurance_eligibility_reception_owner_select',
+        'insurance_eligibility_reception_owner_update'
       )
   LOOP
     RAISE EXCEPTION 'OPERATIONAL_RLS_UNKNOWN_POLICY: public.%.%',
