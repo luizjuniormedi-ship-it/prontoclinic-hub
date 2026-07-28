@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertReceptionBillingIntegrity,
   assertReceptionPriceFound,
+  assertReceptionReceivableIntegrity,
   resolveReceptionPayer,
   type PatientRow,
 } from "@/pages/ReceptionPage";
@@ -73,5 +75,56 @@ describe("ReceptionPage — decisão segura do pagador", () => {
       "Preço não cadastrado para este atendimento",
     );
     expect(() => assertReceptionPriceFound(true)).not.toThrow();
+  });
+
+  it("bloqueia alteração do pagador depois da cotação validada", () => {
+    const quote = {
+      billingType: "convenio" as const,
+      insuranceId: 20,
+      totalGrossAmount: 150,
+    };
+    expect(() =>
+      assertReceptionBillingIntegrity(quote, {
+        ...quote,
+        billingType: "particular",
+        insuranceId: null,
+      }),
+    ).toThrow("divergiu da cotação validada");
+    expect(() =>
+      assertReceptionBillingIntegrity(quote, { ...quote, insuranceId: 21 }),
+    ).toThrow("divergiu da cotação validada");
+  });
+
+  it("bloqueia alteração do valor e aceita a cotação original", () => {
+    const quote = {
+      billingType: "particular" as const,
+      insuranceId: null,
+      totalGrossAmount: 89.9,
+    };
+    expect(() =>
+      assertReceptionBillingIntegrity(quote, {
+        ...quote,
+        totalGrossAmount: 0,
+      }),
+    ).toThrow("divergiu da cotação validada");
+    expect(() => assertReceptionBillingIntegrity(quote, quote)).not.toThrow();
+    expect(() => assertReceptionBillingIntegrity(null, quote)).toThrow(
+      "Cotação da pré-conta indisponível",
+    );
+  });
+
+  it("limita recebível ao valor da pré-conta e ao tipo do pagador", () => {
+    expect(() =>
+      assertReceptionReceivableIntegrity("particular", 100, "private", 100),
+    ).not.toThrow();
+    expect(() =>
+      assertReceptionReceivableIntegrity("convenio", 100, "copayment", 20),
+    ).not.toThrow();
+    expect(() =>
+      assertReceptionReceivableIntegrity("particular", 100, "private", 101),
+    ).toThrow("não pode exceder a pré-conta");
+    expect(() =>
+      assertReceptionReceivableIntegrity("convenio", 100, "private", 20),
+    ).toThrow("incompatível com a fonte pagadora");
   });
 });

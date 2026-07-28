@@ -47,6 +47,12 @@ interface CheckinHandoffReceipt {
   totalGrossAmount: number;
 }
 
+export interface ReceptionBillingQuote {
+  billingType: "particular" | "convenio";
+  insuranceId: number | null;
+  totalGrossAmount: number;
+}
+
 function parseCurrency(value: string): number {
   const normalized = value.trim().replace(/\./g, "").replace(",", ".");
   const parsed = Number(normalized || "0");
@@ -103,6 +109,41 @@ export function assertReceptionPriceFound(found: boolean): void {
     throw new Error(
       "Preço não cadastrado para este atendimento. A pré-conta não pode ser aberta com valor presumido.",
     );
+  }
+}
+
+export function assertReceptionBillingIntegrity(
+  quote: ReceptionBillingQuote | null,
+  submitted: ReceptionBillingQuote,
+): void {
+  if (!quote) {
+    throw new Error("Cotação da pré-conta indisponível. Reabra o check-in.");
+  }
+  if (
+    quote.billingType !== submitted.billingType
+    || quote.insuranceId !== submitted.insuranceId
+    || Math.abs(quote.totalGrossAmount - submitted.totalGrossAmount) > 0.001
+  ) {
+    throw new Error(
+      "Pagador ou valor da pré-conta divergiu da cotação validada. Reabra o check-in.",
+    );
+  }
+}
+
+export function assertReceptionReceivableIntegrity(
+  billingType: "particular" | "convenio",
+  totalGrossAmount: number,
+  receivableType: "copayment" | "private",
+  receivableAmount: number,
+): void {
+  if (receivableAmount <= 0 || receivableAmount > totalGrossAmount) {
+    throw new Error("Valor do recebível deve ser positivo e não pode exceder a pré-conta.");
+  }
+  if (
+    (billingType === "particular" && receivableType !== "private")
+    || (billingType === "convenio" && receivableType !== "copayment")
+  ) {
+    throw new Error("Tipo do recebível incompatível com a fonte pagadora.");
   }
 }
 
@@ -167,6 +208,8 @@ export default function ReceptionPage() {
   const [billingType, setBillingType] = useState<"particular" | "convenio">("particular");
   const [insuranceId, setInsuranceId] = useState("");
   const [grossAmount, setGrossAmount] = useState("0,00");
+  const [validatedBillingQuote, setValidatedBillingQuote] =
+    useState<ReceptionBillingQuote | null>(null);
   const [requiresTiss, setRequiresTiss] = useState(false);
   const [tissGuideType] = useState<NonNullable<ReceptionWorkflowInput["tiss"]>["guideType"]>("SP/SADT");
   const [createReceivable, setCreateReceivable] = useState(false);
@@ -343,6 +386,11 @@ export default function ReceptionPage() {
       setBillingType(isInsurance ? "convenio" : "particular");
       setInsuranceId(isInsurance ? String(plan?.insurance_company_id) : "");
       setGrossAmount(estimatedAmount.toFixed(2).replace(".", ","));
+      setValidatedBillingQuote({
+        billingType: resolvedBillingType,
+        insuranceId: insurer?.id ?? null,
+        totalGrossAmount: estimatedAmount,
+      });
       setRequiresTiss(Boolean(isInsurance && insurer?.lg_guia_obrigatoria));
       setCreateReceivable(!isInsurance && estimatedAmount > 0);
       setReceivableType(isInsurance ? "copayment" : "private");
@@ -376,8 +424,29 @@ export default function ReceptionPage() {
       setCheckingIn(true);
       const totalGrossAmount = parseCurrency(grossAmount);
       if (billingType === "convenio" && !insuranceId) throw new Error("Selecione o convênio da pré-conta");
+      const submittedInsuranceId = billingType === "convenio"
+        ? Number(insuranceId)
+        : null;
+      if (
+        submittedInsuranceId !== null
+        && (!Number.isSafeInteger(submittedInsuranceId) || submittedInsuranceId <= 0)
+      ) {
+        throw new Error("Convênio inválido para a pré-conta");
+      }
+      assertReceptionBillingIntegrity(validatedBillingQuote, {
+        billingType,
+        insuranceId: submittedInsuranceId,
+        totalGrossAmount,
+      });
       const pendingAmount = createReceivable ? parseCurrency(receivableAmount) : 0;
-      if (createReceivable && pendingAmount <= 0) throw new Error("Informe o valor do título pendente");
+      if (createReceivable) {
+        assertReceptionReceivableIntegrity(
+          billingType,
+          totalGrossAmount,
+          receivableType,
+          pendingAmount,
+        );
+      }
       const appointmentId = Number(checkinTarget.id);
       if (!Number.isSafeInteger(appointmentId) || appointmentId <= 0) {
         throw new Error("Identificador do agendamento inválido");
@@ -390,7 +459,7 @@ export default function ReceptionPage() {
         billing: {
           type: billingType,
           accountType: "ambulatorial",
-          insuranceId: billingType === "convenio" ? Number(insuranceId) : undefined,
+          insuranceId: submittedInsuranceId ?? undefined,
           totalGrossAmount,
         },
         tiss: requiresTiss ? { guideType: tissGuideType, environment: "HOMOLOGACAO" } : undefined,
@@ -426,7 +495,7 @@ export default function ReceptionPage() {
           ? "A conta foi aberta e seguirá para conferência do faturamento."
           : "A conta foi aberta e o recebimento deve ser confirmado no Caixa.",
       });
-      setCheckinTarget(null); setReadiness(null); setCanReleaseByException(false); await loadAll();
+      setCheckinTarget(null); setReadiness(null); setCanReleaseByException(false); setValidatedBillingQuote(null); await loadAll();
     } catch (err) { toast({ title: "Check-in bloqueado", description: (err as Error).message, variant: "destructive" }); }
     finally { setCheckingIn(false); }
   };
@@ -690,7 +759,7 @@ export default function ReceptionPage() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={Boolean(checkinTarget)} onOpenChange={(open) => { if (!open && !checkingIn) { setCheckinTarget(null); setReadiness(null); setCanReleaseByException(false); } }}>
+      <Dialog open={Boolean(checkinTarget)} onOpenChange={(open) => { if (!open && !checkingIn) { setCheckinTarget(null); setReadiness(null); setCanReleaseByException(false); setValidatedBillingQuote(null); } }}>
         <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
           <DialogHeader><DialogTitle>Entrada do paciente</DialogTitle><DialogDescription>{checkinTarget?.patientName} · {checkinTarget?.time} · {checkinTarget?.doctorName}</DialogDescription></DialogHeader>
           {!readiness ? <p role="status" className="text-sm text-muted-foreground">Validando cadastro, convênio e autorização...</p> : <div className="space-y-4">
@@ -708,15 +777,7 @@ export default function ReceptionPage() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="reception-billing-type">Fonte pagadora</Label>
-                  <Select value={billingType} onValueChange={(value) => {
-                    const nextType = value as typeof billingType;
-                    setBillingType(nextType);
-                    setReceivableType(nextType === "convenio" ? "copayment" : "private");
-                    if (nextType === "particular") {
-                      setInsuranceId("");
-                      setRequiresTiss(false);
-                    }
-                  }}>
+                  <Select value={billingType} disabled>
                     <SelectTrigger id="reception-billing-type"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="particular">Particular — encaminhar ao Caixa</SelectItem>
@@ -731,16 +792,15 @@ export default function ReceptionPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="reception-gross-amount">Valor bruto da pré-conta</Label>
-                  <Input id="reception-gross-amount" inputMode="decimal" value={grossAmount} onChange={(event) => setGrossAmount(event.target.value)} placeholder="0,00" />
+                  <Input id="reception-gross-amount" inputMode="decimal" value={grossAmount} readOnly />
+                  <p className="text-xs text-muted-foreground">
+                    Valor calculado pela tabela vigente. Ajustes exigem correção cadastral antes do check-in.
+                  </p>
                 </div>
                 {billingType === "convenio" && (
                   <div className="space-y-2 sm:col-span-2">
                     <Label htmlFor="reception-insurance">Convênio</Label>
-                    <Select value={insuranceId} onValueChange={(value) => {
-                      setInsuranceId(value);
-                      const selected = insuranceCompanies.find((item) => String(item.id) === value);
-                      setRequiresTiss(Boolean(selected?.lg_guia_obrigatoria));
-                    }}>
+                    <Select value={insuranceId} disabled>
                       <SelectTrigger id="reception-insurance"><SelectValue placeholder="Selecione o convênio" /></SelectTrigger>
                       <SelectContent>
                         {insuranceCompanies.map((item) => <SelectItem key={item.id} value={String(item.id)}>{item.name}</SelectItem>)}
@@ -753,8 +813,7 @@ export default function ReceptionPage() {
                 <Checkbox
                   id="reception-requires-tiss"
                   checked={requiresTiss}
-                  disabled={billingType !== "convenio"}
-                  onCheckedChange={(checked) => setRequiresTiss(Boolean(checked))}
+                  disabled
                 />
                 <div className="space-y-0.5">
                   <Label htmlFor="reception-requires-tiss">Preparar guia TISS</Label>

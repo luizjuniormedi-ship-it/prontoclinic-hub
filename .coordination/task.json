@@ -1,7 +1,7 @@
 {
-  "taskId": "module-11-fail-closed-checkin",
+  "taskId": "module-11-billing-integrity",
   "module": 11,
-  "baseCommit": "5631ebbd12955574e7a9e50f959f651873027f4a",
+  "baseCommit": "c9b9aed09d32f05753302edd3fe0158283cab2ce",
   "paths": [
     "src/pages/__tests__/ReceptionPage.test.tsx",
     "src/pages/ReceptionPage.tsx"
