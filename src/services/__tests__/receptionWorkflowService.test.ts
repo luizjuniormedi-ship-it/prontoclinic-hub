@@ -333,6 +333,13 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
     ),
     "utf8",
   );
+  const appointmentTransactionCapabilityMigration = readFileSync(
+    resolve(
+      process.cwd(),
+      "supabase/migrations/20260728173000_reception_appointment_transaction_capability.sql",
+    ),
+    "utf8",
+  );
 
   it("não autoriza por current_user nem concede escrita financeira ao runtime", () => {
     expect(migration).not.toMatch(/current_user\s*=\s*'app_prontomedic'/i);
@@ -415,6 +422,24 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
       "reception_actor_can_access_unit",
     );
     expect(appointmentActiveContextMigration).not.toMatch(
+      /FOR (SELECT|UPDATE) TO (authenticated|app_prontomedic)/,
+    );
+    expect(appointmentTransactionCapabilityMigration).toContain(
+      "'app.reception.appointment_id'",
+    );
+    expect(appointmentTransactionCapabilityMigration).toContain(
+      "'app.reception.company_id'",
+    );
+    expect(appointmentTransactionCapabilityMigration).toContain(
+      "'app.reception.unit_id'",
+    );
+    expect(appointmentTransactionCapabilityMigration).toMatch(
+      /set_config\([\s\S]*p_appointment_id::TEXT[\s\S]*TRUE[\s\S]*SELECT \*[\s\S]*FOR UPDATE/,
+    );
+    expect(appointmentTransactionCapabilityMigration).toMatch(
+      /FOR SELECT TO prontomedic_reception_rpc_owner[\s\S]*id = NULLIF\([\s\S]*app\.reception\.appointment_id/,
+    );
+    expect(appointmentTransactionCapabilityMigration).not.toMatch(
       /FOR (SELECT|UPDATE) TO (authenticated|app_prontomedic)/,
     );
   });
