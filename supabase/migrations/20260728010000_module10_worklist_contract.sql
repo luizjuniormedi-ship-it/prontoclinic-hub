@@ -179,6 +179,13 @@ BEGIN
 END
 $contract$;
 
+DROP POLICY IF EXISTS dicom_worklist_queue_tenant_read
+  ON public.dicom_worklist_queue;
+DROP POLICY IF EXISTS dicom_worklist_queue_tenant_write
+  ON public.dicom_worklist_queue;
+DROP POLICY IF EXISTS app_imaging_worklist_read
+  ON public.dicom_worklist_queue;
+
 ALTER TABLE public.dicom_worklist_queue
   ALTER COLUMN imaging_order_item_id TYPE UUID
     USING NULLIF(imaging_order_item_id::TEXT, '')::UUID,
