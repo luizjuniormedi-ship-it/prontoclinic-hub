@@ -149,6 +149,12 @@ describe("local auth server security invariants", () => {
     );
   });
 
+  it("bloqueia waiting pela RPC publica da Agenda", () => {
+    expect(source).toMatch(
+      /fnName === 'update_appointment_status_secure'[\s\S]*body\.p_new_status === 'waiting'[\s\S]*code: '42501'[\s\S]*403/,
+    );
+  });
+
   it("autoriza pelo contexto ativo e sem bypass estatico de administrador", () => {
     expect(source).toContain("getActiveAccessContext(payload)");
     expect(source).toContain("public.can_access($1, $2)");

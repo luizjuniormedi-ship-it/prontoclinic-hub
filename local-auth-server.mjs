@@ -680,6 +680,20 @@ const server = createServer(async (req, res) => {
         return json(res, { error: 'forbidden', message: rpcDecision.reason }, 403);
       }
       const body = await parseBody(req);
+      if (
+        fnName === 'update_appointment_status_secure' &&
+        body.p_new_status === 'waiting'
+      ) {
+        return json(
+          res,
+          {
+            error: 'forbidden',
+            message: 'Entrada em espera exige o workflow transacional da recepcao',
+            code: '42501',
+          },
+          403,
+        );
+      }
       const keys = Object.keys(body);
       for (const key of keys) {
         if (!IDENT.test(key)) {
