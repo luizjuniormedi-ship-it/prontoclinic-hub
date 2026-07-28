@@ -3,6 +3,20 @@
 -- references those habilitations and owns availability in Scheduling.
 BEGIN;
 
+ALTER TABLE public.appointments
+  ADD COLUMN IF NOT EXISTS room_id BIGINT
+    REFERENCES public.organizational_resources(id) ON DELETE RESTRICT,
+  ADD COLUMN IF NOT EXISTS equipment_id BIGINT
+    REFERENCES public.organizational_resources(id) ON DELETE RESTRICT;
+
+CREATE INDEX IF NOT EXISTS idx_appointments_room_schedule
+  ON public.appointments(company_id, unit_id, room_id, appointment_date, start_time)
+  WHERE room_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_appointments_equipment_schedule
+  ON public.appointments(company_id, unit_id, equipment_id, appointment_date, start_time)
+  WHERE equipment_id IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS public.professional_schedule_grades (
   id BIGSERIAL PRIMARY KEY,
   company_id UUID NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT,
