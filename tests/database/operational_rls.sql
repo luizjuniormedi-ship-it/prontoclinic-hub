@@ -477,6 +477,9 @@ SELECT set_config('request.jwt.claim.sub', '', TRUE);
 SELECT set_config('request.jwt.claim.aal', '', TRUE);
 SELECT set_config('request.jwt.claims', '', TRUE);
 
+ALTER TABLE public.insurance_eligibility_checks
+  DISABLE TRIGGER trg_insurance_eligibility_event;
+
 INSERT INTO public.insurance_eligibility_checks (
   id, company_id, unit_id, patient_id, status
 ) VALUES
@@ -495,6 +498,9 @@ INSERT INTO public.insurance_eligibility_checks (
     '84000000-0000-0000-0000-000000000002',
     840003, 840022, 'pendente'
   );
+
+ALTER TABLE public.insurance_eligibility_checks
+  ENABLE TRIGGER trg_insurance_eligibility_event;
 
 INSERT INTO public.appointments (
   id, company_id, unit_id, patient_id, professional_id,
