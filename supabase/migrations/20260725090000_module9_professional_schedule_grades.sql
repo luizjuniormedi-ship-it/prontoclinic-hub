@@ -1725,13 +1725,74 @@ AS $fn$
       "equipmentId" BIGINT
     )
   ),
+  weekday AS (
+    SELECT (
+      ARRAY[
+        'domingo', 'segunda-feira', 'terça-feira', 'quarta-feira',
+        'quinta-feira', 'sexta-feira', 'sábado'
+      ]
+    )[EXTRACT(DOW FROM p_date)::INTEGER + 1] AS name
+  ),
+  legacy_windows AS (
+    SELECT
+      legacy_slot.unit_id,
+      public.scheduling_hhmm_to_time(legacy_slot.starts_hhmm) AS starts_at,
+      public.scheduling_hhmm_to_time(legacy_slot.ends_hhmm) AS ends_at,
+      NULL::TIME AS break_starts_at,
+      NULL::TIME AS break_ends_at,
+      GREATEST(
+        5,
+        COALESCE(NULLIF(p_duration_minutes, 0), NULLIF(legacy_slot.duration_minutes, 0), 30)
+      )::INTEGER AS duration_minutes,
+      1::INTEGER AS capacity,
+      NULL::BIGINT AS room_id,
+      NULL::BIGINT AS equipment_id
+    FROM public.professional_schedules legacy_schedule
+    CROSS JOIN weekday
+    CROSS JOIN LATERAL (
+      VALUES
+        (
+          legacy_schedule.slot1_start,
+          legacy_schedule.slot1_end,
+          legacy_schedule.slot1_duration,
+          legacy_schedule.slot1_unit_id
+        ),
+        (
+          legacy_schedule.slot2_start,
+          legacy_schedule.slot2_end,
+          legacy_schedule.slot2_duration,
+          legacy_schedule.slot2_unit_id
+        ),
+        (
+          legacy_schedule.slot3_start,
+          legacy_schedule.slot3_end,
+          legacy_schedule.slot3_duration,
+          legacy_schedule.slot3_unit_id
+        )
+    ) AS legacy_slot(starts_hhmm, ends_hhmm, duration_minutes, unit_id)
+    WHERE NOT EXISTS (SELECT 1 FROM windows)
+      AND public.can_access('agenda', 'view')
+      AND legacy_schedule.company_id = public.active_company_id()
+      AND legacy_schedule.professional_id = p_professional_id
+      AND legacy_schedule.lg_habilitado IS TRUE
+      AND lower(legacy_schedule.day_of_week) = weekday.name
+      AND legacy_slot.starts_hhmm IS NOT NULL
+      AND legacy_slot.ends_hhmm IS NOT NULL
+      AND legacy_slot.unit_id = public.active_unit_id()
+      AND (p_unit_id IS NULL OR legacy_slot.unit_id = p_unit_id)
+  ),
+  available_windows AS (
+    SELECT * FROM windows
+    UNION ALL
+    SELECT * FROM legacy_windows
+  ),
   candidate_slots AS (
     SELECT
       window_row.*,
       generated_slot.slot_start,
       generated_slot.slot_start
         + make_interval(mins => window_row.duration_minutes) AS slot_end
-    FROM windows window_row
+    FROM available_windows window_row
     CROSS JOIN LATERAL generate_series(
       p_date + window_row.starts_at,
       p_date + window_row.ends_at
