@@ -1,10 +1,23 @@
 {
-  "taskId": "module-11-billing-integrity",
-  "module": 11,
-  "baseCommit": "c9b9aed09d32f05753302edd3fe0158283cab2ce",
+  "taskId": "integration-modules-01-23-20260728",
+  "module": "01-23",
+  "baseCommit": "f1cd2ce46a10da718de5e53b29e90adc276d091f",
   "paths": [
-    "src/pages/__tests__/ReceptionPage.test.tsx",
-    "src/pages/ReceptionPage.tsx"
+    ".coordination/task.example.json",
+    ".env.example",
+    ".github",
+    "CONTRIBUTING.md",
+    "docs",
+    "e2e",
+    "local-auth-projection.d.ts",
+    "local-auth-projection.mjs",
+    "local-auth-server.mjs",
+    "package.json",
+    "scripts",
+    "src",
+    "supabase",
+    "tests",
+    "vitest.config.ts"
   ],
   "sharedPaths": [],
   "status": "active"
