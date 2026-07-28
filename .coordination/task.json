@@ -1,17 +1,20 @@
 {
-  "taskId": "conflict-free-orchestration",
-  "module": 1,
-  "baseCommit": "660872f9554900f7307f47dedc84aaf68330c324",
+  "taskId": "module-09-schedule-runtime",
+  "module": 9,
+  "baseCommit": "642e83b48801bab73a8acb09fa5671e8334c14a1",
   "paths": [
-    ".coordination",
-    "docs/DEVELOPMENT_ORCHESTRATION.md",
-    "scripts/coordination.ps1",
-    "scripts/validate-task-scope.mjs"
+    "e2e/agendamento.spec.ts",
+    "src/components/schedule",
+    "src/pages/__tests__/schedulePatientMapper.test.ts",
+    "src/pages/SchedulePage.tsx",
+    "src/services/__tests__/appointmentsService.test.ts",
+    "src/services/__tests__/scheduleGridsService.test.ts",
+    "src/services/appointmentsService.ts",
+    "src/services/scheduleGridsService.ts",
+    "src/services/schedulingOperationsService.ts"
   ],
   "sharedPaths": [
-    ".github/workflows",
-    "CONTRIBUTING.md",
-    "package.json"
+    "src/App.tsx"
   ],
   "status": "active"
 }

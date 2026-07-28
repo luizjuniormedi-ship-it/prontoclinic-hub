@@ -38,6 +38,28 @@ function nullableFiniteNumber(value: unknown): number | null {
   return Number.isFinite(normalized) ? normalized : null;
 }
 
+const PATIENT_SEARCH_DEBOUNCE_MS = 300;
+const PATIENT_SEARCH_TIMEOUT_MS = 8_000;
+
+function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error("PATIENT_SEARCH_TIMEOUT")),
+      timeoutMs,
+    );
+    operation.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 export function NewAppointmentDialog({ open, onOpenChange, professionals, specialties, appointmentTypes, services, insurances, units, patients, selectedDate, onCreated }: NewAppointmentDialogProps) {
   const { toast } = useToast();
   const [patientId, setPatientId] = useState("");
@@ -60,6 +82,8 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
   const [patientSearch, setPatientSearch] = useState("");
   const [patientResults, setPatientResults] = useState<Patient[]>([]);
   const [patientSearchLoading, setPatientSearchLoading] = useState(false);
+  const [patientSearchError, setPatientSearchError] = useState<string | null>(null);
+  const patientSearchRequestRef = useRef(0);
 
   // Validation states
   const [overlapWarning, setOverlapWarning] = useState<string | null>(null);
@@ -151,7 +175,9 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
     setEndTime(""); setIsReturn(false); setNotes(""); setSaving(false);
     setServiceId("none"); setServiceSearch(""); setInsuranceId("private"); setUnitId(""); setCardNumber("");
     setAuthorizationNumber(""); setRequirements(null);
+    patientSearchRequestRef.current += 1;
     setPatientSearch(""); setPatientResults([]); setPatientSearchLoading(false);
+    setPatientSearchError(null);
     setOverlapWarning(null); setOverlapValidationError(null);
     setReturnWarning(null); setReturnValidationError(null);
     setReturnOverrideConfirmed(false); setValidationErrors([]);
@@ -238,27 +264,44 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
 
   useEffect(() => {
     const term = patientSearch.trim();
+    const requestId = ++patientSearchRequestRef.current;
     if (term.length < 2) {
       setPatientResults([]);
       setPatientSearchLoading(false);
+      setPatientSearchError(null);
       return;
     }
 
-    let cancelled = false;
+    setPatientSearchError(null);
     const timer = setTimeout(async () => {
+      if (requestId !== patientSearchRequestRef.current) return;
       try {
         setPatientSearchLoading(true);
-        const result = await patientsService.search(term);
-        if (!cancelled) setPatientResults(result.slice(0, 50));
-      } catch {
-        if (!cancelled) setPatientResults([]);
+        const result = await withTimeout(
+          patientsService.search(term),
+          PATIENT_SEARCH_TIMEOUT_MS,
+        );
+        if (requestId === patientSearchRequestRef.current) {
+          setPatientResults(result.slice(0, 50));
+          setPatientSearchError(null);
+        }
+      } catch (error) {
+        if (requestId === patientSearchRequestRef.current) {
+          setPatientResults([]);
+          setPatientSearchError(
+            error instanceof Error && error.message === "PATIENT_SEARCH_TIMEOUT"
+              ? "A busca demorou demais. Tente novamente."
+              : "Não foi possível buscar pacientes. Tente novamente.",
+          );
+        }
       } finally {
-        if (!cancelled) setPatientSearchLoading(false);
+        if (requestId === patientSearchRequestRef.current) {
+          setPatientSearchLoading(false);
+        }
       }
-    }, 300);
+    }, PATIENT_SEARCH_DEBOUNCE_MS);
 
     return () => {
-      cancelled = true;
       clearTimeout(timer);
     };
   }, [patientSearch]);
@@ -464,7 +507,7 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
               onChange={(e) => setPatientSearch(e.target.value)}
             />
             <Select value={patientId} onValueChange={setPatientId}>
-              <SelectTrigger aria-label="Selecionar paciente">
+              <SelectTrigger aria-label="Selecionar paciente" disabled={patientSearchLoading}>
                 <SelectValue placeholder={patientSearchLoading ? "Buscando..." : "Selecione o paciente"} />
               </SelectTrigger>
               <SelectContent>
@@ -473,6 +516,19 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
                 ))}
               </SelectContent>
             </Select>
+            {patientSearchError && (
+              <p role="alert" className="text-xs text-destructive">
+                {patientSearchError}
+              </p>
+            )}
+            {!patientSearchLoading &&
+              !patientSearchError &&
+              patientSearch.trim().length >= 2 &&
+              patientOptions.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Nenhum paciente encontrado para esta busca.
+                </p>
+              )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">

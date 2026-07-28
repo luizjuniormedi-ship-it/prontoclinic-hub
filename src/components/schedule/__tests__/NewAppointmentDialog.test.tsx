@@ -214,4 +214,49 @@ describe("NewAppointmentDialog", () => {
     });
     expect(onCreated).toHaveBeenCalledTimes(1);
   });
+
+  it("encerra busca travada e informa que o operador deve tentar novamente", async () => {
+    vi.useFakeTimers();
+    mocks.patientSearch.mockImplementation(() => new Promise(() => undefined));
+
+    try {
+      render(
+        <NewAppointmentDialog
+          open
+          onOpenChange={vi.fn()}
+          professionals={[professional]}
+          specialties={[specialty]}
+          appointmentTypes={[appointmentType]}
+          services={[]}
+          insurances={[]}
+          units={[]}
+          patients={[]}
+          selectedDate="2026-08-03"
+          onCreated={vi.fn()}
+        />,
+      );
+
+      fireEvent.change(screen.getByLabelText("Buscar paciente para agendamento"), {
+        target: { value: "Paciente QA" },
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      expect(screen.getByLabelText("Selecionar paciente")).toHaveTextContent(
+        "Buscando...",
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(8_000);
+      });
+
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "A busca demorou demais. Tente novamente.",
+      );
+      expect(screen.getByLabelText("Selecionar paciente")).not.toBeDisabled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
