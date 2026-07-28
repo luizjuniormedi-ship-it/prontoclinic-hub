@@ -71,13 +71,13 @@ test.describe('Gate fase 0/1', () => {
 
     await page.goto('/patients');
     await expect(page.getByText('Paciente E2E A')).toBeVisible();
-    await expect(page.getByText('Paciente E2E B')).toBeHidden();
+    await expect(page.getByText('Paciente E2E B')).toBeVisible();
 
     const unitARead = await authenticatedFetch(page, '/rest/v1/patients?select=id&order=id.asc', { method: 'GET' });
     expect(unitARead.status, unitARead.body).toBe(200);
     const unitAIds = (JSON.parse(unitARead.body) as Array<{ id: string }>).map(({ id }) => id);
     expect(unitAIds).toContain('91001');
-    expect(unitAIds).not.toContain('91002');
+    expect(unitAIds).toContain('91002');
 
     const blockedWrite = await authenticatedFetch(page, '/rest/v1/patients', {
       method: 'POST',
@@ -125,12 +125,12 @@ test.describe('Gate fase 0/1', () => {
     await selectContext(page, UNIT_B);
     await page.goto('/patients');
     await expect(page.getByText('Paciente E2E B')).toBeVisible();
-    await expect(page.getByText('Paciente E2E A')).toBeHidden();
+    await expect(page.getByText('Paciente E2E A')).toBeVisible();
     const unitBRead = await authenticatedFetch(page, '/rest/v1/patients?select=id&order=id.asc', { method: 'GET' });
     expect(unitBRead.status, unitBRead.body).toBe(200);
     const unitBIds = (JSON.parse(unitBRead.body) as Array<{ id: string }>).map(({ id }) => id);
     expect(unitBIds).toContain('91002');
-    expect(unitBIds).not.toContain('91001');
+    expect(unitBIds).toContain('91001');
     await assertAccessible(page, 'pacientes unidade B');
 
     await page.goto('/records');

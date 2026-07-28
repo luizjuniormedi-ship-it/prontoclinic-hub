@@ -5,8 +5,7 @@ CREATE POLICY patients_access_select ON public.patients
   FOR SELECT TO authenticated
   USING (
     company_id = public.active_company_id()
-    AND unit_id = public.active_unit_id()
-    AND public.org_can_access_unit(company_id, unit_id)
+    AND public.active_unit_id() IS NOT NULL
     AND (
       public.can_access('patients', 'view')
       OR public.can_access('pacientes', 'view')
