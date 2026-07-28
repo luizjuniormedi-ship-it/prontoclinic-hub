@@ -13,6 +13,7 @@
     "local-auth-projection.mjs",
     "local-auth-server.mjs",
     "package.json",
+    "playwright.config.ts",
     "scripts",
     "src",
     "supabase",
