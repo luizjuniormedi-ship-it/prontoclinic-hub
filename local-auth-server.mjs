@@ -710,7 +710,12 @@ const server = createServer(async (req, res) => {
         return json(res, val);
       } catch (e) {
         await client.query('ROLLBACK');
-        return json(res, { error: e.message, message: e.message, code: 'PGRST202' }, 400);
+        const status = e.code === '42501' ? 403 : 400;
+        return json(
+          res,
+          { error: e.message, message: e.message, code: e.code || 'PGRST202' },
+          status,
+        );
       } finally {
         client.release();
       }

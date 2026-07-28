@@ -510,7 +510,7 @@ describe("migration M11 check-in workflow — regressões P0/P1", () => {
       /p_new_status = 'waiting'\s+AND public\.can_access\('recepcao', 'edit'\)/,
     );
     expect(waitingFailClosedMigration).toMatch(
-      /p_new_status <> 'waiting'[\s\S]*public\.can_access\('agenda', 'edit'\)[\s\S]*OR v_waiting_authorized/,
+      /p_new_status = 'waiting' AND NOT v_waiting_authorized[\s\S]*ERRCODE = '42501'/,
     );
     expect(waitingFailClosedMigration).toMatch(
       /v_waiting_transition[\s\S]*AND NOT v_waiting_authorized/,

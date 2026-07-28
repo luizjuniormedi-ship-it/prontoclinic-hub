@@ -21,14 +21,17 @@ DECLARE
     p_new_status = 'waiting'
     AND private.reception_waiting_transition_authorized(p_appointment_id);
 BEGIN
+  IF p_new_status = 'waiting' AND NOT v_waiting_authorized THEN
+    RAISE EXCEPTION
+      'Entrada em espera exige check-in transacional completo'
+      USING ERRCODE = '42501';
+  END IF;
+
   IF v_company_id IS NULL
      OR v_unit_id IS NULL
-     OR NOT (
-       (
-         p_new_status <> 'waiting'
-         AND public.can_access('agenda', 'edit')
-       )
-       OR v_waiting_authorized
+     OR (
+       p_new_status <> 'waiting'
+       AND NOT public.can_access('agenda', 'edit')
      ) THEN
     RAISE EXCEPTION
       'Contexto AAL2, sessão, unidade ou permissão operacional inválidos'
