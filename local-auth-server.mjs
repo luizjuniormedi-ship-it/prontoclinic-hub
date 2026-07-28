@@ -697,7 +697,10 @@ const server = createServer(async (req, res) => {
           [payload.sub, JSON.stringify(payload)],
         );
         await client.query('SET LOCAL ROLE authenticated');
-        const result = await client.query(`SELECT public."${fnName}"(${namedArgs}) AS result`, vals);
+        const result = await client.query(
+          `SELECT to_jsonb(public."${fnName}"(${namedArgs})) AS result`,
+          vals,
+        );
         await client.query('COMMIT');
         const val = result.rows.length === 0
           ? []

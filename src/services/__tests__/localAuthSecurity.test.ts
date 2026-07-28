@@ -140,6 +140,15 @@ describe("local auth server security invariants", () => {
     expect(source).toContain("queryAsAuthenticated(payload, query, values)");
   });
 
+  it("serializa retornos RPC compostos como JSON compativel com PostgREST", () => {
+    expect(source).toContain(
+      '`SELECT to_jsonb(public."${fnName}"(${namedArgs})) AS result`',
+    );
+    expect(source).not.toContain(
+      '`SELECT public."${fnName}"(${namedArgs}) AS result`',
+    );
+  });
+
   it("autoriza pelo contexto ativo e sem bypass estatico de administrador", () => {
     expect(source).toContain("getActiveAccessContext(payload)");
     expect(source).toContain("public.can_access($1, $2)");
