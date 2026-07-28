@@ -166,7 +166,12 @@ test.describe('Gate fase 0/1', () => {
     await assertAccessible(page, 'pacientes unidade B');
 
     await page.goto('/records');
-    await page.getByPlaceholder('Buscar por nome...').fill('Paciente E2E A');
-    await expect(page.getByText('Nenhum paciente encontrado')).toBeVisible();
+    const isolatedRecordRead = await authenticatedFetch(
+      page,
+      '/rest/v1/medical_records?select=id,complaint&appointment_id=eq.91001',
+      { method: 'GET' },
+    );
+    expect(isolatedRecordRead.status, isolatedRecordRead.body).toBe(200);
+    expect(JSON.parse(isolatedRecordRead.body)).toEqual([]);
   });
 });
