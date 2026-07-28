@@ -28,13 +28,22 @@ export function AppLayout({ children }: { children: ReactNode }) {
     }
 
     let active = true;
-    const onContextChanged = () => active && setContextStatus("ready");
+    let contextChanged = false;
+    const onContextChanged = () => {
+      if (!active) return;
+      contextChanged = true;
+      setContextStatus("ready");
+    };
     window.addEventListener("prontomedic:access-context-changed", onContextChanged);
     void initializeAccessContext()
       .then((selected) => {
-        if (active) setContextStatus(selected ? "ready" : "selection-required");
+        if (active && !contextChanged) {
+          setContextStatus(selected ? "ready" : "selection-required");
+        }
       })
-      .catch(() => active && setContextStatus("error"));
+      .catch(() => {
+        if (active && !contextChanged) setContextStatus("error");
+      });
 
     return () => {
       active = false;

@@ -49,10 +49,10 @@ BEGIN
     WHERE schemaname = 'public'
       AND tablename = 'appointments'
       AND policyname = 'appointments_reception_rpc_select'
-  ) NOT LIKE '%reception_actor_has_selected_unit%'
+  ) NOT LIKE '%reception_actor_can_access_unit%'
   THEN
     RAISE EXCEPTION
-      'Reception appointment owner policy bypasses the active unit boundary';
+      'Reception appointment owner policy bypasses the authorized unit boundary';
   END IF;
 
   IF has_function_privilege(

@@ -46,7 +46,7 @@ CREATE POLICY appointments_reception_rpc_select
   ON public.appointments
   FOR SELECT TO prontomedic_reception_rpc_owner
   USING (
-    private.reception_actor_has_selected_unit(company_id, unit_id)
+    private.reception_actor_can_access_unit(company_id, unit_id)
   );
 
 CREATE OR REPLACE FUNCTION public.get_reception_exception_capability(

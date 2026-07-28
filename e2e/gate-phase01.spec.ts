@@ -47,7 +47,7 @@ async function authenticatedFetch(page: Page, path: string, init: RequestInit) {
 }
 
 test.describe('Gate fase 0/1', () => {
-  test.describe.configure({ mode: 'serial' });
+  test.describe.configure({ mode: 'serial', retries: 0 });
   test.skip(
     ({ browserName }) => browserName !== 'chromium',
     'Gate stateful canônico: a fixture compartilhada é consumida uma única vez',
@@ -65,7 +65,9 @@ test.describe('Gate fase 0/1', () => {
     const beforeReload = await page.evaluate(() => JSON.parse(sessionStorage.getItem('prontomedic-application-session') || 'null'));
     expect(beforeReload?.session_id).toBeTruthy();
     await page.reload();
-    await expect(page.getByText('Selecione seu contexto de acesso')).toBeHidden();
+    await expect(page.getByRole('button', {
+      name: /selecionar empresa, unidade e perfil/i,
+    })).toContainText(/Empresa E2E.*Unidade E2E A.*admin/i);
     const afterReload = await page.evaluate(() => JSON.parse(sessionStorage.getItem('prontomedic-application-session') || 'null'));
     expect(afterReload?.session_id).toBe(beforeReload.session_id);
 
