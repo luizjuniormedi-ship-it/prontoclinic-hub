@@ -425,14 +425,6 @@ SELECT public.add_insurance_authorization_attachment_secure(
   'authorizations/a1.pdf',
   'a1.pdf'
 );
-INSERT INTO public.insurance_eligibility_checks (
-  id, company_id, unit_id, patient_id, status
-) VALUES (
-  '84000000-0000-0000-0000-000000000041',
-  '84000000-0000-0000-0000-000000000001',
-  840001, 840020, 'pendente'
-);
-
 SELECT public.activate_application_context(
   '84000000-0000-0000-0000-000000000020',
   (SELECT id FROM public.roles WHERE name = 'recepcao'),
@@ -452,14 +444,6 @@ SELECT public.add_insurance_authorization_attachment_secure(
   'authorizations/a2.pdf',
   'a2.pdf'
 );
-INSERT INTO public.insurance_eligibility_checks (
-  id, company_id, unit_id, patient_id, status
-) VALUES (
-  '84000000-0000-0000-0000-000000000042',
-  '84000000-0000-0000-0000-000000000001',
-  840002, 840021, 'pendente'
-);
-
 SELECT public.activate_application_context(
   '84000000-0000-0000-0000-000000000021',
   (SELECT id FROM public.roles WHERE name = 'recepcao'),
@@ -488,18 +472,29 @@ SELECT public.add_insurance_authorization_attachment_secure(
   'authorizations/b1.pdf',
   'b1.pdf'
 );
-INSERT INTO public.insurance_eligibility_checks (
-  id, company_id, unit_id, patient_id, status
-) VALUES (
-  '84000000-0000-0000-0000-000000000043',
-  '84000000-0000-0000-0000-000000000002',
-  840003, 840022, 'pendente'
-);
-
 RESET ROLE;
 SELECT set_config('request.jwt.claim.sub', '', TRUE);
 SELECT set_config('request.jwt.claim.aal', '', TRUE);
 SELECT set_config('request.jwt.claims', '', TRUE);
+
+INSERT INTO public.insurance_eligibility_checks (
+  id, company_id, unit_id, patient_id, status
+) VALUES
+  (
+    '84000000-0000-0000-0000-000000000041',
+    '84000000-0000-0000-0000-000000000001',
+    840001, 840020, 'pendente'
+  ),
+  (
+    '84000000-0000-0000-0000-000000000042',
+    '84000000-0000-0000-0000-000000000001',
+    840002, 840021, 'pendente'
+  ),
+  (
+    '84000000-0000-0000-0000-000000000043',
+    '84000000-0000-0000-0000-000000000002',
+    840003, 840022, 'pendente'
+  );
 
 INSERT INTO public.appointments (
   id, company_id, unit_id, patient_id, professional_id,
