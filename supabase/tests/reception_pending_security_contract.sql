@@ -36,8 +36,8 @@ BEGIN
   )
   INTO v_capability_definition;
 
-  IF v_capability_definition NOT LIKE '%public.active_company_id()%'
-     OR v_capability_definition NOT LIKE '%public.active_unit_id()%'
+  IF v_capability_definition NOT LIKE
+    '%private.reception_actor_has_selected_unit%'
   THEN
     RAISE EXCEPTION
       'Reception exception capability bypasses the active unit boundary';
@@ -49,7 +49,7 @@ BEGIN
     WHERE schemaname = 'public'
       AND tablename = 'appointments'
       AND policyname = 'appointments_reception_rpc_select'
-  ) NOT LIKE '%active_unit_id()%'
+  ) NOT LIKE '%reception_actor_has_selected_unit%'
   THEN
     RAISE EXCEPTION
       'Reception appointment owner policy bypasses the active unit boundary';
