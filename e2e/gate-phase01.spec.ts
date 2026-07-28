@@ -65,6 +65,7 @@ test.describe('Gate fase 0/1', () => {
     const beforeReload = await page.evaluate(() => JSON.parse(sessionStorage.getItem('prontomedic-application-session') || 'null'));
     expect(beforeReload?.session_id).toBeTruthy();
     await page.reload();
+    await expect(page.locator('#main-content')).toHaveAttribute('data-access-context-status', 'ready');
     await expect(page.getByRole('button', {
       name: /selecionar empresa, unidade e perfil/i,
     })).toContainText(/Empresa E2E.*Unidade E2E A.*admin/i);

@@ -114,6 +114,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             role="main"
             tabIndex={-1}
             aria-label={`Conteúdo principal: ${currentPage}`}
+            data-access-context-status={contextStatus}
             className="flex-1 p-6 overflow-auto focus:outline-none"
             onFocus={() => announce(`Navegou para ${currentPage}`)}
           >
