@@ -19,6 +19,19 @@
 
 import { supabase } from "@/lib/supabase";
 
+const DICOM_BUCKET = "dicom";
+const DICOM_SIGNED_URL_TTL_SECONDS = 15 * 60;
+
+async function resolvePrivateDicomUrl(value?: string): Promise<string | undefined> {
+  if (!value || /^https?:\/\//i.test(value)) return value;
+
+  const { data, error } = await supabase.storage
+    .from(DICOM_BUCKET)
+    .createSignedUrl(value, DICOM_SIGNED_URL_TTL_SECONDS);
+  if (error) throw new Error(`Falha ao autorizar acesso à imagem DICOM: ${error.message}`);
+  return data.signedUrl;
+}
+
 // ── Types ──────────────────────────────────────────────────────────
 
 export type DicomModality = "US" | "CT" | "MR" | "CR" | "XA" | "PT" | "NM" | "MG" | "DX" | "ECG";
@@ -444,7 +457,13 @@ export const examService = {
       .order("nr_series", { ascending: true })
       .order("nr_instance", { ascending: true });
     if (error) throw error;
-    return (data || []) as DicomExamImage[];
+    return Promise.all(
+      ((data || []) as DicomExamImage[]).map(async (image) => ({
+        ...image,
+        bl_dicom_url: await resolvePrivateDicomUrl(image.bl_dicom_url),
+        bl_thumb_url: await resolvePrivateDicomUrl(image.bl_thumb_url),
+      })),
+    );
   },
 
   async listByCompany(
@@ -521,16 +540,14 @@ export const examService = {
       throw new Error(`Upload falhou: ${upErr.message}. Configure bucket "dicom" no Supabase Storage.`);
     }
 
-    const { data: pub } = supabase.storage.from("dicom").getPublicUrl(path);
-
     // Registrar no banco
     const { data: row, error: insErr } = await supabase
       .from("dicom_exam_images")
       .insert({
         cd_dicom_exam: examId,
         ds_filename: file.name,
-        bl_dicom_url: pub.publicUrl,
-        bl_thumb_url: pub.publicUrl,
+        bl_dicom_url: path,
+        bl_thumb_url: path,
         ds_sop_instance_uid: sopInstanceUid,
         dt_acquisition: new Date().toISOString(),
         nr_instance: Math.floor(Math.random() * 1000),
@@ -552,7 +569,9 @@ export const examService = {
         .eq("id", examId);
     }
 
-    return { imageId: row.id, url: pub.publicUrl, sopInstanceUid };
+    const signedUrl = await resolvePrivateDicomUrl(path);
+    if (!signedUrl) throw new Error("Falha ao autorizar acesso à imagem DICOM.");
+    return { imageId: row.id, url: signedUrl, sopInstanceUid };
   },
 
   async updateStatus(examId: number, status: DicomExamStatus): Promise<void> {
