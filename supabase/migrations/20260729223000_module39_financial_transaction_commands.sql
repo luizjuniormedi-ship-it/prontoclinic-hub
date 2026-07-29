@@ -100,20 +100,8 @@ DROP POLICY IF EXISTS appointments_reception_billing_lock
 CREATE POLICY appointments_reception_billing_lock
   ON public.appointments
   FOR ALL TO prontomedic_reception_rpc_owner
-  USING (
-    id = NULLIF(current_setting('app.reception.appointment_id', TRUE), '')::BIGINT
-    AND company_id = NULLIF(
-      current_setting('app.reception.company_id', TRUE),
-      ''
-    )::UUID
-  )
-  WITH CHECK (
-    id = NULLIF(current_setting('app.reception.appointment_id', TRUE), '')::BIGINT
-    AND company_id = NULLIF(
-      current_setting('app.reception.company_id', TRUE),
-      ''
-    )::UUID
-  );
+  USING (company_id = public.current_company_id())
+  WITH CHECK (company_id = public.current_company_id());
 
 ALTER TABLE public.billings
   ADD COLUMN IF NOT EXISTS unit_id INTEGER,
@@ -668,16 +656,6 @@ BEGIN
     p_vital_signs
   );
 
-  PERFORM set_config(
-    'app.reception.appointment_id',
-    p_appointment_id::TEXT,
-    TRUE
-  );
-  PERFORM set_config(
-    'app.reception.company_id',
-    public.current_company_id()::TEXT,
-    TRUE
-  );
   PERFORM public.sync_completed_appointment_billing_secure(
     p_appointment_id,
     'Faturamento consolidado na finalização do atendimento'

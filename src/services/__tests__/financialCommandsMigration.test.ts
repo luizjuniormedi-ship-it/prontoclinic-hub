@@ -58,11 +58,11 @@ describe("Module 39 financial command boundary", () => {
       /GRANT UPDATE ON TABLE public\.appointments[\s\S]*TO prontomedic_reception_rpc_owner/i,
     );
     expect(migration).toMatch(
-      /CREATE POLICY appointments_reception_billing_lock[\s\S]*app\.reception\.appointment_id[\s\S]*app\.reception\.company_id/i,
+      /CREATE POLICY appointments_reception_billing_lock[\s\S]*USING \(company_id = public\.current_company_id\(\)\)[\s\S]*WITH CHECK \(company_id = public\.current_company_id\(\)\)/i,
     );
-    expect(migration).not.toMatch(/app\.reception\.unit_id/i);
+    expect(migration).not.toMatch(/app\.reception\./i);
     expect(migration).toMatch(
-      /finalize_attendance_with_billing_secure[\s\S]*set_config\([\s\S]*app\.reception\.appointment_id[\s\S]*sync_completed_appointment_billing_secure/i,
+      /finalize_attendance_with_billing_secure[\s\S]*finalize_attendance_secure[\s\S]*sync_completed_appointment_billing_secure/i,
     );
   });
 
