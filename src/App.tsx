@@ -213,8 +213,12 @@ const App = () => (
             <Route path="/pacs" element={<AppLayout><ProtectedRoute path="/pacs"><LazyRoute><PACSPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/dicom/nodes" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomNodesPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/dicom/modalities" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomModalitiesPage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/dicom/orders" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><ImagingOrdersPage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/dicom/worklist" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomWorklistPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            {isWaveModuleEnabled(24) && (
+              <Route path="/dicom/orders" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><ImagingOrdersPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            )}
+            {isWaveModuleEnabled(24) && (
+              <Route path="/dicom/worklist" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomWorklistPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            )}
             <Route path="/dicom/dashboard" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomDashboardPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/dicom/reports" element={<AppLayout><ProtectedRoute path="/dicom/reports"><LazyRoute><RadiologyReportsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/admin/dicom" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><DicomEquipmentManager /></LazyRoute></ProtectedRoute></AppLayout>} />
@@ -250,7 +254,9 @@ const App = () => (
             <Route path="/admin/notifications" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><NotificationCenter /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* LIS / Laboratório */}
-            <Route path="/lab" element={<AppLayout><ProtectedRoute path="/lab"><LazyRoute><LabPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            {isWaveModuleEnabled(23) && (
+              <Route path="/lab" element={<AppLayout><ProtectedRoute path="/lab"><LazyRoute><LabPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            )}
 
             {/* Patient portal */}
             <Route path="/meus-agendamentos" element={<AppLayout><ProtectedRoute path="/meus-agendamentos"><LazyRoute><MeusAgendamentosPage /></LazyRoute></ProtectedRoute></AppLayout>} />

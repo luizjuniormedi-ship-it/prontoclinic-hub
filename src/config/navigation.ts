@@ -209,13 +209,17 @@ export const navigationItems: NavigationItem[] = [
     area: "Assistência clínica",
     description: "Dispensação e acompanhamento farmacêutico.",
   },
-  {
-    title: "Laboratório e resultados",
-    url: "/lab",
-    icon: FlaskConical,
-    area: "Exames e laudos",
-    description: "Pedidos, coleta, processamento e resultados laboratoriais.",
-  },
+  ...(isWaveModuleEnabled(23)
+    ? [
+        {
+          title: "Laboratório e resultados",
+          url: "/lab",
+          icon: FlaskConical,
+          area: "Exames e laudos" as const,
+          description: "Pedidos, coleta, processamento e resultados laboratoriais.",
+        },
+      ]
+    : []),
   {
     title: "Central de atendimento",
     url: "/callcenter",
@@ -258,20 +262,24 @@ export const navigationItems: NavigationItem[] = [
     area: "Configurações",
     description: "Monitorar conexões e integrações DICOM.",
   },
-  {
-    title: "Exames de imagem",
-    url: "/dicom/orders",
-    icon: FileImage,
-    area: "Exames e laudos",
-    description: "Acompanhar pedidos e execução de exames de imagem.",
-  },
-  {
-    title: "Fila dos equipamentos",
-    url: "/dicom/worklist",
-    icon: ListChecks,
-    area: "Exames e laudos",
-    description: "Acompanhar a fila de exames dos equipamentos.",
-  },
+  ...(isWaveModuleEnabled(24)
+    ? [
+        {
+          title: "Exames de imagem",
+          url: "/dicom/orders",
+          icon: FileImage,
+          area: "Exames e laudos" as const,
+          description: "Acompanhar pedidos e execução de exames de imagem.",
+        },
+        {
+          title: "Fila dos equipamentos",
+          url: "/dicom/worklist",
+          icon: ListChecks,
+          area: "Exames e laudos" as const,
+          description: "Acompanhar a fila de exames dos equipamentos.",
+        },
+      ]
+    : []),
   {
     title: "Modelos de laudo",
     url: "/admin/report-templates",

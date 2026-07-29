@@ -43,7 +43,9 @@ const mainItems: MenuGroup = {
     ...(isWaveModuleEnabled(22)
       ? [{ title: "Solicitações de Exames", url: "/exam-requests", icon: ClipboardList }]
       : []),
-    { title: "Laboratório", url: "/lab", icon: FlaskConical },
+    ...(isWaveModuleEnabled(23)
+      ? [{ title: "Laboratório", url: "/lab", icon: FlaskConical }]
+      : []),
     { title: "Call Center", url: "/callcenter", icon: Phone },
     { title: "Telemedicina", url: "/telemedicina", icon: Video },
   ],
@@ -60,13 +62,17 @@ const dicomItems: MenuGroup = {
         { title: "Modalidades", url: "/dicom/modalities", icon: Activity },
         { title: "Nós DICOM", url: "/dicom/nodes", icon: Server },
         { title: "Integração", url: "/dicom/dashboard", icon: Monitor },
-        { title: "Pedidos", url: "/dicom/orders", icon: FileImage },
+        ...(isWaveModuleEnabled(24)
+          ? [{ title: "Pedidos", url: "/dicom/orders", icon: FileImage }]
+          : []),
       ],
     },
     {
       groupTitle: "Laudos",
       items: [
-        { title: "Worklist", url: "/dicom/worklist", icon: ListChecks },
+        ...(isWaveModuleEnabled(24)
+          ? [{ title: "Worklist", url: "/dicom/worklist", icon: ListChecks }]
+          : []),
         { title: "Templates", url: "/admin/report-templates", icon: FileSpreadsheet },
         { title: "Visualizador", url: "/pacs", icon: Monitor },
         { title: "Laudos", url: "/dicom/reports", icon: ScrollText },
