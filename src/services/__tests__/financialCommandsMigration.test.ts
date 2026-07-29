@@ -51,6 +51,9 @@ describe("Module 39 financial command boundary", () => {
       /finalize_attendance_with_billing_secure[\s\S]*finalize_attendance_secure[\s\S]*sync_completed_appointment_billing_secure/i,
     );
     expect(migration).toMatch(/trg_audit_financial_transactions/i);
+    expect(migration).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.m18_can_edit_attendance\(\)[\s\S]*TO prontomedic_reception_rpc_owner/i,
+    );
   });
 
   it("keeps the hardened profile policy compatible with auth replay", () => {

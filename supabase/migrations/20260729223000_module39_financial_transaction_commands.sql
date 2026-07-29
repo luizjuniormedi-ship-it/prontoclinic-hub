@@ -90,6 +90,8 @@ GRANT SELECT, INSERT ON TABLE public.billings, public.billing_accounts
   TO prontomedic_financial_rpc_owner;
 GRANT USAGE, SELECT ON SEQUENCE public.financial_transactions_id_seq
   TO prontomedic_financial_rpc_owner;
+GRANT EXECUTE ON FUNCTION public.m18_can_edit_attendance()
+  TO prontomedic_reception_rpc_owner;
 
 ALTER TABLE public.billings
   ADD COLUMN IF NOT EXISTS unit_id INTEGER,
