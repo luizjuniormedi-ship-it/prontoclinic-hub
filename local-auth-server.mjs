@@ -322,6 +322,7 @@ const RPC_PERMISSIONS = {
   ensure_tiss_guide_for_checkin_secure: { module: 'recepcao', action: 'can_create' },
   ensure_financial_receivable_for_checkin_secure: { module: 'recepcao', action: 'can_create' },
   finalize_attendance_secure: { module: 'prontuario', action: 'can_create' },
+  finalize_attendance_with_billing_secure: { module: 'prontuario', action: 'can_create' },
   tiss_get_stats: { module: 'faturamento', action: 'can_view' },
   m16_generate_monthly_batch_secure: { module: 'faturamento', action: 'can_edit' },
   m16_persist_xml_secure: { module: 'faturamento', action: 'can_edit' },

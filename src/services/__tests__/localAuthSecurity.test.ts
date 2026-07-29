@@ -35,6 +35,7 @@ describe("local auth server security invariants", () => {
       "ensure_billing_preaccount_for_checkin_secure",
       "ensure_tiss_guide_for_checkin_secure",
       "ensure_financial_receivable_for_checkin_secure",
+      "finalize_attendance_with_billing_secure",
       "tiss_get_stats",
       "m16_generate_monthly_batch_secure",
       "m16_persist_xml_secure",
