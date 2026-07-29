@@ -211,9 +211,10 @@ export function NpsDashboard() {
               </SelectContent>
             </Select>
             {pesquisaId && (
-              <Button variant="outline" onClick={() => window.open(`/nps/${pesquisaId}`, "_blank")}>
-                <MessageSquare className="h-4 w-4 mr-2" />Abrir Pesquisa Pública
-              </Button>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <MessageSquare className="h-4 w-4" />
+                Links individuais são emitidos com token seguro para cada paciente.
+              </div>
             )}
           </div>
         </CardContent>

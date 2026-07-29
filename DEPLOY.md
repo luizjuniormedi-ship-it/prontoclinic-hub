@@ -41,18 +41,15 @@ Em **Settings → Environment Variables**, adicione (para Production, Preview e 
 | `VITE_TWILIO_ACCOUNT_SID` | opcional | Twilio SID para SMS |
 | `VITE_TWILIO_AUTH_TOKEN` | opcional | Twilio token |
 | `VITE_TWILIO_FROM` | opcional | Número Twilio remetente |
-| `VITE_DAILY_API_KEY` | opcional | Daily.co para telemedicina |
 | `VITE_DAILY_DOMAIN` | opcional | Domínio Daily.co |
-| `VITE_ORTHANC_URL` | sim (PACS) | URL do Orthanc |
-| `VITE_ORTHANC_USER` | sim (PACS) | Usuário Orthanc |
-| `VITE_ORTHANC_PASS` | sim (PACS) | Senha Orthanc (NUNCA `orthanc`) |
 | `VITE_DICOM_BUCKET` | sim (PACS) | Bucket DICOM no Supabase Storage |
-| `VITE_TISS_VERSION` | sim | Versão TISS (default `3.05.00`) |
+| `VITE_TISS_VERSION` | sim | Versão TISS suportada (`4.03.00`) |
 | `VITE_TISS_AMBIENTE` | sim | `HOMOLOGACAO` ou `PRODUCAO` |
-| `VITE_TISS_CERT_PATH` | opcional | Caminho do certificado A1 |
-| `VITE_TISS_CERT_PASSWORD` | opcional | Senha do certificado |
 
 > **Importante**: o build do Vite embarca as variáveis `VITE_*` no bundle. Após mudar uma env var, faça **redeploy**.
+> `DAILY_API_KEY`, `DAILY_WEBHOOK_SECRET`, `ORTHANC_URL`, `ORTHANC_USER`,
+> `ORTHANC_PASSWORD` e as credenciais/certificado TISS devem existir somente
+> como secrets server-side das Edge Functions ou do gateway.
 
 #### 3. Deploy
 

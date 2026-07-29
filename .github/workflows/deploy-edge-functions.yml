@@ -1,0 +1,132 @@
+name: Deploy Edge Functions to VPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "Commit SHA aprovado para publicação"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prontomedic-edge-functions-production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run type-check
+      - run: npm run test:unit
+      - run: npm run build
+      - name: Type check Edge Functions
+        run: |
+          docker run --rm \
+            -v "$PWD:/app" -w /app \
+            --entrypoint deno denoland/deno:2.5.6 \
+            check \
+            supabase/functions/dicom-bridge/index.ts \
+            supabase/functions/telemedicina-daily/index.ts
+      - name: Test Edge Function security helpers
+        run: |
+          docker run --rm \
+            -v "$PWD:/app" -w /app \
+            --entrypoint deno denoland/deno:2.5.6 \
+            test --allow-env supabase/functions/_shared/cors_test.ts
+      - run: |
+          grep -R '"Access-Control-Allow-Origin": "\*"' \
+            supabase/functions/dicom-bridge \
+            supabase/functions/telemedicina-daily && {
+            echo "::error::CORS wildcard encontrado nas Edge Functions"
+            exit 1
+          } || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: edge-functions-${{ inputs.commit_sha }}
+          if-no-files-found: error
+          path: |
+            supabase/functions/_shared
+            supabase/functions/dicom-bridge
+            supabase/functions/telemedicina-daily
+            supabase/migrations/20260729200000_harden_telemedicine_and_nps.sql
+            supabase/migrations/20260729210000_harden_dicom_telemedicine_runtime.sql
+            deploy/edge-runtime/deploy-functions.sh
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: Production
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: edge-functions-${{ inputs.commit_sha }}
+          path: release
+
+      - name: Validate transport secrets
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          for variable in VPS_HOST VPS_USER VPS_SSH_PRIVATE_KEY VPS_KNOWN_HOSTS; do
+            test -n "${!variable}" || {
+              echo "::error::Secret obrigatório ausente: ${variable}"
+              exit 1
+            }
+          done
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload immutable release
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          tar -C release -czf edge-functions.tgz .
+          scp edge-functions.tgz "${VPS_USER}@${VPS_HOST}:/tmp/prontomedic-edge-${{ inputs.commit_sha }}.tgz"
+
+      - name: Deploy atomically and smoke test
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          PUBLIC_URL: https://prontomedic.191-252-196-6.sslip.io
+        run: |
+          ssh "${VPS_USER}@${VPS_HOST}" \
+            "bash -s -- '${{ inputs.commit_sha }}' '/tmp/prontomedic-edge-${{ inputs.commit_sha }}.tgz'" \
+            < release/deploy/edge-runtime/deploy-functions.sh
+
+          for function_name in dicom-bridge telemedicina-daily; do
+            status="$(curl -sS -o /tmp/response -w '%{http_code}' \
+              -X POST \
+              -H 'Origin: https://prontomedic.191-252-196-6.sslip.io' \
+              "${PUBLIC_URL}/functions/v1/${function_name}")"
+            test "$status" = "401" || {
+              echo "::error::${function_name} retornou HTTP ${status}, esperado 401 sem JWT"
+              cat /tmp/response
+              exit 1
+            }
+          done

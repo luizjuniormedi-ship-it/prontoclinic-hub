@@ -139,9 +139,9 @@ export default function TelemedicinePage() {
         {!telemedicinaService.isConfigured() && (
           <Alert>
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Daily.co não configurado</AlertTitle>
+            <AlertTitle>Telemedicina não habilitada</AlertTitle>
             <AlertDescription>
-              Configure <code>VITE_DAILY_API_KEY</code> e <code>VITE_DAILY_DOMAIN</code> no <code>.env</code> para habilitar videochamada.
+              Habilite o módulo e configure o provedor no backend seguro para usar videochamadas.
             </AlertDescription>
           </Alert>
         )}

@@ -1,7 +1,7 @@
 /**
  * DicomViewer — Wrapper do Cornerstone.js (DICOM viewer open source)
  *
- * Carrega imagens DICOM do Orthanc (VITE_ORTHANC_URL) via WADO-RS/WADO-URI
+ * Carrega imagens DICOM por URLs privadas assinadas do storage.
  * Suporte a:
  *   - Zoom, pan, window/level
  *   - Medições (distância, ângulo)
@@ -25,13 +25,8 @@ import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { ZoomIn, ZoomOut, Move, Sun, Ruler, Type, Download, RefreshCw, AlertCircle, Loader2 } from "lucide-react";
-import { dicomWeb, type DicomExamImage, type DicomExam } from "@/services/dicomService";
-import { supabase } from "@/lib/supabase";
+import { examService, type DicomExamImage, type DicomExam } from "@/services/dicomService";
 import { toast } from "@/hooks/use-toast";
-
-const ORTHANC_URL = (import.meta.env.VITE_ORTHANC_URL as string) || "http://localhost:8042";
-const ORTHANC_USER = (import.meta.env.VITE_ORTHANC_USER as string) || "orthanc";
-const ORTHANC_PASS = (import.meta.env.VITE_ORTHANC_PASS as string) || "orthanc";
 
 interface CornerstoneLike {
   enable(el: HTMLElement): void;
@@ -89,10 +84,6 @@ async function loadCornerstone(): Promise<boolean> {
   });
 }
 
-function orthancHeaders(): HeadersInit {
-  return { Authorization: "Basic " + btoa(`${ORTHANC_USER}:${ORTHANC_PASS}`) };
-}
-
 interface Props {
   exam: DicomExam;
   image: DicomExamImage;
@@ -114,13 +105,15 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data } = await supabase
-        .from("dicom_exam_images")
-        .select("*")
-        .eq("cd_dicom_exam", exam.id)
-        .order("nr_series")
-        .order("nr_instance");
-      if (!cancelled && data) setImages(data as DicomExamImage[]);
+      try {
+        const data = await examService.getImages(exam.id);
+        if (!cancelled) setImages(data);
+      } catch (error) {
+        if (!cancelled) {
+          setStatus("error");
+          setErrorMsg(error instanceof Error ? error.message : "Falha ao autorizar imagens DICOM");
+        }
+      }
     })();
     return () => { cancelled = true; };
   }, [exam.id]);
@@ -147,7 +140,7 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
         cs.enable(el);
         if (cst) cst.init();
 
-        const imageId = buildImageId(displayImage, exam);
+        const imageId = buildImageId(displayImage);
         if (!imageId) {
           setStatus("fallback");
           return;
@@ -359,16 +352,8 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
   );
 }
 
-function buildImageId(image: DicomExamImage, exam: DicomExam): string | null {
-  // WADO-URI scheme: wadouri:https://...
-  if (image.ds_sop_instance_uid) {
-    return `wadouri:${ORTHANC_URL}/instances/${image.ds_sop_instance_uid}/file`;
-  }
-  if (exam.cd_dicom_exame && image.nr_instance !== undefined) {
-    // Tenta WADO-RS
-    return `wadors:${ORTHANC_URL}/dicom-web/studies/${exam.cd_dicom_exame}/instances/${image.nr_instance}`;
-  }
-  return null;
+function buildImageId(image: DicomExamImage): string | null {
+  return image.bl_dicom_url ? `wadouri:${image.bl_dicom_url}` : null;
 }
 
 function FallbackViewer({ image, studyUID }: { image: DicomExamImage; studyUID?: string }) {

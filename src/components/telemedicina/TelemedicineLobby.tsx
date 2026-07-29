@@ -340,8 +340,8 @@ export function TelemedicineLobby({
           {!telemedicinaService.isConfigured() && (
             <Alert variant="destructive">
               <AlertDescription>
-                Daily.co não configurado (VITE_DAILY_API_KEY / VITE_DAILY_DOMAIN ausentes).
-                Configure o .env para habilitar a videochamada.
+                Telemedicina não habilitada. Configure o provedor no backend seguro
+                para liberar a videochamada.
               </AlertDescription>
             </Alert>
           )}

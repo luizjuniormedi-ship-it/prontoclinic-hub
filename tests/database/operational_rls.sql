@@ -131,8 +131,39 @@ SELECT pg_temp.assert_true(
       AND p.prosecdef
       AND p.prokind = 'f'
       AND has_function_privilege('anon', p.oid, 'EXECUTE')
+      AND p.oid NOT IN (
+        'public.get_nps_survey_public(text)'::regprocedure,
+        'public.submit_nps_response_public(text,smallint,text,jsonb)'::regprocedure
+      )
   ),
-  'anon não pode executar nenhuma função SECURITY DEFINER pública'
+  'anon só pode executar a allowlist SECURITY DEFINER pública do NPS'
+);
+SELECT pg_temp.assert_true(
+  has_function_privilege(
+    'anon',
+    'public.get_nps_survey_public(text)',
+    'EXECUTE'
+  )
+  AND has_function_privilege(
+    'anon',
+    'public.submit_nps_response_public(text,smallint,text,jsonb)',
+    'EXECUTE'
+  )
+  AND NOT has_function_privilege(
+    'anon',
+    'public.create_nps_invitation_secure(bigint,bigint,bigint,text,interval)',
+    'EXECUTE'
+  )
+  AND NOT has_table_privilege('anon', 'public.nps_respostas', 'INSERT')
+  AND NOT has_table_privilege('authenticated', 'public.nps_respostas', 'INSERT')
+  AND NOT has_table_privilege('anon', 'public.nps_convites', 'SELECT')
+  AND NOT has_table_privilege('anon', 'public.nps_convites', 'INSERT')
+  AND (
+    SELECT relrowsecurity AND NOT relforcerowsecurity
+    FROM pg_class
+    WHERE oid = 'public.nps_convites'::regclass
+  ),
+  'NPS público deve usar somente token opaco via RPC e manter tabelas fechadas'
 );
 SELECT pg_temp.assert_true(
   COALESCE(

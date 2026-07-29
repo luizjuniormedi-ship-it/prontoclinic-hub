@@ -4,12 +4,12 @@
  * Testes unitários do módulo de Telemedicina.
  *
  * Cobre:
- *   - criarSala retorna UUID e cria sala no Daily (best-effort)
- *   - entrarSala valida token e gera meeting token
+ *   - criarSala usa o backend seguro e falha fechado
+ *   - entrarSala recebe token emitido pelo backend
  *   - finalizar chama RPC com métricas
  *   - enviarMensagem insere no banco
  *   - getRelatorio agrega corretamente
- *   - isConfigured reflete estado das env vars
+ *   - isConfigured reflete o feature flag, sem segredo no navegador
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -32,25 +32,22 @@ vi.mock("@/lib/supabase", () => {
     supabase: {
       from: vi.fn(() => chain),
       rpc: vi.fn(),
+      functions: {
+        invoke: vi.fn(),
+      },
     },
   };
 });
 
-// Mock da env — habilita Daily.co para os testes
+// Mock da env — apenas o feature flag fica disponível no navegador
 vi.mock("@/lib/env", () => ({
   env: {
     VITE_SUPABASE_URL: "https://test.supabase.co",
     VITE_SUPABASE_ANON_KEY: "sb_test_key_1234567890",
     VITE_APP_NAME: "Test",
-    VITE_DAILY_API_KEY: "test-daily-key",
-    VITE_DAILY_DOMAIN: "test.daily.co",
-    VITE_DAILY_WEBHOOK_SECRET: "whsec_test",
+    VITE_ENABLE_TELEMEDICINE: true,
   },
 }));
-
-// Mock do fetch (chamadas Daily.co REST API)
-const fetchMock = vi.fn();
-globalThis.fetch = fetchMock as unknown as typeof fetch;
 
 import { supabase } from "@/lib/supabase";
 import { telemedicinaService, type TelemedSala } from "@/services/telemedicinaService";
@@ -84,58 +81,59 @@ beforeEach(() => {
 });
 
 describe("telemedicinaService.criarSala", () => {
-  it("retorna UUID da sala criada via RPC", async () => {
-    // RPC retorna o UUID
-    (supabase.rpc as any).mockResolvedValueOnce({ data: "sala-uuid-1", error: null });
-
-    // select após insert retorna a sala
-    const chain: any = {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: salaFake, error: null }),
-      update: vi.fn().mockReturnThis(),
+  it("retorna somente sala provisionada pelo backend seguro", async () => {
+    const provisioned = {
+      ...salaFake,
+      ds_url_daily: "https://test.daily.co/pm-1",
     };
-    (supabase.from as any).mockReturnValueOnce(chain);
-
-    // Mock fetch para Daily.co (criar room)
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      status: 201,
-      text: async () => "",
-      json: async () => ({ id: "daily-room-1", name: "pm-1", url: "https://test.daily.co/pm-1" }),
+    (supabase.functions.invoke as any).mockResolvedValueOnce({
+      data: { sala: provisioned },
+      error: null,
     });
 
     const result = await telemedicinaService.criarSala(1);
-    expect(result).toBeDefined();
-    expect(supabase.rpc).toHaveBeenCalledWith("criar_sala_telemedicina", { p_appointment_id: 1 });
+    expect(result).toEqual(provisioned);
+    expect(supabase.functions.invoke).toHaveBeenCalledWith("telemedicina-daily", {
+      body: { action: "create-room", appointmentId: 1 },
+    });
+    expect(supabase.rpc).not.toHaveBeenCalled();
   });
 
-  it("lança erro se RPC falhar", async () => {
-    (supabase.rpc as any).mockResolvedValueOnce({ data: null, error: { message: "Appointment not found" } });
-    await expect(telemedicinaService.criarSala(999)).rejects.toThrow("Appointment not found");
+  it("falha fechado quando o backend não provisiona a sala remota", async () => {
+    (supabase.functions.invoke as any).mockResolvedValueOnce({
+      data: null,
+      error: { message: "FunctionsHttpError" },
+    });
+    await expect(telemedicinaService.criarSala(999)).rejects.toThrow(
+      "Telemedicina indisponível",
+    );
+  });
+
+  it("rejeita resposta parcial sem URL remota", async () => {
+    (supabase.functions.invoke as any).mockResolvedValueOnce({
+      data: { sala: salaFake },
+      error: null,
+    });
+    await expect(telemedicinaService.criarSala(1)).rejects.toThrow(
+      "sala remota não foi provisionada",
+    );
   });
 });
 
 describe("telemedicinaService.entrarSala", () => {
   it("valida token e retorna meeting token", async () => {
-    const sala = { ...salaFake, ds_url_daily: "https://test.daily.co/pm-1" };
-    const chain: any = {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      insert: vi.fn().mockResolvedValue({ data: null, error: null }),
-      single: vi.fn().mockResolvedValue({ data: sala, error: null }),
-      update: vi.fn().mockReturnThis(),
+    const sala = {
+      ...salaFake,
+      ds_url_daily: "https://test.daily.co/pm-1",
+      tp_status: "EM_ANDAMENTO" as const,
     };
-    (supabase.from as any).mockReturnValueOnce(chain); // select
-    (supabase.from as any).mockReturnValueOnce(chain); // update
-    (supabase.from as any).mockReturnValueOnce(chain); // insert participante
-
-    // Daily.co meeting token
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      text: async () => "",
-      json: async () => ({ token: "meeting-jwt-token" }),
+    (supabase.functions.invoke as any).mockResolvedValueOnce({
+      data: {
+        sala,
+        meetingToken: "meeting-jwt-token",
+        meetingUrl: sala.ds_url_daily,
+      },
+      error: null,
     });
 
     const result = await telemedicinaService.entrarSala("tok-abc", {
@@ -146,18 +144,24 @@ describe("telemedicinaService.entrarSala", () => {
 
     expect(result.meetingToken).toBe("meeting-jwt-token");
     expect(result.sala.tp_status).toBe("EM_ANDAMENTO");
+    expect(supabase.functions.invoke).toHaveBeenCalledWith("telemedicina-daily", {
+      body: {
+        action: "join-room",
+        accessToken: "tok-abc",
+        participant: { nome: "Dr. Teste", role: "MEDICO" },
+        userAgent: expect.any(String),
+      },
+    });
   });
 
   it("rejeita token inválido", async () => {
-    const chain: any = {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: null, error: { message: "not found" } }),
-    };
-    (supabase.from as any).mockReturnValueOnce(chain);
+    (supabase.functions.invoke as any).mockResolvedValueOnce({
+      data: null,
+      error: { message: "Token inválido" },
+    });
     await expect(
       telemedicinaService.entrarSala("invalid", { userId: "u", nome: "x", role: "MEDICO" }),
-    ).rejects.toThrow("Token inválido");
+    ).rejects.toThrow("Telemedicina indisponível");
   });
 });
 
@@ -258,7 +262,7 @@ describe("telemedicinaService.getRelatorioTelemedicina", () => {
 });
 
 describe("telemedicinaService.isConfigured", () => {
-  it("retorna true quando VITE_DAILY_API_KEY e VITE_DAILY_DOMAIN estão definidos", () => {
+  it("retorna true pelo feature flag sem depender de segredo Daily no cliente", () => {
     expect(telemedicinaService.isConfigured()).toBe(true);
   });
 });

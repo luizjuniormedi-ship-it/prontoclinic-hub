@@ -80,9 +80,8 @@ ZAPI_INSTANCE_ID=...
 ZAPI_TOKEN=...
 
 # DICOM (opcional)
-VITE_ORTHANC_URL=http://localhost:8042
-ORTHANC_USERNAME=orthanc
-ORTHANC_PASSWORD=orthanc
+# Configure ORTHANC_URL, ORTHANC_USER e ORTHANC_PASSWORD como secrets da
+# Edge Function dicom-bridge. Nao use credenciais padrao.
 
 # App
 VITE_APP_URL=http://localhost:5173

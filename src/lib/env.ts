@@ -43,9 +43,7 @@ const envSchema = z.object({
   VITE_TWILIO_ACCOUNT_SID: z.string().optional(),
   VITE_TWILIO_AUTH_TOKEN: z.string().optional(),
   VITE_TWILIO_FROM_NUMBER: z.string().optional(),
-  VITE_DAILY_API_KEY: z.string().optional(),
   VITE_DAILY_DOMAIN: z.string().optional(),
-  VITE_DAILY_WEBHOOK_SECRET: z.string().optional(),
   VITE_S3_BUCKET: z.string().optional(),
   VITE_S3_REGION: z.string().default("us-east-1"),
   VITE_ENABLE_TELEMEDICINE: z.string().transform((v) => v === "true").default("false"),
@@ -55,20 +53,8 @@ const envSchema = z.object({
   VITE_ENABLE_MODULE_21: z.string().transform((v) => v === "true").default("false"),
   VITE_ENABLE_MODULE_22: z.string().transform((v) => v === "true").default("false"),
   VITE_ENABLE_MODULE_23: z.string().transform((v) => v === "true").default("false"),
-  VITE_ORTHANC_URL: z.string().url().optional(),
-  VITE_ORTHANC_USER: z.string().min(4).optional(),
-  VITE_ORTHANC_PASS: z
-    .string()
-    .min(8, "VITE_ORTHANC_PASS deve ter no mínimo 8 caracteres")
-    .optional()
-    .refine(
-      (v) => !v || v !== "orthanc",
-      "VITE_ORTHANC_PASS não pode ser 'orthanc' (credencial padrão insegura)"
-    ),
   VITE_DICOM_BUCKET: z.string().optional(),
-  VITE_TISS_VERSION: z.string().default("3.05.00"),
-  VITE_TISS_CERT_PATH: z.string().optional(),
-  VITE_TISS_CERT_PASSWORD: z.string().optional(),
+  VITE_TISS_VERSION: z.literal("4.03.00").default("4.03.00"),
   VITE_TISS_AMBIENTE: z.enum(["HOMOLOGACAO", "PRODUCAO"]).default("HOMOLOGACAO"),
 });
 
