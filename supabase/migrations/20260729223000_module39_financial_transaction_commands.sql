@@ -100,8 +100,34 @@ DROP POLICY IF EXISTS appointments_reception_billing_lock
 CREATE POLICY appointments_reception_billing_lock
   ON public.appointments
   FOR ALL TO prontomedic_reception_rpc_owner
-  USING (TRUE)
-  WITH CHECK (TRUE);
+  USING (
+    id = NULLIF(
+      current_setting('app.reception.appointment_id', TRUE),
+      ''
+    )::BIGINT
+    AND company_id = NULLIF(
+      current_setting('app.reception.company_id', TRUE),
+      ''
+    )::UUID
+    AND unit_id = NULLIF(
+      current_setting('app.reception.unit_id', TRUE),
+      ''
+    )::INTEGER
+  )
+  WITH CHECK (
+    id = NULLIF(
+      current_setting('app.reception.appointment_id', TRUE),
+      ''
+    )::BIGINT
+    AND company_id = NULLIF(
+      current_setting('app.reception.company_id', TRUE),
+      ''
+    )::UUID
+    AND unit_id = NULLIF(
+      current_setting('app.reception.unit_id', TRUE),
+      ''
+    )::INTEGER
+  );
 
 ALTER TABLE public.billings
   ADD COLUMN IF NOT EXISTS unit_id INTEGER,
@@ -647,13 +673,36 @@ SECURITY INVOKER
 SET search_path = pg_catalog, public
 AS $function$
 DECLARE
+  v_company_id UUID := public.current_company_id();
+  v_unit_id INTEGER := public.active_unit_id();
   v_record JSONB;
 BEGIN
+  IF v_company_id IS NULL OR v_unit_id IS NULL THEN
+    RAISE EXCEPTION 'Contexto clínico exige empresa e unidade ativas'
+      USING ERRCODE = '42501';
+  END IF;
+
   v_record := public.finalize_attendance_secure(
     p_appointment_id,
     p_anamnesis,
     p_evolution,
     p_vital_signs
+  );
+
+  PERFORM set_config(
+    'app.reception.appointment_id',
+    p_appointment_id::TEXT,
+    TRUE
+  );
+  PERFORM set_config(
+    'app.reception.company_id',
+    v_company_id::TEXT,
+    TRUE
+  );
+  PERFORM set_config(
+    'app.reception.unit_id',
+    v_unit_id::TEXT,
+    TRUE
   );
 
   PERFORM public.sync_completed_appointment_billing_secure(

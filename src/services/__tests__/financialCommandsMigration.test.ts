@@ -58,9 +58,14 @@ describe("Module 39 financial command boundary", () => {
       /GRANT UPDATE ON TABLE public\.appointments[\s\S]*TO prontomedic_reception_rpc_owner/i,
     );
     expect(migration).toMatch(
-      /CREATE POLICY appointments_reception_billing_lock[\s\S]*FOR ALL TO prontomedic_reception_rpc_owner[\s\S]*USING \(TRUE\)[\s\S]*WITH CHECK \(TRUE\)/i,
+      /CREATE POLICY appointments_reception_billing_lock[\s\S]*FOR ALL TO prontomedic_reception_rpc_owner[\s\S]*app\.reception\.appointment_id[\s\S]*app\.reception\.company_id[\s\S]*app\.reception\.unit_id/i,
     );
-    expect(migration).not.toMatch(/app\.reception\./i);
+    expect(migration).not.toMatch(
+      /CREATE POLICY appointments_reception_billing_lock[\s\S]*USING \(TRUE\)/i,
+    );
+    expect(migration).toMatch(
+      /finalize_attendance_with_billing_secure[\s\S]*set_config\(\s*'app\.reception\.appointment_id'[\s\S]*set_config\(\s*'app\.reception\.company_id'[\s\S]*set_config\(\s*'app\.reception\.unit_id'[\s\S]*sync_completed_appointment_billing_secure/i,
+    );
     const receptionBilling = readFileSync(
       resolve(
         process.cwd(),
