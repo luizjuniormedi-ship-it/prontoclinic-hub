@@ -456,7 +456,8 @@ BEGIN
       'module_role_permissions_admin',
       'module_role_permissions_select',
       'm11_reception_owner_profiles_read',
-      'm23_owner_profile_self_read'
+      'm23_owner_profile_self_read',
+      'user_profiles_financial_rpc_select'
     );
 
   IF v_unknown_policies IS NOT NULL THEN

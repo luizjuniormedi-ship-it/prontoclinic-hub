@@ -10,6 +10,14 @@ const migration = readFileSync(
   "utf8",
 );
 
+const authFoundationMigration = readFileSync(
+  resolve(
+    process.cwd(),
+    "supabase/migrations/20260716203000_auth_foundation.sql",
+  ),
+  "utf8",
+);
+
 describe("Module 39 financial command boundary", () => {
   it("forces RLS and removes browser write grants from billings", () => {
     expect(migration).toMatch(/ALTER TABLE public\.billings FORCE ROW LEVEL SECURITY/i);
@@ -43,5 +51,14 @@ describe("Module 39 financial command boundary", () => {
       /finalize_attendance_with_billing_secure[\s\S]*finalize_attendance_secure[\s\S]*sync_completed_appointment_billing_secure/i,
     );
     expect(migration).toMatch(/trg_audit_financial_transactions/i);
+  });
+
+  it("keeps the hardened profile policy compatible with auth replay", () => {
+    expect(migration).toMatch(
+      /CREATE POLICY user_profiles_financial_rpc_select[\s\S]*TO prontomedic_financial_rpc_owner/i,
+    );
+    expect(authFoundationMigration).toMatch(
+      /policyname NOT IN \([\s\S]*'user_profiles_financial_rpc_select'[\s\S]*\)/i,
+    );
   });
 });
