@@ -122,6 +122,20 @@ export interface TissProtocol {
   updated_at: string;
 }
 
+export interface TissXmlDocument {
+  id: number;
+  appointment_id?: number;
+  ds_filename?: string;
+  ds_versao_tiss: string;
+  tp_ambiente: TissAmbiente;
+  status: TissStatus;
+  ds_hash_envio?: string;
+  ds_hash_retorno?: string;
+  bl_xml_enviado?: string;
+  bl_xml_retorno?: string;
+  bl_xml_recurso?: string;
+}
+
 // ── Códigos TISS (tabela oficial ANS, subset) ──────────────────────
 
 export const TISS_GLOSA_CODES: Array<{ codigo: string; descricao: string }> = [
@@ -662,42 +676,44 @@ export const tissService = {
     companyId: string,
     filters?: { status?: TissStatus; mes?: number; ano?: number; cd_convenio?: number }
   ): Promise<TissXml[]> {
-    let q = supabase
-      .from("tiss_xml")
-      .select("*, insurance_companies(name, registro_ans)")
-      .eq("company_id", companyId)
-      .eq("lg_deletado", false)
-      .order("dt_fatura", { ascending: false });
-    if (filters?.status) q = q.eq("status", filters.status);
-    if (filters?.cd_convenio) q = q.eq("cd_convenio", filters.cd_convenio);
-    if (filters?.mes) {
-      if (!filters.ano) {
-        throw new Error("Ano obrigatório para filtrar a competência TISS");
-      }
-      const nextMonth = filters.mes === 12 ? 1 : filters.mes + 1;
-      const nextYear = filters.mes === 12 ? filters.ano + 1 : filters.ano;
-      const firstDay = `${filters.ano}-${String(filters.mes).padStart(2, "0")}-01`;
-      const firstDayNextMonth = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
-      q = q.gte("dt_fatura", firstDay).lt("dt_fatura", firstDayNextMonth);
+    if (!companyId) throw new Error("Empresa obrigatória para consultar TISS");
+    if (filters?.mes && !filters.ano) {
+      throw new Error("Ano obrigatório para filtrar a competência TISS");
     }
-    if (filters?.ano && !filters?.mes) {
-      q = q
-        .gte("dt_fatura", `${filters.ano}-01-01`)
-        .lt("dt_fatura", `${filters.ano + 1}-01-01`);
-    }
-    const { data, error } = await q.limit(500);
+    const { data, error } = await supabase.rpc("m16_list_xml_secure", {
+      p_year: filters?.ano ?? null,
+      p_limit: 500,
+    });
     if (error) throw error;
-    return (data || []).map((row, index) => normalizeTissXmlRow(row, `tiss_xml[${index}]`));
+    return ((data || []) as Array<Record<string, unknown>>)
+      .map((row, index) =>
+        normalizeTissXmlRow(
+          { ...row, company_id: companyId, lg_deletado: false },
+          `m16_list_xml_secure[${index}]`,
+        ),
+      )
+      .filter((row) => !filters?.status || row.status === filters.status)
+      .filter((row) => !filters?.cd_convenio || row.cd_convenio === filters.cd_convenio)
+      .filter((row) => {
+        if (!filters?.mes) return true;
+        const month = Number(row.dt_fatura?.slice(5, 7));
+        return month === filters.mes;
+      });
   },
 
-  async getById(id: number): Promise<TissXml> {
-    const { data, error } = await supabase
-      .from("tiss_xml")
-      .select("*")
-      .eq("id", id)
-      .single();
+  async getXmlDocument(id: number): Promise<TissXmlDocument> {
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      throw new Error("Identificador do XML TISS inválido");
+    }
+    const { data, error } = await supabase.rpc("m16_get_xml_document_secure", {
+      p_tiss_xml_id: id,
+    });
     if (error) throw error;
-    return normalizeTissXmlRow(data, "tiss_xml");
+    const document = asRpcRecord(data, "m16_get_xml_document_secure");
+    if (rpcPositiveInteger(document.id, "m16_get_xml_document_secure.id") !== id) {
+      throw new Error("m16_get_xml_document_secure retornou XML divergente");
+    }
+    return document as unknown as TissXmlDocument;
   },
 
   // ── Geracao do XML TISS ───────────────────────────────────────
@@ -850,23 +866,30 @@ export const tissService = {
       response.id,
       "m16_record_manual_denial_secure.id"
     );
-    const { data: row, error: readError } = await supabase
-      .from("tiss_glosas")
-      .select("*")
-      .eq("id", denialId)
-      .single();
+    const { data: denials, error: readError } = await supabase.rpc(
+      "m16_list_denials_secure",
+      { p_tiss_xml_id: tissXmlId, p_limit: 500 },
+    );
     if (readError) throw readError;
+    const row = ((denials || []) as Array<Record<string, unknown>>).find(
+      (item) => Number(item.id) === denialId,
+    );
+    if (!row) throw new Error("Glosa registrada não foi encontrada no escopo ativo");
     return normalizeTissGlosaRow(row, "tiss_glosas");
   },
 
   async listGlosas(tissXmlId: number): Promise<TissGlosa[]> {
-    const { data, error } = await supabase
-      .from("tiss_glosas")
-      .select("*")
-      .eq("cd_tiss_xml", tissXmlId)
-      .order("dt_glosa", { ascending: false });
+    const { data, error } = await supabase.rpc("m16_list_denials_secure", {
+      p_tiss_xml_id: tissXmlId,
+      p_limit: 500,
+    });
     if (error) throw error;
-    return (data || []).map((row, index) => normalizeTissGlosaRow(row, `tiss_glosas[${index}]`));
+    return ((data || []) as Array<Record<string, unknown>>).map((row, index) =>
+      normalizeTissGlosaRow(
+        { ...row, cd_tiss_xml: row.tiss_xml_id },
+        `m16_list_denials_secure[${index}]`,
+      ),
+    );
   },
 
   // ── Recurso de Glosa ───────────────────────────────────────────
@@ -879,13 +902,6 @@ export const tissService = {
   },
 
   async gerarXMLRecurso(glosaId: number): Promise<string> {
-    const { data: glosa } = await supabase
-      .from("tiss_glosas")
-      .select("*, tiss_xml(cd_convenio, ds_protocolo, dt_fatura, vl_glosa)")
-      .eq("id", glosaId)
-      .single();
-    if (!glosa) throw new Error("Glosa nao encontrada");
-
     throw new Error(
       `Recurso de glosa ${glosaId} não foi migrado para o XSD 04.03.00 e permanece bloqueado para evitar XML incompatível.`
     );
@@ -1021,13 +1037,12 @@ export const tissService = {
   // ── Protocolos (configuracao) ──────────────────────────────────
 
   async listProtocols(companyId: string): Promise<TissProtocol[]> {
-    const { data, error } = await supabase
-      .from("tiss_protocols")
-      .select("id, company_id, cd_convenio, ds_endpoint, ds_versao_tiss, tp_ambiente, lg_active, dt_ultimo_teste, ds_status_teste, created_at, updated_at")
-      .eq("company_id", companyId)
-      .order("cd_convenio");
+    if (!companyId) throw new Error("Empresa obrigatória para consultar protocolos TISS");
+    const { data, error } = await supabase.rpc("m16_list_protocols_secure");
     if (error) throw error;
-    return (data || []) as TissProtocol[];
+    return ((data || []) as Array<Record<string, unknown>>).map(
+      (row) => ({ ...row, company_id: companyId }) as unknown as TissProtocol,
+    );
   },
 
   async saveProtocol(

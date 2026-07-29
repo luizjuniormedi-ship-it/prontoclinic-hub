@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { rpc, from } = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }));
-vi.mock("@/lib/supabase", () => ({ supabase: { rpc, from } }));
+const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }));
+vi.mock("@/lib/supabase", () => ({ supabase: { rpc } }));
 
 import {
   assertSignedGuideImmutable,
@@ -13,7 +13,6 @@ import {
 describe("tissGuideService — M16", () => {
   beforeEach(() => {
     rpc.mockReset();
-    from.mockReset();
   });
 
   it("valida tipos, versao e ambiente antes de criar", () => {
@@ -49,6 +48,32 @@ describe("tissGuideService — M16", () => {
       p_billing_account_id: "billing-1",
     }));
     expect(rpc.mock.calls[0][1]).not.toHaveProperty("p_company_id");
+  });
+
+  it("lista guias exclusivamente pela projeção segura do tenant ativo", async () => {
+    rpc.mockResolvedValue({
+      data: [{
+        id: "guide-1",
+        status: "DRAFT",
+        guide_type: "SP/SADT",
+        guide_number: 10,
+        tiss_version: "4.03.00",
+        environment: "HOMOLOGACAO",
+      }],
+      error: null,
+    });
+
+    const result = await tissGuideService.list("company-1");
+
+    expect(rpc).toHaveBeenCalledWith("m16_list_guides_secure", {
+      p_status: null,
+      p_limit: 500,
+    });
+    expect(result[0]).toMatchObject({
+      id: "guide-1",
+      company_id: "company-1",
+      validation_errors: [],
+    });
   });
 
   it("encadeia validacao, assinatura, cancelamento e substituicao por RPC", async () => {

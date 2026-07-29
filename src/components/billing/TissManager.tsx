@@ -86,9 +86,16 @@ export function TissManager() {
     }
   };
 
-  const handleSelectXml = (xml: TissXml) => {
-    setSelectedXml(xml);
-    setGlosaDialogOpen(false);
+  const handleSelectXml = async (xml: TissXml) => {
+    try {
+      const document = await tissService.getXmlDocument(xml.id);
+      setSelectedXml({ ...xml, ...document });
+      setGlosaDialogOpen(false);
+    } catch (error) {
+      toast.error(
+        `Não foi possível abrir o XML TISS: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   };
 
   const handleOpenGlosa = (xml: TissXml) => {
@@ -158,7 +165,7 @@ export function TissManager() {
             setFilterStatus={setFilterStatus}
             filterConvenio={filterConvenio}
             setFilterConvenio={setFilterConvenio}
-            onSelectXml={handleSelectXml}
+            onSelectXml={(xml) => void handleSelectXml(xml)}
             onOpenGlosa={handleOpenGlosa}
           />
         </TabsContent>

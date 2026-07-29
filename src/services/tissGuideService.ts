@@ -75,13 +75,24 @@ export function assertSignedGuideImmutable(before: Pick<TissGuide, "status">, af
 
 export const tissGuideService = {
   async list(companyId: string): Promise<TissGuide[]> {
-    const { data, error } = await supabase
-      .from("tiss_guides")
-      .select("*")
-      .eq("company_id", companyId)
-      .order("created_at", { ascending: false });
+    if (!companyId) throw new Error("Empresa obrigatória para consultar guias TISS");
+    const { data, error } = await supabase.rpc("m16_list_guides_secure", {
+      p_status: null,
+      p_limit: 500,
+    });
     if (error) throw error;
-    return (data ?? []) as TissGuide[];
+    return ((data ?? []) as Array<Partial<TissGuide>>).map((guide) => ({
+      ...guide,
+      company_id: companyId,
+      validation_errors: [],
+      signed_by: null,
+      signature_sha256: null,
+      signature_reference: null,
+      cancelled_by: null,
+      cancellation_reason: null,
+      substitution_reason: null,
+      created_by: null,
+    })) as TissGuide[];
   },
 
   async create(input: {

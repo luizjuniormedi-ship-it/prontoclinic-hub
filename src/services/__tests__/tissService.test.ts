@@ -1,4 +1,6 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   TISS_COMMUNICATION_VERSION,
@@ -175,42 +177,23 @@ describe("buildTissXml", () => {
   );
 });
 
-function createListQuery(data: unknown[]) {
-  const query = {
-    select: vi.fn(),
-    eq: vi.fn(),
-    gte: vi.fn(),
-    lt: vi.fn(),
-    order: vi.fn(),
-    limit: vi.fn().mockResolvedValue({ data, error: null }),
-  };
-  query.select.mockReturnValue(query);
-  query.eq.mockReturnValue(query);
-  query.gte.mockReturnValue(query);
-  query.lt.mockReturnValue(query);
-  query.order.mockReturnValue(query);
-  return query;
-}
-
 describe("tissService numeric boundary", () => {
   it("normaliza DECIMAL string e null das faturas em números finitos", async () => {
-    const query = createListQuery([
-      {
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({
+      data: [{
         id: 10,
-        company_id: "company-1",
         ds_versao_tiss: "4.03.00",
         tp_ambiente: "HOMOLOGACAO",
         status: "PENDENTE",
-        lg_deletado: false,
         created_at: "2026-07-26T00:00:00.000Z",
         updated_at: "2026-07-26T00:00:00.000Z",
         vl_informado: "150.75",
         vl_processado: null,
         vl_liberado: "100.25",
         vl_glosa: undefined,
-      },
-    ]);
-    vi.mocked(supabase.from).mockReturnValueOnce(query as never);
+      }],
+      error: null,
+    } as never);
 
     const [row] = await tissService.listFaturas("company-1");
 
@@ -313,36 +296,39 @@ describe("tissService numeric boundary", () => {
   });
 
   it("falha fechado quando uma fatura contém DECIMAL inválido", async () => {
-    const query = createListQuery([
-      {
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({
+      data: [{
         id: 11,
         vl_informado: "NaN",
         vl_processado: null,
         vl_liberado: null,
         vl_glosa: null,
-      },
-    ]);
-    vi.mocked(supabase.from).mockReturnValueOnce(query as never);
+      }],
+      error: null,
+    } as never);
 
     await expect(tissService.listFaturas("company-1")).rejects.toThrow(
-      /tiss_xml\[0\]\.vl_informado/
+      /m16_list_xml_secure\[0\]\.vl_informado/
     );
   });
 
-  it("filtra a competência pelo intervalo fechado-aberto completo", async () => {
-    const julyQuery = createListQuery([]);
-    const decemberQuery = createListQuery([]);
-    vi.mocked(supabase.from)
-      .mockReturnValueOnce(julyQuery as never)
-      .mockReturnValueOnce(decemberQuery as never);
+  it("usa a leitura segura e filtra o mês sem consultar a tabela", async () => {
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({
+      data: [
+        { id: 1, dt_fatura: "2026-07-10", status: "PENDENTE" },
+        { id: 2, dt_fatura: "2026-08-10", status: "PENDENTE" },
+      ],
+      error: null,
+    } as never);
 
-    await tissService.listFaturas("company-1", { mes: 7, ano: 2026 });
-    await tissService.listFaturas("company-1", { mes: 12, ano: 2026 });
+    const result = await tissService.listFaturas("company-1", { mes: 7, ano: 2026 });
 
-    expect(julyQuery.gte).toHaveBeenCalledWith("dt_fatura", "2026-07-01");
-    expect(julyQuery.lt).toHaveBeenCalledWith("dt_fatura", "2026-08-01");
-    expect(decemberQuery.gte).toHaveBeenCalledWith("dt_fatura", "2026-12-01");
-    expect(decemberQuery.lt).toHaveBeenCalledWith("dt_fatura", "2027-01-01");
+    expect(result.map((row) => row.id)).toEqual([1]);
+    expect(supabase.rpc).toHaveBeenCalledWith("m16_list_xml_secure", {
+      p_year: 2026,
+      p_limit: 500,
+    });
+    expect(supabase.from).not.toHaveBeenCalled();
   });
 
   it("bloqueia qualquer retorno no cliente antes de RPC ou persistência", async () => {
@@ -358,19 +344,32 @@ describe("tissService numeric boundary", () => {
 });
 
 describe("tissService secure lifecycle RPCs", () => {
-  it("registra glosa pela RPC e faz apenas leitura do resultado", async () => {
-    vi.mocked(supabase.rpc).mockResolvedValueOnce({
-      data: { id: 91, tiss_xml_id: 10, vl_glosa: 25, status: "GLOSADO" },
-      error: null,
-    } as never);
-    const query = {
-      select: vi.fn(),
-      eq: vi.fn(),
-      single: vi.fn().mockResolvedValue({
-        data: {
+  it("não reintroduz leitura direta das tabelas protegidas do domínio TISS", () => {
+    const serviceSources = [
+      "src/services/tissService.ts",
+      "src/services/tissGuideService.ts",
+    ].map((path) => readFileSync(resolve(process.cwd(), path), "utf8")).join("\n");
+
+    expect(serviceSources).not.toMatch(
+      /\.from\("(?:tiss_xml|tiss_glosas|tiss_protocols|tiss_guides)"\)/,
+    );
+    expect(serviceSources).toContain("m16_list_xml_secure");
+    expect(serviceSources).toContain("m16_list_denials_secure");
+    expect(serviceSources).toContain("m16_list_protocols_secure");
+    expect(serviceSources).toContain("m16_list_guides_secure");
+    expect(serviceSources).toContain("m16_get_xml_document_secure");
+  });
+
+  it("registra glosa e lê o resultado somente pelas RPCs seguras", async () => {
+    vi.mocked(supabase.rpc)
+      .mockResolvedValueOnce({
+        data: { id: 91, tiss_xml_id: 10, vl_glosa: 25, status: "GLOSADO" },
+        error: null,
+      } as never)
+      .mockResolvedValueOnce({
+        data: [{
           id: 91,
-          cd_tiss_xml: 10,
-          company_id: "company-1",
+          tiss_xml_id: 10,
           cd_glosa_code: "7101",
           ds_motivo: "Teste",
           vl_glosa: "25.00",
@@ -379,13 +378,9 @@ describe("tissService secure lifecycle RPCs", () => {
           ds_status_recurso: "PENDENTE",
           created_at: "2026-07-26T00:00:00.000Z",
           updated_at: "2026-07-26T00:00:00.000Z",
-        },
+        }],
         error: null,
-      }),
-    };
-    query.select.mockReturnValue(query);
-    query.eq.mockReturnValue(query);
-    vi.mocked(supabase.from).mockReturnValueOnce(query as never);
+      } as never);
 
     const result = await tissService.registrarGlosa(10, "Teste", 25, "7101");
 
@@ -400,7 +395,11 @@ describe("tissService secure lifecycle RPCs", () => {
         p_code: "7101",
       })
     );
-    expect(query.select).toHaveBeenCalledWith("*");
+    expect(supabase.rpc).toHaveBeenLastCalledWith(
+      "m16_list_denials_secure",
+      { p_tiss_xml_id: 10, p_limit: 500 },
+    );
+    expect(supabase.from).not.toHaveBeenCalled();
   });
 
   it("fecha lote mensal somente pela RPC idempotente", async () => {

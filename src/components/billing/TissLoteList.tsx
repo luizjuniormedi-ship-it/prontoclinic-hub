@@ -46,6 +46,7 @@ import {
   formatTissCurrency,
   toFiniteTissNumber,
 } from "./tissDisplay";
+import { toast } from "sonner";
 
 function statusBadge(s: TissStatus): { label: string; cls: string; icon: typeof FileText } {
   const map: Record<TissStatus, { label: string; cls: string; icon: typeof FileText }> = {
@@ -86,6 +87,16 @@ const TissRow = memo(function TissRow({ fatura, onSelectXml, onOpenGlosa }: Tiss
     (fatura as TissXml & { insurance_companies?: { name: string } }).insurance_companies?.name ||
     fatura.cd_convenio ||
     "—";
+  const handleDownload = async () => {
+    try {
+      const document = await tissService.getXmlDocument(fatura.id);
+      downloadTissXml({ ...fatura, ...document });
+    } catch (error) {
+      toast.error(
+        `Não foi possível baixar o XML TISS: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  };
   return (
     <TableRow
       className="cursor-pointer hover:bg-muted/50"
@@ -149,15 +160,13 @@ const TissRow = memo(function TissRow({ fatura, onSelectXml, onOpenGlosa }: Tiss
               <AlertTriangle className="h-3 w-3 text-orange-600" />
             </Button>
           )}
-          {fatura.bl_xml_enviado && (
-            <Button
-              size="sm" variant="ghost"
-              onClick={() => downloadTissXml(fatura)}
-              title="Baixar XML"
-            >
-              <Download className="h-3 w-3" />
-            </Button>
-          )}
+          <Button
+            size="sm" variant="ghost"
+            onClick={() => void handleDownload()}
+            title="Baixar XML"
+          >
+            <Download className="h-3 w-3" />
+          </Button>
         </div>
       </TableCell>
     </TableRow>
