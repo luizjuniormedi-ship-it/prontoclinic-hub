@@ -181,7 +181,7 @@ jobs:
           echo "::add-mask::$E2E_PASSWORD"
           echo "E2E_PASSWORD=$E2E_PASSWORD" >> "$GITHUB_ENV"
           psql -X -v ON_ERROR_STOP=1 \
-            -h localhost -p 54322 -U postgres -d migrations_first \
+            -h localhost -p 54322 -U postgres -d migrations_second \
             -f scripts/seed-e2e-users.sql >/dev/null
           echo "LOCAL_E2E_JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
 
@@ -191,7 +191,10 @@ jobs:
           PGPORT: 54322
           PGUSER: postgres
           PGPASSWORD: postgres
-          PGDATABASE: migrations_first
+          # migrations_first is intentionally mutated by the historical
+          # idempotency retries above. The E2E gate must exercise the clean,
+          # canonical result of a complete chronological replay.
+          PGDATABASE: migrations_second
           JWT_SECRET: ${{ env.LOCAL_E2E_JWT_SECRET }}
           LOCAL_AUTH_MODE: test
           LOCAL_AUTH_PORT: 18000
@@ -219,7 +222,7 @@ jobs:
           PGPORT: 54322
           PGUSER: postgres
           PGPASSWORD: postgres
-          PGDATABASE: migrations_first
+          PGDATABASE: migrations_second
 
       - name: Upload test results
         if: always()
