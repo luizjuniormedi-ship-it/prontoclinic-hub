@@ -3,7 +3,6 @@ import { corsDenied, corsHeaders } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const DAILY_API_KEY = Deno.env.get("DAILY_API_KEY") ?? "";
 const DAILY_API_BASE = (Deno.env.get("DAILY_API_BASE_URL") ?? "https://api.daily.co/v1").replace(/\/$/, "");
 
@@ -93,10 +92,6 @@ function userClient(authorization: string) {
   });
 }
 
-const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
-
 async function authenticate(authorization: string) {
   const client = userClient(authorization);
   const token = authorization.replace(/^Bearer\s+/i, "");
@@ -167,7 +162,7 @@ async function createRoom(client: ReturnType<typeof userClient>, appointmentId: 
       await deleteDailyRoom(sala.ds_sala_daily)
         .catch((cleanupError) => console.error("[telemedicina-daily] cleanup failed", cleanupError));
     }
-    await admin
+    await client
       .from("telemedicina_salas")
       .update({ tp_status: "FALHOU", ds_url_daily: null })
       .eq("id", sala.id);
@@ -198,13 +193,13 @@ async function joinRoom(
     return json({ error: `Sala ${String(sala.tp_status).toLowerCase()}` }, 409);
   }
 
-  const { data: professional } = await admin
+  const { data: professional } = await client
     .from("professionals")
     .select("id, full_name")
     .eq("id", sala.cd_medico)
     .eq("user_id", user.id)
     .maybeSingle();
-  const { data: patient } = await admin
+  const { data: patient } = await client
     .from("patients")
     .select("id, full_name")
     .eq("id", sala.cd_paciente)
@@ -286,7 +281,7 @@ async function deleteRoom(client: ReturnType<typeof userClient>, salaId: string)
     .update({ tp_status: "CANCELADA", dt_fim: new Date().toISOString() })
     .eq("id", sala.id);
   if (updateError) {
-    const { error: reconcileError } = await admin
+    const { error: reconcileError } = await client
       .from("telemedicina_salas")
       .update({ tp_status: "CANCELADA", dt_fim: new Date().toISOString() })
       .eq("id", sala.id);

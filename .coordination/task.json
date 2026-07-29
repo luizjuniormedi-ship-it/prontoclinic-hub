@@ -5,6 +5,7 @@
   "paths": [
     ".coordination/task.example.json",
     ".env.example",
+    ".gitignore",
     ".github",
     "CONTRIBUTING.md",
     "DEPLOY.md",

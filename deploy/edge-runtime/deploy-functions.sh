@@ -7,6 +7,12 @@ current="${root}/current"
 previous_link="${root}/previous"
 compose="${root}/docker-compose.yml"
 
+exec 9>"${root}/.deploy.lock"
+flock -n 9 || {
+  echo "Outra publicação Edge está em andamento" >&2
+  exit 25
+}
+
 if test "${1:-}" = "--rollback"; then
   previous="$(readlink -f "$previous_link" 2>/dev/null || true)"
   test -n "$previous" && test -f "${previous}/main/index.ts" || {
@@ -27,10 +33,16 @@ release="${releases}/${sha}"
 [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
 test -f "$archive"
 test -f "$checksum"
+test "$(stat -c '%U:%G' "${root}/secrets/.env.functions")" = "root:root"
+test "$(stat -c '%a' "${root}/secrets/.env.functions")" = "600"
 (
   cd "$(dirname "$archive")"
   sha256sum -c "$(basename "$checksum")"
 )
+if tar -tzf "$archive" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+  echo "Arquivo de release contém caminho inseguro" >&2
+  exit 26
+fi
 test -f "$compose" || {
   echo "Edge Runtime não provisionado em ${compose}" >&2
   exit 20
@@ -46,7 +58,7 @@ test ! -e "$release" || {
   exit 22
 }
 mkdir "$release"
-tar -xzf "$archive" -C "$release"
+tar --no-same-owner --no-same-permissions -xzf "$archive" -C "$release"
 
 for path in \
   "$release/supabase/functions/_shared/cors.ts" \
@@ -84,7 +96,9 @@ mv -Tf "${current}.next" "$current"
 docker compose -f "$compose" up -d --no-deps --force-recreate functions
 
 for attempt in $(seq 1 20); do
-  if timeout 1 bash -c '</dev/tcp/127.0.0.1/9000' 2>/dev/null; then
+  status="$(curl -sS -o /dev/null -w '%{http_code}' \
+    -X POST http://127.0.0.1:9000/dicom-bridge 2>/dev/null || true)"
+  if test "$status" = "401"; then
     break
   fi
   test "$attempt" -lt 20

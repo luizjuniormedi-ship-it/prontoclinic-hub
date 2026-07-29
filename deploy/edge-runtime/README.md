@@ -17,7 +17,7 @@ repositório oficial Supabase e validado por SHA-256 antes da inicialização.
 
 Secrets clínicos ficam somente na VPS:
 
-`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
+`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `JWT_SECRET`,
 `ORTHANC_URL`, `ORTHANC_USER`, `ORTHANC_PASSWORD`, `DAILY_API_KEY`,
 `DAILY_API_BASE_URL` e `ALLOWED_ORIGINS`.
 

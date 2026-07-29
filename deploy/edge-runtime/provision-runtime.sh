@@ -12,10 +12,18 @@ test "$(id -u)" -eq 0 || {
 }
 test -f "${root}/docker-compose.yml"
 test -f "${root}/secrets/.env.functions"
+test "$(stat -c '%U:%G' "${root}/secrets/.env.functions")" = "root:root"
+test "$(stat -c '%a' "${root}/secrets/.env.functions")" = "600"
 test ! -e "${root}/current" || {
   echo "Runtime já provisionado; use o workflow de deploy" >&2
   exit 31
 }
+
+cleanup() {
+  rm -f "${root}/current"
+  rm -rf "${root}/releases/bootstrap"
+}
+trap cleanup ERR
 
 install -d -m 0750 "${root}/releases/bootstrap/main"
 curl --fail --silent --show-error --location \
@@ -28,8 +36,11 @@ docker compose -f "${root}/docker-compose.yml" pull functions
 docker compose -f "${root}/docker-compose.yml" up -d functions
 
 for attempt in $(seq 1 30); do
-  if timeout 1 bash -c '</dev/tcp/127.0.0.1/9000' 2>/dev/null; then
+  status="$(curl -sS -o /dev/null -w '%{http_code}' \
+    -X POST http://127.0.0.1:9000/not-provisioned 2>/dev/null || true)"
+  if test "$status" = "404"; then
     docker compose -f "${root}/docker-compose.yml" ps functions
+    trap - ERR
     exit 0
   fi
   test "$attempt" -lt 30
