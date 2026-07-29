@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { DollarSign, Search, TrendingUp, TrendingDown, Calendar, Plus, Receipt } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -16,7 +16,6 @@ import { financialService, DbFinancialTransaction } from "@/services/financialSe
 import { billingsService } from "@/services/financialService";
 import { professionalsLookup, DbProfessional } from "@/services/appointmentsService";
 import { Patient } from "@/types";
-import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 
@@ -40,8 +39,8 @@ export default function FinancialPage() {
   const [paymentMethod, setPaymentMethod] = useState("pix");
   const [newOpen, setNewOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const { user } = useAuth();
   const { toast } = useToast();
+  const createIdempotencyKey = useRef<string | null>(null);
 
   // New transaction form
   const [newPatientId, setNewPatientId] = useState("");
@@ -118,24 +117,33 @@ export default function FinancialPage() {
     try {
       await financialService.create({
         patient_id: newPatientId,
-        company_id: user?.company_id || undefined,
-        unit_id: user?.primary_unit_id || undefined,
         amount: Number(newAmount),
         payment_method: newMethod,
         due_date: newDueDate,
         notes: newNotes.trim() || undefined,
-        status: "pendente",
+        idempotency_key: createIdempotencyKey.current
+          || (createIdempotencyKey.current = crypto.randomUUID()),
       });
       toast({ title: "Cobrança criada!" });
       setNewOpen(false);
       setNewPatientId("");
       setNewAmount("");
       setNewNotes("");
+      createIdempotencyKey.current = null;
       loadAll();
     } catch (err) {
       toast({ title: "Erro", description: (err as Error).message, variant: "destructive" });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleNewOpenChange = (open: boolean) => {
+    setNewOpen(open);
+    if (open) {
+      createIdempotencyKey.current ||= crypto.randomUUID();
+    } else if (!saving) {
+      createIdempotencyKey.current = null;
     }
   };
 
@@ -147,7 +155,9 @@ export default function FinancialPage() {
       <PageHeader
         title="Financeiro"
         description="Transações e cobranças"
-        actions={<Button onClick={() => setNewOpen(true)}><Plus className="mr-2 h-4 w-4" />Nova Cobrança</Button>}
+        actions={<Button onClick={() => {
+          handleNewOpenChange(true);
+        }}><Plus className="mr-2 h-4 w-4" />Nova Cobrança</Button>}
       />
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
@@ -257,7 +267,7 @@ export default function FinancialPage() {
       </Dialog>
 
       {/* New transaction dialog */}
-      <Dialog open={newOpen} onOpenChange={setNewOpen}>
+      <Dialog open={newOpen} onOpenChange={handleNewOpenChange}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Nova Cobrança</DialogTitle>
@@ -289,7 +299,7 @@ export default function FinancialPage() {
             <div className="space-y-2"><Label>Observações</Label><Textarea rows={2} value={newNotes} onChange={(e) => setNewNotes(e.target.value)} /></div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setNewOpen(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => handleNewOpenChange(false)}>Cancelar</Button>
             <Button onClick={handleCreateTransaction} disabled={saving}>{saving ? "Salvando..." : "Registrar"}</Button>
           </DialogFooter>
         </DialogContent>

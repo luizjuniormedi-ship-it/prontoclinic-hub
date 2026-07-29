@@ -29,7 +29,7 @@ vi.mock("@/lib/supabase", () => {
     update: vi.fn().mockReturnThis(),
     single: vi.fn(),
   };
-  return { supabase: { from: vi.fn(() => chain) } };
+  return { supabase: { from: vi.fn(() => chain), rpc: vi.fn() } };
 });
 
 import { supabase } from "@/lib/supabase";
@@ -37,6 +37,32 @@ import { supabase } from "@/lib/supabase";
 describe("medicalRecordsService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  describe("finalizeAttendance", () => {
+    it("finaliza prontuário e faturamento na mesma RPC transacional", async () => {
+      const record = { id: "10", appointment_id: "42" };
+      (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+        data: record,
+        error: null,
+      });
+
+      const result = await medicalRecordsService.finalizeAttendance({
+        appointment_id: "42",
+        anamnesis: "Queixa",
+      });
+
+      expect(supabase.rpc).toHaveBeenCalledWith(
+        "finalize_attendance_with_billing_secure",
+        {
+          p_appointment_id: 42,
+          p_anamnesis: "Queixa",
+          p_evolution: null,
+          p_vital_signs: null,
+        },
+      );
+      expect(result).toBe(record);
+    });
   });
 
   describe("getByPatient", () => {

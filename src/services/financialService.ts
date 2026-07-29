@@ -1,5 +1,48 @@
 import { supabase } from '@/lib/supabase';
 
+function requiredBigIntParam(value: string, label: string): string {
+  if (!/^[1-9]\d*$/.test(value)) {
+    throw new Error(`${label} inválido`);
+  }
+  const parsed = BigInt(value);
+  if (parsed > 9223372036854775807n) {
+    throw new Error(`${label} inválido`);
+  }
+  return value;
+}
+
+function normalizeFinancialTransaction(row: any): DbFinancialTransaction {
+  return {
+    ...row,
+    id: String(row.id),
+    patient_id: row.patient_id == null ? null : String(row.patient_id),
+    billing_id: row.billing_id == null ? null : String(row.billing_id),
+    professional_id: row.professional_id == null ? null : String(row.professional_id),
+    appointment_id: row.appointment_id == null ? null : String(row.appointment_id),
+    amount: Number(row.amount) || 0,
+    discount: Number(row.discount) || 0,
+  };
+}
+
+function normalizeBilling(row: any): DbBilling {
+  return {
+    id: String(row.id),
+    company_id: row.company_id ?? null,
+    unit_id: row.unit_id == null ? null : Number(row.unit_id),
+    patient_id: row.patient_id == null ? null : String(row.patient_id),
+    professional_id: row.professional_id == null ? null : String(row.professional_id),
+    appointment_id: row.appointment_id == null ? null : String(row.appointment_id),
+    billing_type: row.billing_type
+      || (row.insurance_company_id ? 'convenio' : 'particular'),
+    gross_amount: Number(row.amount ?? row.gross_amount) || 0,
+    discount: Number(row.discount) || 0,
+    net_amount: Number(row.total ?? row.net_amount) || 0,
+    status: row.status,
+    notes: row.notes || row.description || null,
+    created_at: row.created_at,
+  };
+}
+
 // ── Billings ──
 
 export interface DbBilling {
@@ -19,90 +62,45 @@ export interface DbBilling {
 }
 
 export interface BillingInput {
-  company_id?: string;
-  unit_id?: number;
   patient_id: string;
   professional_id?: string;
-  appointment_id?: string;
   billing_type?: string;
   gross_amount: number;
   discount?: number;
   net_amount: number;
-  status?: string;
   notes?: string;
+  idempotency_key: string;
 }
 
 export const billingsService = {
   async getAll(): Promise<DbBilling[]> {
     const { data, error } = await supabase
       .from('billings')
-      .select('id, company_id, patient_id, professional_id, insurance_company_id, description, amount, discount, total, status, notes, created_at')
+      .select('id, company_id, unit_id, patient_id, professional_id, appointment_id, billing_type, insurance_company_id, description, amount, discount, total, status, notes, created_at')
       .order('created_at', { ascending: false })
       .limit(2000);
     if (error) throw new Error(`Erro ao buscar faturamentos: ${error.message}`);
-    return (data || []).map((row: any) => ({
-      id: String(row.id),
-      company_id: row.company_id,
-      unit_id: null,
-      patient_id: row.patient_id == null ? null : String(row.patient_id),
-      professional_id: row.professional_id == null ? null : String(row.professional_id),
-      appointment_id: null,
-      billing_type: row.insurance_company_id ? 'convenio' : 'particular',
-      gross_amount: Number(row.amount) || 0,
-      discount: Number(row.discount) || 0,
-      net_amount: Number(row.total) || 0,
-      status: row.status,
-      notes: row.notes || row.description,
-      created_at: row.created_at,
-    }));
+    return (data || []).map(normalizeBilling);
   },
 
   async create(input: BillingInput): Promise<DbBilling> {
-    const row: Record<string, any> = {
-      company_id: input.company_id,
-      patient_id: input.patient_id,
-      professional_id: input.professional_id || null,
-      amount: input.gross_amount,
-      discount: input.discount || 0,
-      total: input.net_amount,
-      status: input.status || 'em_aberto',
-      notes: input.notes || null,
-    };
-
-    const { data, error } = await supabase
-      .from('billings')
-      .insert(row)
-      .select()
-      .single();
+    const { data, error } = await supabase.rpc('create_manual_billing_secure', {
+      p_patient_id: requiredBigIntParam(input.patient_id, 'Paciente'),
+      p_professional_id: input.professional_id
+        ? requiredBigIntParam(input.professional_id, 'Profissional')
+        : null,
+      p_billing_type: input.billing_type || 'particular',
+      p_gross_amount: input.gross_amount,
+      p_discount: input.discount || 0,
+      p_net_amount: input.net_amount,
+      p_notes: input.notes || null,
+      p_idempotency_key: input.idempotency_key,
+    });
     if (error) throw new Error(`Erro ao criar faturamento: ${error.message}`);
-    return {
-      ...input,
-      id: String(data.id),
-      company_id: data.company_id,
-      unit_id: null,
-      patient_id: data.patient_id == null ? null : String(data.patient_id),
-      professional_id: data.professional_id == null ? null : String(data.professional_id),
-      appointment_id: null,
-      billing_type: input.billing_type || 'particular',
-      gross_amount: Number(data.amount) || 0,
-      discount: Number(data.discount) || 0,
-      net_amount: Number(data.total) || 0,
-      status: data.status,
-      notes: data.notes,
-      created_at: data.created_at,
-    } as DbBilling;
+    if (!data) throw new Error('Erro ao criar faturamento: resposta vazia');
+    return normalizeBilling(data);
   },
 
-  async updateStatus(id: string, status: string): Promise<DbBilling> {
-    const { data, error } = await supabase
-      .from('billings')
-      .update({ status })
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) throw new Error(`Erro ao atualizar faturamento: ${error.message}`);
-    return data;
-  },
 };
 
 // ── Financial Transactions ──
@@ -127,19 +125,12 @@ export interface DbFinancialTransaction {
 }
 
 export interface FinancialTransactionInput {
-  company_id?: string;
-  unit_id?: number;
   patient_id: string;
-  billing_id?: string;
-  professional_id?: string;
-  appointment_id?: string;
   amount: number;
-  discount?: number;
   payment_method?: string;
-  status?: string;
   due_date?: string;
-  payment_date?: string;
   notes?: string;
+  idempotency_key: string;
 }
 
 export const financialService = {
@@ -150,46 +141,30 @@ export const financialService = {
       .order('created_at', { ascending: false })
       .limit(2000);
     if (error) throw new Error(`Erro ao buscar transações: ${error.message}`);
-    return data || [];
+    return (data || []).map(normalizeFinancialTransaction);
   },
 
   async create(input: FinancialTransactionInput): Promise<DbFinancialTransaction> {
-    const row: Record<string, any> = { ...input };
-    if (!row.status) row.status = 'pendente';
-    if (row.discount === undefined) row.discount = 0;
-
-    const { data, error } = await supabase
-      .from('financial_transactions')
-      .insert(row)
-      .select()
-      .single();
+    const { data, error } = await supabase.rpc('create_financial_receivable_secure', {
+      p_patient_id: requiredBigIntParam(input.patient_id, 'Paciente'),
+      p_amount: input.amount,
+      p_due_date: input.due_date || null,
+      p_payment_method: input.payment_method || null,
+      p_notes: input.notes || null,
+      p_idempotency_key: input.idempotency_key,
+    });
     if (error) throw new Error(`Erro ao criar transação: ${error.message}`);
-    return data;
+    if (!data) throw new Error('Erro ao criar transação: resposta vazia');
+    return normalizeFinancialTransaction(data);
   },
 
   async markPaid(id: string, paymentMethod: string): Promise<DbFinancialTransaction> {
-    const { data, error } = await supabase
-      .from('financial_transactions')
-      .update({
-        status: 'pago',
-        payment_method: paymentMethod,
-        payment_date: new Date().toISOString().split('T')[0],
-      })
-      .eq('id', id)
-      .select()
-      .single();
+    const { data, error } = await supabase.rpc('settle_financial_transaction_secure', {
+      p_transaction_id: requiredBigIntParam(id, 'ID da cobrança'),
+      p_payment_method: paymentMethod,
+    });
     if (error) throw new Error(`Erro ao registrar pagamento: ${error.message}`);
-    return data;
-  },
-
-  async updateStatus(id: string, status: string): Promise<DbFinancialTransaction> {
-    const { data, error } = await supabase
-      .from('financial_transactions')
-      .update({ status })
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) throw new Error(`Erro ao atualizar transação: ${error.message}`);
-    return data;
+    if (!data) throw new Error('Erro ao registrar pagamento: resposta vazia');
+    return normalizeFinancialTransaction(data);
   },
 };

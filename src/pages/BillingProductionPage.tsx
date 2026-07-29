@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Receipt, Search, TrendingUp, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -12,10 +12,9 @@ import { LoadingState, EmptyState, ErrorState } from "@/components/StateViews";
 import { StatsCard } from "@/components/StatsCard";
 import { billingsService, DbBilling } from "@/services/financialService";
 import { professionalsLookup, DbProfessional } from "@/services/appointmentsService";
+import { patientsService } from "@/services/patientsService";
 import { Patient } from "@/types";
-import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
 
 const formatCurrency = (v: number | null | undefined) => (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -36,7 +35,7 @@ export default function BillingProductionPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [newOpen, setNewOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const { user } = useAuth();
+  const createIdempotencyKey = useRef<string | null>(null);
   const { toast } = useToast();
 
   // New billing form
@@ -50,20 +49,13 @@ export default function BillingProductionPage() {
     try {
       setLoading(true);
       setError(null);
-      const [b, profs] = await Promise.all([
+      const [b, profs, patientRows] = await Promise.all([
         billingsService.getAll(),
         professionalsLookup.getAll(),
+        patientsService.getAll(),
       ]);
-      const patientIds = Array.from(new Set(b.map((item) => item.patient_id).filter((id): id is string => Boolean(id))));
-      const chunks: string[][] = [];
-      for (let i = 0; i < patientIds.length; i += 100) chunks.push(patientIds.slice(i, i + 100));
-      const responses = await Promise.all(chunks.map((ids) => supabase.from("patients").select("id, full_name").in("id", ids)));
-      const patientRows = responses.flatMap(({ data, error: patientError }) => {
-        if (patientError) throw patientError;
-        return data || [];
-      });
       setBillings(b);
-      setPatients(patientRows.map((p: any) => ({ id: String(p.id), name: p.full_name || "" } as Patient)));
+      setPatients(patientRows);
       setProfessionals(profs);
     } catch (err) {
       setError((err as Error).message);
@@ -101,15 +93,15 @@ export default function BillingProductionPage() {
       await billingsService.create({
         patient_id: newPatientId,
         professional_id: newProfId || undefined,
-        company_id: user?.company_id || undefined,
-        unit_id: user?.primary_unit_id || undefined,
         billing_type: newType,
         gross_amount: gross,
         discount: disc,
         net_amount: gross - disc,
-        status: "em_aberto",
+        idempotency_key: createIdempotencyKey.current
+          || (createIdempotencyKey.current = crypto.randomUUID()),
       });
       toast({ title: "Faturamento criado!" });
+      createIdempotencyKey.current = null;
       setNewOpen(false);
       setNewPatientId("");
       setNewProfId("");
@@ -123,6 +115,15 @@ export default function BillingProductionPage() {
     }
   };
 
+  const handleNewOpenChange = (open: boolean) => {
+    setNewOpen(open);
+    if (open) {
+      createIdempotencyKey.current ||= crypto.randomUUID();
+    } else if (!saving) {
+      createIdempotencyKey.current = null;
+    }
+  };
+
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={loadAll} />;
 
@@ -131,7 +132,7 @@ export default function BillingProductionPage() {
       <PageHeader
         title="Faturamento"
         description="Produção faturável vinculada aos atendimentos"
-        actions={<Button onClick={() => setNewOpen(true)}><Plus className="mr-2 h-4 w-4" />Novo Faturamento</Button>}
+        actions={<Button onClick={() => handleNewOpenChange(true)}><Plus className="mr-2 h-4 w-4" />Novo Faturamento</Button>}
       />
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -192,7 +193,7 @@ export default function BillingProductionPage() {
       )}
 
       {/* New billing dialog */}
-      <Dialog open={newOpen} onOpenChange={setNewOpen}>
+      <Dialog open={newOpen} onOpenChange={handleNewOpenChange}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Novo Faturamento</DialogTitle>
@@ -229,7 +230,7 @@ export default function BillingProductionPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setNewOpen(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => handleNewOpenChange(false)}>Cancelar</Button>
             <Button onClick={handleCreate} disabled={saving}>{saving ? "Salvando..." : "Registrar"}</Button>
           </DialogFooter>
         </DialogContent>

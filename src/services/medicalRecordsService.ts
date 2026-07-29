@@ -39,7 +39,7 @@ export interface FinalizeAttendanceInput {
 
 export const medicalRecordsService = {
   async finalizeAttendance(input: FinalizeAttendanceInput): Promise<DbMedicalRecord> {
-    const { data, error } = await supabase.rpc('finalize_attendance_secure', {
+    const { data, error } = await supabase.rpc('finalize_attendance_with_billing_secure', {
       p_appointment_id: Number(input.appointment_id),
       p_anamnesis: input.anamnesis || null,
       p_evolution: input.evolution || null,
