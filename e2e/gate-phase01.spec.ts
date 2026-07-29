@@ -76,6 +76,22 @@ test.describe('Gate fase 0/1', () => {
     );
     expect(blockedDirectWaiting.status, blockedDirectWaiting.body).toBe(403);
     expect(JSON.parse(blockedDirectWaiting.body)).toMatchObject({ code: '42501' });
+
+    await page.goto('/reception');
+    await expect(page.getByText('Paciente E2E A')).toBeVisible();
+    await expect(page.getByText('Paciente E2E B')).toBeHidden();
+    const patientA = page.getByText('Paciente E2E A').locator('xpath=ancestor::*[contains(@class,"rounded-lg") or contains(@class,"border")][1]');
+    await patientA.getByRole('button', { name: 'Check-in' }).click();
+    const checkinDialog = page.getByRole('dialog', { name: 'Entrada do paciente' });
+    await expect(checkinDialog).toBeVisible();
+    await expect(checkinDialog.getByText('Paciente liberado para check-in')).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByRole('button', { name: 'Confirmar entrada e abrir conta' }).click();
+    await expect(page.getByText(/^Entrada concluída · Senha C\d{3}$/).first()).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Entrada do paciente' })).toBeHidden();
+    await page.getByRole('button', { name: 'Fechar', exact: true }).click();
+    await assertAccessible(page, 'recepção após check-in pelo perfil recepcao');
   });
 
   test('contexto, RLS A/B, recepção, atendimento, prontuário e Axe', async ({ page }) => {
@@ -124,19 +140,6 @@ test.describe('Gate fase 0/1', () => {
     await page.goto('/reception');
     await expect(page.getByText('Paciente E2E A')).toBeVisible();
     await expect(page.getByText('Paciente E2E B')).toBeHidden();
-    const patientA = page.getByText('Paciente E2E A').locator('xpath=ancestor::*[contains(@class,"rounded-lg") or contains(@class,"border")][1]');
-    await patientA.getByRole('button', { name: 'Check-in' }).click();
-    const checkinDialog = page.getByRole('dialog', { name: 'Entrada do paciente' });
-    await expect(checkinDialog).toBeVisible();
-    await expect(checkinDialog.getByText('Paciente liberado para check-in')).toBeVisible({
-      timeout: 15_000,
-    });
-    await page.getByRole('button', { name: 'Confirmar entrada e abrir conta' }).click();
-    await expect(page.getByText(/^Entrada concluída · Senha C\d{3}$/).first()).toBeVisible();
-    await expect(page.getByRole('dialog', { name: 'Entrada do paciente' })).toBeHidden();
-    await expect(page).toHaveURL(/\/reception/);
-    await page.getByRole('button', { name: 'Fechar', exact: true }).click();
-    await assertAccessible(page, 'recepção após check-in');
 
     const waitingA = page.getByText('Paciente E2E A').locator('xpath=ancestor::*[contains(@class,"rounded-lg") or contains(@class,"border")][1]');
     await waitingA.getByRole('button', { name: 'Iniciar' }).click();
@@ -164,6 +167,10 @@ test.describe('Gate fase 0/1', () => {
     expect(unitBIds).toContain('91002');
     expect(unitBIds).toContain('91001');
     await assertAccessible(page, 'pacientes unidade B');
+
+    await page.goto('/reception');
+    await expect(page.getByText('Paciente E2E B')).toBeVisible();
+    await expect(page.getByText('Paciente E2E A')).toBeHidden();
 
     await page.goto('/records');
     const isolatedRecordRead = await authenticatedFetch(

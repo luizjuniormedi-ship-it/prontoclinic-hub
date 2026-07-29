@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import type { Session } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 import { supabase } from "@/lib/supabase";
@@ -17,8 +17,13 @@ const session = {
 } as Session;
 
 function Probe() {
-  const { isAuthenticated, isLoading, mfaStep, mustChangePassword } = useAuth();
-  return <div>{isLoading ? "loading" : isAuthenticated ? "authenticated" : mustChangePassword ? "password-change" : mfaStep}</div>;
+  const { activeUnitId, isAuthenticated, isLoading, mfaStep, mustChangePassword } = useAuth();
+  return (
+    <>
+      <div>{isLoading ? "loading" : isAuthenticated ? "authenticated" : mustChangePassword ? "password-change" : mfaStep}</div>
+      <div data-testid="active-unit">{activeUnitId ?? "none"}</div>
+    </>
+  );
 }
 
 function configureAuth(
@@ -40,6 +45,28 @@ function configureAuth(
 }
 
 describe("AuthProvider fail-closed restoration", () => {
+  it("atualiza a unidade ativa quando o contexto autorizado muda", async () => {
+    configureAuth("aal1");
+    render(<AuthProvider><Probe /></AuthProvider>);
+
+    expect(screen.getByTestId("active-unit")).toHaveTextContent("none");
+    act(() => {
+      window.dispatchEvent(new CustomEvent("prontomedic:access-context-changed", {
+        detail: {
+          membershipId: "membership-1",
+          companyId: "10000000-0000-0000-0000-000000000001",
+          companyName: "Empresa QA",
+          roleId: 3,
+          roleName: "recepcao",
+          unitId: 91002,
+          unitName: "Unidade B",
+        },
+      }));
+    });
+
+    await waitFor(() => expect(screen.getByTestId("active-unit")).toHaveTextContent("91002"));
+  });
+
   it("encerra a sessão restaurada quando não existe perfil autorizado", async () => {
     const auth = configureAuth("aal2");
     const query = {

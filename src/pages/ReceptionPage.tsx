@@ -240,9 +240,10 @@ export default function ReceptionPage() {
   const { allowed: canOpenAttendance } = usePermissionGate("/attendance");
   const { allowed: canOpenBilling } = usePermissionGate("/billing-accounts");
   const { allowed: canOpenFinancial } = usePermissionGate("/financial");
-  const { user } = useAuth();
-  const parsedUnitId = user?.primary_unit_id ? Number(user.primary_unit_id) : Number.NaN;
-  const unitId = Number.isInteger(parsedUnitId) && parsedUnitId > 0 ? parsedUnitId : null;
+  const { activeUnitId } = useAuth();
+  const unitId = Number.isInteger(activeUnitId) && Number(activeUnitId) > 0
+    ? Number(activeUnitId)
+    : null;
   const loadSequence = useRef(0);
   const exceptionReasonLength = receptionExceptionReasonLength(exceptionReason);
 

@@ -4,7 +4,12 @@ import { normalizeRoleName } from "@/config/routePermissions";
 import { supabase } from "@/lib/supabase";
 import { getMfaNextStep, verifyTotpFactor } from "@/services/authMfaService";
 import { authSessionService } from "@/services/authSessionService";
-import { clearApplicationSession, readApplicationSession } from "@/services/applicationSessionStorage";
+import {
+  clearApplicationSession,
+  readApplicationSession,
+  readStoredAccessContext,
+} from "@/services/applicationSessionStorage";
+import type { AccessContextOption } from "@/services/accessContextService";
 
 export interface UserProfile {
   id: string;
@@ -50,6 +55,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   companyId: string | null;
+  activeUnitId: number | null;
   mfaStep: MfaStep;
   mfaFactorId: string | null;
   mustChangePassword: boolean;
@@ -124,7 +130,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [passwordRecoveryAuthorized, setPasswordRecoveryAuthorized] = useState(false);
+  const [activeUnitId, setActiveUnitId] = useState<number | null>(
+    () => readStoredAccessContext<AccessContextOption>()?.unitId ?? null,
+  );
   const profileRequestId = useRef(0);
+
+  useEffect(() => {
+    const onAccessContextChanged = (event: Event) => {
+      const option = (event as CustomEvent<AccessContextOption>).detail;
+      setActiveUnitId(option?.unitId ?? null);
+    };
+    window.addEventListener("prontomedic:access-context-changed", onAccessContextChanged);
+    return () => {
+      window.removeEventListener("prontomedic:access-context-changed", onAccessContextChanged);
+    };
+  }, []);
 
   const initializeSession = useCallback(async (sess: Session | null): Promise<AuthResult> => {
     const requestId = ++profileRequestId.current;
@@ -242,6 +262,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setMfaFactorId(null);
     setMustChangePassword(false);
     setPasswordRecoveryAuthorized(false);
+    setActiveUnitId(null);
   };
 
   return (
@@ -251,6 +272,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: Boolean(user && mfaStep === "verified" && !mustChangePassword),
       isLoading,
       companyId: user?.company_id ?? null,
+      activeUnitId,
       mfaStep,
       mfaFactorId,
       mustChangePassword,
