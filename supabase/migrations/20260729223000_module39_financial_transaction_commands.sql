@@ -92,6 +92,36 @@ GRANT USAGE, SELECT ON SEQUENCE public.financial_transactions_id_seq
   TO prontomedic_financial_rpc_owner;
 GRANT EXECUTE ON FUNCTION public.m18_can_edit_attendance()
   TO prontomedic_reception_rpc_owner;
+GRANT UPDATE ON TABLE public.appointments
+  TO prontomedic_reception_rpc_owner;
+
+DROP POLICY IF EXISTS appointments_reception_billing_lock
+  ON public.appointments;
+CREATE POLICY appointments_reception_billing_lock
+  ON public.appointments
+  FOR ALL TO prontomedic_reception_rpc_owner
+  USING (
+    id = NULLIF(current_setting('app.reception.appointment_id', TRUE), '')::BIGINT
+    AND company_id = NULLIF(
+      current_setting('app.reception.company_id', TRUE),
+      ''
+    )::UUID
+    AND unit_id = NULLIF(
+      current_setting('app.reception.unit_id', TRUE),
+      ''
+    )::INTEGER
+  )
+  WITH CHECK (
+    id = NULLIF(current_setting('app.reception.appointment_id', TRUE), '')::BIGINT
+    AND company_id = NULLIF(
+      current_setting('app.reception.company_id', TRUE),
+      ''
+    )::UUID
+    AND unit_id = NULLIF(
+      current_setting('app.reception.unit_id', TRUE),
+      ''
+    )::INTEGER
+  );
 
 ALTER TABLE public.billings
   ADD COLUMN IF NOT EXISTS unit_id INTEGER,
@@ -644,6 +674,22 @@ BEGIN
     p_anamnesis,
     p_evolution,
     p_vital_signs
+  );
+
+  PERFORM set_config(
+    'app.reception.appointment_id',
+    p_appointment_id::TEXT,
+    TRUE
+  );
+  PERFORM set_config(
+    'app.reception.company_id',
+    public.current_company_id()::TEXT,
+    TRUE
+  );
+  PERFORM set_config(
+    'app.reception.unit_id',
+    public.active_unit_id()::TEXT,
+    TRUE
   );
 
   PERFORM public.sync_completed_appointment_billing_secure(
