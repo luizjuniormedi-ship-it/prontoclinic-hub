@@ -53,6 +53,7 @@ const envSchema = z.object({
   VITE_ENABLE_MODULE_21: z.string().transform((v) => v === "true").default("false"),
   VITE_ENABLE_MODULE_22: z.string().transform((v) => v === "true").default("false"),
   VITE_ENABLE_MODULE_23: z.string().transform((v) => v === "true").default("false"),
+  VITE_ENABLE_MODULE_24: z.string().transform((v) => v === "true").default("false"),
   VITE_DICOM_BUCKET: z.string().optional(),
   VITE_TISS_VERSION: z.literal("4.03.00").default("4.03.00"),
   VITE_TISS_AMBIENTE: z.enum(["HOMOLOGACAO", "PRODUCAO"]).default("HOMOLOGACAO"),
@@ -80,4 +81,5 @@ export const features = {
   module21: env.VITE_ENABLE_MODULE_21,
   module22: env.VITE_ENABLE_MODULE_22,
   module23: env.VITE_ENABLE_MODULE_23,
+  module24: env.VITE_ENABLE_MODULE_24,
 } as const;

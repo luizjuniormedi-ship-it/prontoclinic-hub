@@ -1,6 +1,6 @@
 import { features } from "@/lib/env";
 
-export type WaveModuleId = 19 | 20 | 21 | 22 | 23;
+export type WaveModuleId = 19 | 20 | 21 | 22 | 23 | 24;
 
 export interface WaveModuleDefinition {
   id: WaveModuleId;
@@ -39,6 +39,12 @@ export const waveModules: readonly WaveModuleDefinition[] = [
     title: "Laboratório / LIS",
     path: "/lab",
     enabled: features.module23,
+  },
+  {
+    id: 24,
+    title: "Imagem / RIS",
+    path: "/dicom/orders",
+    enabled: features.module24,
   },
 ] as const;
 
