@@ -1,0 +1,28 @@
+services:
+  functions:
+    container_name: prontomedic-edge-functions
+    image: supabase/edge-runtime:v1.74.0
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - ./secrets/.env.functions
+    environment:
+      VERIFY_JWT: "true"
+    command:
+      - start
+      - --main-service
+      - /home/deno/functions/main
+    volumes:
+      - ./current:/home/deno/functions:ro
+      - deno-cache:/root/.cache/deno
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/127.0.0.1/9000'"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  deno-cache:

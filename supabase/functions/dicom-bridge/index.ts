@@ -69,14 +69,14 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ ok: false, error: "Método não permitido" }, 405, cors);
 
+  const authorization = req.headers.get("Authorization") ?? "";
+  const accessToken = authorization.replace(/^Bearer\s+/i, "");
+  if (!accessToken) return json({ ok: false, error: "Não autorizado" }, 401, cors);
+
   const configuration = orthancConfiguration();
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !configuration) {
     return json({ ok: false, error: "Bridge DICOM não configurada" }, 503, cors);
   }
-
-  const authorization = req.headers.get("Authorization") ?? "";
-  const accessToken = authorization.replace(/^Bearer\s+/i, "");
-  if (!accessToken) return json({ ok: false, error: "Não autorizado" }, 401, cors);
 
   const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     global: { headers: { Authorization: `Bearer ${accessToken}` } },

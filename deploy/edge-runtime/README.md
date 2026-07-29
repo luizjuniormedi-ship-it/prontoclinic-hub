@@ -11,6 +11,10 @@ possui:
 - rotas Nginx exatas para `dicom-bridge` e `telemedicina-daily`;
 - migrations da release aplicadas e validadas antes da ativação do frontend.
 
+O provisionamento inicial usa `docker-compose.yml` e
+`provision-runtime.sh`. O roteador `main` é baixado de um commit imutável do
+repositório oficial Supabase e validado por SHA-256 antes da inicialização.
+
 Secrets clínicos ficam somente na VPS:
 
 `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,

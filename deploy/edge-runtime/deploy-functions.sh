@@ -62,7 +62,7 @@ mv -Tf "${current}.next" "$current"
 docker compose -f "$compose" up -d --no-deps --force-recreate functions
 
 for attempt in $(seq 1 20); do
-  if curl -fsS --max-time 2 http://127.0.0.1:9000/ >/dev/null 2>&1; then
+  if timeout 1 bash -c '</dev/tcp/127.0.0.1/9000' 2>/dev/null; then
     break
   fi
   test "$attempt" -lt 20

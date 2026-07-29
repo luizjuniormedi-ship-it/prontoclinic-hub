@@ -63,7 +63,7 @@ jobs:
             supabase/functions/telemedicina-daily
             supabase/migrations/20260729200000_harden_telemedicine_and_nps.sql
             supabase/migrations/20260729210000_harden_dicom_telemedicine_runtime.sql
-            deploy/edge-runtime/deploy-functions.sh
+            deploy/edge-runtime
 
   deploy:
     needs: validate
