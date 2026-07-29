@@ -20,6 +20,7 @@ test ! -e "${root}/current" || {
 }
 
 cleanup() {
+  docker compose -f "${root}/docker-compose.yml" down >/dev/null 2>&1 || true
   rm -f "${root}/current"
   rm -rf "${root}/releases/bootstrap"
 }
@@ -38,7 +39,7 @@ docker compose -f "${root}/docker-compose.yml" up -d functions
 for attempt in $(seq 1 30); do
   status="$(curl -sS -o /dev/null -w '%{http_code}' \
     -X POST http://127.0.0.1:9000/not-provisioned 2>/dev/null || true)"
-  if test "$status" = "404"; then
+  if test "$status" = "401"; then
     docker compose -f "${root}/docker-compose.yml" ps functions
     trap - ERR
     exit 0
