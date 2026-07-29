@@ -54,7 +54,7 @@ describe("QueueDisplay", () => {
   });
 
   it("exibe a fila e chama o proximo paciente sem acao de nova Triagem", async () => {
-    render(<QueueDisplay companyId="company-nursing-qa" />);
+    render(<QueueDisplay companyId="company-nursing-qa" unitId={7} />);
 
     expect(await screen.findByRole("heading", { name: "Painel de Chamada" })).toBeInTheDocument();
     expect(screen.getByText("E042")).toBeInTheDocument();
@@ -64,6 +64,7 @@ describe("QueueDisplay", () => {
 
     await waitFor(() => expect(mocks.chamar).toHaveBeenCalledWith(42));
     await waitFor(() => expect(mocks.getFilaAtiva).toHaveBeenCalledTimes(2));
+    expect(mocks.getFilaAtiva).toHaveBeenCalledWith("company-nursing-qa", 7);
     expect(mocks.toast).toHaveBeenCalledWith({ title: "Senha E042 chamada!" });
   });
 });

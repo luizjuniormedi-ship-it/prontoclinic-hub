@@ -37,6 +37,7 @@ import { TriageForm } from "./TriageForm";
 
 interface TriagePanelProps {
   companyId: string;
+  unitId: number;
 }
 
 function useTicker(intervalMs: number = 1000): number {
@@ -57,7 +58,7 @@ function formatarEspera(iso: string): string {
   return `${min}min ${seg}s`;
 }
 
-export function TriagePanel({ companyId }: TriagePanelProps): JSX.Element {
+export function TriagePanel({ companyId, unitId }: TriagePanelProps): JSX.Element {
   const { user } = useAuth();
   const { toast } = useToast();
   useTicker(1000);
@@ -71,12 +72,12 @@ export function TriagePanel({ companyId }: TriagePanelProps): JSX.Element {
 
   const carregarFila = useCallback(async (): Promise<void> => {
     try {
-      const itens = await nursingService.fila.getFilaAtiva(companyId);
+      const itens = await nursingService.fila.getFilaAtiva(companyId, unitId);
       setFila(itens);
     } catch (err: unknown) {
       console.error("Erro ao carregar fila:", err);
     }
-  }, [companyId]);
+  }, [companyId, unitId]);
 
   const carregarClassificacoes = useCallback(async (): Promise<void> => {
     try {

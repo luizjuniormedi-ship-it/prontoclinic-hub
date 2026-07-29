@@ -12,22 +12,21 @@ import { QueueDisplay } from "@/components/nursing/QueueDisplay";
 
 export default function NursingTriagePage(): JSX.Element {
   const [params] = useSearchParams();
-  const { user } = useAuth();
-  const companyId = user?.company_id;
+  const { activeCompanyId: companyId, activeUnitId: unitId } = useAuth();
 
   // Modo TV para sala de espera
   if (params.get("tv") === "1" || params.get("mode") === "tv") {
-    if (!companyId) {
+    if (!companyId || !unitId) {
       return (
         <div className="p-8 text-center text-muted-foreground">
           Carregando contexto da empresa...
         </div>
       );
     }
-    return <QueueDisplay companyId={companyId} modoTV />;
+    return <QueueDisplay companyId={companyId} unitId={unitId} modoTV />;
   }
 
-  if (!companyId) {
+  if (!companyId || !unitId) {
     return (
       <div className="p-8 text-center text-muted-foreground">
         Carregando contexto da empresa...
@@ -37,7 +36,7 @@ export default function NursingTriagePage(): JSX.Element {
 
   return (
     <div className="container mx-auto p-4 md:p-6">
-      <TriagePanel companyId={companyId} />
+      <TriagePanel companyId={companyId} unitId={unitId} />
     </div>
   );
 }

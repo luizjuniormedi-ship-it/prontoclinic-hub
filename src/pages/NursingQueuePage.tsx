@@ -10,10 +10,9 @@ import { useAuth } from "@/hooks/useAuth";
 
 export default function NursingQueuePage(): JSX.Element {
   const [params] = useSearchParams();
-  const { user } = useAuth();
-  const companyId = user?.company_id;
+  const { activeCompanyId: companyId, activeUnitId: unitId } = useAuth();
 
-  if (!companyId) {
+  if (!companyId || !unitId) {
     return (
       <div className="p-8 text-center text-muted-foreground">
         Carregando contexto da empresa...
@@ -24,12 +23,12 @@ export default function NursingQueuePage(): JSX.Element {
   const modoTV = params.get("tv") === "1" || params.get("mode") === "tv";
 
   if (modoTV) {
-    return <QueueDisplay companyId={companyId} modoTV />;
+    return <QueueDisplay companyId={companyId} unitId={unitId} modoTV />;
   }
 
   return (
     <div className="container mx-auto p-4 md:p-6">
-      <QueueDisplay companyId={companyId} modoTV={false} />
+      <QueueDisplay companyId={companyId} unitId={unitId} modoTV={false} />
     </div>
   );
 }

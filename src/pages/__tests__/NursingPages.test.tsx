@@ -14,7 +14,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/hooks/useAuth", () => ({
-  useAuth: () => ({ user: { company_id: "company-nursing-qa" } }),
+  useAuth: () => ({
+    user: { company_id: "company-nursing-qa" },
+    activeCompanyId: "company-nursing-qa",
+    activeUnitId: 7,
+  }),
 }));
 
 vi.mock("@/components/nursing/TriagePanel", () => ({
@@ -54,7 +58,7 @@ describe("paginas de Enfermagem", () => {
     expect(screen.getByRole("button", { name: "Chamar próxima" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Nova Triagem" })).not.toBeInTheDocument();
     expect(mocks.queueDisplay).toHaveBeenLastCalledWith(
-      expect.objectContaining({ companyId: "company-nursing-qa", modoTV: false }),
+      expect.objectContaining({ companyId: "company-nursing-qa", unitId: 7, modoTV: false }),
       {},
     );
   });
@@ -67,7 +71,7 @@ describe("paginas de Enfermagem", () => {
     );
 
     expect(mocks.queueDisplay).toHaveBeenLastCalledWith(
-      expect.objectContaining({ companyId: "company-nursing-qa", modoTV: true }),
+      expect.objectContaining({ companyId: "company-nursing-qa", unitId: 7, modoTV: true }),
       {},
     );
   });

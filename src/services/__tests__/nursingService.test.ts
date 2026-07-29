@@ -2,10 +2,10 @@
  * nursingService.test.ts — Testes do módulo de Enfermagem/Triagem
  *
  * Cobre:
- * - gerarSenha (formato T001, T002)
+ * - emissão e transição segura da fila via RPC canônico
+ * - isolamento da fila por empresa e unidade
  * - calcularNEWS2 (BAIXO 0-4, MEDIO 5-6, ALTO 7+)
  * - classificarManchester (dispneia -> VERMELHO, dor severa -> LARANJA)
- * - fila.chamar (status CHAMADO)
  * - validateTriagem
  */
 
@@ -43,40 +43,73 @@ vi.mock("@/lib/supabase", () => {
 
 import { supabase } from "@/lib/supabase";
 
-describe("nursingService — gerarSenha", () => {
+describe("nursingService — fila segura", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("retorna senha no formato T001 quando chamada via RPC com sucesso", async () => {
+  it("emite senha exclusivamente pelo RPC canônico", async () => {
+    const item = {
+      id: 42,
+      company_id: "company-uuid",
+      unit_id: 7,
+      cd_paciente: 101,
+      cd_senha: "T001",
+      tp_status: "AGUARDANDO",
+    };
     (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-      data: "T001",
+      data: item,
       error: null,
     });
-    const senha = await nursingService.fila.gerarSenha("company-uuid");
-    expect(senha).toBe("T001");
-    expect(supabase.rpc).toHaveBeenCalledWith("gerar_senha_triagem", {
-      p_company_id: "company-uuid",
+
+    const result = await nursingService.fila.adicionar(7, 101, "Dor abdominal", 3);
+
+    expect(result).toEqual(item);
+    expect(supabase.rpc).toHaveBeenCalledWith("issue_triage_queue_ticket_secure", {
+      p_unit_id: 7,
+      p_patient_id: 101,
+      p_complaint: "Dor abdominal",
+      p_classification_id: 3,
     });
+    expect(supabase.from).not.toHaveBeenCalled();
   });
 
-  it("gera senha sequencial T002 quando RPC retorna T002", async () => {
+  it("transiciona a senha exclusivamente pelo RPC canônico", async () => {
+    const itemChamado = {
+      id: 42,
+      tp_status: "CHAMADO",
+      dt_chamada: "2026-06-22T10:30:00Z",
+    };
     (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-      data: "T002",
+      data: itemChamado,
       error: null,
     });
-    const senha = await nursingService.fila.gerarSenha("company-uuid");
-    expect(senha).toBe("T002");
-    expect(senha).toMatch(/^T\d{3}$/);
+
+    const result = await nursingService.fila.chamar(42);
+
+    expect(result).toEqual(itemChamado);
+    expect(supabase.rpc).toHaveBeenCalledWith("transition_triage_queue_secure", {
+      p_queue_id: 42,
+      p_to_status: "CHAMADO",
+      p_reason: "Paciente chamado pela fila de triagem",
+    });
+    expect(supabase.from).not.toHaveBeenCalled();
   });
 
-  it("usa fallback local quando RPC falha", async () => {
-    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("offline"),
-    );
-    const senha = await nursingService.fila.gerarSenha("company-uuid");
-    expect(senha).toMatch(/^T\d+$/);
-    expect(senha.length).toBeGreaterThan(0);
+  it("filtra a fila ativa por empresa e unidade", async () => {
+    const chain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      in: vi.fn().mockReturnThis(),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    };
+    (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue(chain);
+
+    await nursingService.fila.getFilaAtiva("company-uuid", 7);
+
+    expect(supabase.from).toHaveBeenCalledWith("triagem_fila");
+    expect(chain.eq).toHaveBeenNthCalledWith(1, "company_id", "company-uuid");
+    expect(chain.eq).toHaveBeenNthCalledWith(2, "unit_id", 7);
   });
 });
 
@@ -233,33 +266,6 @@ describe("nursingService — classificarManchester", () => {
       "Renovação de receita",
     );
     expect(cor).toBe("AZUL");
-  });
-});
-
-describe("nursingService — fila.chamar", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("muda status para CHAMADO e seta dt_chamada", async () => {
-    const itemChamado = {
-      id: 42,
-      tp_status: "CHAMADO",
-      dt_chamada: "2026-06-22T10:30:00Z",
-    };
-    const chain: Record<string, unknown> = {
-      update: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: itemChamado, error: null }),
-    };
-    (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue(chain);
-
-    const result = await nursingService.fila.chamar(42);
-    expect(result.tp_status).toBe("CHAMADO");
-    expect(result.dt_chamada).toBeDefined();
-    expect(chain.update).toHaveBeenCalled();
-    expect(chain.eq).toHaveBeenCalledWith("id", 42);
   });
 });
 
