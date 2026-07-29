@@ -22,6 +22,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.commit_sha }}
+          fetch-depth: 0
+
+      - name: Validate approved commit
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          [[ "$COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::commit_sha deve ser um SHA-1 completo"
+            exit 1
+          }
+          test "$(git rev-parse HEAD)" = "$COMMIT_SHA"
+          git fetch origin main --no-tags
+          git merge-base --is-ancestor "$COMMIT_SHA" origin/main || {
+            echo "::error::A publicação aceita apenas commits já integrados em main"
+            exit 1
+          }
 
       - uses: actions/setup-node@v4
         with:
@@ -61,8 +77,6 @@ jobs:
             supabase/functions/_shared
             supabase/functions/dicom-bridge
             supabase/functions/telemedicina-daily
-            supabase/migrations/20260729200000_harden_telemedicine_and_nps.sql
-            supabase/migrations/20260729210000_harden_dicom_telemedicine_runtime.sql
             deploy/edge-runtime
 
   deploy:
@@ -103,22 +117,27 @@ jobs:
 
       - name: Upload immutable release
         env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           tar -C release -czf edge-functions.tgz .
-          scp edge-functions.tgz "${VPS_USER}@${VPS_HOST}:/tmp/prontomedic-edge-${{ inputs.commit_sha }}.tgz"
+          sha256sum edge-functions.tgz > edge-functions.tgz.sha256
+          scp edge-functions.tgz edge-functions.tgz.sha256 \
+            "${VPS_USER}@${VPS_HOST}:/tmp/"
 
       - name: Deploy atomically and smoke test
         env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           PUBLIC_URL: https://prontomedic.191-252-196-6.sslip.io
         run: |
           ssh "${VPS_USER}@${VPS_HOST}" \
-            "bash -s -- '${{ inputs.commit_sha }}' '/tmp/prontomedic-edge-${{ inputs.commit_sha }}.tgz'" \
+            "bash -s -- '$COMMIT_SHA' '/tmp/edge-functions.tgz' '/tmp/edge-functions.tgz.sha256'" \
             < release/deploy/edge-runtime/deploy-functions.sh
 
+          smoke_failed=0
           for function_name in dicom-bridge telemedicina-daily; do
             status="$(curl -sS -o /tmp/response -w '%{http_code}' \
               -X POST \
@@ -127,6 +146,12 @@ jobs:
             test "$status" = "401" || {
               echo "::error::${function_name} retornou HTTP ${status}, esperado 401 sem JWT"
               cat /tmp/response
-              exit 1
+              smoke_failed=1
             }
           done
+
+          if test "$smoke_failed" -ne 0; then
+            ssh "${VPS_USER}@${VPS_HOST}" "bash -s -- --rollback" \
+              < release/deploy/edge-runtime/deploy-functions.sh
+            exit 1
+          fi

@@ -1,16 +1,36 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-sha="${1:?commit SHA ausente}"
-archive="${2:?arquivo da release ausente}"
 root="/opt/prontomedic/edge-runtime"
 releases="${root}/releases"
-release="${releases}/${sha}"
 current="${root}/current"
+previous_link="${root}/previous"
 compose="${root}/docker-compose.yml"
 
-test "$sha" != "main"
+if test "${1:-}" = "--rollback"; then
+  previous="$(readlink -f "$previous_link" 2>/dev/null || true)"
+  test -n "$previous" && test -f "${previous}/main/index.ts" || {
+    echo "Release anterior válida não encontrada" >&2
+    exit 24
+  }
+  ln -sfn "$previous" "${current}.next"
+  mv -Tf "${current}.next" "$current"
+  docker compose -f "$compose" up -d --no-deps --force-recreate functions
+  exit 0
+fi
+
+sha="${1:?commit SHA ausente}"
+archive="${2:?arquivo da release ausente}"
+checksum="${3:?checksum da release ausente}"
+release="${releases}/${sha}"
+
+[[ "$sha" =~ ^[0-9a-f]{40}$ ]]
 test -f "$archive"
+test -f "$checksum"
+(
+  cd "$(dirname "$archive")"
+  sha256sum -c "$(basename "$checksum")"
+)
 test -f "$compose" || {
   echo "Edge Runtime não provisionado em ${compose}" >&2
   exit 20
@@ -43,6 +63,8 @@ test -n "$previous" && test -f "${previous}/main/index.ts" || {
   echo "Runtime atual sem roteador main oficial; publicação bloqueada" >&2
   exit 23
 }
+ln -sfn "$previous" "${previous_link}.next"
+mv -Tf "${previous_link}.next" "$previous_link"
 
 mkdir "${release}/functions"
 cp -a "${previous}/." "${release}/functions/"
@@ -71,4 +93,4 @@ done
 
 docker compose -f "$compose" ps functions
 trap - ERR
-rm -f "$archive"
+rm -f "$archive" "$checksum"
