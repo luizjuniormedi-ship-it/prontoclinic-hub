@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { callCenterService } from "@/services/callCenterService";
 
@@ -62,15 +64,10 @@ describe("callCenterService", () => {
   });
 
   it("cria contato e tarefa quando proxima acao é informada", async () => {
-    (supabase.auth.getUser as any).mockResolvedValue({ data: { user: { id: "user-1" } } });
-    const profileChain = chainWith({ data: { company_id: "company-1" }, error: null });
-    const contactChain = chainWith({ data: { id: 77, result: "recado" }, error: null });
-    const taskChain = chainWith({ data: { id: 88, status: "pending" }, error: null });
-    (supabase.from as any)
-      .mockReturnValueOnce(profileChain)
-      .mockReturnValueOnce(contactChain)
-      .mockReturnValueOnce(profileChain)
-      .mockReturnValueOnce(taskChain);
+    (supabase.rpc as any).mockResolvedValue({
+      data: { id: 77, result: "recado" },
+      error: null,
+    });
 
     const result = await callCenterService.createContact({
       patient_id: "10",
@@ -84,24 +81,20 @@ describe("callCenterService", () => {
     });
 
     expect(result.id).toBe(77);
-    expect(contactChain.insert).toHaveBeenCalledWith(expect.objectContaining({
-      patient_id: 10,
-      company_id: "company-1",
-      operator_id: "user-1",
-      contact_reason: "Retorno pendente",
-    }));
-    expect(taskChain.insert).toHaveBeenCalledWith(expect.objectContaining({
-      contact_log_id: 77,
-      task_type: "retornar_ligacao",
-      status: "pending",
-    }));
+    expect(supabase.rpc).toHaveBeenCalledTimes(1);
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "record_call_center_contact_secure",
+      expect.objectContaining({
+        p_patient_id: 10,
+        p_contact_reason: "Retorno pendente",
+        p_next_action: "retornar_ligacao",
+        p_create_task: true,
+      }),
+    );
+    expect(supabase.from).not.toHaveBeenCalled();
   });
 
   it("rejeita contato sem motivo", async () => {
-    (supabase.auth.getUser as any).mockResolvedValue({ data: { user: { id: "user-1" } } });
-    const profileChain = chainWith({ data: { company_id: "company-1" }, error: null });
-    (supabase.from as any).mockReturnValue(profileChain);
-
     await expect(callCenterService.createContact({
       patient_id: "10",
       channel: "telefone",
@@ -112,12 +105,52 @@ describe("callCenterService", () => {
   });
 
   it("conclui tarefa", async () => {
-    const chain = chainWith({ data: null, error: null });
-    chain.eq.mockResolvedValue({ error: null });
-    (supabase.from as any).mockReturnValue(chain);
+    (supabase.rpc as any).mockResolvedValue({ data: { id: 5, status: "done" }, error: null });
 
     await expect(callCenterService.completeTask(5)).resolves.toBeUndefined();
-    expect(chain.update).toHaveBeenCalledWith(expect.objectContaining({ status: "done" }));
-    expect(chain.eq).toHaveBeenCalledWith("id", 5);
+    expect(supabase.rpc).toHaveBeenCalledWith("complete_call_center_task_secure", {
+      p_task_id: 5,
+    });
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+});
+
+describe("Call Center atomic command migration", () => {
+  const migration = readFileSync(
+    resolve(
+      process.cwd(),
+      "supabase/migrations/20260729225000_call_center_atomic_commands.sql",
+    ),
+    "utf8",
+  );
+
+  it("usa o owner restrito existente e mantém RLS forçado", () => {
+    expect(migration).toContain("prontomedic_reception_rpc_owner");
+    expect(migration).toContain("FORCE ROW LEVEL SECURITY");
+    expect(migration).toMatch(/SECURITY DEFINER[\s\S]*SET search_path = public, pg_temp/i);
+    expect(migration).toContain("SET row_security = on");
+    expect(migration).toContain("Call Center RPC owner must not own command tables");
+    expect(migration).not.toMatch(/\bALTER ROLE\b[^\n]*\bBYPASSRLS\b/i);
+  });
+
+  it("fecha escrita direta e expõe somente comandos seguros", () => {
+    expect(migration).toMatch(
+      /REVOKE INSERT, UPDATE, DELETE, TRUNCATE[\s\S]*ON TABLE public\.scheduling_contact_logs[\s\S]*FROM PUBLIC, anon, authenticated, app_prontomedic/i,
+    );
+    expect(migration).toMatch(
+      /REVOKE INSERT, UPDATE, DELETE, TRUNCATE[\s\S]*ON TABLE public\.scheduling_call_center_tasks[\s\S]*FROM PUBLIC, anon, authenticated, app_prontomedic/i,
+    );
+    expect(migration).toContain("record_call_center_contact_secure");
+    expect(migration).toContain("complete_call_center_task_secure");
+  });
+
+  it("valida empresa, paciente e agendamento antes da transação", () => {
+    expect(migration).toContain("v_company_id := public.active_company_id()");
+    expect(migration).toContain("v_unit_id := public.active_unit_id()");
+    expect(migration).toContain("Paciente indisponivel no contexto atual");
+    expect(migration).toContain("Agendamento nao pertence ao paciente informado");
+    expect(migration).toMatch(
+      /INSERT INTO public\.scheduling_contact_logs[\s\S]*IF p_create_task THEN[\s\S]*INSERT INTO public\.scheduling_call_center_tasks/i,
+    );
   });
 });

@@ -46,7 +46,6 @@ export interface CallCenterTask {
 export interface CreateContactLogInput {
   patient_id?: string | number | null;
   appointment_id?: string | number | null;
-  company_id?: string | null;
   channel: CallCenterChannel;
   direction: CallCenterDirection;
   contact_reason: string;
@@ -80,20 +79,6 @@ function requireText(value: string, field: string): string {
   const normalized = value.trim();
   if (!normalized) throw new Error(`${field} é obrigatório.`);
   return normalized;
-}
-
-async function currentActor() {
-  const { data: authData } = await supabase.auth.getUser();
-  const userId = authData.user?.id ?? null;
-  if (!userId) return { userId: null, companyId: null };
-
-  const { data } = await supabase
-    .from("user_profiles")
-    .select("id, company_id")
-    .eq("id", userId)
-    .maybeSingle();
-
-  return { userId, companyId: data?.company_id ?? null };
 }
 
 export const callCenterService = {
@@ -150,91 +135,36 @@ export const callCenterService = {
   },
 
   async createContact(input: CreateContactLogInput): Promise<CallCenterContactLog> {
-    const actor = await currentActor();
     const patientId = nullableNumber(input.patient_id, "Paciente");
     const appointmentId = nullableNumber(input.appointment_id, "Agendamento");
     const contactReason = requireText(input.contact_reason, "Motivo do contato");
     const notes = input.notes?.trim() || null;
     const nextAction = input.next_action?.trim() || null;
 
-    const { data, error } = await supabase
-      .from("scheduling_contact_logs")
-      .insert({
-        company_id: input.company_id ?? actor.companyId,
-        patient_id: patientId,
-        appointment_id: appointmentId,
-        operator_id: actor.userId,
-        channel: input.channel,
-        direction: input.direction,
-        contact_reason: contactReason,
-        result: input.result,
-        notes,
-        next_action: nextAction,
-        next_action_at: input.next_action_at || null,
-      })
-      .select()
-      .single();
+    const { data, error } = await supabase.rpc("record_call_center_contact_secure", {
+      p_patient_id: patientId,
+      p_appointment_id: appointmentId,
+      p_channel: input.channel,
+      p_direction: input.direction,
+      p_contact_reason: contactReason,
+      p_result: input.result,
+      p_notes: notes,
+      p_next_action: nextAction,
+      p_next_action_at: input.next_action_at || null,
+      p_create_task: Boolean(input.create_task),
+    });
 
     if (error) throw new Error(`Erro ao registrar contato do call center: ${error.message}`);
-
-    if (input.create_task && nextAction) {
-      await this.createTask({
-        patient_id: patientId,
-        appointment_id: appointmentId,
-        contact_log_id: data.id,
-        task_type: nextAction,
-        description: notes || contactReason,
-        due_at: input.next_action_at || null,
-        company_id: input.company_id ?? actor.companyId,
-      });
-    }
-
     return data as CallCenterContactLog;
-  },
-
-  async createTask(input: {
-    patient_id?: string | number | null;
-    appointment_id?: string | number | null;
-    contact_log_id?: string | number | null;
-    company_id?: string | null;
-    assigned_to?: string | null;
-    task_type: string;
-    description: string;
-    due_at?: string | null;
-    priority?: CallCenterTaskPriority;
-  }): Promise<CallCenterTask> {
-    const actor = await currentActor();
-    const description = requireText(input.description, "Descrição da tarefa");
-
-    const { data, error } = await supabase
-      .from("scheduling_call_center_tasks")
-      .insert({
-        company_id: input.company_id ?? actor.companyId,
-        patient_id: nullableNumber(input.patient_id, "Paciente"),
-        appointment_id: nullableNumber(input.appointment_id, "Agendamento"),
-        contact_log_id: nullableNumber(input.contact_log_id, "Contato"),
-        assigned_to: input.assigned_to ?? actor.userId,
-        task_type: requireText(input.task_type, "Tipo da tarefa"),
-        description,
-        due_at: input.due_at || null,
-        priority: input.priority || "normal",
-        status: "pending",
-      })
-      .select()
-      .single();
-
-    if (error) throw new Error(`Erro ao criar tarefa do call center: ${error.message}`);
-    return data as CallCenterTask;
   },
 
   async completeTask(id: string | number): Promise<void> {
     const taskId = nullableNumber(id, "Tarefa");
     if (taskId === null) throw new Error("Tarefa é obrigatória.");
 
-    const { error } = await supabase
-      .from("scheduling_call_center_tasks")
-      .update({ status: "done", completed_at: new Date().toISOString() })
-      .eq("id", taskId);
+    const { error } = await supabase.rpc("complete_call_center_task_secure", {
+      p_task_id: taskId,
+    });
 
     if (error) throw new Error(`Erro ao concluir tarefa do call center: ${error.message}`);
   },

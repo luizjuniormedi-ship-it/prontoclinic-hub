@@ -298,6 +298,8 @@ const RPC_PERMISSIONS = {
   refresh_confirmation_queue_secure: { module: 'agenda', action: 'can_edit' },
   record_confirmation_attempt_secure: { module: 'agenda', action: 'can_edit' },
   mark_overdue_appointments_no_show_secure: { module: 'agenda', action: 'can_edit' },
+  record_call_center_contact_secure: { module: 'recepcao', action: 'can_create' },
+  complete_call_center_task_secure: { module: 'recepcao', action: 'can_edit' },
   get_reception_checkin_readiness: { module: 'recepcao', action: 'can_view' },
   get_reception_precheckin_context: { module: 'recepcao', action: 'can_view' },
   get_reception_patient_appointments_secure: { module: 'recepcao', action: 'can_view' },
