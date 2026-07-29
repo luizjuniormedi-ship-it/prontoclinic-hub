@@ -106,10 +106,6 @@ CREATE POLICY appointments_reception_billing_lock
       current_setting('app.reception.company_id', TRUE),
       ''
     )::UUID
-    AND unit_id = NULLIF(
-      current_setting('app.reception.unit_id', TRUE),
-      ''
-    )::INTEGER
   )
   WITH CHECK (
     id = NULLIF(current_setting('app.reception.appointment_id', TRUE), '')::BIGINT
@@ -117,10 +113,6 @@ CREATE POLICY appointments_reception_billing_lock
       current_setting('app.reception.company_id', TRUE),
       ''
     )::UUID
-    AND unit_id = NULLIF(
-      current_setting('app.reception.unit_id', TRUE),
-      ''
-    )::INTEGER
   );
 
 ALTER TABLE public.billings
@@ -686,12 +678,6 @@ BEGIN
     public.current_company_id()::TEXT,
     TRUE
   );
-  PERFORM set_config(
-    'app.reception.unit_id',
-    public.active_unit_id()::TEXT,
-    TRUE
-  );
-
   PERFORM public.sync_completed_appointment_billing_secure(
     p_appointment_id,
     'Faturamento consolidado na finalização do atendimento'
