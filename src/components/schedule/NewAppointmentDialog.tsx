@@ -25,6 +25,7 @@ interface NewAppointmentDialogProps {
   units: Array<{ id: string; name: string }>;
   patients: Patient[];
   selectedDate: string;
+  defaultUnitId?: string;
   onCreated: () => void;
 }
 
@@ -60,7 +61,7 @@ function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
   });
 }
 
-export function NewAppointmentDialog({ open, onOpenChange, professionals, specialties, appointmentTypes, services, insurances, units, patients, selectedDate, onCreated }: NewAppointmentDialogProps) {
+export function NewAppointmentDialog({ open, onOpenChange, professionals, specialties, appointmentTypes, services, insurances, units, patients, selectedDate, defaultUnitId = "", onCreated }: NewAppointmentDialogProps) {
   const { toast } = useToast();
   const [patientId, setPatientId] = useState("");
   const [professionalId, setProfessionalId] = useState("");
@@ -74,7 +75,7 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
   const [serviceId, setServiceId] = useState("none");
   const [serviceSearch, setServiceSearch] = useState("");
   const [insuranceId, setInsuranceId] = useState("private");
-  const [unitId, setUnitId] = useState("");
+  const [unitId, setUnitId] = useState(defaultUnitId);
   const [cardNumber, setCardNumber] = useState("");
   const [authorizationNumber, setAuthorizationNumber] = useState("");
   const [requirements, setRequirements] = useState<SchedulingRequirements | null>(null);
@@ -168,12 +169,15 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
 
   // Reset on selectedDate change
   useEffect(() => { setDate(selectedDate); }, [selectedDate]);
+  useEffect(() => {
+    if (open) setUnitId(defaultUnitId);
+  }, [defaultUnitId, open]);
 
   const resetForm = () => {
     setPatientId(""); setProfessionalId(""); setSpecialtyId("");
     setAppointmentTypeId(""); setDate(selectedDate); setStartTime("");
     setEndTime(""); setIsReturn(false); setNotes(""); setSaving(false);
-    setServiceId("none"); setServiceSearch(""); setInsuranceId("private"); setUnitId(""); setCardNumber("");
+    setServiceId("none"); setServiceSearch(""); setInsuranceId("private"); setUnitId(defaultUnitId); setCardNumber("");
     setAuthorizationNumber(""); setRequirements(null);
     patientSearchRequestRef.current += 1;
     setPatientSearch(""); setPatientResults([]); setPatientSearchLoading(false);

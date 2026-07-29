@@ -269,6 +269,43 @@ export const appointmentsService = {
     return this.getByDateRange(date, date);
   },
 
+  async getByDateRangeForUnit(
+    startDate: string,
+    endDate: string,
+    unitId: number,
+  ): Promise<DbAppointment[]> {
+    if (!Number.isInteger(unitId) || unitId <= 0) {
+      throw new Error('Unidade operacional inválida.');
+    }
+
+    const pageSize = 500;
+    const maxPages = 40;
+    const rows: DbAppointment[] = [];
+
+    for (let page = 0; page < maxPages; page += 1) {
+      const from = page * pageSize;
+      const { data, error } = await supabase
+        .from('appointments')
+        .select('*')
+        .eq('unit_id', unitId)
+        .gte('appointment_date', startDate)
+        .lte('appointment_date', endDate)
+        .order('appointment_date')
+        .order('start_time')
+        .order('id')
+        .range(from, from + pageSize - 1);
+      if (error) throw new Error(`Erro ao buscar agenda da unidade: ${error.message}`);
+
+      const pageRows = (data || []) as DbAppointment[];
+      rows.push(...pageRows);
+      if (pageRows.length < pageSize) return rows;
+    }
+
+    throw new Error(
+      'A agenda da unidade excedeu 20.000 registros no período. Reduza o intervalo ou os filtros.',
+    );
+  },
+
   async getByDateForUnit(date: string, unitId: number): Promise<DbAppointment[]> {
     if (!Number.isInteger(unitId) || unitId <= 0) {
       throw new Error('Unidade operacional inválida.');

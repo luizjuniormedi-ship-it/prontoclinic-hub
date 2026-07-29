@@ -17,6 +17,7 @@ import { Appointment, AppointmentStatus, Patient } from "@/types";
 import type { AppointmentTypeLiteral, PatientDbRow } from "@/types/missing";
 import { useToast } from "@/hooks/use-toast";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useAuth } from "@/hooks/useAuth";
 import { friendlyError } from "@/utils/friendlyError";
 import { mapSchedulePatient } from "@/pages/schedulePatientMapper";
 
@@ -91,6 +92,7 @@ function toDisplayAppointment(
 }
 
 export default function SchedulePage() {
+  const { activeUnitId } = useAuth();
   const [dbAppointments, setDbAppointments] = useState<DbAppointment[]>([]);
   const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
   const [specialties, setSpecialties] = useState<DbSpecialty[]>([]);
@@ -124,7 +126,16 @@ export default function SchedulePage() {
   const initialLoadRef = useRef(false);
   const skipInitialDateRefreshRef = useRef(true);
 
+  useEffect(() => {
+    initialLoadRef.current = false;
+    skipInitialDateRefreshRef.current = true;
+  }, [activeUnitId]);
+
   const loadLookups = useCallback(async () => {
+    if (!activeUnitId) {
+      throw new Error("Selecione uma unidade ativa antes de acessar a agenda.");
+    }
+
     const [profs, specs, types, serviceRows] = await Promise.all([
       professionalsLookup.getAll(),
       specialtiesLookup.getAll(),
@@ -136,34 +147,50 @@ export default function SchedulePage() {
     setAppointmentTypes(types);
     setServices(serviceRows);
 
-    try {
-      const [{ data: ins }, { data: unitRows }] = await Promise.all([
-        supabase.from("insurance_companies").select("id, name"),
-        supabase.from("units").select("id, ds_nome").eq("lg_ativo", true).order("ds_nome"),
-      ]);
-      if (ins) {
-        const insuranceRows = ins as InsuranceLookupRow[];
-        setInsuranceNames(Object.fromEntries(insuranceRows.map((item) => [String(item.id), item.name])));
-        setInsurances(
-          insuranceRows
-            .map((item) => ({ id: String(item.id), name: item.name }))
-            .sort((a, b) => a.name.localeCompare(b.name)),
-        );
-      }
-      if (unitRows) {
-        setUnits(
-          (unitRows as UnitLookupRow[]).map((unit) => ({
-            id: String(unit.id),
-            name: unit.ds_nome,
-          })),
-        );
-      }
-    } catch {
-      setUnits([]);
+    const [
+      { data: ins, error: insuranceError },
+      { data: unitRows, error: unitError },
+    ] = await Promise.all([
+      supabase.from("insurance_companies").select("id, name"),
+      supabase
+        .from("units")
+        .select("id, ds_nome")
+        .eq("id", activeUnitId)
+        .eq("lg_ativo", true)
+        .order("ds_nome"),
+    ]);
+    if (insuranceError) {
+      throw new Error(`Erro ao carregar convênios da agenda: ${insuranceError.message}`);
     }
-  }, []);
+    if (unitError) {
+      throw new Error(`Erro ao carregar a unidade ativa: ${unitError.message}`);
+    }
+    if (!unitRows?.length) {
+      throw new Error("A unidade ativa não está disponível para agendamento.");
+    }
+
+    const insuranceRows = (ins || []) as InsuranceLookupRow[];
+    setInsuranceNames(
+      Object.fromEntries(insuranceRows.map((item) => [String(item.id), item.name])),
+    );
+    setInsurances(
+      insuranceRows
+        .map((item) => ({ id: String(item.id), name: item.name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    );
+    setUnits(
+      (unitRows as UnitLookupRow[]).map((unit) => ({
+        id: String(unit.id),
+        name: unit.ds_nome,
+      })),
+    );
+  }, [activeUnitId]);
 
   const loadAppointments = useCallback(async (date: string) => {
+    if (!activeUnitId) {
+      throw new Error("Selecione uma unidade ativa antes de carregar a agenda.");
+    }
+
     const d = new Date(date + "T00:00:00");
     const dayOfWeek = d.getDay();
     const startOfWeek = new Date(d);
@@ -174,7 +201,11 @@ export default function SchedulePage() {
     const startStr = localDateKey(startOfWeek);
     const endStr = localDateKey(endOfWeek);
 
-    const data = await appointmentsService.getByDateRange(startStr, endStr);
+    const data = await appointmentsService.getByDateRangeForUnit(
+      startStr,
+      endStr,
+      activeUnitId,
+    );
     setDbAppointments(data);
 
     // Load only patients referenced in these appointments
@@ -188,7 +219,7 @@ export default function SchedulePage() {
     } else {
       setPatients([]);
     }
-  }, []);
+  }, [activeUnitId]);
 
   const refreshAppointments = useCallback(async (date: string) => {
     try {
@@ -557,6 +588,7 @@ export default function SchedulePage() {
         units={units}
         patients={patients}
         selectedDate={selectedDate}
+        defaultUnitId={activeUnitId ? String(activeUnitId) : ""}
         onCreated={handleAppointmentCreated}
       />
       <EncaixeDialog

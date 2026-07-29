@@ -140,6 +140,38 @@ describe("appointmentsService — getByDate (filtro por data)", () => {
     expect(result[0].appointment_date).toBe("2026-06-23");
   });
 
+  it("restringe o intervalo à unidade operacional ativa", async () => {
+    const rows = [makeAppointment({ id: "a1", unit_id: "9" })];
+    const chain: Record<string, unknown> = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      gte: vi.fn().mockReturnThis(),
+      lte: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      range: vi.fn(),
+    };
+    (chain.range as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: rows,
+      error: null,
+    });
+    (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue(chain);
+
+    const result = await appointmentsService.getByDateRangeForUnit(
+      "2026-06-01",
+      "2026-06-30",
+      9,
+    );
+
+    expect(chain.eq).toHaveBeenCalledWith("unit_id", 9);
+    expect(result).toEqual(rows);
+  });
+
+  it("rejeita intervalo sem unidade operacional válida", async () => {
+    await expect(
+      appointmentsService.getByDateRangeForUnit("2026-06-01", "2026-06-30", 0),
+    ).rejects.toThrow("Unidade operacional inválida");
+  });
+
   it("filtra a agenda operacional por data e unidade", async () => {
     const rows = [makeAppointment({ id: "a1", unit_id: "9" })];
     const query = {

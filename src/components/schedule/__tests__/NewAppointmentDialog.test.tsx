@@ -152,14 +152,13 @@ describe("NewAppointmentDialog", () => {
         }>}
         patients={[patient]}
         selectedDate="2026-08-03"
+        defaultUnitId="7"
         onCreated={onCreated}
       />,
     );
 
     await selectOption("Selecionar paciente", /Paciente Agenda QA/);
     await selectOption("Selecionar profissional", /Profissional Agenda QA/);
-    await selectOption("Selecionar unidade do agendamento", "Unidade Agenda QA");
-
     await waitFor(() => {
       expect(mocks.getRequirements).toHaveBeenCalledWith(expect.objectContaining({
         patientId: "11",
@@ -232,6 +231,7 @@ describe("NewAppointmentDialog", () => {
           units={[]}
           patients={[]}
           selectedDate="2026-08-03"
+          defaultUnitId=""
           onCreated={vi.fn()}
         />,
       );
