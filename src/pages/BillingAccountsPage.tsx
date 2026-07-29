@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Receipt, Search, AlertTriangle, ShieldCheck, Send, RotateCcw, Lock } from "lucide-react";
+import { Receipt, Search, AlertTriangle, ShieldCheck, Send, RotateCcw, Lock, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -32,6 +32,8 @@ export default function BillingAccountsPage() {
 
   const [detail, setDetail] = useState<BillingAccount | null>(null);
   const [issues, setIssues] = useState<PendingIssue[]>([]);
+  const [issuesStatus, setIssuesStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [issuesError, setIssuesError] = useState("");
   const [reopenAcc, setReopenAcc] = useState<BillingAccount | null>(null);
   const [reopenReason, setReopenReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -64,25 +66,62 @@ export default function BillingAccountsPage() {
 
   useEffect(load, [load]);
 
-  const openDetail = async (a: BillingAccount) => {
+  const loadPendingIssues = async (accountId: string) => {
+    setIssuesStatus("loading");
+    setIssuesError("");
+    try {
+      const pending = await billingAccountsService.pendingIssues(accountId);
+      setIssues(pending);
+      setIssuesStatus("ready");
+      return pending;
+    } catch (error) {
+      setIssues([]);
+      setIssuesStatus("error");
+      setIssuesError(error instanceof Error ? error.message : "Falha não identificada");
+      throw error;
+    }
+  };
+
+  const openDetail = (a: BillingAccount) => {
     setDetail(a);
-    try { setIssues(await billingAccountsService.pendingIssues(a.id)); } catch { setIssues([]); }
+    void loadPendingIssues(a.id).catch(() => {
+      toast({
+        title: "Não foi possível verificar as pendências",
+        description: "A conta permanece bloqueada para conferência até a consulta ser concluída.",
+        variant: "destructive",
+      });
+    });
   };
 
   const recheckPending = async (a: BillingAccount) => {
     setBusy(true);
     try {
-      const n = await billingAccountsService.checkPending(a.id);
-      toast({ title: "Glosa preventiva executada", description: n > 0 ? `${n} pendência(s) detectada(s)` : "Nenhuma pendência — pronta para envio" });
-      if (detail) setIssues(await billingAccountsService.pendingIssues(a.id));
+      await billingAccountsService.checkPending(a.id);
+      const pending = await loadPendingIssues(a.id);
+      toast({ title: "Glosa preventiva executada", description: pending.length > 0 ? `${pending.length} pendência(s) detectada(s)` : "Nenhuma pendência — pronta para envio" });
       load();
-    } catch (e) { toast({ title: "Erro", description: String(e), variant: "destructive" }); }
+    } catch (e) {
+      toast({
+        title: "Não foi possível validar a conta",
+        description: String(e),
+        variant: "destructive",
+      });
+    }
     finally { setBusy(false); }
   };
 
   const resolveIssue = async (issueId: number) => {
-    try { await billingAccountsService.resolveIssue(issueId); if (detail) setIssues(await billingAccountsService.pendingIssues(detail.id)); load(); }
-    catch (e) { toast({ title: "Erro", description: String(e), variant: "destructive" }); }
+    if (!detail) return;
+    setBusy(true);
+    try {
+      await billingAccountsService.resolveIssue(issueId);
+      await loadPendingIssues(detail.id);
+      load();
+    } catch (e) {
+      toast({ title: "Não foi possível atualizar a pendência", description: String(e), variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
   };
 
   const confirmReopen = async () => {
@@ -241,7 +280,16 @@ export default function BillingAccountsPage() {
       </Tabs>
 
       {/* Conferência da conta */}
-      <Dialog open={!!detail} onOpenChange={(v) => !v && setDetail(null)}>
+      <Dialog
+        open={!!detail}
+        onOpenChange={(open) => {
+          if (open) return;
+          setDetail(null);
+          setIssues([]);
+          setIssuesStatus("idle");
+          setIssuesError("");
+        }}
+      >
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Conferência da Conta</DialogTitle><DialogDescription>{detail?.patient_name} · {detail?.billing_type} · {detail && (BILLING_STATUS_LABELS[detail.status] || detail.status)}</DialogDescription></DialogHeader>
           {detail && (
@@ -254,18 +302,34 @@ export default function BillingAccountsPage() {
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">Pendências (glosa preventiva)</Label>
-                {issues.length === 0 ? (
+                {issuesStatus === "loading" ? (
+                  <div role="status" className="rounded bg-muted p-2 text-xs flex items-center gap-2 text-muted-foreground mt-1">
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    Verificando pendências...
+                  </div>
+                ) : issuesStatus === "error" ? (
+                  <div role="alert" className="rounded bg-destructive/10 p-2 text-xs text-destructive mt-1 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+                      <span>Verificação indisponível. A conta não está liberada para envio.</span>
+                    </div>
+                    <p className="text-muted-foreground">{issuesError}</p>
+                    <Button size="sm" variant="outline" onClick={() => void loadPendingIssues(detail.id).catch(() => undefined)}>
+                      Tentar novamente
+                    </Button>
+                  </div>
+                ) : issuesStatus === "ready" && issues.length === 0 ? (
                   <div className="rounded bg-success/10 p-2 text-xs flex items-center gap-2 text-success mt-1"><ShieldCheck className="h-4 w-4" />Sem pendências — conta pronta para envio</div>
-                ) : (
+                ) : issuesStatus === "ready" ? (
                   <div className="space-y-1 mt-1">
                     {issues.map((i) => (
                       <div key={i.id} className="rounded bg-warning/10 p-2 text-xs flex items-center justify-between gap-2">
                         <span className="text-warning">{i.issue_label}</span>
-                        <Button size="sm" variant="ghost" className="h-5 text-[10px]" onClick={() => resolveIssue(i.id)}>Resolver</Button>
+                        <Button size="sm" variant="ghost" className="h-5 text-[10px]" disabled={busy} onClick={() => resolveIssue(i.id)}>Resolver</Button>
                       </div>
                     ))}
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
           )}
