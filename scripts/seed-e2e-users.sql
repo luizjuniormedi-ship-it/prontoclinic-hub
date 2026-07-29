@@ -319,6 +319,14 @@ ON CONFLICT (id) DO UPDATE SET
   status = 'active',
   lg_ativo = TRUE;
 
+DELETE FROM public.reception_checkin_workflows
+WHERE appointment_id IN (91001, 91002);
+DELETE FROM public.tiss_xml WHERE appointment_id IN (91001, 91002);
+DELETE FROM public.billings WHERE appointment_id IN (91001, 91002);
+DELETE FROM public.tiss_guides WHERE appointment_id IN (91001, 91002);
+DELETE FROM public.reception_payments WHERE appointment_id IN (91001, 91002);
+DELETE FROM public.financial_transactions WHERE appointment_id IN (91001, 91002);
+DELETE FROM public.billing_accounts WHERE appointment_id IN (91001, 91002);
 DELETE FROM public.reception_checkin_status_history
 WHERE checkin_id IN (SELECT id FROM public.reception_checkins WHERE appointment_id IN (91001, 91002));
 DELETE FROM public.reception_exception_releases WHERE appointment_id IN (91001, 91002);

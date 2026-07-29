@@ -240,7 +240,7 @@ export default function ReceptionPage() {
   const { allowed: canOpenAttendance } = usePermissionGate("/attendance");
   const { allowed: canOpenBilling } = usePermissionGate("/billing-accounts");
   const { allowed: canOpenFinancial } = usePermissionGate("/financial");
-  const { activeUnitId } = useAuth();
+  const { activeCompanyId, activeUnitId } = useAuth();
   const unitId = Number.isInteger(activeUnitId) && Number(activeUnitId) > 0
     ? Number(activeUnitId)
     : null;
@@ -391,7 +391,7 @@ export default function ReceptionPage() {
         serviceId,
         appointmentTypeId,
         plan?.id ? Number(plan.id) : null,
-        sourceAppointment?.company_id || user?.company_id || null,
+        sourceAppointment?.company_id || activeCompanyId,
       );
       assertReceptionPriceFound(priceLookup.found);
       const estimatedAmount = Math.max(

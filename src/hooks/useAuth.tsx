@@ -55,6 +55,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   companyId: string | null;
+  activeCompanyId: string | null;
   activeUnitId: number | null;
   mfaStep: MfaStep;
   mfaFactorId: string | null;
@@ -130,6 +131,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [passwordRecoveryAuthorized, setPasswordRecoveryAuthorized] = useState(false);
+  const [activeCompanyId, setActiveCompanyId] = useState<string | null>(
+    () => readStoredAccessContext<AccessContextOption>()?.companyId ?? null,
+  );
   const [activeUnitId, setActiveUnitId] = useState<number | null>(
     () => readStoredAccessContext<AccessContextOption>()?.unitId ?? null,
   );
@@ -138,6 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const onAccessContextChanged = (event: Event) => {
       const option = (event as CustomEvent<AccessContextOption>).detail;
+      setActiveCompanyId(option?.companyId ?? null);
       setActiveUnitId(option?.unitId ?? null);
     };
     window.addEventListener("prontomedic:access-context-changed", onAccessContextChanged);
@@ -262,6 +267,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setMfaFactorId(null);
     setMustChangePassword(false);
     setPasswordRecoveryAuthorized(false);
+    setActiveCompanyId(null);
     setActiveUnitId(null);
   };
 
@@ -272,6 +278,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: Boolean(user && mfaStep === "verified" && !mustChangePassword),
       isLoading,
       companyId: user?.company_id ?? null,
+      activeCompanyId,
       activeUnitId,
       mfaStep,
       mfaFactorId,
