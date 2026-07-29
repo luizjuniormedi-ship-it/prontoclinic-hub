@@ -1,32 +1,18 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import BillingAccountsPage from "@/pages/BillingAccountsPage";
 import { billingAccountsService, type BillingAccount } from "@/services/billingAccountsService";
 
-const mocks = vi.hoisted(() => ({
-  toast: vi.fn(),
-  confirm: vi.fn(),
-}));
+const mocks = vi.hoisted(() => ({ toast: vi.fn() }));
 
 vi.mock("@/hooks/use-toast", () => ({ toast: mocks.toast }));
-vi.mock("@/hooks/useConfirm", () => ({
-  useConfirm: () => ({ confirm: mocks.confirm }),
-}));
 vi.mock("@/services/billingAccountsService", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/services/billingAccountsService")>();
   return {
     ...original,
     billingAccountsService: {
       list: vi.fn(),
-      listCompetencies: vi.fn(),
       stats: vi.fn(),
-      pendingIssues: vi.fn(),
-      checkPending: vi.fn(),
-      resolveIssue: vi.fn(),
-      reopen: vi.fn(),
-      closeCompetency: vi.fn(),
-      receitaPorConvenio: vi.fn(),
-      receitaMensal: vi.fn(),
     },
   };
 });
@@ -56,8 +42,7 @@ const account: BillingAccount = {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(billingAccountsService.list).mockResolvedValue([account]);
-  vi.mocked(billingAccountsService.listCompetencies).mockResolvedValue([]);
-  vi.mocked(billingAccountsService.stats).mockResolvedValue({
+  vi.mocked(billingAccountsService.stats).mockReturnValue({
     total: 1,
     abertas: 1,
     prontas: 1,
@@ -74,63 +59,19 @@ async function openAccountDetail() {
   expect(await screen.findByRole("dialog", { name: "Conferência da Conta" })).toBeInTheDocument();
 }
 
-describe("BillingAccountsPage — conferência fail-closed", () => {
-  it("não libera a conta quando a consulta de pendências falha", async () => {
-    vi.mocked(billingAccountsService.pendingIssues).mockRejectedValue(new Error("Banco indisponível"));
-
+describe("BillingAccountsPage — contrato canônico de pré-contas", () => {
+  it("carrega somente billing_accounts e calcula indicadores da mesma resposta", async () => {
     await openAccountDetail();
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "A conta não está liberada para envio",
-    );
-    expect(screen.getByText("Banco indisponível")).toBeInTheDocument();
-    expect(screen.queryByText("Sem pendências — conta pronta para envio")).not.toBeInTheDocument();
-    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
-      title: "Não foi possível verificar as pendências",
-      variant: "destructive",
-    }));
+    expect(billingAccountsService.list).toHaveBeenCalledTimes(1);
+    expect(billingAccountsService.stats).toHaveBeenCalledWith([account]);
+    expect(screen.getByText(/comandos transacionais auditáveis/i)).toBeInTheDocument();
   });
 
-  it("exibe conta pronta somente depois de consulta comprovadamente vazia", async () => {
-    vi.mocked(billingAccountsService.pendingIssues).mockResolvedValue([]);
-
-    await openAccountDetail();
-
-    expect(await screen.findByText("Sem pendências — conta pronta para envio")).toBeInTheDocument();
-    expect(screen.queryByText("A conta não está liberada para envio")).not.toBeInTheDocument();
-  });
-
-  it("permite repetir a consulta sem fechar o detalhe", async () => {
-    vi.mocked(billingAccountsService.pendingIssues)
-      .mockRejectedValueOnce(new Error("Falha transitória"))
-      .mockResolvedValueOnce([]);
-
-    await openAccountDetail();
-    fireEvent.click(await screen.findByRole("button", { name: "Tentar novamente" }));
-
-    await waitFor(() => expect(billingAccountsService.pendingIssues).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText("Sem pendências — conta pronta para envio")).toBeInTheDocument();
-  });
-
-  it("não anuncia conta pronta quando a validação pós-glosa fica indisponível", async () => {
-    vi.mocked(billingAccountsService.pendingIssues)
-      .mockResolvedValueOnce([])
-      .mockRejectedValueOnce(new Error("Falha ao confirmar resultado"));
-    vi.mocked(billingAccountsService.checkPending).mockResolvedValue(0);
-
-    await openAccountDetail();
-    await screen.findByText("Sem pendências — conta pronta para envio");
-    fireEvent.click(screen.getByRole("button", { name: "Rodar glosa preventiva" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "A conta não está liberada para envio",
-    );
-    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
-      title: "Não foi possível validar a conta",
-      variant: "destructive",
-    }));
-    expect(mocks.toast).not.toHaveBeenCalledWith(expect.objectContaining({
-      title: "Glosa preventiva executada",
-    }));
+  it("mantém o carregamento funcional sem relações auxiliares inexistentes", async () => {
+    render(<BillingAccountsPage />);
+    expect(await screen.findByText("Paciente Faturamento QA")).toBeInTheDocument();
+    expect(screen.queryByText("Competências")).not.toBeInTheDocument();
+    expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
+    expect(mocks.toast).not.toHaveBeenCalled();
   });
 });
