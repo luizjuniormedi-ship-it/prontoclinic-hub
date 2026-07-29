@@ -58,9 +58,22 @@ describe("Module 39 financial command boundary", () => {
       /GRANT UPDATE ON TABLE public\.appointments[\s\S]*TO prontomedic_reception_rpc_owner/i,
     );
     expect(migration).toMatch(
-      /CREATE POLICY appointments_reception_billing_lock[\s\S]*USING \(company_id = public\.current_company_id\(\)\)[\s\S]*WITH CHECK \(company_id = public\.current_company_id\(\)\)/i,
+      /CREATE POLICY appointments_reception_billing_lock[\s\S]*FOR ALL TO prontomedic_reception_rpc_owner[\s\S]*USING \(TRUE\)[\s\S]*WITH CHECK \(TRUE\)/i,
     );
     expect(migration).not.toMatch(/app\.reception\./i);
+    const receptionBilling = readFileSync(
+      resolve(
+        process.cwd(),
+        "supabase/migrations/20260725103000_reception_billing_continuity.sql",
+      ),
+      "utf8",
+    );
+    expect(receptionBilling).toMatch(
+      /appointment\.id = p_appointment_id[\s\S]*appointment\.company_id = v_company/i,
+    );
+    expect(receptionBilling).toMatch(
+      /v_company IS NULL OR NOT public\.m18_can_edit_attendance\(\)/i,
+    );
     expect(migration).toMatch(
       /finalize_attendance_with_billing_secure[\s\S]*finalize_attendance_secure[\s\S]*sync_completed_appointment_billing_secure/i,
     );

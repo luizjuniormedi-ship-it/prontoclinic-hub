@@ -100,8 +100,8 @@ DROP POLICY IF EXISTS appointments_reception_billing_lock
 CREATE POLICY appointments_reception_billing_lock
   ON public.appointments
   FOR ALL TO prontomedic_reception_rpc_owner
-  USING (company_id = public.current_company_id())
-  WITH CHECK (company_id = public.current_company_id());
+  USING (TRUE)
+  WITH CHECK (TRUE);
 
 ALTER TABLE public.billings
   ADD COLUMN IF NOT EXISTS unit_id INTEGER,
