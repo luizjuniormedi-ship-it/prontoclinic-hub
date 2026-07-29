@@ -134,8 +134,7 @@ jobs:
           PUBLIC_URL: https://prontomedic.191-252-196-6.sslip.io
         run: |
           ssh "${VPS_USER}@${VPS_HOST}" \
-            "bash -s -- '$COMMIT_SHA' '/tmp/edge-functions.tgz' '/tmp/edge-functions.tgz.sha256'" \
-            < release/deploy/edge-runtime/deploy-functions.sh
+            "sudo /usr/local/sbin/prontomedic-edge-deploy '$COMMIT_SHA' '/tmp/edge-functions.tgz' '/tmp/edge-functions.tgz.sha256'"
 
           smoke_failed=0
           for function_name in dicom-bridge telemedicina-daily; do
@@ -151,7 +150,7 @@ jobs:
           done
 
           if test "$smoke_failed" -ne 0; then
-            ssh "${VPS_USER}@${VPS_HOST}" "bash -s -- --rollback" \
-              < release/deploy/edge-runtime/deploy-functions.sh
+            ssh "${VPS_USER}@${VPS_HOST}" \
+              "sudo /usr/local/sbin/prontomedic-edge-deploy --rollback"
             exit 1
           fi
