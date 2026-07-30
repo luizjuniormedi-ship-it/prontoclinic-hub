@@ -186,6 +186,8 @@ describe("local auth server security invariants", () => {
   it("permite leitura contextual dos catalogos compartilhados sem liberar escrita", () => {
     expect(source).toContain("const SHARED_CATALOG_ACCESS");
     expect(source).toContain("companies: { readModules: [], writeModule: 'admin' }");
+    expect(source).toContain("units: { readModules: [], writeModule: 'admin' }");
+    expect(source).toContain("roles: { readModules: [], writeModule: 'admin' }");
     expect(source).toContain(
       "insurance_companies: { readModules: ['recepcao', 'faturamento'], writeModule: 'faturamento' }",
     );

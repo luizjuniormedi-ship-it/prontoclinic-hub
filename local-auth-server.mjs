@@ -144,6 +144,7 @@ const REFERENCE_TABLES = new Set([
 const SHARED_CATALOG_ACCESS = Object.freeze({
   companies: { readModules: [], writeModule: 'admin' },
   units: { readModules: [], writeModule: 'admin' },
+  roles: { readModules: [], writeModule: 'admin' },
   insurance_companies: { readModules: ['recepcao', 'faturamento'], writeModule: 'faturamento' },
   insurance_plans: { readModules: ['recepcao', 'faturamento'], writeModule: 'faturamento' },
   payment_sources: { readModules: ['recepcao', 'faturamento'], writeModule: 'faturamento' },
