@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Search } from "lucide-react";
+import { LayoutGrid, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/useAuth";
@@ -9,6 +10,7 @@ import { NotificationBell } from "./NotificationBell";
 import { UserMenu } from "./UserMenu";
 import { CompanySwitcher } from "./CompanySwitcher";
 import { AccessContextSwitcher } from "./AccessContextSwitcher";
+import { ModuleLauncher } from "./ModuleLauncher";
 
 const STORAGE_KEY = "prontomedic-theme";
 type Theme = "light" | "dark";
@@ -34,6 +36,7 @@ export function AppHeader() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [theme, toggleTheme] = useTheme();
+  const [launcherOpen, setLauncherOpen] = useState(false);
 
   const handleLogout = async () => {
     await logout();
@@ -74,11 +77,36 @@ export function AppHeader() {
       </div>
 
       <div className="flex items-center gap-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Abrir jornadas e módulos"
+              onClick={() => setLauncherOpen(true)}
+            >
+              <LayoutGrid className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Jornadas e módulos</TooltipContent>
+        </Tooltip>
         <AccessContextSwitcher />
         <CompanySwitcher theme={theme} onToggleTheme={toggleTheme} />
         <NotificationBell count={3} />
-        <UserMenu fullName={user?.full_name} roleName={user?.role_name} onLogout={handleLogout} />
+        <UserMenu
+          fullName={user?.full_name}
+          roleName={user?.role_name}
+          onOpenSecurity={() => navigate("/account/security")}
+          onLogout={handleLogout}
+        />
       </div>
+      <ModuleLauncher
+        open={launcherOpen}
+        onOpenChange={setLauncherOpen}
+        roleName={user?.role_name}
+        storageScope={user?.id ?? "anonymous"}
+        onNavigate={(url) => navigate(url)}
+      />
     </header>
   );
 }

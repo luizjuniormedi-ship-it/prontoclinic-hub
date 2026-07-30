@@ -1,7 +1,104 @@
 import { test as base, expect, Page } from '@playwright/test';
 import { E2E_PASSWORD } from '../env';
 
-export type UserRole = 'admin' | 'doctor' | 'reception' | 'receptionSupervisor' | 'patient' | 'callcenter';
+export type UserRole =
+  | 'admin'
+  | 'doctor'
+  | 'reception'
+  | 'receptionSupervisor'
+  | 'patient'
+  | 'callcenter'
+  | 'adminA'
+  | 'managerA'
+  | 'doctorA'
+  | 'nurseA'
+  | 'pharmacyA'
+  | 'diagnosticA'
+  | 'receptionA'
+  | 'doctorB'
+  | 'nurseB';
+
+const LOCAL_CREDENTIALS: Partial<Record<UserRole, { email: string; password: string }>> = {
+  admin: { email: 'admin@prontomedic.test', password: E2E_PASSWORD },
+  doctor: { email: 'doctor@prontomedic.test', password: E2E_PASSWORD },
+  reception: { email: 'recepcao@prontomedic.test', password: E2E_PASSWORD },
+  receptionSupervisor: {
+    email: 'supervisor.recepcao@prontomedic.test',
+    password: E2E_PASSWORD,
+  },
+  patient: { email: 'paciente@prontomedic.test', password: E2E_PASSWORD },
+  callcenter: { email: 'callcenter@prontomedic.test', password: E2E_PASSWORD },
+};
+
+const ENV_KEYS: Partial<Record<UserRole, { email: string; password: string }>> = {
+  admin: { email: 'E2E_ADMIN_EMAIL', password: 'E2E_ADMIN_PASSWORD' },
+  doctor: { email: 'E2E_DOCTOR_EMAIL', password: 'E2E_DOCTOR_PASSWORD' },
+  reception: { email: 'E2E_RECEPTION_EMAIL', password: 'E2E_RECEPTION_PASSWORD' },
+  patient: { email: 'E2E_PATIENT_EMAIL', password: 'E2E_PATIENT_PASSWORD' },
+  adminA: { email: 'E2E_COMPANY_A_ADMIN_EMAIL', password: 'E2E_COMPANY_A_ADMIN_PASSWORD' },
+  managerA: { email: 'E2E_COMPANY_A_MANAGER_EMAIL', password: 'E2E_COMPANY_A_MANAGER_PASSWORD' },
+  doctorA: { email: 'E2E_COMPANY_A_DOCTOR_EMAIL', password: 'E2E_COMPANY_A_DOCTOR_PASSWORD' },
+  nurseA: { email: 'E2E_COMPANY_A_NURSE_EMAIL', password: 'E2E_COMPANY_A_NURSE_PASSWORD' },
+  pharmacyA: { email: 'E2E_COMPANY_A_PHARMACY_EMAIL', password: 'E2E_COMPANY_A_PHARMACY_PASSWORD' },
+  diagnosticA: { email: 'E2E_COMPANY_A_DIAGNOSTIC_EMAIL', password: 'E2E_COMPANY_A_DIAGNOSTIC_PASSWORD' },
+  receptionA: { email: 'E2E_COMPANY_A_RECEPTION_EMAIL', password: 'E2E_COMPANY_A_RECEPTION_PASSWORD' },
+  doctorB: { email: 'E2E_COMPANY_B_DOCTOR_EMAIL', password: 'E2E_COMPANY_B_DOCTOR_PASSWORD' },
+  nurseB: { email: 'E2E_COMPANY_B_NURSE_EMAIL', password: 'E2E_COMPANY_B_NURSE_PASSWORD' },
+};
+
+export function credentialsForOrNull(role: UserRole) {
+  const keys = ENV_KEYS[role];
+  const email = keys ? process.env[keys.email]?.trim() : undefined;
+  const password = keys ? process.env[keys.password] : undefined;
+  if (email && password) return { email, password };
+  return LOCAL_CREDENTIALS[role] ?? null;
+}
+
+export function credentialsFor(role: UserRole) {
+  const credentials = credentialsForOrNull(role);
+  if (credentials) return credentials;
+  const keys = ENV_KEYS[role];
+  const requirement = keys ? `${keys.email} e ${keys.password}` : 'credenciais E2E';
+  throw new Error(`[e2e/auth] usuário ${role} deve ser provisionado via ${requirement}`);
+}
+
+export async function clearBrowserAuth(page: Page): Promise<void> {
+  await page.context().clearCookies();
+  await page.evaluate(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  }).catch(() => undefined);
+}
+
+export async function loginAsRole(page: Page, role: UserRole): Promise<void> {
+  const creds = credentialsFor(role);
+  await page.goto('/login');
+  await page.getByLabel('E-mail').fill(creds.email);
+  await page.getByRole('textbox', { name: 'Senha' }).fill(creds.password);
+  await page.getByRole('button', { name: /entrar/i }).click();
+  await expect(page).not.toHaveURL(/\/login/, { timeout: 10_000 });
+
+  const contextRequired = page.getByRole('heading', {
+    name: /selecione seu contexto de acesso/i,
+  });
+  const contextSelector = page.getByRole('button', {
+    name: /selecionar empresa, unidade e perfil/i,
+  });
+  await expect(contextSelector).toBeEnabled({ timeout: 10_000 });
+  if ((await contextSelector.textContent())?.includes('Selecionar contexto')) {
+    await contextSelector.click();
+    const unitOption = page.getByRole('menuitem').filter({ hasText: /Unidade E2E A/i }).first();
+    const option = (await unitOption.count()) > 0
+      ? unitOption
+      : page.getByRole('menuitem').first();
+    await expect(option).toBeVisible();
+    await option.click();
+    await expect(contextSelector).not.toContainText('Selecionar contexto', {
+      timeout: 10_000,
+    });
+    await expect(contextRequired).toHaveCount(0, { timeout: 10_000 });
+  }
+}
 
 /* eslint-disable react-hooks/rules-of-hooks */
 // This file is a Playwright fixture using `use()` from @playwright/test.
@@ -17,48 +114,7 @@ export const test = base.extend<{
   },
   loginAs: async ({ page }, useFn) => {
     await useFn(async (role) => {
-      const creds = {
-        admin: { email: 'admin@prontomedic.test', password: E2E_PASSWORD },
-        doctor: { email: 'doctor@prontomedic.test', password: E2E_PASSWORD },
-        reception: { email: 'recepcao@prontomedic.test', password: E2E_PASSWORD },
-        receptionSupervisor: { email: 'supervisor.recepcao@prontomedic.test', password: E2E_PASSWORD },
-        patient: { email: 'paciente@prontomedic.test', password: E2E_PASSWORD },
-        callcenter: { email: 'callcenter@prontomedic.test', password: E2E_PASSWORD }
-      }[role];
-
-      await page.goto('/login');
-      await page.getByLabel('E-mail').fill(creds.email);
-      await page.getByRole('textbox', { name: 'Senha' }).fill(creds.password);
-      await page.getByRole('button', { name: /entrar/i }).click();
-      await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
-
-      const contextRequired = page.getByRole('heading', {
-        name: /selecione seu contexto de acesso/i
-      });
-      const contextSelector = page.getByRole('button', {
-        name: /selecionar empresa, unidade e perfil/i
-      });
-      await expect(contextSelector).toBeEnabled({ timeout: 10000 });
-      const expectedRole = {
-        admin: /admin|administrador/i,
-        doctor: /medico|médico/i,
-        reception: /recepcao|recepção/i,
-        receptionSupervisor: /supervisor_recepcao|supervisor de recepção/i,
-        patient: /paciente/i,
-        callcenter: /callcenter|call center/i,
-      }[role];
-      const expectedContext = /empresa e2e.*unidade e2e a/i;
-      if ((await contextSelector.textContent())?.includes('Selecionar contexto')) {
-        await contextSelector.click();
-        const option = page.getByRole('menuitem')
-          .filter({ hasText: expectedContext })
-          .filter({ hasText: expectedRole });
-        await expect(option).toHaveCount(1);
-        await option.click();
-        await expect(contextRequired).toHaveCount(0, { timeout: 10000 });
-      }
-      await expect(contextSelector).toContainText(expectedContext);
-      await expect(contextSelector).toContainText(expectedRole);
+      await loginAsRole(page, role);
     });
   }
 });

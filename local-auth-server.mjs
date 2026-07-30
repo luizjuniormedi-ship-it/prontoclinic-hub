@@ -156,12 +156,14 @@ function tableToModule(table) {
     // prontuÃ¡rio/clÃ­nico ANTES de pacientes (patient_allergies, patient_problem_list, patient_medications sÃ£o atos clÃ­nicos)
     // NOTA: 'cid' (catÃ¡logo CID-10) Ã© tabela de REFERÃŠNCIA universal â€” NÃƒO entra aqui,
     // cai no default (leitura livre p/ qualquer perfil autenticado, escrita sÃ³ admin).
+    [/^exam_requests?$|^exam_request_/, 'solicitacoes_exames'],
     [/^encounters?$|^encounter_|^medical_records|^clinical_|^prescricoes|^prontuar|^diagnos|^patient_allergies|^patient_problem|^patient_medication|^alergias/, 'prontuario'],
     [/^patients$|^paciente|^patient_phones|^telxpac/, 'pacientes'],
     [/^scheduling_contact_logs|^scheduling_call_center_tasks|^scheduling_confirmation_/, 'recepcao'],
     [/^appointments$|^agenda|^scheduling_|^professional_schedules|^escala|^professionals$|^specialties$|^appointment_types$|^services_catalog$/, 'agenda'],
     // EvoluÃ§Ã£o/procedimentos/incidentes de enfermagem = conteÃºdo clÃ­nico sensÃ­vel â†’ mÃ³dulo prontuario (recepÃ§Ã£o bloqueada por LGPD)
     [/^nursing_notes|^nursing_procedures|^nursing_incidents|^nursing_medication|^nursing_evolution/, 'prontuario'],
+    [/^care_protocol_/, 'protocolos_assistenciais'],
     // Fila de triagem e classificaÃ§Ã£o de risco = mÃ³dulo enfermagem (recepÃ§Ã£o pode ver p/ chamar paciente)
     [/^triagens?$|^triagem_|^nursing_|^mnct_/, 'enfermagem'],
     [/^exames_lab|^lab_/, 'laboratorio'],
@@ -444,6 +446,7 @@ const loginAttempts = new Map();
 const LOGIN_MAX_ATTEMPTS = Number(process.env.LOGIN_MAX_ATTEMPTS || 5);
 const LOGIN_WINDOW_MS = Number(process.env.LOGIN_WINDOW_MS || 15 * 60 * 1000);
 const LOGIN_BLOCK_MS = Number(process.env.LOGIN_BLOCK_MS || 15 * 60 * 1000);
+const LOGIN_RATE_LIMIT_ENABLED = process.env.LOCAL_AUTH_MODE !== 'test';
 
 function loginAttemptKey(req, email) {
   const forwarded = process.env.TRUST_PROXY === 'true' ? req.headers['x-forwarded-for'] : null;
@@ -452,6 +455,7 @@ function loginAttemptKey(req, email) {
 }
 
 function loginBlocked(key, now = Date.now()) {
+  if (!LOGIN_RATE_LIMIT_ENABLED) return false;
   const attempt = loginAttempts.get(key);
   if (!attempt) return false;
   if (attempt.blockedUntil > now) return true;
@@ -460,6 +464,7 @@ function loginBlocked(key, now = Date.now()) {
 }
 
 function recordLoginFailure(key, now = Date.now()) {
+  if (!LOGIN_RATE_LIMIT_ENABLED) return;
   const previous = loginAttempts.get(key);
   const attempt = !previous || now - previous.firstAttempt > LOGIN_WINDOW_MS
     ? { count: 0, firstAttempt: now, blockedUntil: 0 }
@@ -946,7 +951,18 @@ const server = createServer(async (req, res) => {
       }
 
       if (req.method === 'POST') {
-        const body = await parseBody(req);
+        const parsedBody = await parseBody(req);
+        if (Array.isArray(parsedBody) && parsedBody.length !== 1) {
+          return json(
+            res,
+            { error: 'bad_request', message: 'insert em lote ainda não suportado no auth local' },
+            400,
+          );
+        }
+        const body = Array.isArray(parsedBody) ? parsedBody[0] : parsedBody;
+        if (!body || typeof body !== 'object') {
+          return json(res, { error: 'bad_request', message: 'body inválido' }, 400);
+        }
         const keys = Object.keys(body);
         if (keys.length === 0) return json(res, { error: 'bad_request', message: 'body vazio' }, 400);
         for (const key of keys) {

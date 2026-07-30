@@ -147,7 +147,20 @@ export default function MedicalRecordsPage() {
           {filtered.map((p) => {
             const age = p.birth_date ? calculateAge(p.birth_date) : null;
             return (
-              <Card key={p.id} className="cursor-pointer hover:shadow-md hover:border-primary/30 transition-all" onClick={() => handleSelectPatient(p)}>
+              <Card
+                key={p.id}
+                role="button"
+                tabIndex={0}
+                aria-label={`Abrir prontuário de ${p.full_name}`}
+                className="cursor-pointer hover:shadow-md hover:border-primary/30 transition-all"
+                onClick={() => handleSelectPatient(p)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    handleSelectPatient(p);
+                  }
+                }}
+              >
                 <CardContent className="p-4 space-y-2">
                   <div className="flex items-center gap-2">
                     <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0"><User className="h-4 w-4 text-primary" /></div>

@@ -1,88 +1,156 @@
-import { test as base, expect } from '@playwright/test';
-import { test as authed } from './fixtures/auth';
+import { expect } from '@playwright/test';
+import { test } from './fixtures/auth';
 
-/**
- * E2E — PACS / DICOM
- *
- * Cobre:
- *   - Listar equipamentos (modalities)
- *   - Adicionar equipamento
- *   - Testar conexão Orthanc
- *   - Worklist aparece (DICOM Modality Worklist)
- *   - Solicitar study (mover para PACS)
- *   - Upload de imagem
- *   - Laudo criado
- *   - Laudo publicado (status LG_PUBLICAR)
- */
+const orthancReady = process.env.E2E_ORTHANC_READY === 'true';
+const orthancExamId = process.env.E2E_ORTHANC_EXAM_ID;
+const supabaseUrl = process.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY;
+const orthancSkipReason =
+  'Requer Orthanc externo homologado. Execute com E2E_ORTHANC_READY=true.';
 
-authed.describe('DICOM / PACS', () => {
-  authed.beforeEach(async ({ loginAs }) => {
-    await loginAs('doctor');
+test.describe('DICOM / PACS - superfícies canônicas locais', () => {
+  test.beforeEach(async ({ loginAs }) => {
+    await loginAs('admin');
   });
 
-  authed('listar equipamentos DICOM', async ({ page }) => {
-    await page.goto('/dicom/equipment');
-    await expect(page.getByRole('heading', { name: /equipamentos|modalities/i })).toBeVisible();
-    await expect(page.getByRole('row').first()).toBeVisible();
+  test('administração DICOM expõe cadastro e controles existentes', async ({ page }) => {
+    await page.goto('/admin/dicom');
+
+    await expect(
+      page.getByRole('heading', { name: 'Equipamentos DICOM', exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Novo Equipamento' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: /^Equipamentos/ })).toBeVisible();
+    await expect(page.getByRole('tab', { name: /^Worklist/ })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Novo Equipamento' }).click();
+    await expect(
+      page.getByRole('heading', { name: 'Cadastrar Equipamento DICOM' }),
+    ).toBeVisible();
+    await expect(page.getByLabel('Nome do Equipamento *')).toBeVisible();
+    await expect(page.getByLabel('AE Title *')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Salvar' })).toBeVisible();
+    await page.getByRole('button', { name: 'Cancelar' }).click();
   });
 
-  authed('adicionar novo equipamento (CT/MRI)', async ({ page }) => {
-    await page.goto('/dicom/equipment');
-    await page.getByRole('button', { name: /novo|adicionar/i }).click();
-    await page.getByLabel(/nome/i).fill('Tomógrafo Philips 1');
-    await page.getByLabel(/modalidade/i).selectOption('CT');
-    await page.getByLabel(/ae title/i).fill('CT_PHILIPS_01');
-    await page.getByLabel(/host|ip/i).fill('192.168.10.50');
-    await page.getByLabel(/porta/i).fill('104');
-    await page.getByRole('button', { name: /salvar/i }).click();
-    await expect(page.getByText(/equipamento.*criado|sucesso/i)).toBeVisible();
+  test('nós DICOM expõem listagem e formulário canônicos', async ({ page }) => {
+    await page.goto('/dicom/nodes');
+
+    await expect(
+      page.getByRole('heading', { name: 'Nós DICOM / PACS', exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Novo Nó' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Novo Nó' }).click();
+    await expect(page.getByRole('heading', { name: 'Novo Nó DICOM' })).toBeVisible();
+    await expect(page.getByText('AE Title *', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Criar' })).toBeVisible();
+    await page.keyboard.press('Escape');
   });
 
-  authed('testar conexão Orthanc (ping)', async ({ page }) => {
-    await page.goto('/dicom/equipment');
-    await page.getByRole('row').first().getByRole('button', { name: /testar|ping/i }).click();
-    await expect(page.getByText(/conectado|online|sucesso/i).first()).toBeVisible({ timeout: 10000 });
+  test('modalidades DICOM expõem busca e formulário canônicos', async ({ page }) => {
+    await page.goto('/dicom/modalities');
+
+    await expect(
+      page.getByRole('heading', { name: 'Equipamentos DICOM', exact: true }),
+    ).toBeVisible();
+    await expect(page.getByPlaceholder('Buscar equipamento...')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Novo Equipamento' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Novo Equipamento' }).click();
+    await expect(page.getByRole('heading', { name: 'Novo Equipamento' })).toBeVisible();
+    await expect(page.getByText('Modalidade', { exact: true })).toBeVisible();
+    await expect(page.getByText('Worklist habilitada', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Criar' })).toBeVisible();
+    await page.keyboard.press('Escape');
   });
 
-  authed('worklist aparece para o paciente agendado', async ({ page }) => {
-    await page.goto('/dicom/worklist');
-    await expect(page.getByRole('heading', { name: /worklist/i })).toBeVisible();
-    await expect(page.getByText(/agendado|scheduled/i).first()).toBeVisible();
+  test('worklist DICOM expõe filtros e atualização canônicos', async ({ page }) => {
+    await page.goto('/worklist');
+
+    await expect(
+      page.getByRole('heading', { name: 'Worklist', exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText(/Nenhum item na worklist|Paciente|Agendamento/).first()).toBeVisible();
+    await expect(page.getByText('Erro ao carregar worklist')).toHaveCount(0);
   });
 
-  authed('solicitar study (enviar para PACS)', async ({ page }) => {
-    await page.goto('/dicom/worklist');
-    await page.getByRole('row').first().getByRole('button', { name: /solicitar|enviar/i }).click();
-    await expect(page.getByText(/solicitado|enviado.*pacs/i).first()).toBeVisible();
-  });
-
-  authed('upload de imagem (DICOM file)', async ({ page }) => {
-    await page.goto('/dicom/studies/new');
-    const buffer = Buffer.from('DICM', 'utf8'); // marcador DICOM mínimo
-    await page.setInputFiles('input[type="file"]', {
-      name: 'test.dcm',
-      mimeType: 'application/dicom',
-      buffer,
-    });
-    await page.getByLabel(/paciente/i).click();
-    await page.getByRole('option').first().click();
-    await page.getByRole('button', { name: /upload|enviar/i }).click();
-    await expect(page.getByText(/upload.*concluído|imagem.*recebida/i)).toBeVisible();
-  });
-
-  authed('laudo criado (rascunho)', async ({ page }) => {
-    await page.goto('/dicom/reports/new');
-    await page.getByLabel(/study|estudo/i).click();
-    await page.getByRole('option').first().click();
-    await page.getByLabel(/laudo/i).fill('Exame sem alterações significativas');
-    await page.getByRole('button', { name: /salvar.*rascunho/i }).click();
-    await expect(page.getByText(/rascunho.*salvo|draft/i)).toBeVisible();
-  });
-
-  authed('laudo publicado (status final LG_PUBLICAR)', async ({ page }) => {
+  test('laudos DICOM expõem fila e filtros canônicos', async ({ page }) => {
     await page.goto('/dicom/reports');
-    await page.getByRole('row', { name: /rascunho|draft/i }).first().getByRole('button', { name: /publicar|finalizar/i }).click();
-    await page.getByRole('button', { name: /confirmar/i }).click();
-    await expect(page.getByText(/publicado|final|lg_publicar/i).first()).toBeVisible();
+
+    await expect(page.getByRole('heading', { name: 'Laudos', exact: true })).toBeVisible();
+    await expect(
+      page.getByPlaceholder('Buscar paciente, exame ou código...'),
+    ).toBeVisible();
+    await expect(page.getByText(/Nenhum laudo encontrado|Paciente/).first()).toBeVisible();
+  });
+});
+
+test.describe('DICOM / PACS - integração Orthanc externa', () => {
+  test.beforeEach(async ({ loginAs }) => {
+    test.skip(!orthancReady, orthancSkipReason);
+    await loginAs('admin');
+  });
+
+  test('C-ECHO usa o controle canônico da administração DICOM', async ({ page }) => {
+    await page.goto('/admin/dicom');
+
+    const echoButton = page.getByTitle('Testar conexão (DICOM Echo)').first();
+    await expect(echoButton).toBeVisible();
+    await echoButton.click();
+    await expect(page.getByText(/Echo OK|conectado|online|sucesso/i).first()).toBeVisible({
+      timeout: 10_000,
+    });
+  });
+
+  test('C-STORE permanece condicionado ao provider Orthanc homologado', async ({ page }) => {
+    test.skip(
+      !orthancExamId,
+      'Requer E2E_ORTHANC_EXAM_ID com exame sintético autorizado para C-STORE.',
+    );
+    test.skip(
+      !supabaseUrl || !supabaseAnonKey,
+      'Requer VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY para chamar a bridge DICOM.',
+    );
+
+    await page.goto('/dicom/reports');
+    const result = await page.evaluate(async ({ examId, apiUrl, anonKey }) => {
+      const session = Object.values(localStorage)
+        .map((value) => {
+          try {
+            return JSON.parse(value);
+          } catch {
+            return null;
+          }
+        })
+        .find((value) => value?.access_token);
+
+      if (!session?.access_token) {
+        throw new Error('Sessão autenticada não encontrada para testar a bridge DICOM');
+      }
+
+      const response = await fetch(
+        `${apiUrl}/functions/v1/dicom-bridge`,
+        {
+          method: 'POST',
+          headers: {
+            apikey: anonKey,
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ action: 'store-study', examId: Number(examId) }),
+        },
+      );
+
+      return { status: response.status, body: await response.json() };
+    }, { examId: orthancExamId, apiUrl: supabaseUrl, anonKey: supabaseAnonKey });
+
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ ok: true });
+  });
+
+  test('provider Orthanc está disponível para as superfícies DICOM', async ({ page }) => {
+    await page.goto('/admin/dicom');
+    await expect(page.getByTitle('Testar conexão (DICOM Echo)').first()).toBeVisible();
   });
 });

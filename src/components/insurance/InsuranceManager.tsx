@@ -19,6 +19,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Search } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 import {
   insuranceCompanyService,
   insurancePlanService,
@@ -33,6 +35,8 @@ export function InsuranceManager() {
   const [selectedInsurance, setSelectedInsurance] = useState<InsuranceCompany | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const queryClient = useQueryClient();
+  const { activeCompanyId } = useAuth();
+  const { toast } = useToast();
 
   const { data: insuranceCompanies, isLoading: loadingInsurances } = useQuery({
     queryKey: ["insurance-companies"],
@@ -58,6 +62,13 @@ export function InsuranceManager() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["insurance-companies"] });
       setIsCreateOpen(false);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Erro ao cadastrar convenio",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -105,8 +116,17 @@ export function InsuranceManager() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
+                if (!activeCompanyId) {
+                  toast({
+                    title: "Contexto empresarial indisponivel",
+                    description: "Selecione uma empresa antes de cadastrar o convenio.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
                 const fd = new FormData(e.currentTarget);
                 createInsurance.mutate({
+                  company_id: activeCompanyId,
                   name: fd.get("name") as string,
                   registro_ans: (fd.get("registro_ans") as string) || undefined,
                   cnpj: (fd.get("cnpj") as string) || undefined,

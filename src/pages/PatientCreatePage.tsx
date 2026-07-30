@@ -14,7 +14,7 @@ export default function PatientCreatePage() {
   const [validationError, setValidationError] = useState<string | null>(null);
   const [duplicate, setDuplicate] = useState<{ id: string; full_name: string; cpf: string } | null>(null);
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { activeCompanyId } = useAuth();
   const { toast } = useToast();
 
   const handleSubmit = async (data: PatientFormData) => {
@@ -54,6 +54,9 @@ export default function PatientCreatePage() {
 
     setSaving(true);
     try {
+      if (!activeCompanyId) {
+        throw new Error("Selecione uma empresa ativa antes de cadastrar o paciente.");
+      }
       const row: Record<string, any> = {
         full_name: data.full_name.trim(),
         cpf: cleanCpf,
@@ -71,7 +74,7 @@ export default function PatientCreatePage() {
         clinical_alerts: data.clinical_alerts.trim() || null,
         admin_notes: data.admin_notes.trim() || null,
         clinical_notes: data.clinical_notes.trim() || null,
-        company_id: user?.company_id || null,
+        company_id: activeCompanyId,
         registration_status: "complete",
       };
 

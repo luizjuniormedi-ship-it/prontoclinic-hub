@@ -328,7 +328,7 @@ export const worklistService = {
     created_at?: string;
   }>> {
     const { data, error } = await supabase
-      .from("dicom_worklist")
+      .from("dicom_worklist_queue")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(200);
@@ -355,7 +355,7 @@ export const worklistService = {
    */
   async update(id: number, updates: { status?: string; [key: string]: unknown }): Promise<void> {
     const { error } = await supabase
-      .from("dicom_worklist")
+      .from("dicom_worklist_queue")
       .update(updates)
       .eq("id", id);
     if (error) throw error;

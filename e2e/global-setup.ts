@@ -1,7 +1,51 @@
 import { chromium, FullConfig } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
+import { closeSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { E2E_PASSWORD } from './env';
+
+function acquireLocalMutationLock(port: string, database: string): () => void {
+  const safeDatabase = database.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const lockPath = resolve(tmpdir(), `prontomedic-e2e-${port}-${safeDatabase}.lock`);
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const descriptor = openSync(lockPath, 'wx');
+      writeFileSync(descriptor, String(process.pid));
+      closeSync(descriptor);
+      return () => {
+        try {
+          if (readFileSync(lockPath, 'utf8').trim() === String(process.pid)) {
+            unlinkSync(lockPath);
+          }
+        } catch {
+          // O lock pode ter sido removido após uma interrupção do processo.
+        }
+      };
+    } catch (error) {
+      const currentPid = Number.parseInt(readFileSync(lockPath, 'utf8').trim(), 10);
+      let ownerIsAlive = Number.isInteger(currentPid);
+      if (ownerIsAlive) {
+        try {
+          process.kill(currentPid, 0);
+        } catch {
+          ownerIsAlive = false;
+        }
+      }
+      if (ownerIsAlive) {
+        throw new Error(
+          `[global-setup] Banco E2E já está em uso pelo processo ${currentPid}. ` +
+          'Não execute suítes mutáveis em paralelo.',
+        );
+      }
+      unlinkSync(lockPath);
+      if (attempt === 1) throw error;
+    }
+  }
+
+  throw new Error('[global-setup] Não foi possível adquirir o lock do banco E2E.');
+}
 
 /**
  * Global setup — runs once before all tests.
@@ -56,6 +100,10 @@ export default async function globalSetup(config: FullConfig) {
       );
     }
 
+    const releaseMutationLock = acquireLocalMutationLock(
+      process.env.PGPORT!,
+      process.env.PGDATABASE!,
+    );
     try {
       execFileSync(
         'psql',
@@ -77,6 +125,7 @@ export default async function globalSetup(config: FullConfig) {
         },
       );
     } catch (error) {
+      releaseMutationLock();
       const stderr = error instanceof Error && 'stderr' in error
         ? String((error as Error & { stderr?: Buffer }).stderr || '')
         : '';
@@ -86,7 +135,7 @@ export default async function globalSetup(config: FullConfig) {
       );
     }
     console.log('[global-setup] Local auth OK — fixtures E2E restauradas no PostgreSQL.');
-    return;
+    return releaseMutationLock;
   }
 
   console.log('[global-setup] Supabase OK — verificando usuários de teste...');

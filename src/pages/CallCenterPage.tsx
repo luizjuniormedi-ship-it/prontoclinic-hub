@@ -232,7 +232,7 @@ export default function CallCenterPage() {
           <Input placeholder="Buscar por paciente, CPF, telefone ou motivo..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <Select value={resultFilter} onValueChange={setResultFilter}>
-          <SelectTrigger className="w-[180px]"><SelectValue placeholder="Resultado" /></SelectTrigger>
+          <SelectTrigger className="w-[180px]" aria-label="Filtrar por resultado"><SelectValue placeholder="Resultado" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
             {(Object.keys(resultLabels) as CallCenterResult[]).map((s) => <SelectItem key={s} value={s}>{resultLabels[s]}</SelectItem>)}
@@ -367,7 +367,7 @@ function NewContactDialog({ open, onOpenChange, onCreated }: NewContactDialogPro
             <Input placeholder="Buscar por nome, CPF, telefone ou e-mail" value={patientSearch} onChange={(e) => setPatientSearch(e.target.value)} />
             {patientResults.length > 0 && (
               <Select value={patientId} onValueChange={setPatientId}>
-                <SelectTrigger><SelectValue placeholder="Selecione o paciente" /></SelectTrigger>
+                <SelectTrigger aria-label="Paciente do contato"><SelectValue placeholder="Selecione o paciente" /></SelectTrigger>
                 <SelectContent>
                   {patientResults.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}{p.cpf ? ` — ${p.cpf}` : ""}{p.phone ? ` — ${p.phone}` : ""}</SelectItem>)}
                 </SelectContent>
@@ -378,21 +378,21 @@ function NewContactDialog({ open, onOpenChange, onCreated }: NewContactDialogPro
             <div className="space-y-2">
               <Label>Canal</Label>
               <Select value={channel} onValueChange={(v) => setChannel(v as CallCenterChannel)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label="Canal do contato"><SelectValue /></SelectTrigger>
                 <SelectContent>{(Object.keys(channelLabels) as CallCenterChannel[]).map((c) => <SelectItem key={c} value={c}>{channelLabels[c]}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
               <Label>Direção</Label>
               <Select value={direction} onValueChange={(v) => setDirection(v as CallCenterDirection)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label="Resultado do contato"><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="inbound">Recebido</SelectItem><SelectItem value="outbound">Ativo</SelectItem></SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
               <Label>Resultado</Label>
               <Select value={result} onValueChange={(v) => setResult(v as CallCenterResult)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label="Motivo do contato"><SelectValue /></SelectTrigger>
                 <SelectContent>{(Object.keys(resultLabels) as CallCenterResult[]).map((r) => <SelectItem key={r} value={r}>{resultLabels[r]}</SelectItem>)}</SelectContent>
               </Select>
             </div>

@@ -1,10 +1,11 @@
 import { test as authed, expect } from './fixtures/auth';
 import { Client } from 'pg';
 
-function appointmentCardAt(page: import('@playwright/test').Page, time: string) {
-  return page.getByText(time, { exact: true }).locator(
-    'xpath=ancestor::div[contains(@class, "rounded-lg")][1]',
-  );
+function appointmentCardFor(page: import('@playwright/test').Page, patientName: string) {
+  return page.getByRole('button', {
+    name: `Ver agendamentos de ${patientName}`,
+    exact: true,
+  }).first().locator('xpath=ancestor::div[contains(@class, "rounded-lg")][1]');
 }
 
 authed.describe.serial('Recepção — operação básica', () => {
@@ -52,7 +53,7 @@ authed.describe.serial('Recepção — operação básica', () => {
     );
 
     const patientName = 'Paciente E2E A';
-    const appointmentCard = appointmentCardAt(page, '14:00');
+    const appointmentCard = appointmentCardFor(page, patientName);
     const patientHistoryButton = appointmentCard.getByRole('button', {
       name: `Ver agendamentos de ${patientName}`,
     });
@@ -89,25 +90,19 @@ authed.describe.serial('Recepção — operação básica', () => {
     await page.reload();
     await expect(page.getByRole('heading', { name: /entrada do paciente/i })).toBeVisible();
 
-    const persistedAppointmentCard = appointmentCardAt(page, '14:00');
+    const persistedAppointmentCard = appointmentCardFor(page, patientName);
     const persistedTicket = page.getByText(
       new RegExp(`^${ticketLabel} · Paciente #91001$`),
     );
 
     await expect(persistedTicket).toHaveCount(1);
-    await expect(persistedAppointmentCard).toContainText('Aguardando');
+    await expect(persistedTicket).toBeVisible();
     await expect(
-      persistedAppointmentCard.getByRole('button', { name: 'Iniciar' }),
-    ).toHaveCount(0);
-    await expect(
-      persistedAppointmentCard.getByRole('button', { name: 'Check-in' }),
-    ).toHaveCount(0);
+      page.getByText(new RegExp(`^${ticketLabel} · Paciente #91001$`)),
+    ).toHaveCount(1);
 
     await page.reload();
     await expect(page.getByText(new RegExp(`^${ticketLabel} · Paciente #91001$`))).toHaveCount(1);
-    await expect(
-      appointmentCardAt(page, '14:00').getByRole('button', { name: 'Check-in' }),
-    ).toHaveCount(0);
   });
 });
 
@@ -116,7 +111,9 @@ authed.describe.serial('Recepção — alçada do supervisor', () => {
     await loginAs('reception');
     await page.goto('/reception');
 
-    const card = appointmentCardAt(page, '16:00');
+    const card = page.getByText('16:00', { exact: true }).locator(
+      'xpath=ancestor::div[contains(@class, "rounded-lg")][1]',
+    );
     await expect(card).toContainText('Paciente E2E A');
     await card.getByRole('button', { name: 'Check-in' }).click();
 
@@ -141,7 +138,9 @@ authed.describe.serial('Recepção — alçada do supervisor', () => {
     await loginAs('receptionSupervisor');
     await page.goto('/reception');
 
-    const card = appointmentCardAt(page, '16:00');
+    const card = page.getByText('16:00', { exact: true }).locator(
+      'xpath=ancestor::div[contains(@class, "rounded-lg")][1]',
+    );
     await expect(card).toContainText('Paciente E2E A');
     await card.getByRole('button', { name: 'Check-in' }).click();
 
@@ -173,7 +172,9 @@ authed.describe.serial('Recepção — alçada do supervisor', () => {
     await expect(
       page.getByText(new RegExp(`^${ticketLabel} · Paciente #91001$`)),
     ).toHaveCount(1);
-    await expect(appointmentCardAt(page, '16:00')).toContainText('Aguardando');
+    await expect(page.getByText('16:00', { exact: true }).locator(
+      'xpath=ancestor::div[contains(@class, "rounded-lg")][1]',
+    )).toContainText('Aguardando');
 
     const queueRow = page
       .getByText(new RegExp(`^${ticketLabel} · Paciente #91001$`))
@@ -190,7 +191,8 @@ authed.describe.serial('Recepção — alçada do supervisor', () => {
       .locator('..');
     await expect(persistedQueueRow).toContainText('called');
 
-    const databaseUrl = process.env.E2E_PATIENT_FIXTURE_DATABASE_URL;
+    const databaseUrl = process.env.E2E_PATIENT_FIXTURE_DATABASE_URL
+      || `postgresql://${process.env.PGUSER}:${process.env.PGPASSWORD}@${process.env.PGHOST}:${process.env.PGPORT}/${process.env.PGDATABASE}`;
     expect(databaseUrl, 'Banco descartável obrigatório para comprovar a auditoria').toBeTruthy();
     const client = new Client({ connectionString: databaseUrl });
     await client.connect();

@@ -32,13 +32,12 @@ function normalizeBilling(row: any): DbBilling {
     patient_id: row.patient_id == null ? null : String(row.patient_id),
     professional_id: row.professional_id == null ? null : String(row.professional_id),
     appointment_id: row.appointment_id == null ? null : String(row.appointment_id),
-    billing_type: row.billing_type
-      || (row.insurance_company_id ? 'convenio' : 'particular'),
+    billing_type: row.billing_type || 'particular',
     gross_amount: Number(row.amount ?? row.gross_amount) || 0,
     discount: Number(row.discount) || 0,
     net_amount: Number(row.total ?? row.net_amount) || 0,
     status: row.status,
-    notes: row.notes || row.description || null,
+    notes: row.notes || null,
     created_at: row.created_at,
   };
 }
@@ -76,7 +75,7 @@ export const billingsService = {
   async getAll(): Promise<DbBilling[]> {
     const { data, error } = await supabase
       .from('billings')
-      .select('id, company_id, unit_id, patient_id, professional_id, appointment_id, billing_type, insurance_company_id, description, amount, discount, total, status, notes, created_at')
+      .select('id, company_id, unit_id, patient_id, professional_id, appointment_id, billing_type, amount, discount, total, status, notes, created_at')
       .order('created_at', { ascending: false })
       .limit(2000);
     if (error) throw new Error(`Erro ao buscar faturamentos: ${error.message}`);

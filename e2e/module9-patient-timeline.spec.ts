@@ -7,16 +7,15 @@ authed.describe("M9 visão longitudinal do paciente @readonly", () => {
     loginAs,
   }) => {
     await loginAs("admin");
-    await page.goto("/patients");
-    const firstPatient = page.getByRole("row").filter({ has: page.getByRole("cell") }).first();
-    await expect(firstPatient).toBeVisible();
-    await firstPatient.click();
-    await page.getByRole("tab", { name: /agendamentos/i }).click();
+    await page.goto("/clinical-timeline");
+    await expect(page.getByRole("heading", { name: "Timeline Clínica" })).toBeVisible();
+    await page.getByPlaceholder("Buscar paciente por nome...").fill("Paciente E2E A");
+    await page.getByRole("button", { name: "Buscar", exact: true }).click();
+    await page.getByRole("button", { name: "Paciente E2E A", exact: true }).click();
 
-    await expect(page.getByRole("heading", { name: /agendamentos do paciente/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /linha do tempo/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /^lista$/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /calendário/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Paciente E2E A" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /emitir receita/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /todos \(/i })).toBeVisible();
     await expect(page.getByText(/pagamento:/i)).toHaveCount(0);
   });
 

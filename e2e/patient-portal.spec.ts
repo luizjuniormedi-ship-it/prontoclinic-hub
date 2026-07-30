@@ -336,7 +336,7 @@ test.describe("Portal do paciente mobile @readonly @local", () => {
 test.describe("Portal do paciente @mutating @local", () => {
   test.describe.configure({ mode: "serial" });
 
-  test.beforeAll(async (_fixtures, workerInfo) => {
+  test.beforeAll(async ({ browserName: _browserName }, workerInfo) => {
     if (
       workerInfo.project.name === mutationProject
       && process.env.E2E_ENV === "local"
@@ -348,14 +348,14 @@ test.describe("Portal do paciente @mutating @local", () => {
     }
   });
 
-  test.afterAll(async (_fixtures, workerInfo) => {
+  test.afterAll(async ({ browserName: _browserName }, workerInfo) => {
     if (workerInfo.project.name === mutationProject && fixture) {
       await deleteUniqueFixture(fixture);
       fixture = null;
     }
   });
 
-  test.beforeEach((_fixtures, testInfo) => {
+  test.beforeEach(({ browserName: _browserName }, testInfo) => {
     requireLocalMutationGuard(testInfo.project.name);
     if (!fixture) {
       throw new Error("Fixture isolada do portal não foi criada.");

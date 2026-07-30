@@ -59,6 +59,7 @@ const FinancialPage = lazy(() => import("@/pages/FinancialPage"));
 
 // Settings + Admin
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
+const AccountSecurityPage = lazy(() => import("@/pages/AccountSecurityPage"));
 const AdminUsersPage = lazy(() => import("@/pages/AdminUsersPage"));
 const AdminProfilesPage = lazy(() => import("@/pages/AdminProfilesPage"));
 const AdminPermissionsPage = lazy(() => import("@/pages/AdminPermissionsPage"));
@@ -191,6 +192,7 @@ const App = () => (
 
             {/* Authenticated — lazy */}
             <Route path="/" element={<AppLayout><ProtectedRoute path="/"><LazyRoute><DashboardPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/account/security" element={<AppLayout><ProtectedRoute path="/account/security"><LazyRoute><AccountSecurityPage /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* Patients */}
             <Route path="/patients" element={<AppLayout><ProtectedRoute path="/patients"><LazyRoute><PatientsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
