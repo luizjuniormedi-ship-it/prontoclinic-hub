@@ -269,6 +269,7 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
   useEffect(() => {
     const term = patientSearch.trim();
     const requestId = ++patientSearchRequestRef.current;
+    const controller = new AbortController();
     if (term.length < 2) {
       setPatientResults([]);
       setPatientSearchLoading(false);
@@ -282,7 +283,7 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
       try {
         setPatientSearchLoading(true);
         const result = await withTimeout(
-          patientsService.search(term),
+          patientsService.search(term, controller.signal),
           PATIENT_SEARCH_TIMEOUT_MS,
         );
         if (requestId === patientSearchRequestRef.current) {
@@ -299,6 +300,7 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
           );
         }
       } finally {
+        controller.abort();
         if (requestId === patientSearchRequestRef.current) {
           setPatientSearchLoading(false);
         }
@@ -307,6 +309,7 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
 
     return () => {
       clearTimeout(timer);
+      controller.abort();
     };
   }, [patientSearch]);
 

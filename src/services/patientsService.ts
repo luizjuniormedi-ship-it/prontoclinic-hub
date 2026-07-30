@@ -158,24 +158,15 @@ export const patientsService = {
     if (error) throw new Error(`Erro ao excluir paciente: ${error.message}`);
   },
 
-  async search(query: string): Promise<Patient[]> {
+  async search(query: string, signal?: AbortSignal): Promise<Patient[]> {
     const sanitized = query.trim();
     if (!sanitized) return this.getAll();
-    const digits = stripNonDigits(sanitized);
-    const safeText = sanitized.replace(/[%,()]/g, ' ');
-    const filters = [
-      'full_name.ilike.%' + safeText + '%',
-      'cpf.ilike.%' + (digits || safeText) + '%',
-      'phone.ilike.%' + (digits || safeText) + '%',
-      'email.ilike.%' + safeText + '%',
-    ].join(',');
-
-    const { data, error } = await supabase
-      .from('patients')
-      .select('*')
-      .or(filters)
-      .order('full_name')
-      .limit(50);
+    let request = supabase.rpc('search_patients_secure', {
+      p_query: sanitized,
+      p_limit: 50,
+    });
+    if (signal) request = request.abortSignal(signal);
+    const { data, error } = await request;
 
     if (error) throw new Error('Erro ao buscar pacientes: ' + error.message);
     return (data || []).map(mapRowToPatient);
