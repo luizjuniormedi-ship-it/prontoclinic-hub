@@ -165,6 +165,36 @@ function workflowStorageKey(companyId: string | null, unitId: number | null, app
   return `prontomedic:reception-workflow:${companyId || "company"}:${unitId || "unit"}:${appointmentId}`;
 }
 
+function walkinStorageKey(companyId: string | null, unitId: number | null): string {
+  return `prontomedic:reception-walkin:${companyId || "company"}:${unitId || "unit"}`;
+}
+
+export function getOrCreateWalkinKey(
+  companyId: string | null,
+  unitId: number | null,
+): string {
+  const storageKey = walkinStorageKey(companyId, unitId);
+  const existing = typeof sessionStorage !== "undefined"
+    ? sessionStorage.getItem(storageKey)
+    : null;
+  if (existing) return existing;
+  const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const value = `walkin:${suffix}`.slice(0, 120);
+  if (typeof sessionStorage !== "undefined") sessionStorage.setItem(storageKey, value);
+  return value;
+}
+
+export function clearWalkinKey(
+  companyId: string | null,
+  unitId: number | null,
+): void {
+  if (typeof sessionStorage !== "undefined") {
+    sessionStorage.removeItem(walkinStorageKey(companyId, unitId));
+  }
+}
+
 export function getOrCreateWorkflowKey(
   appointmentId: string,
   companyId: string | null,
@@ -281,6 +311,7 @@ export default function ReceptionPage() {
   const [walkinServiceId, setWalkinServiceId] = useState("");
   const [walkinNotes, setWalkinNotes] = useState("");
   const [walkinBusy, setWalkinBusy] = useState(false);
+  const [walkinHandoffAppointmentId, setWalkinHandoffAppointmentId] = useState<string | null>(null);
   const debouncedSearch = useDebounce(search, 300);
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -483,6 +514,8 @@ export default function ReceptionPage() {
     } catch (err) { setCheckinTarget(null); setCanReleaseByException(false); toast({ title: "Erro ao validar check-in", description: (err as Error).message, variant: "destructive" }); }
     finally { setCheckingIn(false); }
   };
+  const openCheckinRef = useRef(openCheckin);
+  openCheckinRef.current = openCheckin;
 
   const confirmCheckin = async () => {
     if (!checkinTarget || !readiness) return;
@@ -595,27 +628,57 @@ export default function ReceptionPage() {
     if (unitId === null) return;
     try {
       setWalkinBusy(true);
-      const appointmentId = await receptionCompletionService.createWalkin(
+      const result = await receptionCompletionService.createWalkin(
         walkinPatientId,
         unitId,
         Number(walkinTypeId),
         Number(walkinProfessionalId),
         Number(walkinServiceId),
+        getOrCreateWalkinKey(activeCompanyId, unitId),
         walkinNotes,
       );
+      if (
+        !Number.isSafeInteger(Number(result.appointment_id))
+        || Number(result.appointment_id) <= 0
+      ) {
+        throw new Error("Atendimento espontâneo retornou agendamento inválido");
+      }
       setWalkinOpen(false);
       setWalkinSearch("");
       setWalkinPatients([]);
       setWalkinPatientId("");
       setWalkinNotes("");
+      setWalkinHandoffAppointmentId(String(result.appointment_id));
       await loadAll();
-      toast({ title: `Atendimento espontâneo #${appointmentId} criado`, description: "O paciente foi incluído na recepção com status agendado." });
+      toast({
+        title: result.idempotent
+          ? `Atendimento espontâneo #${result.appointment_id} retomado`
+          : `Atendimento espontâneo #${result.appointment_id} criado`,
+        description: "O mesmo atendimento seguirá para o check-in transacional.",
+      });
     } catch (err) {
       toast({ title: "Atendimento espontâneo não criado", description: friendlyError(err, "Criar atendimento espontâneo"), variant: "destructive" });
     } finally {
       setWalkinBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (!walkinHandoffAppointmentId || loading) return;
+    const appointment = appointments.find(
+      (item) => item.id === walkinHandoffAppointmentId,
+    );
+    if (!appointment) return;
+    setWalkinHandoffAppointmentId(null);
+    clearWalkinKey(activeCompanyId, unitId);
+    void openCheckinRef.current(appointment);
+  }, [
+    activeCompanyId,
+    appointments,
+    loading,
+    unitId,
+    walkinHandoffAppointmentId,
+  ]);
 
   const openPending = (item: ReceptionPendingItem) => {
     setPendingTarget(item); setPendingStatus(item.status); setPendingProtocol(item.protocol_number || "");
@@ -1049,7 +1112,7 @@ export default function ReceptionPage() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Atendimento espontâneo</DialogTitle>
-            <DialogDescription>Localize o paciente e defina os dados mínimos para criar a entrada na agenda.</DialogDescription>
+            <DialogDescription>Localize o paciente e defina os dados mínimos. A mesma operação será retomada em caso de falha e seguirá para o check-in.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="flex gap-2">

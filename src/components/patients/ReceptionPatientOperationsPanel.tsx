@@ -140,6 +140,49 @@ export function ReceptionPatientOperationsPanel({
     if (completed) setManifestationConfirmed(false);
   };
 
+  const handleDocumentResolution = async () => {
+    if (!appointmentId || !resolvingDocumentId || !resolutionNumber.trim()) {
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const result = await receptionCompletionService.resolveDocumentIssue(
+        appointmentId,
+        resolvingDocumentId,
+        resolutionNumber,
+        resolutionExpiry || undefined,
+      );
+      toast({
+        title: result.idempotent
+          ? "Documento já estava regularizado"
+          : "Documento regularizado e auditado",
+      });
+      setResolvingDocumentId("");
+      setResolutionNumber("");
+      setResolutionExpiry("");
+      if (onOperationCompleted) {
+        try {
+          await onOperationCompleted();
+        } catch (error) {
+          toast({
+            title: "Registro concluído; atualização pendente",
+            description: (error as Error).message,
+            variant: "destructive",
+          });
+        }
+      }
+    } catch (error) {
+      toast({
+        title: "Operação não concluída",
+        description: error instanceof Error ? error.message : "Erro inesperado",
+        variant: "destructive",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <section
       className="space-y-4 rounded-md border p-4"
@@ -210,24 +253,7 @@ export function ReceptionPatientOperationsPanel({
               type="button"
               variant="outline"
               disabled={busy || !resolvingDocumentId || !resolutionNumber.trim()}
-              onClick={() =>
-                void run(
-                  () =>
-                    receptionCompletionService.resolveDocumentIssue(
-                      appointmentId,
-                      resolvingDocumentId,
-                      resolutionNumber,
-                      resolutionExpiry || undefined,
-                    ),
-                  "Documento regularizado e auditado",
-                ).then((completed) => {
-                  if (completed) {
-                    setResolvingDocumentId("");
-                    setResolutionNumber("");
-                    setResolutionExpiry("");
-                  }
-                })
-              }
+              onClick={() => void handleDocumentResolution()}
             >
               Confirmar regularização
             </Button>

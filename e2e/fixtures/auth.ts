@@ -85,15 +85,18 @@ export async function loginAsRole(page: Page, role: UserRole): Promise<void> {
     name: /selecionar empresa, unidade e perfil/i,
   });
 
-  const contextIsRequired = await contextRequired
-    .isVisible({ timeout: 2_000 })
-    .catch(() => false);
+  // Context bootstrap is asynchronous after authentication. Wait for either
+  // the switcher or a stable application route before deciding that there is
+  // no context to select.
   const contextSelectorIsVisible = await contextSelector
-    .isVisible({ timeout: contextIsRequired ? 10_000 : 2_000 })
+    .isVisible({ timeout: 10_000 })
     .catch(() => false);
 
   if (!contextSelectorIsVisible) {
     await expect(contextRequired).toHaveCount(0);
+    await expect(page).not.toHaveURL(/\/select-context(?:\/|$|\?)/, {
+      timeout: 10_000,
+    });
     return;
   }
 

@@ -1324,6 +1324,67 @@ BEGIN
 END
 $reception_operational_rpcs$;
 
+DO $document_resolution_idempotency$
+DECLARE
+  v_first JSONB;
+  v_retry JSONB;
+  v_history_count BIGINT;
+BEGIN
+  v_first := public.resolve_reception_document_issue_secure(
+    910001,
+    '10000000-0000-4000-8000-000000000301',
+    'DOC-RECEPTION-910001',
+    CURRENT_DATE + 365
+  );
+  IF COALESCE((v_first->>'idempotent')::BOOLEAN, TRUE) IS NOT FALSE THEN
+    RAISE EXCEPTION 'First document resolution was incorrectly idempotent';
+  END IF;
+
+  SELECT count(*)
+    INTO v_history_count
+    FROM public.reception_admin_history
+   WHERE appointment_id = 910001
+     AND entity_type = 'patient_document'
+     AND entity_id = '10000000-0000-4000-8000-000000000301'
+     AND reason = 'Documento regularizado durante o check-in';
+  IF v_history_count <> 1 THEN
+    RAISE EXCEPTION 'First document resolution did not create exactly one history row';
+  END IF;
+
+  v_retry := public.resolve_reception_document_issue_secure(
+    910001,
+    '10000000-0000-4000-8000-000000000301',
+    '  DOC-RECEPTION-910001  ',
+    CURRENT_DATE + 365
+  );
+  IF COALESCE((v_retry->>'idempotent')::BOOLEAN, FALSE) IS NOT TRUE THEN
+    RAISE EXCEPTION 'Repeated document resolution was not idempotent';
+  END IF;
+
+  SELECT count(*)
+    INTO v_history_count
+    FROM public.reception_admin_history
+   WHERE appointment_id = 910001
+     AND entity_type = 'patient_document'
+     AND entity_id = '10000000-0000-4000-8000-000000000301'
+     AND reason = 'Documento regularizado durante o check-in';
+  IF v_history_count <> 1 THEN
+    RAISE EXCEPTION 'Repeated document resolution duplicated history';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+      FROM public.patient_documents
+     WHERE id = '10000000-0000-4000-8000-000000000301'
+       AND document_number = 'DOC-RECEPTION-910001'
+       AND expires_at = CURRENT_DATE + 365
+       AND status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'Document resolution did not persist normalized state';
+  END IF;
+END
+$document_resolution_idempotency$;
+
 RESET ROLE;
 
 DO $allowed_side_effects$

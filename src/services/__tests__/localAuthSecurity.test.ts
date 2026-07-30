@@ -29,6 +29,7 @@ describe("local auth server security invariants", () => {
       "record_reception_term_acceptance_secure",
       "create_reception_document_pickup_secure",
       "release_reception_document_pickup_secure",
+      "resolve_reception_document_issue_secure",
       "create_reception_walkin_secure",
       "search_patients_secure",
       "start_reception_checkin_workflow_secure",

@@ -321,6 +321,7 @@ const RPC_PERMISSIONS = {
   record_reception_term_acceptance_secure: { module: 'recepcao', action: 'can_create' },
   create_reception_document_pickup_secure: { module: 'recepcao', action: 'can_create' },
   release_reception_document_pickup_secure: { module: 'recepcao', action: 'can_edit' },
+  resolve_reception_document_issue_secure: { module: 'recepcao', action: 'can_edit' },
   create_reception_walkin_secure: { module: 'recepcao', action: 'can_create' },
   start_reception_checkin_workflow_secure: { module: 'recepcao', action: 'can_create' },
   advance_reception_checkin_workflow_secure: { module: 'recepcao', action: 'can_edit' },

@@ -11,6 +11,15 @@ export interface ReceptionTermCatalogItem {
   publishedAt: string | null;
 }
 
+export interface ReceptionWalkinResult {
+  appointment_id: number;
+  idempotency_key: string;
+  idempotent: boolean;
+  workflow_id: string | null;
+  workflow_status: string | null;
+  workflow_required: boolean;
+}
+
 interface ReceptionTermCatalogRow {
   id: string;
   codigo: string;
@@ -20,6 +29,13 @@ interface ReceptionTermCatalogRow {
   texto_hash: string;
   finalidade: string;
   publicado_em: string | null;
+}
+
+export interface ReceptionDocumentResolutionResult {
+  appointment_id: number;
+  document_id: string;
+  status: "active";
+  idempotent: boolean;
 }
 
 async function rpc<T>(
@@ -137,9 +153,10 @@ export const receptionCompletionService = {
     appointmentTypeId: number,
     professionalId: number,
     serviceId: number,
+    idempotencyKey: string,
     notes?: string,
   ) {
-    return rpc<number>(
+    return rpc<ReceptionWalkinResult>(
       "create_reception_walkin_secure",
       {
         p_patient_id: Number(patientId),
@@ -148,6 +165,7 @@ export const receptionCompletionService = {
         p_professional_id: professionalId,
         p_service_id: serviceId,
         p_notes: notes || null,
+        p_idempotency_key: idempotencyKey,
       },
       "Erro ao registrar atendimento espontaneo",
     );
@@ -158,7 +176,7 @@ export const receptionCompletionService = {
     documentNumber: string,
     expiresAt?: string,
   ) {
-    return rpc<null>(
+    return rpc<ReceptionDocumentResolutionResult>(
       "resolve_reception_document_issue_secure",
       {
         p_appointment_id: Number(appointmentId),

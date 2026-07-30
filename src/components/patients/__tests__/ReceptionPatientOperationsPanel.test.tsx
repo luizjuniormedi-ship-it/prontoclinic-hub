@@ -49,7 +49,12 @@ describe("ReceptionPatientOperationsPanel — integridade do aceite", () => {
     serviceMocks.acceptTerm.mockResolvedValue(
       "4c564f6b-3522-45a5-92fb-c5268e966126",
     );
-    serviceMocks.resolveDocumentIssue.mockResolvedValue(null);
+    serviceMocks.resolveDocumentIssue.mockResolvedValue({
+      appointment_id: 91,
+      document_id: "4b8917b2-8f95-4fe4-98f3-7e5900093170",
+      status: "active",
+      idempotent: false,
+    });
   });
 
   it("remove entradas livres e exige seleção, leitura e manifestação", async () => {
@@ -176,5 +181,50 @@ describe("ReceptionPatientOperationsPanel — integridade do aceite", () => {
       ),
     );
     expect(completed).toHaveBeenCalled();
+    expect(toastMock).toHaveBeenCalledWith({
+      title: "Documento regularizado e auditado",
+    });
+  });
+
+  it("trata repetição idempotente sem apresentar uma nova auditoria", async () => {
+    serviceMocks.resolveDocumentIssue.mockResolvedValue({
+      appointment_id: 91,
+      document_id: "4b8917b2-8f95-4fe4-98f3-7e5900093170",
+      status: "active",
+      idempotent: true,
+    });
+
+    render(
+      <ReceptionPatientOperationsPanel
+        patientId="42"
+        appointmentId="91"
+        mode="checkin"
+        documentIssues={[{
+          type: "document",
+          severity: "blocking",
+          description: "Documento expirado",
+          document_id: "4b8917b2-8f95-4fe4-98f3-7e5900093170",
+          document_type: "identidade",
+        }]}
+      />,
+    );
+
+    const issueSelect = await screen.findByRole("combobox", {
+      name: "Regularizar documento pendente",
+    });
+    fireEvent.keyDown(issueSelect, { key: "Enter", code: "Enter" });
+    fireEvent.click(await screen.findByRole("option", { name: /identidade/i }));
+    fireEvent.change(screen.getByLabelText("Número conferido"), {
+      target: { value: "DOC-2026-001" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirmar regularização" }),
+    );
+
+    await waitFor(() =>
+      expect(toastMock).toHaveBeenCalledWith({
+        title: "Documento já estava regularizado",
+      }),
+    );
   });
 });

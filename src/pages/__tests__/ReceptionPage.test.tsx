@@ -4,7 +4,9 @@ import {
   assertReceptionPriceFound,
   assertReceptionReceivableIntegrity,
   assertReceptionReceivableRequired,
+  clearWalkinKey,
   clearWorkflowKey,
+  getOrCreateWalkinKey,
   getOrCreateWorkflowKey,
   resolveReceptionPayer,
   type PatientRow,
@@ -42,6 +44,17 @@ describe("ReceptionPage — decisão segura do pagador", () => {
     const next = getOrCreateWorkflowKey("91001", "company-a", 10);
     expect(next).not.toBe(first);
     clearWorkflowKey("91001", "company-a", 10);
+  });
+
+  it("reutiliza a chave do atendimento espontâneo até o handoff", () => {
+    const first = getOrCreateWalkinKey("company-a", 10);
+    const resumed = getOrCreateWalkinKey("company-a", 10);
+    expect(resumed).toBe(first);
+
+    clearWalkinKey("company-a", 10);
+    const next = getOrCreateWalkinKey("company-a", 10);
+    expect(next).not.toBe(first);
+    clearWalkinKey("company-a", 10);
   });
 
   it("bloqueia quando o cadastro do paciente está indisponível", () => {

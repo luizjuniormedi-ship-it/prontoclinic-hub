@@ -172,3 +172,81 @@ describe("receptionCompletionService — catálogo e aceite de termos", () => {
     );
   });
 });
+
+describe("receptionCompletionService — atendimento espontâneo", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("envia chave idempotente e preserva o resultado de retomada", async () => {
+    const result = {
+      appointment_id: 91002,
+      idempotency_key: "walkin:qa-operation-001",
+      idempotent: true,
+      workflow_id: null,
+      workflow_status: null,
+      workflow_required: true,
+    };
+    supabaseMocks.rpc.mockResolvedValue({ data: result, error: null });
+
+    await expect(
+      receptionCompletionService.createWalkin(
+        "42",
+        3,
+        7,
+        11,
+        19,
+        "walkin:qa-operation-001",
+        "Paciente sem agendamento prévio",
+      ),
+    ).resolves.toEqual(result);
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith(
+      "create_reception_walkin_secure",
+      {
+        p_patient_id: 42,
+        p_unit_id: 3,
+        p_appointment_type_id: 7,
+        p_professional_id: 11,
+        p_service_id: 19,
+        p_notes: "Paciente sem agendamento prévio",
+        p_idempotency_key: "walkin:qa-operation-001",
+      },
+    );
+  });
+});
+
+describe("receptionCompletionService — resolução documental", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("normaliza os argumentos e preserva a resposta idempotente do RPC", async () => {
+    const result = {
+      appointment_id: 91,
+      document_id: "4b8917b2-8f95-4fe4-98f3-7e5900093170",
+      status: "active",
+      idempotent: true,
+    };
+    supabaseMocks.rpc.mockResolvedValue({ data: result, error: null });
+
+    await expect(
+      receptionCompletionService.resolveDocumentIssue(
+        "91",
+        "4b8917b2-8f95-4fe4-98f3-7e5900093170",
+        "  DOC-2026-001  ",
+        "2027-07-30",
+      ),
+    ).resolves.toEqual(result);
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith(
+      "resolve_reception_document_issue_secure",
+      {
+        p_appointment_id: 91,
+        p_document_id: "4b8917b2-8f95-4fe4-98f3-7e5900093170",
+        p_document_number: "DOC-2026-001",
+        p_expires_at: "2027-07-30",
+      },
+    );
+  });
+});
