@@ -10,6 +10,18 @@
   \echo 'Variavel de ambiente obrigatoria ausente: E2E_PASSWORD'
   \quit 1
 \endif
+\getenv e2e_mfa_secret E2E_MFA_SECRET
+\if :{?e2e_mfa_secret}
+\else
+  \echo 'Variavel de ambiente obrigatoria ausente: E2E_MFA_SECRET'
+  \quit 1
+\endif
+\getenv e2e_mfa_encryption_key AUTH_MFA_ENCRYPTION_KEY
+\if :{?e2e_mfa_encryption_key}
+\else
+  \echo 'Variavel de ambiente obrigatoria ausente: AUTH_MFA_ENCRYPTION_KEY'
+  \quit 1
+\endif
 
 BEGIN;
 SET LOCAL TIME ZONE 'America/Sao_Paulo';
@@ -109,6 +121,34 @@ ON CONFLICT (id) DO UPDATE SET
   company_id = EXCLUDED.company_id,
   primary_unit_id = EXCLUDED.primary_unit_id,
   lg_ativo = true,
+    updated_at = now();
+
+WITH seed_users(id) AS (
+  VALUES
+    ('eeeeeeee-0000-4000-8000-000000000001'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000002'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000003'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000006'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000004'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid)
+)
+INSERT INTO public.auth_mfa_factors(
+  id, user_id, factor_type, friendly_name, secret_ciphertext,
+  status, created_at, updated_at
+)
+SELECT
+  md5(seed_users.id::text || ':e2e-totp')::uuid,
+  seed_users.id,
+  'totp',
+  'ProntoMedic E2E',
+  pgp_sym_encrypt(:'e2e_mfa_secret', :'e2e_mfa_encryption_key'),
+  'verified',
+  now(),
+  now()
+FROM seed_users
+ON CONFLICT (user_id, friendly_name) DO UPDATE SET
+  secret_ciphertext = EXCLUDED.secret_ciphertext,
+  status = 'verified',
   updated_at = now();
 
 UPDATE public.user_profiles

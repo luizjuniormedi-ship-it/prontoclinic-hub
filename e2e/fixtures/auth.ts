@@ -1,4 +1,5 @@
 import { test as base, expect, Page } from '@playwright/test';
+import { createHmac } from 'node:crypto';
 import { E2E_PASSWORD } from '../env';
 
 export type UserRole =
@@ -29,6 +30,37 @@ const LOCAL_CREDENTIALS: Partial<Record<UserRole, { email: string; password: str
   patient: { email: 'paciente@prontomedic.test', password: E2E_PASSWORD },
   callcenter: { email: 'callcenter@prontomedic.test', password: E2E_PASSWORD },
 };
+
+function decodeBase32(secret: string): Buffer {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const normalized = secret.toUpperCase().replace(/[^A-Z2-7]/g, '');
+  let bits = '';
+  for (const character of normalized) {
+    const value = alphabet.indexOf(character);
+    if (value < 0) throw new Error('[e2e/auth] segredo TOTP inválido');
+    bits += value.toString(2).padStart(5, '0');
+  }
+  const bytes: number[] = [];
+  for (let offset = 0; offset + 8 <= bits.length; offset += 8) {
+    bytes.push(Number.parseInt(bits.slice(offset, offset + 8), 2));
+  }
+  return Buffer.from(bytes);
+}
+
+function totpCode(secret: string, timestamp = Date.now()): string {
+  const counter = Math.floor(timestamp / 30_000);
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(BigInt(counter));
+  const digest = createHmac('sha1', decodeBase32(secret)).update(message).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const value = (
+    ((digest[offset] & 0x7f) << 24)
+    | ((digest[offset + 1] & 0xff) << 16)
+    | ((digest[offset + 2] & 0xff) << 8)
+    | (digest[offset + 3] & 0xff)
+  ) % 1_000_000;
+  return value.toString().padStart(6, '0');
+}
 
 const ENV_KEYS: Partial<Record<UserRole, { email: string; password: string }>> = {
   admin: { email: 'E2E_ADMIN_EMAIL', password: 'E2E_ADMIN_PASSWORD' },
@@ -76,6 +108,26 @@ export async function loginAsRole(page: Page, role: UserRole): Promise<void> {
   await page.getByLabel('E-mail').fill(creds.email);
   await page.getByRole('textbox', { name: 'Senha' }).fill(creds.password);
   await page.getByRole('button', { name: /entrar/i }).click();
+
+  const mfaCodeInput = page.getByRole('textbox', {
+    name: /código 2fa|código de 6 dígitos/i,
+  });
+  if (await mfaCodeInput.isVisible({ timeout: 10_000 }).catch(() => false)) {
+    const displayedEnrollmentSecret = await page.locator('code').textContent()
+      .catch(() => null);
+    const secret = displayedEnrollmentSecret?.trim()
+      || process.env.E2E_MFA_SECRET?.trim();
+    if (!secret) {
+      throw new Error('[e2e/auth] E2E_MFA_SECRET é obrigatório para validar MFA');
+    }
+    await mfaCodeInput.fill(totpCode(secret));
+    const submitMfa = page.getByRole('button', {
+      name: /verificar|ativar mfa/i,
+    });
+    await expect(submitMfa).toBeEnabled();
+    await submitMfa.click();
+  }
+
   await expect(page).not.toHaveURL(/\/login/, { timeout: 10_000 });
 
   const contextRequired = page.getByRole('heading', {
