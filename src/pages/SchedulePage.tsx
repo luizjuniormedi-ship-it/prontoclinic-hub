@@ -20,17 +20,13 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { useAuth } from "@/hooks/useAuth";
 import { friendlyError } from "@/utils/friendlyError";
 import { mapSchedulePatient } from "@/pages/schedulePatientMapper";
+import { accessContextService } from "@/services/accessContextService";
 
 const weekDays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
 interface InsuranceLookupRow {
   id: string | number;
   name: string;
-}
-
-interface UnitLookupRow {
-  id: string | number;
-  ds_nome: string;
 }
 
 type ScheduleAppointment = Appointment & { insuranceName?: string };
@@ -147,25 +143,17 @@ export default function SchedulePage() {
     setAppointmentTypes(types);
     setServices(serviceRows);
 
-    const [
-      { data: ins, error: insuranceError },
-      { data: unitRows, error: unitError },
-    ] = await Promise.all([
+    const [{ data: ins, error: insuranceError }, authorizedContexts] = await Promise.all([
       supabase.from("insurance_companies").select("id, name"),
-      supabase
-        .from("units")
-        .select("id, ds_nome")
-        .eq("id", activeUnitId)
-        .eq("lg_ativo", true)
-        .order("ds_nome"),
+      accessContextService.listAuthorized(),
     ]);
     if (insuranceError) {
       throw new Error(`Erro ao carregar convênios da agenda: ${insuranceError.message}`);
     }
-    if (unitError) {
-      throw new Error(`Erro ao carregar a unidade ativa: ${unitError.message}`);
-    }
-    if (!unitRows?.length) {
+    const activeContext = authorizedContexts.find(
+      (context) => context.unitId === activeUnitId,
+    );
+    if (!activeContext) {
       throw new Error("A unidade ativa não está disponível para agendamento.");
     }
 
@@ -178,12 +166,7 @@ export default function SchedulePage() {
         .map((item) => ({ id: String(item.id), name: item.name }))
         .sort((a, b) => a.name.localeCompare(b.name)),
     );
-    setUnits(
-      (unitRows as UnitLookupRow[]).map((unit) => ({
-        id: String(unit.id),
-        name: unit.ds_nome,
-      })),
-    );
+    setUnits([{ id: String(activeUnitId), name: activeContext.unitName }]);
   }, [activeUnitId]);
 
   const loadAppointments = useCallback(async (date: string) => {
