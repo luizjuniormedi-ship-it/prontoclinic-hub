@@ -241,9 +241,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const verifyMfa = async (code: string, factorId?: string): Promise<AuthResult> => {
-    const selectedFactor = factorId ?? mfaFactorId;
-    if (!selectedFactor) return { success: false, error: "Fator MFA não encontrado." };
     try {
+      let selectedFactor = factorId ?? mfaFactorId;
+      if (!selectedFactor) {
+        const nextMfa = await getMfaNextStep(supabase.auth.mfa);
+        selectedFactor = nextMfa.kind === "challenge" ? nextMfa.factorId : null;
+      }
+      if (!selectedFactor) return { success: false, error: "Fator MFA não encontrado." };
       await verifyTotpFactor(supabase.auth.mfa, selectedFactor, code);
       const { data } = await supabase.auth.getSession();
       return await initializeSession(data.session);
