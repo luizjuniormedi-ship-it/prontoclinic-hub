@@ -850,6 +850,7 @@ const RPC_PERMISSIONS = {
   convert_call_center_contact_secure: { module: 'call_center', action: 'can_edit' },
   patient_create_with_duplicate_decision: { module: 'pacientes', action: 'can_create' },
   patient_merge_patients: { module: 'pacientes', action: 'can_edit' },
+  search_patients_secure: { module: 'pacientes', action: 'can_view' },
   get_call_center_indicators: { module: 'call_center', action: 'can_view' },
   create_medical_record_secure: { module: 'prontuario', action: 'can_create' },
   update_medical_record_secure: { module: 'prontuario', action: 'can_edit' },
