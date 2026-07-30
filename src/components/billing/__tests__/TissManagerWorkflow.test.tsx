@@ -5,6 +5,7 @@ import { TissManager } from "@/components/billing/TissManager";
 
 const mocks = vi.hoisted(() => ({
   gerarFaturaMensal: vi.fn(),
+  listGlosas: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
 }));
@@ -16,6 +17,7 @@ vi.mock("@/hooks/useAuth", () => ({
 vi.mock("@/services/tissService", () => ({
   tissService: {
     gerarFaturaMensal: mocks.gerarFaturaMensal,
+    listGlosas: mocks.listGlosas,
   },
 }));
 
@@ -45,6 +47,7 @@ vi.mock("@/components/billing/TissXmlPreview", () => ({
 describe("TissManager monthly generation", () => {
   beforeEach(() => {
     mocks.gerarFaturaMensal.mockReset();
+    mocks.listGlosas.mockReset();
     mocks.success.mockReset();
     mocks.error.mockReset();
     mocks.gerarFaturaMensal.mockResolvedValue({
@@ -52,6 +55,7 @@ describe("TissManager monthly generation", () => {
       total_xmls: 2,
       vl_total: 150.5,
     });
+    mocks.listGlosas.mockResolvedValue([]);
   });
 
   it("exige confirmação explícita da competência", () => {
@@ -100,5 +104,40 @@ describe("TissManager monthly generation", () => {
       });
     });
     expect(mocks.success).toHaveBeenCalled();
+  });
+
+  it("lista glosas pelo contrato seguro sem liberar transmissão de recurso", async () => {
+    mocks.listGlosas.mockResolvedValue([
+      {
+        id: 91,
+        cd_tiss_xml: 77,
+        company_id: "company-1",
+        cd_glosa_code: "7101",
+        ds_motivo: "Procedimento sem autorização",
+        vl_glosa: 125.5,
+        dt_glosa: "2026-07-29",
+        lg_recurso_enviado: false,
+        ds_status_recurso: "PENDENTE",
+      },
+    ]);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TissManager />
+      </QueryClientProvider>,
+    );
+
+    const denialsTab = screen.getByRole("tab", { name: "Glosas" });
+    fireEvent.mouseDown(denialsTab, { button: 0, ctrlKey: false });
+    fireEvent.click(denialsTab);
+
+    expect(await screen.findByText("Procedimento sem autorização")).toBeInTheDocument();
+    expect(screen.getByText("R$ 125,50")).toBeInTheDocument();
+    expect(screen.getByText(/transmissão de recursos permanece bloqueada/i)).toBeInTheDocument();
+    expect(mocks.listGlosas).toHaveBeenCalledWith();
+    expect(screen.queryByRole("button", { name: /enviar recurso/i })).not.toBeInTheDocument();
   });
 });

@@ -878,9 +878,9 @@ export const tissService = {
     return normalizeTissGlosaRow(row, "tiss_glosas");
   },
 
-  async listGlosas(tissXmlId: number): Promise<TissGlosa[]> {
+  async listGlosas(tissXmlId?: number): Promise<TissGlosa[]> {
     const { data, error } = await supabase.rpc("m16_list_denials_secure", {
-      p_tiss_xml_id: tissXmlId,
+      p_tiss_xml_id: tissXmlId ?? null,
       p_limit: 500,
     });
     if (error) throw error;

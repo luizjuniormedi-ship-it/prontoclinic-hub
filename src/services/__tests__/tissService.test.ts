@@ -402,6 +402,28 @@ describe("tissService secure lifecycle RPCs", () => {
     expect(supabase.from).not.toHaveBeenCalled();
   });
 
+  it("lista todas as glosas do contexto ativo sem filtro de XML", async () => {
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({
+      data: [{
+        id: 92,
+        tiss_xml_id: 11,
+        vl_glosa: "42.50",
+        dt_glosa: "2026-07-29",
+        lg_recurso_enviado: false,
+        ds_status_recurso: "PENDENTE",
+      }],
+      error: null,
+    } as never);
+
+    await expect(tissService.listGlosas()).resolves.toEqual([
+      expect.objectContaining({ id: 92, cd_tiss_xml: 11, vl_glosa: 42.5 }),
+    ]);
+    expect(supabase.rpc).toHaveBeenCalledWith("m16_list_denials_secure", {
+      p_tiss_xml_id: null,
+      p_limit: 500,
+    });
+  });
+
   it("fecha lote mensal somente pela RPC idempotente", async () => {
     vi.mocked(supabase.rpc).mockResolvedValueOnce({
       data: { lote: "123", total_xmls: "2", vl_total: "150.50" },

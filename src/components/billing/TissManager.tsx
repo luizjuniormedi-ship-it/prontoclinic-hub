@@ -13,9 +13,11 @@
  */
 
 import { useState, useEffect } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -24,7 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Settings2, RefreshCw } from "lucide-react";
+import { Settings2, RefreshCw, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { tissService, type TissStatus, type TissXml } from "@/services/tissService";
 import { useAuth } from "@/hooks/useAuth";
@@ -50,6 +52,13 @@ export function TissManager() {
   const [selectedXml, setSelectedXml] = useState<TissXml | null>(null);
   const [glosaDialogOpen, setGlosaDialogOpen] = useState(false);
   const [protocolDialogOpen, setProtocolDialogOpen] = useState(false);
+
+  const denialsQuery = useQuery({
+    queryKey: ["tiss-denials", companyId],
+    queryFn: () => tissService.listGlosas(),
+    enabled: Boolean(companyId),
+    retry: 1,
+  });
 
   // Listen to cross-component mes-change events from TissLoteList
   useEffect(() => {
@@ -175,9 +184,69 @@ export function TissManager() {
         </TabsContent>
 
         <TabsContent value="glosas" className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Glosas em aberto. Selecione uma fatura GLOSADA na aba "Guias TISS" para enviar recurso.
-          </p>
+          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+            A transmissão de recursos permanece bloqueada até o gateway TISS 04.03.00 estar homologado.
+            Esta lista é somente leitura.
+          </div>
+          {denialsQuery.isLoading ? (
+            <div role="status" className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
+              <RefreshCw className="h-4 w-4 animate-spin" />
+              Carregando glosas...
+            </div>
+          ) : denialsQuery.isError ? (
+            <div role="alert" className="flex flex-col items-start gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-4">
+              <div>
+                <p className="font-medium text-destructive">Não foi possível carregar as glosas</p>
+                <p className="text-sm text-muted-foreground">
+                  {denialsQuery.error instanceof Error ? denialsQuery.error.message : String(denialsQuery.error)}
+                </p>
+              </div>
+              <Button variant="outline" onClick={() => void denialsQuery.refetch()}>
+                Tentar novamente
+              </Button>
+            </div>
+          ) : !denialsQuery.data?.length ? (
+            <div className="flex flex-col items-center gap-2 py-10 text-center text-muted-foreground">
+              <AlertTriangle className="h-8 w-8" />
+              <p className="font-medium">Nenhuma glosa registrada</p>
+              <p className="text-sm">Os retornos das operadoras aparecerão aqui após o processamento seguro.</p>
+            </div>
+          ) : (
+            <div className="overflow-auto rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Data</TableHead>
+                    <TableHead>Guia/XML</TableHead>
+                    <TableHead>Código</TableHead>
+                    <TableHead>Motivo</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Valor glosado</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {denialsQuery.data.map((denial) => (
+                    <TableRow key={denial.id}>
+                      <TableCell className="whitespace-nowrap text-xs">
+                        {new Date(`${denial.dt_glosa}T12:00:00`).toLocaleDateString("pt-BR")}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{denial.cd_tiss_xml}</TableCell>
+                      <TableCell className="font-mono text-xs">{denial.cd_glosa_code || "—"}</TableCell>
+                      <TableCell className="min-w-52 text-sm">{denial.ds_motivo || "Sem motivo informado"}</TableCell>
+                      <TableCell>
+                        <Badge variant={denial.lg_recurso_enviado ? "secondary" : "outline"}>
+                          {denial.ds_status_recurso || (denial.lg_recurso_enviado ? "ENVIADO" : "PENDENTE")}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-medium">
+                        {formatTissCurrency(denial.vl_glosa)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 
