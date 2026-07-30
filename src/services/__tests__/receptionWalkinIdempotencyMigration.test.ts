@@ -43,13 +43,15 @@ describe("reception walk-in idempotency migration", () => {
     expect(migration).not.toMatch(/INSERT INTO public\.billing_accounts/);
   });
 
-  it("mantém a assinatura legada e restringe a assinatura idempotente", () => {
+  it("remove a assinatura legada e restringe a assinatura idempotente", () => {
     expect(migration).toMatch(
       /CREATE FUNCTION public\.create_reception_walkin_secure\([\s\S]*p_idempotency_key TEXT/,
     );
     expect(migration).toMatch(
-      /CREATE OR REPLACE FUNCTION public\.create_reception_walkin_secure\([\s\S]*p_notes TEXT DEFAULT NULL[\s\S]*RETURNS BIGINT/,
+      /DROP FUNCTION IF EXISTS public\.create_reception_walkin_secure\(\s*BIGINT, INTEGER, BIGINT, BIGINT, BIGINT, TEXT\s*\)/,
     );
+    expect(migration).not.toMatch(/p_notes TEXT DEFAULT NULL/);
+    expect(migration).not.toMatch(/'legacy:' \|\| gen_random_uuid/);
     expect(migration).toMatch(
       /REVOKE ALL ON FUNCTION public\.create_reception_walkin_secure\([\s\S]*TEXT, TEXT[\s\S]*FROM PUBLIC, anon/,
     );

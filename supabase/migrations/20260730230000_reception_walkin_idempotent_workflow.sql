@@ -161,6 +161,9 @@ GRANT EXECUTE ON FUNCTION private.reception_insert_walkin_appointment(
 DROP FUNCTION IF EXISTS public.create_reception_walkin_secure(
   BIGINT, INTEGER, BIGINT, BIGINT, BIGINT, TEXT, TEXT
 );
+DROP FUNCTION IF EXISTS public.create_reception_walkin_secure(
+  BIGINT, INTEGER, BIGINT, BIGINT, BIGINT, TEXT
+);
 
 CREATE FUNCTION public.create_reception_walkin_secure(
   p_patient_id BIGINT,
@@ -399,45 +402,6 @@ REVOKE ALL ON FUNCTION public.create_reception_walkin_secure(
 ) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.create_reception_walkin_secure(
   BIGINT, INTEGER, BIGINT, BIGINT, BIGINT, TEXT, TEXT
-) TO authenticated, app_prontomedic;
-
--- Compatibility wrapper for older clients. New clients must always send their
--- own stable operation key so retries can resume across network failures.
-CREATE OR REPLACE FUNCTION public.create_reception_walkin_secure(
-  p_patient_id BIGINT,
-  p_unit_id INTEGER,
-  p_appointment_type_id BIGINT,
-  p_professional_id BIGINT,
-  p_service_id BIGINT,
-  p_notes TEXT DEFAULT NULL
-)
-RETURNS BIGINT
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path = pg_catalog, public
-AS $function$
-  SELECT (
-    public.create_reception_walkin_secure(
-      p_patient_id,
-      p_unit_id,
-      p_appointment_type_id,
-      p_professional_id,
-      p_service_id,
-      p_notes,
-      'legacy:' || gen_random_uuid()::TEXT
-    )->>'appointment_id'
-  )::BIGINT
-$function$;
-
-ALTER FUNCTION public.create_reception_walkin_secure(
-  BIGINT, INTEGER, BIGINT, BIGINT, BIGINT, TEXT
-) OWNER TO prontomedic_reception_rpc_owner;
-
-REVOKE ALL ON FUNCTION public.create_reception_walkin_secure(
-  BIGINT, INTEGER, BIGINT, BIGINT, BIGINT, TEXT
-) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.create_reception_walkin_secure(
-  BIGINT, INTEGER, BIGINT, BIGINT, BIGINT, TEXT
 ) TO authenticated, app_prontomedic;
 
 INSERT INTO public.prontomedic_deployment_migrations(filename)

@@ -98,11 +98,19 @@ BEGIN
 END;
 $$;
 
+ALTER FUNCTION public.resolve_reception_document_issue_secure(
+  BIGINT, UUID, TEXT, DATE
+) OWNER TO prontomedic_reception_rpc_owner;
+
 REVOKE ALL ON FUNCTION public.resolve_reception_document_issue_secure(
   BIGINT, UUID, TEXT, DATE
 ) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.resolve_reception_document_issue_secure(
   BIGINT, UUID, TEXT, DATE
 ) TO authenticated, app_prontomedic;
+
+INSERT INTO public.prontomedic_deployment_migrations(filename)
+VALUES ('20260730234000_reception_document_resolution_idempotency.sql')
+ON CONFLICT (filename) DO NOTHING;
 
 COMMIT;
