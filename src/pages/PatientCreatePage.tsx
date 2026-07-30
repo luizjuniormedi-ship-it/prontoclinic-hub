@@ -8,13 +8,14 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { friendlyError } from "@/utils/friendlyError";
 
 export default function PatientCreatePage() {
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [duplicate, setDuplicate] = useState<{ id: string; full_name: string; cpf: string } | null>(null);
   const navigate = useNavigate();
-  const { activeCompanyId } = useAuth();
+  const { activeCompanyId, activeUnitId } = useAuth();
   const { toast } = useToast();
 
   const handleSubmit = async (data: PatientFormData) => {
@@ -54,10 +55,10 @@ export default function PatientCreatePage() {
 
     setSaving(true);
     try {
-      if (!activeCompanyId) {
-        throw new Error("Selecione uma empresa ativa antes de cadastrar o paciente.");
+      if (!activeCompanyId || !activeUnitId) {
+        throw new Error("Selecione uma empresa e uma unidade ativas antes de cadastrar o paciente.");
       }
-      const row: Record<string, any> = {
+      const row: Record<string, string | number | null> = {
         full_name: data.full_name.trim(),
         cpf: cleanCpf,
         birth_date: data.birth_date,
@@ -75,6 +76,7 @@ export default function PatientCreatePage() {
         admin_notes: data.admin_notes.trim() || null,
         clinical_notes: data.clinical_notes.trim() || null,
         company_id: activeCompanyId,
+        unit_id: activeUnitId,
         registration_status: "complete",
       };
 
@@ -86,7 +88,11 @@ export default function PatientCreatePage() {
       toast({ title: "Paciente cadastrado com sucesso!" });
       navigate("/patients");
     } catch (err) {
-      toast({ title: "Erro ao cadastrar", description: (err as Error).message, variant: "destructive" });
+      toast({
+        title: "Erro ao cadastrar",
+        description: friendlyError(err, "Cadastrar paciente"),
+        variant: "destructive",
+      });
     } finally { setSaving(false); }
   };
 
