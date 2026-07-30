@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Receipt, Search, AlertTriangle, Loader2, RotateCcw, CalendarRange, LockKeyhole } from "lucide-react";
+import { Receipt, Search, AlertTriangle, Loader2, RotateCcw, CalendarRange, LockKeyhole, ClipboardCheck, UserCheck, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -16,6 +16,7 @@ import {
   billingAccountsService,
   BILLING_STATUS_LABELS,
   type BillingAccount,
+  type BillingAuditQueueItem,
   type BillingCompetence,
 } from "@/services/billingAccountsService";
 import { toast } from "@/hooks/use-toast";
@@ -37,6 +38,13 @@ export default function BillingAccountsPage() {
   const [selectedCompetence, setSelectedCompetence] = useState<BillingCompetence | null>(null);
   const [competenceReason, setCompetenceReason] = useState("");
   const [updatingCompetence, setUpdatingCompetence] = useState(false);
+  const [auditQueue, setAuditQueue] = useState<BillingAuditQueueItem[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
+  const [selectedAudit, setSelectedAudit] = useState<BillingAuditQueueItem | null>(null);
+  const [auditOpinion, setAuditOpinion] = useState("");
+  const [auditEvidence, setAuditEvidence] = useState("");
+  const [updatingAudit, setUpdatingAudit] = useState(false);
 
   const [detail, setDetail] = useState<BillingAccount | null>(null);
   const [reviewing, setReviewing] = useState(false);
@@ -75,6 +83,22 @@ export default function BillingAccountsPage() {
   useEffect(() => {
     if (activeTab === "competences") void loadCompetences();
   }, [activeTab, loadCompetences]);
+
+  const loadAuditQueue = useCallback(async () => {
+    setAuditLoading(true);
+    setAuditError(null);
+    try {
+      setAuditQueue(await billingAccountsService.listAuditQueue());
+    } catch (error) {
+      setAuditError(String(error));
+    } finally {
+      setAuditLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "audit") void loadAuditQueue();
+  }, [activeTab, loadAuditQueue]);
 
   const reviewAccount = async () => {
     if (!detail) return;
@@ -144,6 +168,41 @@ export default function BillingAccountsPage() {
     }
   };
 
+  const claimAudit = async (item: BillingAuditQueueItem) => {
+    setUpdatingAudit(true);
+    try {
+      await billingAccountsService.claimAudit(item);
+      toast({ title: "Conta assumida para auditoria" });
+      await loadAuditQueue();
+    } catch (error) {
+      toast({ title: "Não foi possível assumir a auditoria", description: String(error), variant: "destructive" });
+    } finally {
+      setUpdatingAudit(false);
+    }
+  };
+
+  const decideAudit = async (decision: "approved" | "returned" | "escalated") => {
+    if (!selectedAudit) return;
+    setUpdatingAudit(true);
+    try {
+      await billingAccountsService.decideAudit(selectedAudit, decision, auditOpinion, auditEvidence);
+      toast({
+        title: decision === "approved"
+          ? "Conta aprovada para envio"
+          : decision === "returned" ? "Conta devolvida para correção" : "Conta escalada",
+      });
+      setSelectedAudit(null);
+      setAuditOpinion("");
+      setAuditEvidence("");
+      await loadAuditQueue();
+      load();
+    } catch (error) {
+      toast({ title: "Não foi possível concluir a auditoria", description: String(error), variant: "destructive" });
+    } finally {
+      setUpdatingAudit(false);
+    }
+  };
+
   const filtered = accounts.filter((a) => !search || a.patient_name?.toLowerCase().includes(search.toLowerCase()) || a.guide_number?.toLowerCase().includes(search.toLowerCase()));
 
   if (loading) return <LoadingState />;
@@ -164,6 +223,7 @@ export default function BillingAccountsPage() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList aria-label="Visões do faturamento">
           <TabsTrigger value="accounts">Pré-contas</TabsTrigger>
+          <TabsTrigger value="audit">Auditoria</TabsTrigger>
           <TabsTrigger value="competences">Competências</TabsTrigger>
         </TabsList>
 
@@ -209,6 +269,78 @@ export default function BillingAccountsPage() {
                         <div className="flex gap-1">
                           <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setDetail(a)} title="Conferir"><Receipt className="h-3 w-3" /></Button>
                         </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="audit">
+          {auditLoading ? (
+            <LoadingState />
+          ) : auditError ? (
+            <div role="alert" className="flex flex-col items-start gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-4">
+              <div>
+                <p className="font-medium text-destructive">Não foi possível carregar a fila de auditoria</p>
+                <p className="text-sm text-muted-foreground">{auditError}</p>
+              </div>
+              <Button variant="outline" onClick={() => void loadAuditQueue()}>Tentar novamente</Button>
+            </div>
+          ) : auditQueue.length === 0 ? (
+            <EmptyState icon={ClipboardCheck} title="Nenhuma conta na fila de auditoria" />
+          ) : (
+            <div className="rounded-lg border bg-card overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Paciente</TableHead>
+                    <TableHead>Guia</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Responsável</TableHead>
+                    <TableHead>SLA</TableHead>
+                    <TableHead className="text-right">Valor</TableHead>
+                    <TableHead className="w-28"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {auditQueue.map((item) => (
+                    <TableRow key={item.account_id}>
+                      <TableCell className="font-medium">{item.patient_name || "—"}</TableCell>
+                      <TableCell className="text-xs font-mono">{item.guide_number || "—"}</TableCell>
+                      <TableCell>
+                        <Badge variant={item.sla_overdue ? "destructive" : "outline"}>
+                          {item.review_status || BILLING_STATUS_LABELS[item.account_status] || item.account_status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs">{item.reviewer_name || "Não atribuída"}</TableCell>
+                      <TableCell className={item.sla_overdue ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
+                        <Clock className="mr-1 inline h-3 w-3" />
+                        {item.deadline_at ? new Date(item.deadline_at).toLocaleString("pt-BR") : "Aguardando atribuição"}
+                      </TableCell>
+                      <TableCell className="text-right">{fmtBRL(item.total_net_amount)}</TableCell>
+                      <TableCell>
+                        {item.review_status === "assigned" ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setSelectedAudit(item);
+                              setAuditOpinion("");
+                              setAuditEvidence("");
+                            }}
+                          >
+                            <ClipboardCheck className="h-4 w-4" />
+                            Decidir
+                          </Button>
+                        ) : item.review_status == null || ["returned", "escalated"].includes(item.review_status) ? (
+                          <Button size="sm" variant="outline" disabled={updatingAudit} onClick={() => void claimAudit(item)}>
+                            <UserCheck className="h-4 w-4" />
+                            Assumir
+                          </Button>
+                        ) : null}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -335,6 +467,65 @@ export default function BillingAccountsPage() {
               Revisar pendências
             </Button>
             <Button onClick={() => setDetail(null)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!selectedAudit}
+        onOpenChange={(open) => {
+          if (open || updatingAudit) return;
+          setSelectedAudit(null);
+          setAuditOpinion("");
+          setAuditEvidence("");
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Decisão da auditoria</DialogTitle>
+            <DialogDescription>
+              {selectedAudit?.patient_name || "Conta"} · guia {selectedAudit?.guide_number || "não informada"}.
+              Aprovação só será aceita sem pendências bloqueadoras.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="audit-opinion">Parecer</Label>
+              <Textarea id="audit-opinion" value={auditOpinion} onChange={(event) => setAuditOpinion(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="audit-evidence">Evidência verificada</Label>
+              <Textarea
+                id="audit-evidence"
+                value={auditEvidence}
+                onChange={(event) => setAuditEvidence(event.target.value)}
+                placeholder="Descreva guia, autorização, assinatura, laudo e valores conferidos"
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex-wrap">
+            <Button variant="outline" disabled={updatingAudit} onClick={() => setSelectedAudit(null)}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              disabled={updatingAudit || !auditOpinion.trim() || !auditEvidence.trim()}
+              onClick={() => void decideAudit("returned")}
+            >
+              Devolver
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={updatingAudit || !auditOpinion.trim() || !auditEvidence.trim()}
+              onClick={() => void decideAudit("escalated")}
+            >
+              Escalar
+            </Button>
+            <Button
+              disabled={updatingAudit || !auditOpinion.trim() || !auditEvidence.trim()}
+              onClick={() => void decideAudit("approved")}
+            >
+              {updatingAudit && <Loader2 className="h-4 w-4 animate-spin" />}
+              Aprovar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

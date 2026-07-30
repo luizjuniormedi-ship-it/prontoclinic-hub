@@ -88,6 +88,12 @@ jobs:
             psql -v ON_ERROR_STOP=1 \
               -h localhost -p 54322 -U postgres -d "$database" \
               -f tests/database/call_center_atomic_commands.sql >/dev/null
+            psql -v ON_ERROR_STOP=1 \
+              -h localhost -p 54322 -U postgres -d "$database" \
+              -f supabase/tests/module39_billing_account_operational_closure_contract.sql >/dev/null
+            psql -v ON_ERROR_STOP=1 \
+              -h localhost -p 54322 -U postgres -d "$database" \
+              -f supabase/tests/module37_billing_account_audit_contract.sql >/dev/null
           done
 
           # Retry das migrations críticas no mesmo banco: qualquer aplicação

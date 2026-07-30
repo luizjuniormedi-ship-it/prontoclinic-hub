@@ -66,6 +66,40 @@ export interface BillingCompetence {
   updated_at: string;
 }
 
+export type BillingAuditStatus = "unassigned" | "assigned" | "approved" | "returned" | "escalated";
+
+export interface BillingAuditQueueItem {
+  account_id: string;
+  patient_name: string | null;
+  guide_number: string | null;
+  account_status: BillingStatus;
+  account_version: number;
+  total_net_amount: number;
+  readiness: BillingReadiness;
+  review_id: string | null;
+  review_status: Exclude<BillingAuditStatus, "unassigned"> | null;
+  review_version: number | null;
+  reviewer_id: string | null;
+  reviewer_name: string | null;
+  deadline_at: string | null;
+  decided_at: string | null;
+  opinion: string | null;
+  evidence: Record<string, unknown> | unknown[] | null;
+  sla_overdue: boolean;
+}
+
+export interface BillingAuditCommandResult {
+  account_id: string;
+  account_status: BillingStatus;
+  account_version: number;
+  review_id: string;
+  review_status: Exclude<BillingAuditStatus, "unassigned">;
+  review_version: number;
+  reviewer_id?: string;
+  deadline_at?: string;
+  decided_at?: string;
+}
+
 export const BILLING_STATUS_LABELS: Partial<Record<BillingStatus, string>> = {
   aberta: "Aberta", em_montagem: "Em montagem", pronta_envio: "Pronta p/ envio",
   enviada: "Enviada", em_analise: "Em análise", paga: "Paga", parcialmente_paga: "Parc. paga",
@@ -149,6 +183,53 @@ export const billingAccountsService = {
     });
     if (error) throw new Error(error.message);
     return data as unknown as BillingCompetence;
+  },
+
+  async listAuditQueue(status?: BillingAuditStatus): Promise<BillingAuditQueueItem[]> {
+    const { data, error } = await supabase.rpc("m37_list_billing_audit_queue_secure", {
+      p_status: status ?? null,
+      p_limit: 200,
+    });
+    if (error) throw new Error(error.message);
+    return (data || []) as unknown as BillingAuditQueueItem[];
+  },
+
+  async claimAudit(item: BillingAuditQueueItem): Promise<BillingAuditCommandResult> {
+    const { data, error } = await supabase.rpc("m37_claim_billing_audit_secure", {
+      p_account_id: item.account_id,
+      p_expected_account_version: item.account_version,
+      p_operation_id: crypto.randomUUID(),
+    });
+    if (error) throw new Error(error.message);
+    return data as unknown as BillingAuditCommandResult;
+  },
+
+  async decideAudit(
+    item: BillingAuditQueueItem,
+    decision: "approved" | "returned" | "escalated",
+    opinion: string,
+    evidence: string,
+  ): Promise<BillingAuditCommandResult> {
+    const normalizedOpinion = opinion.trim();
+    const normalizedEvidence = evidence.trim();
+    if (!item.review_id || item.review_version == null) {
+      throw new Error("Auditoria ativa não encontrada");
+    }
+    if (!normalizedOpinion || !normalizedEvidence) {
+      throw new Error("Parecer e evidência são obrigatórios");
+    }
+    const { data, error } = await supabase.rpc("m37_decide_billing_audit_secure", {
+      p_account_id: item.account_id,
+      p_review_id: item.review_id,
+      p_decision: decision,
+      p_opinion: normalizedOpinion,
+      p_evidence: { note: normalizedEvidence },
+      p_expected_account_version: item.account_version,
+      p_expected_review_version: item.review_version,
+      p_operation_id: crypto.randomUUID(),
+    });
+    if (error) throw new Error(error.message);
+    return data as unknown as BillingAuditCommandResult;
   },
 
   stats(all: BillingAccount[]): { total: number; abertas: number; prontas: number; comPendencia: number; enviadas: number; pagas: number } {

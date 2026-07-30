@@ -18,6 +18,9 @@ vi.mock("@/services/billingAccountsService", async (importOriginal) => {
       listCompetences: vi.fn(),
       closeCompetence: vi.fn(),
       reopenCompetence: vi.fn(),
+      listAuditQueue: vi.fn(),
+      claimAudit: vi.fn(),
+      decideAudit: vi.fn(),
     },
   };
 });
@@ -79,6 +82,27 @@ beforeEach(() => {
       account_count: 1,
       account_ids: [account.id],
       updated_at: "2026-07-29T12:00:00Z",
+    },
+  ]);
+  vi.mocked(billingAccountsService.listAuditQueue).mockResolvedValue([
+    {
+      account_id: account.id,
+      patient_name: account.patient_name || null,
+      guide_number: account.guide_number,
+      account_status: "aguardando_conferencia",
+      account_version: 1,
+      total_net_amount: 150,
+      readiness: account.readiness,
+      review_id: null,
+      review_status: null,
+      review_version: null,
+      reviewer_id: null,
+      reviewer_name: null,
+      deadline_at: null,
+      decided_at: null,
+      opinion: null,
+      evidence: null,
+      sla_overdue: false,
     },
   ]);
 });
@@ -150,6 +174,30 @@ describe("BillingAccountsPage — contrato canônico de pré-contas", () => {
     await waitFor(() => expect(billingAccountsService.closeCompetence).toHaveBeenCalledWith(
       expect.objectContaining({ competence_month: "2026-07-01", version: 1 }),
       "Fechamento mensal QA",
+    ));
+  });
+
+  it("assume uma conta pela fila de auditoria sem criar outra conta", async () => {
+    vi.mocked(billingAccountsService.claimAudit).mockResolvedValue({
+      account_id: account.id,
+      account_status: "em_auditoria",
+      account_version: 2,
+      review_id: "review-qa",
+      review_status: "assigned",
+      review_version: 1,
+    });
+
+    render(<BillingAccountsPage />);
+    await screen.findByText("Paciente Faturamento QA");
+    const auditTab = screen.getByRole("tab", { name: "Auditoria" });
+    fireEvent.mouseDown(auditTab, { button: 0, ctrlKey: false });
+    fireEvent.click(auditTab);
+
+    await waitFor(() => expect(billingAccountsService.listAuditQueue).toHaveBeenCalled());
+    fireEvent.click(await screen.findByRole("button", { name: "Assumir" }));
+
+    await waitFor(() => expect(billingAccountsService.claimAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ account_id: account.id, account_version: 1 }),
     ));
   });
 });

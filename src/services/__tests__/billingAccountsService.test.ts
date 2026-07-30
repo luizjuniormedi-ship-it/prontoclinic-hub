@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   billingAccountsService,
   type BillingAccount,
+  type BillingAuditQueueItem,
   type BillingCompetence,
 } from "@/services/billingAccountsService";
 
@@ -136,6 +137,78 @@ describe("billingAccountsService", () => {
       p_reason: "Reabertura QA",
       p_expected_version: 2,
       p_operation_id: operationIds[1],
+    });
+  });
+
+  it("lista, assume e decide a auditoria pela fila segura", async () => {
+    const item = {
+      account_id: "account-audit",
+      account_status: "aguardando_conferencia",
+      account_version: 3,
+      review_id: null,
+      review_version: null,
+    } as BillingAuditQueueItem;
+    vi.spyOn(crypto, "randomUUID")
+      .mockReturnValueOnce("44444444-4444-4444-8444-444444444444")
+      .mockReturnValueOnce("55555555-5555-4555-8555-555555555555");
+    mocks.rpc
+      .mockResolvedValueOnce({ data: [item], error: null })
+      .mockResolvedValueOnce({
+        data: {
+          account_id: item.account_id,
+          account_status: "em_auditoria",
+          account_version: 4,
+          review_id: "review-audit",
+          review_status: "assigned",
+          review_version: 1,
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: {
+          account_id: item.account_id,
+          account_status: "pronta_envio",
+          account_version: 5,
+          review_id: "review-audit",
+          review_status: "approved",
+          review_version: 2,
+        },
+        error: null,
+      });
+
+    await billingAccountsService.listAuditQueue();
+    const claimed = await billingAccountsService.claimAudit(item);
+    await billingAccountsService.decideAudit(
+      {
+        ...item,
+        account_status: "em_auditoria",
+        account_version: claimed.account_version,
+        review_id: claimed.review_id,
+        review_version: claimed.review_version,
+      },
+      "approved",
+      "  Documentação conferida  ",
+      "  Guia e laudo anexados  ",
+    );
+
+    expect(mocks.rpc).toHaveBeenNthCalledWith(1, "m37_list_billing_audit_queue_secure", {
+      p_status: null,
+      p_limit: 200,
+    });
+    expect(mocks.rpc).toHaveBeenNthCalledWith(2, "m37_claim_billing_audit_secure", {
+      p_account_id: "account-audit",
+      p_expected_account_version: 3,
+      p_operation_id: "44444444-4444-4444-8444-444444444444",
+    });
+    expect(mocks.rpc).toHaveBeenNthCalledWith(3, "m37_decide_billing_audit_secure", {
+      p_account_id: "account-audit",
+      p_review_id: "review-audit",
+      p_decision: "approved",
+      p_opinion: "Documentação conferida",
+      p_evidence: { note: "Guia e laudo anexados" },
+      p_expected_account_version: 4,
+      p_expected_review_version: 1,
+      p_operation_id: "55555555-5555-4555-8555-555555555555",
     });
   });
 });
