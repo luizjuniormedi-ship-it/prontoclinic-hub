@@ -37,6 +37,7 @@ VALUES
   ('admin', 'Administrador E2E', true),
   ('medico', 'Medico E2E', true),
   ('recepcao', 'Recepcao E2E', true),
+  ('supervisor_recepcao', 'Supervisor de recepcao E2E', true),
   ('paciente', 'Paciente E2E', true),
   ('callcenter', 'Call Center E2E', true)
 ON CONFLICT (name) DO UPDATE SET lg_ativo = true;
@@ -57,6 +58,7 @@ seed_users(id, email, full_name, role_name) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid, 'admin@prontomedic.test', 'Admin E2E', 'admin'),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid, 'doctor@prontomedic.test', 'Medico E2E', 'medico'),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 'recepcao@prontomedic.test', 'Recepcao E2E', 'recepcao'),
+    ('eeeeeeee-0000-4000-8000-000000000006'::uuid, 'supervisor.recepcao@prontomedic.test', 'Supervisor Recepcao E2E', 'supervisor_recepcao'),
     ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente@prontomedic.test', 'Paciente E2E', 'paciente'),
     ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'callcenter@prontomedic.test', 'Call Center E2E', 'callcenter')
 ),
@@ -127,6 +129,7 @@ WITH seed_users(id, role_name) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid, 'admin'),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid, 'medico'),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 'recepcao'),
+    ('eeeeeeee-0000-4000-8000-000000000006'::uuid, 'supervisor_recepcao'),
     ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente'),
     ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'callcenter')
 ), base_company AS (
@@ -142,6 +145,7 @@ WITH desired(user_id, role_name) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid, 'admin'),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid, 'medico'),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 'recepcao'),
+    ('eeeeeeee-0000-4000-8000-000000000006'::uuid, 'supervisor_recepcao'),
     ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente'),
     ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'callcenter')
 )
@@ -161,6 +165,7 @@ WITH seed_users(id, role_name) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid, 'admin'),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid, 'medico'),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 'recepcao'),
+    ('eeeeeeee-0000-4000-8000-000000000006'::uuid, 'supervisor_recepcao'),
     ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente'),
     ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'callcenter')
 )
@@ -180,6 +185,9 @@ WITH permissions(role_name,module,can_view,can_create,can_edit,can_delete,can_ex
     ('recepcao','agenda',TRUE,FALSE,TRUE,FALSE,FALSE),
     ('recepcao','recepcao',TRUE,TRUE,TRUE,FALSE,FALSE),
     ('recepcao','pacientes',TRUE,FALSE,FALSE,FALSE,FALSE),
+    ('supervisor_recepcao','agenda',TRUE,FALSE,TRUE,FALSE,FALSE),
+    ('supervisor_recepcao','recepcao',TRUE,TRUE,TRUE,FALSE,FALSE),
+    ('supervisor_recepcao','pacientes',TRUE,FALSE,FALSE,FALSE,FALSE),
     ('callcenter','recepcao',TRUE,TRUE,TRUE,FALSE,FALSE),
     ('callcenter','pacientes',TRUE,FALSE,FALSE,FALSE,FALSE),
     ('medico','agenda',TRUE,FALSE,TRUE,FALSE,FALSE),
@@ -207,6 +215,7 @@ WITH seed_users(id) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000006'::uuid),
     ('eeeeeeee-0000-4000-8000-000000000004'::uuid),
     ('eeeeeeee-0000-4000-8000-000000000005'::uuid)
 ), base_unit AS (
@@ -232,6 +241,7 @@ WITH desired(user_id, unit_id) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid, 91002),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid, 91001),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 91001),
+    ('eeeeeeee-0000-4000-8000-000000000006'::uuid, 91001),
     ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 91001),
     ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 91001)
 )
@@ -491,20 +501,20 @@ ON CONFLICT (id) DO UPDATE SET
   updated_at = now();
 
 DELETE FROM public.reception_checkin_workflows
-WHERE appointment_id IN (91001, 91002);
-DELETE FROM public.tiss_xml WHERE appointment_id IN (91001, 91002);
-DELETE FROM public.billings WHERE appointment_id IN (91001, 91002);
-DELETE FROM public.tiss_guides WHERE appointment_id IN (91001, 91002);
-DELETE FROM public.reception_payments WHERE appointment_id IN (91001, 91002);
-DELETE FROM public.financial_transactions WHERE appointment_id IN (91001, 91002);
-DELETE FROM public.billing_accounts WHERE appointment_id IN (91001, 91002);
+WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.tiss_xml WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.billings WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.tiss_guides WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.reception_payments WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.financial_transactions WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.billing_accounts WHERE appointment_id IN (91001, 91002, 91003);
 DELETE FROM public.reception_checkin_status_history
-WHERE checkin_id IN (SELECT id FROM public.reception_checkins WHERE appointment_id IN (91001, 91002));
-DELETE FROM public.reception_exception_releases WHERE appointment_id IN (91001, 91002);
-DELETE FROM public.reception_patient_pending_issues WHERE appointment_id IN (91001, 91002);
-DELETE FROM public.reception_queue_tickets WHERE appointment_id IN (91001, 91002);
-DELETE FROM public.reception_checkins WHERE appointment_id IN (91001, 91002);
-DELETE FROM public.medical_records WHERE appointment_id IN (91001, 91002);
+WHERE checkin_id IN (SELECT id FROM public.reception_checkins WHERE appointment_id IN (91001, 91002, 91003));
+DELETE FROM public.reception_exception_releases WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.reception_patient_pending_issues WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.reception_queue_tickets WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.reception_checkins WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.medical_records WHERE appointment_id IN (91001, 91002, 91003);
 
 INSERT INTO public.appointments (
   id, company_id, unit_id, patient_id, professional_id, specialty_id,
@@ -523,6 +533,12 @@ INSERT INTO public.appointments (
   91002, 91001, 91001, 91001, 91001, NULL, NULL,
   CURRENT_DATE, TIME '15:00', TIME '15:30',
   'scheduled', 'agendado', TRUE, FALSE, 'Fixture de isolamento da unidade B'
+),
+(
+  91003, 'eeeeeeee-1000-4000-8000-000000000001', 91001,
+  91001, 91001, 91001, 91001, 91001, 91001, 91001,
+  CURRENT_DATE, TIME '16:00', TIME '16:30',
+  'scheduled', 'agendado', TRUE, FALSE, 'Fixture de excecao sem elegibilidade'
 )
 ON CONFLICT (id) DO UPDATE SET
   company_id = EXCLUDED.company_id,

@@ -1,7 +1,7 @@
 import { test as base, expect, Page } from '@playwright/test';
 import { E2E_PASSWORD } from '../env';
 
-export type UserRole = 'admin' | 'doctor' | 'reception' | 'patient' | 'callcenter';
+export type UserRole = 'admin' | 'doctor' | 'reception' | 'receptionSupervisor' | 'patient' | 'callcenter';
 
 /* eslint-disable react-hooks/rules-of-hooks */
 // This file is a Playwright fixture using `use()` from @playwright/test.
@@ -21,6 +21,7 @@ export const test = base.extend<{
         admin: { email: 'admin@prontomedic.test', password: E2E_PASSWORD },
         doctor: { email: 'doctor@prontomedic.test', password: E2E_PASSWORD },
         reception: { email: 'recepcao@prontomedic.test', password: E2E_PASSWORD },
+        receptionSupervisor: { email: 'supervisor.recepcao@prontomedic.test', password: E2E_PASSWORD },
         patient: { email: 'paciente@prontomedic.test', password: E2E_PASSWORD },
         callcenter: { email: 'callcenter@prontomedic.test', password: E2E_PASSWORD }
       }[role];
@@ -42,6 +43,7 @@ export const test = base.extend<{
         admin: /admin|administrador/i,
         doctor: /medico|médico/i,
         reception: /recepcao|recepção/i,
+        receptionSupervisor: /supervisor_recepcao|supervisor de recepção/i,
         patient: /paciente/i,
         callcenter: /callcenter|call center/i,
       }[role];

@@ -1,4 +1,11 @@
 import { test as authed, expect } from './fixtures/auth';
+import { Client } from 'pg';
+
+function appointmentCardAt(page: import('@playwright/test').Page, time: string) {
+  return page.getByText(time, { exact: true }).locator(
+    'xpath=ancestor::div[contains(@class, "rounded-lg")][1]',
+  );
+}
 
 authed.describe.serial('Recepção — operação básica', () => {
   authed.beforeEach(async ({ loginAs, page }) => {
@@ -45,12 +52,10 @@ authed.describe.serial('Recepção — operação básica', () => {
     );
 
     const patientName = 'Paciente E2E A';
-    const patientHistoryButton = page.getByRole('button', {
+    const appointmentCard = appointmentCardAt(page, '14:00');
+    const patientHistoryButton = appointmentCard.getByRole('button', {
       name: `Ver agendamentos de ${patientName}`,
     });
-    const appointmentCard = patientHistoryButton.locator(
-      'xpath=ancestor::div[contains(@class, "rounded-lg")][1]',
-    );
 
     await expect(patientHistoryButton).toBeVisible();
     await expect(appointmentCard).toContainText('Médico E2E');
@@ -84,12 +89,7 @@ authed.describe.serial('Recepção — operação básica', () => {
     await page.reload();
     await expect(page.getByRole('heading', { name: /entrada do paciente/i })).toBeVisible();
 
-    const persistedPatientButton = page.getByRole('button', {
-      name: `Ver agendamentos de ${patientName}`,
-    });
-    const persistedAppointmentCard = persistedPatientButton.locator(
-      'xpath=ancestor::div[contains(@class, "rounded-lg")][1]',
-    );
+    const persistedAppointmentCard = appointmentCardAt(page, '14:00');
     const persistedTicket = page.getByText(
       new RegExp(`^${ticketLabel} · Paciente #91001$`),
     );
@@ -106,9 +106,113 @@ authed.describe.serial('Recepção — operação básica', () => {
     await page.reload();
     await expect(page.getByText(new RegExp(`^${ticketLabel} · Paciente #91001$`))).toHaveCount(1);
     await expect(
-      page.getByRole('button', { name: `Ver agendamentos de ${patientName}` })
-        .locator('xpath=ancestor::div[contains(@class, "rounded-lg")][1]')
-        .getByRole('button', { name: 'Check-in' }),
+      appointmentCardAt(page, '14:00').getByRole('button', { name: 'Check-in' }),
     ).toHaveCount(0);
+  });
+});
+
+authed.describe.serial('Recepção — alçada do supervisor', () => {
+  authed('impede a recepcionista de liberar pendência por exceção', async ({ loginAs, page }) => {
+    await loginAs('reception');
+    await page.goto('/reception');
+
+    const card = appointmentCardAt(page, '16:00');
+    await expect(card).toContainText('Paciente E2E A');
+    await card.getByRole('button', { name: 'Check-in' }).click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(
+      dialog.getByText(
+        'Resolva as pendências antes do check-in. Seu perfil não possui permissão para liberar este atendimento por exceção.',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(
+      dialog.getByRole('button', { name: 'Liberar entrada por exceção' }),
+    ).toBeDisabled();
+  });
+
+  authed('exige justificativa, libera e preserva a trilha da exceção', async ({ loginAs, page }, testInfo) => {
+    authed.skip(
+      testInfo.project.name !== 'chromium',
+      'A liberação transacional usa uma única massa e roda uma vez no Chromium.',
+    );
+
+    await loginAs('receptionSupervisor');
+    await page.goto('/reception');
+
+    const card = appointmentCardAt(page, '16:00');
+    await expect(card).toContainText('Paciente E2E A');
+    await card.getByRole('button', { name: 'Check-in' }).click();
+
+    const dialog = page.getByRole('dialog');
+    const reason = dialog.getByLabel('Justificativa da exceção *');
+    const release = dialog.getByRole('button', { name: 'Liberar entrada por exceção' });
+
+    await expect(reason).toBeVisible();
+    await reason.fill('curta');
+    await expect(release).toBeDisabled();
+
+    const justification =
+      'Supervisor autorizou atendimento sintético após avaliar a pendência de elegibilidade.';
+    await reason.fill(justification);
+    await expect(release).toBeEnabled();
+    await release.click();
+
+    const receipt = page.getByRole('dialog', {
+      name: 'Entrada concluída e conta aberta',
+    });
+    await expect(receipt).toBeVisible({ timeout: 20_000 });
+    await expect(receipt).toContainText('Paciente E2E A · Atendimento #91003');
+    const ticket = receipt.getByText(/^Senha \S+$/);
+    const ticketLabel = (await ticket.textContent())?.replace(/^Senha\s+/, '').trim();
+    expect(ticketLabel).toBeTruthy();
+
+    await receipt.getByRole('button', { name: 'Fechar' }).click();
+    await page.reload();
+    await expect(
+      page.getByText(new RegExp(`^${ticketLabel} · Paciente #91001$`)),
+    ).toHaveCount(1);
+    await expect(appointmentCardAt(page, '16:00')).toContainText('Aguardando');
+
+    const databaseUrl = process.env.E2E_PATIENT_FIXTURE_DATABASE_URL;
+    expect(databaseUrl, 'Banco descartável obrigatório para comprovar a auditoria').toBeTruthy();
+    const client = new Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      const history = await client.query<{
+        reason: string;
+        actor_user_id: string;
+        company_id: string;
+        unit_id: number;
+        exception_authorized: boolean;
+      }>(
+        `SELECT history.reason,
+                history.actor_user_id::text,
+                history.company_id::text,
+                history.unit_id,
+                COALESCE(
+                  (history.details->>'exception_authorized')::boolean,
+                  false
+                ) AS exception_authorized
+           FROM public.reception_admin_history history
+          WHERE history.appointment_id = 91003
+            AND history.to_status = 'checked_in'
+          ORDER BY history.id DESC
+          LIMIT 1`,
+      );
+
+      expect(history.rows).toEqual([
+        expect.objectContaining({
+          reason: justification,
+          actor_user_id: 'eeeeeeee-0000-4000-8000-000000000006',
+          company_id: 'eeeeeeee-1000-4000-8000-000000000001',
+          unit_id: 91001,
+          exception_authorized: true,
+        }),
+      ]);
+    } finally {
+      await client.end();
+    }
   });
 });

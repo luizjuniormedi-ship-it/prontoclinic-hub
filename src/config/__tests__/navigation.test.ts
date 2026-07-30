@@ -57,6 +57,12 @@ describe("navigation catalog", () => {
     expect(routes).not.toContain("/patients");
   });
 
+  it("routes the reception supervisor through the canonical reception journey", () => {
+    expect(canAccessRoute("supervisor_recepcao", "/reception")).toBe(true);
+    expect(canAccessRoute("Supervisor de Recepção", "/reception")).toBe(true);
+    expect(canAccessRoute("supervisor_recepcao", "/admin/users")).toBe(false);
+  });
+
   it("keeps security outside the operational catalog because it belongs to the account menu", () => {
     expect(navigationItems.some((item) => item.url === "/account/security")).toBe(false);
   });
