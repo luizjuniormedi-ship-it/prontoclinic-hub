@@ -18,6 +18,7 @@
     "local-auth-projection.d.ts",
     "local-auth-projection.mjs",
     "local-auth-server.mjs",
+    "package-lock.json",
     "package.json",
     "playwright.config.ts",
     "scripts",
