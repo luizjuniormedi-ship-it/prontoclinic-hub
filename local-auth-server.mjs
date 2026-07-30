@@ -1,6 +1,5 @@
 /**
- * Local Auth Server â€” harness exclusivo para desenvolvimento e testes.
- * Nao substitui GoTrue/Supabase Auth em producao e nao implementa MFA real.
+ * ProntoMedic Auth Gateway.
  * Simula os endpoints que o supabase-js usa:
  *   POST /auth/v1/token?grant_type=password
  *   GET  /auth/v1/user
@@ -17,8 +16,23 @@ import { parseSelectProjection } from './local-auth-projection.mjs';
 const { Pool } = pg;
 
 const LOCAL_AUTH_MODE = process.env.LOCAL_AUTH_MODE;
-if (!['development', 'test'].includes(LOCAL_AUTH_MODE)) {
-  throw new Error('local-auth-server.mjs e exclusivo para desenvolvimento/testes; use GoTrue/Supabase Auth em producao');
+if (!['development', 'test', 'production'].includes(LOCAL_AUTH_MODE)) {
+  throw new Error('LOCAL_AUTH_MODE deve ser development, test ou production');
+}
+if (LOCAL_AUTH_MODE === 'production') {
+  const productionOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (
+    productionOrigins.length === 0
+    || productionOrigins.some((origin) => origin === '*' || /localhost|127\.0\.0\.1/i.test(origin))
+  ) {
+    throw new Error('CORS_ALLOWED_ORIGINS de producao deve conter somente origens publicas explicitas');
+  }
+  if (!process.env.PGPASSWORD) {
+    throw new Error('PGPASSWORD obrigatorio em producao');
+  }
 }
 
 const PORT = Number(process.env.LOCAL_AUTH_PORT || 8000);

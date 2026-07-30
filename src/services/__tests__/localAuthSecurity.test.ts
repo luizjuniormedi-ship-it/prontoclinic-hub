@@ -5,10 +5,14 @@ import { describe, expect, it } from "vitest";
 const source = readFileSync(resolve(process.cwd(), "local-auth-server.mjs"), "utf8");
 
 describe("local auth server security invariants", () => {
-  it("falha fechado fora de desenvolvimento e testes", () => {
+  it("exige modo explícito e endurece o gateway em produção", () => {
     expect(source).toContain("const LOCAL_AUTH_MODE = process.env.LOCAL_AUTH_MODE");
-    expect(source).toContain("if (!['development', 'test'].includes(LOCAL_AUTH_MODE))");
-    expect(source).toContain("use GoTrue/Supabase Auth em producao");
+    expect(source).toContain("['development', 'test', 'production']");
+    expect(source).toContain("if (LOCAL_AUTH_MODE === 'production')");
+    expect(source).toContain(
+      "CORS_ALLOWED_ORIGINS de producao deve conter somente origens publicas explicitas",
+    );
+    expect(source).toContain("PGPASSWORD obrigatorio em producao");
   });
 
   it("nega RPC que nao esteja na allowlist", () => {
