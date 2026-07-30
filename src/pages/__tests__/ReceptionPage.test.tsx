@@ -3,6 +3,7 @@ import {
   assertReceptionBillingIntegrity,
   assertReceptionPriceFound,
   assertReceptionReceivableIntegrity,
+  assertReceptionReceivableRequired,
   resolveReceptionPayer,
   type PatientRow,
 } from "@/pages/ReceptionPage";
@@ -126,5 +127,17 @@ describe("ReceptionPage — decisão segura do pagador", () => {
     expect(() =>
       assertReceptionReceivableIntegrity("convenio", 100, "private", 20),
     ).toThrow("incompatível com a fonte pagadora");
+  });
+
+  it("impede check-in particular sem título financeiro pendente", () => {
+    expect(() =>
+      assertReceptionReceivableRequired("particular", false),
+    ).toThrow("Atendimento particular exige título financeiro pendente");
+    expect(() =>
+      assertReceptionReceivableRequired("particular", true),
+    ).not.toThrow();
+    expect(() =>
+      assertReceptionReceivableRequired("convenio", false),
+    ).not.toThrow();
   });
 });

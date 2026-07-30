@@ -148,6 +148,17 @@ export function assertReceptionReceivableIntegrity(
   }
 }
 
+export function assertReceptionReceivableRequired(
+  billingType: "particular" | "convenio",
+  createReceivable: boolean,
+): void {
+  if (billingType === "particular" && !createReceivable) {
+    throw new Error(
+      "Atendimento particular exige título financeiro pendente antes do check-in.",
+    );
+  }
+}
+
 function createWorkflowKey(appointmentId: string): string {
   const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -461,6 +472,7 @@ export default function ReceptionPage() {
         insuranceId: submittedInsuranceId,
         totalGrossAmount,
       });
+      assertReceptionReceivableRequired(billingType, createReceivable);
       const pendingAmount = createReceivable ? parseCurrency(receivableAmount) : 0;
       if (createReceivable) {
         assertReceptionReceivableIntegrity(
@@ -868,10 +880,19 @@ export default function ReceptionPage() {
                 </div>
               )}
               <div className="flex items-start gap-2">
-                <Checkbox id="reception-create-receivable" checked={createReceivable} onCheckedChange={(checked) => setCreateReceivable(Boolean(checked))} />
+                <Checkbox
+                  id="reception-create-receivable"
+                  checked={createReceivable}
+                  disabled={billingType === "particular"}
+                  onCheckedChange={(checked) => setCreateReceivable(Boolean(checked))}
+                />
                 <div className="space-y-0.5">
                   <Label htmlFor="reception-create-receivable">Gerar título pendente</Label>
-                  <p className="text-xs text-muted-foreground">O título seguirá para o Financeiro sem baixa, Pix ou cartão presumidos.</p>
+                  <p className="text-xs text-muted-foreground">
+                    {billingType === "particular"
+                      ? "Obrigatório no particular: o Caixa confirma a forma de pagamento e registra a baixa."
+                      : "Quando houver coparticipação, o título seguirá ao Financeiro sem baixa presumida."}
+                  </p>
                 </div>
               </div>
               {createReceivable && (
