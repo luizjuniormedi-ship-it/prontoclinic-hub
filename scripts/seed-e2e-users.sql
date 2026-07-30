@@ -445,6 +445,33 @@ ON CONFLICT (id) DO UPDATE SET
   insurance_card_number = EXCLUDED.insurance_card_number,
   lg_ativo = TRUE;
 
+INSERT INTO public.patient_insurances (
+  id, company_id, patient_id, insurance_plan_id, card_number,
+  holder_name, holder_cpf, valid_until, is_primary, status
+) VALUES (
+  91001,
+  'eeeeeeee-1000-4000-8000-000000000001',
+  91001,
+  91001,
+  'E2E-CARD-91001',
+  'Paciente E2E A',
+  '91000000001',
+  CURRENT_DATE + 365,
+  TRUE,
+  'active'
+)
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  patient_id = EXCLUDED.patient_id,
+  insurance_plan_id = EXCLUDED.insurance_plan_id,
+  card_number = EXCLUDED.card_number,
+  holder_name = EXCLUDED.holder_name,
+  holder_cpf = EXCLUDED.holder_cpf,
+  valid_until = EXCLUDED.valid_until,
+  is_primary = TRUE,
+  status = 'active',
+  updated_at = now();
+
 DELETE FROM public.reception_checkin_workflows
 WHERE appointment_id IN (91001, 91002);
 DELETE FROM public.tiss_xml WHERE appointment_id IN (91001, 91002);
@@ -498,6 +525,64 @@ ON CONFLICT (id) DO UPDATE SET
   lg_checkin = EXCLUDED.lg_checkin,
   notes = EXCLUDED.notes;
 
+-- O evento de auditoria da elegibilidade e gravado por uma funcao SECURITY
+-- DEFINER e exige o tenant explicito mesmo durante o seed local.
+SELECT set_config(
+  'request.jwt.claim.company_id',
+  'eeeeeeee-1000-4000-8000-000000000001',
+  TRUE
+);
+
+INSERT INTO public.insurance_eligibility_checks (
+  id, company_id, unit_id, patient_id, appointment_id,
+  insurance_id, insurance_plan_id, card_number,
+  status, protocol_number, result_detail, source,
+  checked_at, request_channel, valid_from, valid_until,
+  result_code, external_request_id, requested_at, completed_at
+) VALUES (
+  'eeeeeeee-9100-4000-8000-000000000001',
+  'eeeeeeee-1000-4000-8000-000000000001',
+  91001,
+  91001,
+  91001,
+  91001,
+  91001,
+  'E2E-CARD-91001',
+  'elegivel',
+  'E2E-ELIG-91001',
+  'Elegibilidade sintética aprovada exclusivamente para homologação E2E.',
+  'fixture_e2e',
+  now(),
+  'manual',
+  CURRENT_DATE,
+  CURRENT_DATE + 30,
+  'E2E_APPROVED',
+  'E2E-REQ-91001',
+  now(),
+  now()
+)
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  unit_id = EXCLUDED.unit_id,
+  patient_id = EXCLUDED.patient_id,
+  appointment_id = EXCLUDED.appointment_id,
+  insurance_id = EXCLUDED.insurance_id,
+  insurance_plan_id = EXCLUDED.insurance_plan_id,
+  card_number = EXCLUDED.card_number,
+  status = 'elegivel',
+  protocol_number = EXCLUDED.protocol_number,
+  result_detail = EXCLUDED.result_detail,
+  source = EXCLUDED.source,
+  checked_at = EXCLUDED.checked_at,
+  request_channel = EXCLUDED.request_channel,
+  valid_from = EXCLUDED.valid_from,
+  valid_until = EXCLUDED.valid_until,
+  result_code = EXCLUDED.result_code,
+  external_request_id = EXCLUDED.external_request_id,
+  requested_at = EXCLUDED.requested_at,
+  completed_at = EXCLUDED.completed_at,
+  updated_at = now();
+
 DO $fixture_contract$
 BEGIN
   IF NOT EXISTS (
@@ -528,6 +613,21 @@ BEGIN
      AND plan.company_id = appointment.company_id
      AND plan.insurance_company_id = appointment.insurance_company_id
      AND plan.lg_ativo
+    JOIN public.patient_insurances patient_insurance
+      ON patient_insurance.company_id = appointment.company_id
+     AND patient_insurance.patient_id = appointment.patient_id
+     AND patient_insurance.insurance_plan_id = appointment.insurance_plan_id
+     AND patient_insurance.status = 'active'
+     AND patient_insurance.valid_until >= CURRENT_DATE
+    JOIN public.insurance_eligibility_checks eligibility
+      ON eligibility.company_id = appointment.company_id
+     AND eligibility.unit_id = appointment.unit_id
+     AND eligibility.patient_id = appointment.patient_id
+     AND eligibility.appointment_id = appointment.id
+     AND eligibility.insurance_id = appointment.insurance_company_id
+     AND eligibility.insurance_plan_id = appointment.insurance_plan_id
+     AND eligibility.status = 'elegivel'
+     AND eligibility.valid_until >= CURRENT_DATE
     JOIN public.professional_insurances accreditation
       ON accreditation.professional_id = professional.id
      AND accreditation.insurance_company_id = plan.insurance_company_id
