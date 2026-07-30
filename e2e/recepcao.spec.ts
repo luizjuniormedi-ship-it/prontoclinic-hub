@@ -175,6 +175,21 @@ authed.describe.serial('Recepção — alçada do supervisor', () => {
     ).toHaveCount(1);
     await expect(appointmentCardAt(page, '16:00')).toContainText('Aguardando');
 
+    const queueRow = page
+      .getByText(new RegExp(`^${ticketLabel} · Paciente #91001$`))
+      .locator('..')
+      .locator('..');
+    await queueRow.getByRole('button', {
+      name: new RegExp(`^Chamar senha ${ticketLabel}`),
+    }).click();
+    await expect(queueRow).toContainText('called');
+    await page.reload();
+    const persistedQueueRow = page
+      .getByText(new RegExp(`^${ticketLabel} · Paciente #91001$`))
+      .locator('..')
+      .locator('..');
+    await expect(persistedQueueRow).toContainText('called');
+
     const databaseUrl = process.env.E2E_PATIENT_FIXTURE_DATABASE_URL;
     expect(databaseUrl, 'Banco descartável obrigatório para comprovar a auditoria').toBeTruthy();
     const client = new Client({ connectionString: databaseUrl });
@@ -209,6 +224,39 @@ authed.describe.serial('Recepção — alçada do supervisor', () => {
           company_id: 'eeeeeeee-1000-4000-8000-000000000001',
           unit_id: 91001,
           exception_authorized: true,
+        }),
+      ]);
+
+      const queueHistory = await client.query<{
+        reason: string;
+        actor_user_id: string;
+        company_id: string;
+        unit_id: number;
+        from_status: string;
+        to_status: string;
+      }>(
+        `SELECT history.reason,
+                history.actor_user_id::text,
+                history.company_id::text,
+                history.unit_id,
+                history.from_status,
+                history.to_status
+           FROM public.reception_admin_history history
+          WHERE history.appointment_id = 91003
+            AND history.entity_type = 'reception_queue_ticket'
+            AND history.to_status = 'called'
+          ORDER BY history.id DESC
+          LIMIT 1`,
+      );
+
+      expect(queueHistory.rows).toEqual([
+        expect.objectContaining({
+          reason: 'Atualização pela recepção',
+          actor_user_id: 'eeeeeeee-0000-4000-8000-000000000006',
+          company_id: 'eeeeeeee-1000-4000-8000-000000000001',
+          unit_id: 91001,
+          from_status: 'waiting',
+          to_status: 'called',
         }),
       ]);
     } finally {
