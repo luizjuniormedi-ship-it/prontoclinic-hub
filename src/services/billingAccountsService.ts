@@ -53,7 +53,7 @@ export interface BillingReadiness {
 }
 
 export interface BillingCompetence {
-  id: string;
+  id: string | null;
   competence_month: string;
   status: "open" | "closed";
   version: number;

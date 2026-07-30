@@ -781,15 +781,49 @@ BEGIN
   END IF;
 
   RETURN QUERY
+  WITH account_months AS (
+    SELECT
+      account.competence_month,
+      count(*)::INTEGER AS account_count,
+      array_agg(account.id ORDER BY account.id)::UUID[] AS account_ids,
+      max(account.updated_at) AS updated_at
+    FROM public.billing_accounts account
+    WHERE account.company_id = v_company_id
+      AND account.unit_id = v_unit_id
+      AND account.competence_month IS NOT NULL
+    GROUP BY account.competence_month
+  ),
+  available_months AS (
+    SELECT month.competence_month
+    FROM account_months month
+    UNION
+    SELECT closure.competence_month
+    FROM public.billing_competence_closures closure
+    WHERE closure.company_id = v_company_id
+      AND closure.unit_id = v_unit_id
+  )
   SELECT
-    closure.id, closure.competence_month, closure.status, closure.version,
-    closure.closed_at, closure.closed_by, closure.close_reason,
-    closure.reopened_at, closure.reopened_by, closure.reopen_reason,
-    closure.account_count, closure.account_ids, closure.updated_at
-  FROM public.billing_competence_closures closure
-  WHERE closure.company_id = v_company_id
-    AND closure.unit_id = v_unit_id
-  ORDER BY closure.competence_month DESC
+    closure.id,
+    available.competence_month,
+    COALESCE(closure.status, 'open'::TEXT),
+    COALESCE(closure.version, 1),
+    closure.closed_at,
+    closure.closed_by,
+    closure.close_reason,
+    closure.reopened_at,
+    closure.reopened_by,
+    closure.reopen_reason,
+    COALESCE(month.account_count, closure.account_count, 0),
+    COALESCE(month.account_ids, closure.account_ids, ARRAY[]::UUID[]),
+    COALESCE(closure.updated_at, month.updated_at, NOW())
+  FROM available_months available
+  LEFT JOIN account_months month
+    ON month.competence_month = available.competence_month
+  LEFT JOIN public.billing_competence_closures closure
+    ON closure.company_id = v_company_id
+   AND closure.unit_id = v_unit_id
+   AND closure.competence_month = available.competence_month
+  ORDER BY available.competence_month DESC
   LIMIT LEAST(GREATEST(COALESCE(p_limit, 120), 1), 240);
 END
 $function$;

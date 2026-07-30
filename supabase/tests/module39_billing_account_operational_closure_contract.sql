@@ -496,6 +496,22 @@ SELECT pg_temp.assert_true(
   'Secure list must project the patient name in the active tenant'
 );
 
+SELECT pg_temp.assert_true(
+  (
+    SELECT count(*)
+    FROM public.m39_list_billing_competences_secure() competence
+    WHERE competence.competence_month IN (DATE '2026-07-01', DATE '2026-08-01')
+      AND competence.status = 'open'
+      AND competence.version = 1
+  ) = 2
+  AND (
+    SELECT competence.account_count
+    FROM public.m39_list_billing_competences_secure() competence
+    WHERE competence.competence_month = DATE '2026-07-01'
+  ) = 2,
+  'Secure competence list must project open account months before closure'
+);
+
 DO $cross_scope$
 BEGIN
   PERFORM public.m39_review_billing_account_secure(

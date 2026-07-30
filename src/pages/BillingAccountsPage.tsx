@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Receipt, Search, AlertTriangle, Loader2, RotateCcw } from "lucide-react";
+import { Receipt, Search, AlertTriangle, Loader2, RotateCcw, CalendarRange, LockKeyhole } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -9,9 +9,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState } from "@/components/StateViews";
-import { billingAccountsService, BILLING_STATUS_LABELS, type BillingAccount } from "@/services/billingAccountsService";
+import {
+  billingAccountsService,
+  BILLING_STATUS_LABELS,
+  type BillingAccount,
+  type BillingCompetence,
+} from "@/services/billingAccountsService";
 import { toast } from "@/hooks/use-toast";
 
 const fmtBRL = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -24,6 +30,13 @@ export default function BillingAccountsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [pendingOnly, setPendingOnly] = useState(false);
+  const [activeTab, setActiveTab] = useState("accounts");
+  const [competences, setCompetences] = useState<BillingCompetence[]>([]);
+  const [competencesLoading, setCompetencesLoading] = useState(false);
+  const [competencesError, setCompetencesError] = useState<string | null>(null);
+  const [selectedCompetence, setSelectedCompetence] = useState<BillingCompetence | null>(null);
+  const [competenceReason, setCompetenceReason] = useState("");
+  const [updatingCompetence, setUpdatingCompetence] = useState(false);
 
   const [detail, setDetail] = useState<BillingAccount | null>(null);
   const [reviewing, setReviewing] = useState(false);
@@ -46,6 +59,22 @@ export default function BillingAccountsPage() {
   }, [statusFilter, typeFilter, pendingOnly]);
 
   useEffect(load, [load]);
+
+  const loadCompetences = useCallback(async () => {
+    setCompetencesLoading(true);
+    setCompetencesError(null);
+    try {
+      setCompetences(await billingAccountsService.listCompetences());
+    } catch (error) {
+      setCompetencesError(String(error));
+    } finally {
+      setCompetencesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "competences") void loadCompetences();
+  }, [activeTab, loadCompetences]);
 
   const reviewAccount = async () => {
     if (!detail) return;
@@ -94,6 +123,27 @@ export default function BillingAccountsPage() {
     }
   };
 
+  const updateCompetence = async () => {
+    if (!selectedCompetence) return;
+    setUpdatingCompetence(true);
+    try {
+      const result = selectedCompetence.status === "open"
+        ? await billingAccountsService.closeCompetence(selectedCompetence, competenceReason)
+        : await billingAccountsService.reopenCompetence(selectedCompetence, competenceReason);
+      toast({
+        title: result.status === "closed" ? "Competência fechada" : "Competência reaberta",
+        description: "A operação foi registrada com versão e trilha de auditoria.",
+      });
+      setSelectedCompetence(null);
+      setCompetenceReason("");
+      await loadCompetences();
+    } catch (error) {
+      toast({ title: "Não foi possível atualizar a competência", description: String(error), variant: "destructive" });
+    } finally {
+      setUpdatingCompetence(false);
+    }
+  };
+
   const filtered = accounts.filter((a) => !search || a.patient_name?.toLowerCase().includes(search.toLowerCase()) || a.guide_number?.toLowerCase().includes(search.toLowerCase()));
 
   if (loading) return <LoadingState />;
@@ -111,7 +161,13 @@ export default function BillingAccountsPage() {
         <Card><CardContent className="p-3"><p className="text-lg font-bold text-success">{stats.pagas}</p><p className="text-[10px] text-muted-foreground">Pagas</p></CardContent></Card>
       </div>
 
-      <div className="space-y-3">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList aria-label="Visões do faturamento">
+          <TabsTrigger value="accounts">Pré-contas</TabsTrigger>
+          <TabsTrigger value="competences">Competências</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="accounts" className="space-y-3">
           <div className="flex gap-2 flex-wrap">
             <div className="relative flex-1 min-w-[200px] max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -160,7 +216,69 @@ export default function BillingAccountsPage() {
               </Table>
             </div>
           )}
-      </div>
+        </TabsContent>
+
+        <TabsContent value="competences">
+          {competencesLoading ? (
+            <LoadingState />
+          ) : competencesError ? (
+            <div role="alert" className="flex flex-col items-start gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-4">
+              <div>
+                <p className="font-medium text-destructive">Não foi possível carregar as competências</p>
+                <p className="text-sm text-muted-foreground">{competencesError}</p>
+              </div>
+              <Button variant="outline" onClick={() => void loadCompetences()}>Tentar novamente</Button>
+            </div>
+          ) : competences.length === 0 ? (
+            <EmptyState icon={CalendarRange} title="Nenhuma competência disponível" />
+          ) : (
+            <div className="rounded-lg border bg-card overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Competência</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Contas</TableHead>
+                    <TableHead>Última alteração</TableHead>
+                    <TableHead className="w-12"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {competences.map((competence) => (
+                    <TableRow key={competence.competence_month}>
+                      <TableCell className="font-medium">{competence.competence_month.slice(0, 7)}</TableCell>
+                      <TableCell>
+                        <Badge variant={competence.status === "closed" ? "secondary" : "outline"}>
+                          {competence.status === "closed" ? "Fechada" : "Aberta"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">{competence.account_count}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {new Date(competence.updated_at).toLocaleString("pt-BR")}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          title={competence.status === "open" ? "Fechar competência" : "Reabrir competência"}
+                          onClick={() => {
+                            setSelectedCompetence(competence);
+                            setCompetenceReason("");
+                          }}
+                        >
+                          {competence.status === "open"
+                            ? <LockKeyhole className="h-4 w-4" />
+                            : <RotateCcw className="h-4 w-4" />}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* Conferência da conta */}
       <Dialog
@@ -217,6 +335,53 @@ export default function BillingAccountsPage() {
               Revisar pendências
             </Button>
             <Button onClick={() => setDetail(null)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!selectedCompetence}
+        onOpenChange={(open) => {
+          if (open || updatingCompetence) return;
+          setSelectedCompetence(null);
+          setCompetenceReason("");
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {selectedCompetence?.status === "open" ? "Fechar competência" : "Reabrir competência"}
+            </DialogTitle>
+            <DialogDescription>
+              Competência {selectedCompetence?.competence_month.slice(0, 7)} com {selectedCompetence?.account_count} conta(s).
+              A operação exige autenticação AAL2 e será auditada.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="competence-reason">Motivo</Label>
+            <Textarea
+              id="competence-reason"
+              value={competenceReason}
+              onChange={(event) => setCompetenceReason(event.target.value)}
+              placeholder="Informe o motivo auditável"
+              disabled={updatingCompetence}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setSelectedCompetence(null)}
+              disabled={updatingCompetence}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => void updateCompetence()}
+              disabled={updatingCompetence || !competenceReason.trim()}
+            >
+              {updatingCompetence && <Loader2 className="h-4 w-4 animate-spin" />}
+              Confirmar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
