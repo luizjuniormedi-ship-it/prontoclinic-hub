@@ -145,6 +145,35 @@ function createDependencies(initial: ReceptionCheckinWorkflow) {
 }
 
 describe("receptionWorkflowService", () => {
+  it("bloqueia pré-conta zerada sem gratuidade formal", async () => {
+    const { dependencies } = createDependencies(workflowAt("precheck"));
+    const service = createReceptionWorkflowService(dependencies);
+    await expect(
+      service.run({
+        ...baseInput,
+        billing: { ...baseInput.billing, totalGrossAmount: 0 },
+      }),
+    ).rejects.toThrow(/Gratuidade exige prioridade legal e justificativa formal/);
+  });
+
+  it("aceita gratuidade formal com prioridade legal e justificativa", async () => {
+    const { dependencies } = createDependencies(workflowAt("precheck"));
+    const service = createReceptionWorkflowService(dependencies);
+    await service.run(
+      {
+        ...baseInput,
+        priority: "legal",
+        exceptionReason: "Gratuidade autorizada para atendimento social QA",
+        billing: { ...baseInput.billing, totalGrossAmount: 0 },
+      },
+    );
+
+    expect(dependencies.ensureBilling).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ totalGrossAmount: 0 }),
+    );
+  });
+
   it("executa a ordem completa sem confirmar pagamento", async () => {
     const mock = createDependencies(workflowAt("precheck"));
     const service = createReceptionWorkflowService(mock.dependencies);

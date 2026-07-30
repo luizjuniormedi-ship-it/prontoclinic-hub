@@ -217,6 +217,15 @@ function assertInput(input: ReceptionWorkflowInput): void {
   if (!Number.isFinite(input.billing.totalGrossAmount) || input.billing.totalGrossAmount < 0) {
     throw new Error("Valor da pré-conta inválido");
   }
+  if (
+    input.billing.totalGrossAmount === 0
+    && (
+      input.priority !== "legal"
+      || (input.exceptionReason?.trim().length ?? 0) < 10
+    )
+  ) {
+    throw new Error("Gratuidade exige prioridade legal e justificativa formal");
+  }
   if (input.billing.type === "convenio" && !input.billing.insuranceId) {
     throw new Error("Convênio obrigatório para a pré-conta");
   }

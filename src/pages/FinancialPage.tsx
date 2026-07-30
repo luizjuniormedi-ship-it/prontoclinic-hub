@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { DollarSign, Search, TrendingUp, TrendingDown, Calendar, Plus, Receipt } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -28,6 +29,9 @@ const methodLabels: Record<string, string> = { dinheiro: "Dinheiro", pix: "PIX",
 const allMethods = ["dinheiro", "pix", "cartao_debito", "cartao_credito", "transferencia", "convenio"];
 
 export default function FinancialPage() {
+  const [searchParams] = useSearchParams();
+  const requestedTransactionId = searchParams.get("transaction");
+  const requestedAppointmentId = searchParams.get("appointment");
   const [transactions, setTransactions] = useState<DbFinancialTransaction[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
@@ -35,6 +39,7 @@ export default function FinancialPage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [focusedTransactionId, setFocusedTransactionId] = useState<string | null>(null);
   const [paymentDialog, setPaymentDialog] = useState<DbFinancialTransaction | null>(null);
   const [paymentMethod, setPaymentMethod] = useState("pix");
   const [newOpen, setNewOpen] = useState(false);
@@ -68,6 +73,17 @@ export default function FinancialPage() {
         return data || [];
       });
       setTransactions(txns);
+      const focusedTransaction =
+        txns.find((transaction) => requestedTransactionId && transaction.id === requestedTransactionId)
+        ?? txns.find((transaction) => requestedAppointmentId && transaction.appointment_id === requestedAppointmentId);
+      setFocusedTransactionId(focusedTransaction?.id ?? null);
+      if ((requestedTransactionId || requestedAppointmentId) && !focusedTransaction) {
+        toast({
+          title: "Cobrança da recepção não localizada",
+          description: "A lista geral foi mantida para conferência manual.",
+          variant: "destructive",
+        });
+      }
       setPatients(patientRows.map((p: any) => ({ id: String(p.id), name: p.full_name || "" } as Patient)));
       setProfessionals(profs);
     } catch (err) {
@@ -75,7 +91,7 @@ export default function FinancialPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [requestedAppointmentId, requestedTransactionId, toast]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -209,7 +225,14 @@ export default function FinancialPage() {
             </TableHeader>
             <TableBody>
               {filtered.map((t) => (
-                <TableRow key={t.id} className={t.status === "pendente" ? "" : t.status === "cancelado" ? "opacity-50" : ""}>
+                <TableRow
+                  key={t.id}
+                  data-focused={t.id === focusedTransactionId ? "true" : undefined}
+                  className={[
+                    t.id === focusedTransactionId ? "bg-primary/10 ring-1 ring-inset ring-primary/30" : "",
+                    t.status === "cancelado" ? "opacity-50" : "",
+                  ].filter(Boolean).join(" ")}
+                >
                   <TableCell className="font-medium text-sm">{getPatientName(t.patient_id, t.patient_name)}</TableCell>
                   <TableCell className="font-medium text-sm">{formatCurrency(t.amount)}</TableCell>
                   <TableCell className="text-xs">{t.discount > 0 ? `-${formatCurrency(t.discount)}` : "—"}</TableCell>

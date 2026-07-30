@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import BillingAccountsPage from "@/pages/BillingAccountsPage";
 import { billingAccountsService, type BillingAccount } from "@/services/billingAccountsService";
@@ -108,10 +109,18 @@ beforeEach(() => {
 });
 
 async function openAccountDetail() {
-  render(<BillingAccountsPage />);
+  renderBillingAccountsPage();
   await screen.findByText("Paciente Faturamento QA");
   fireEvent.click(screen.getByTitle("Conferir"));
   expect(await screen.findByRole("dialog", { name: "Conferência da Conta" })).toBeInTheDocument();
+}
+
+function renderBillingAccountsPage(initialEntry = "/billing-accounts") {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <BillingAccountsPage />
+    </MemoryRouter>,
+  );
 }
 
 describe("BillingAccountsPage — contrato canônico de pré-contas", () => {
@@ -123,10 +132,18 @@ describe("BillingAccountsPage — contrato canônico de pré-contas", () => {
   });
 
   it("mantém o carregamento funcional sem relações auxiliares inexistentes", async () => {
-    render(<BillingAccountsPage />);
+    renderBillingAccountsPage();
     expect(await screen.findByText("Paciente Faturamento QA")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Competências" })).toBeInTheDocument();
     expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
+    expect(mocks.toast).not.toHaveBeenCalled();
+  });
+
+  it("abre diretamente a conta indicada pela recepção", async () => {
+    renderBillingAccountsPage("/billing-accounts?account=account-qa&appointment=91001");
+
+    expect(await screen.findByRole("dialog", { name: "Conferência da Conta" })).toBeInTheDocument();
+    expect(screen.getAllByText("Paciente Faturamento QA").length).toBeGreaterThan(0);
     expect(mocks.toast).not.toHaveBeenCalled();
   });
 
@@ -160,7 +177,7 @@ describe("BillingAccountsPage — contrato canônico de pré-contas", () => {
     };
     vi.mocked(billingAccountsService.closeCompetence).mockResolvedValue(closedCompetence);
 
-    render(<BillingAccountsPage />);
+    renderBillingAccountsPage();
     await screen.findByText("Paciente Faturamento QA");
     const competencesTab = screen.getByRole("tab", { name: "Competências" });
     fireEvent.mouseDown(competencesTab, { button: 0, ctrlKey: false });
@@ -187,7 +204,7 @@ describe("BillingAccountsPage — contrato canônico de pré-contas", () => {
       review_version: 1,
     });
 
-    render(<BillingAccountsPage />);
+    renderBillingAccountsPage();
     await screen.findByText("Paciente Faturamento QA");
     const auditTab = screen.getByRole("tab", { name: "Auditoria" });
     fireEvent.mouseDown(auditTab, { button: 0, ctrlKey: false });

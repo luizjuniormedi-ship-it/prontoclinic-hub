@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Receipt, Search, AlertTriangle, Loader2, RotateCcw, CalendarRange, LockKeyhole, ClipboardCheck, UserCheck, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,8 @@ import { toast } from "@/hooks/use-toast";
 const fmtBRL = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 export default function BillingAccountsPage() {
+  const [searchParams] = useSearchParams();
+  const requestedAccountId = searchParams.get("account");
   const [accounts, setAccounts] = useState<BillingAccount[]>([]);
   const [stats, setStats] = useState({ total: 0, abertas: 0, prontas: 0, comPendencia: 0, enviadas: 0, pagas: 0 });
   const [loading, setLoading] = useState(true);
@@ -61,10 +64,22 @@ export default function BillingAccountsPage() {
       .then((nextAccounts) => {
         setAccounts(nextAccounts);
         setStats(billingAccountsService.stats(nextAccounts));
+        if (requestedAccountId) {
+          const focusedAccount = nextAccounts.find((account) => account.id === requestedAccountId);
+          if (focusedAccount) {
+            setDetail(focusedAccount);
+          } else {
+            toast({
+              title: "Conta da recepção não localizada",
+              description: "A lista geral foi mantida para conferência manual.",
+              variant: "destructive",
+            });
+          }
+        }
       })
       .catch((e) => toast({ title: "Erro ao carregar faturamento", description: String(e), variant: "destructive" }))
       .finally(() => setLoading(false));
-  }, [statusFilter, typeFilter, pendingOnly]);
+  }, [statusFilter, typeFilter, pendingOnly, requestedAccountId]);
 
   useEffect(load, [load]);
 

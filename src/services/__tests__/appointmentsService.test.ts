@@ -275,9 +275,9 @@ describe("appointmentsService — create", () => {
     }));
   });
 
-  it("respeita status customizado quando informado na RPC", async () => {
+  it("ignora status operacional informado e sempre cria como scheduled", async () => {
     (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-      data: makeAppointment({ status: "confirmed" }),
+      data: makeAppointment({ status: "scheduled" }),
       error: null,
     });
 
@@ -289,9 +289,9 @@ describe("appointmentsService — create", () => {
       status: "confirmed",
     });
 
-    expect(result.status).toBe("confirmed");
+    expect(result.status).toBe("scheduled");
     expect(supabase.rpc).toHaveBeenCalledWith("create_appointment_with_requirements_secure", expect.objectContaining({
-      p_status: "confirmed",
+      p_status: "scheduled",
     }));
   });
 

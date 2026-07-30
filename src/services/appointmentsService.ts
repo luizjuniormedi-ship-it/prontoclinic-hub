@@ -334,7 +334,7 @@ export const appointmentsService = {
       p_specialty_id: toBigIntParam(input.specialty_id, 'Especialidade'),
       p_service_id: toBigIntParam(input.service_id, 'Serviço'),
       p_appointment_type_id: toBigIntParam(input.appointment_type_id, 'Tipo de atendimento'),
-      p_status: input.status || 'scheduled',
+      p_status: 'scheduled',
       p_is_return: !!input.is_return,
       p_is_walkin: !!input.is_walkin,
       p_notes: input.notes || null,
