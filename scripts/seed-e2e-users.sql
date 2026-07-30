@@ -36,7 +36,8 @@ VALUES
   ('admin', 'Administrador E2E', true),
   ('medico', 'Medico E2E', true),
   ('recepcao', 'Recepcao E2E', true),
-  ('paciente', 'Paciente E2E', true)
+  ('paciente', 'Paciente E2E', true),
+  ('callcenter', 'Call Center E2E', true)
 ON CONFLICT (name) DO UPDATE SET lg_ativo = true;
 
 WITH base_company AS (
@@ -55,7 +56,8 @@ seed_users(id, email, full_name, role_name) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid, 'admin@prontomedic.test', 'Admin E2E', 'admin'),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid, 'doctor@prontomedic.test', 'Medico E2E', 'medico'),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 'recepcao@prontomedic.test', 'Recepcao E2E', 'recepcao'),
-    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente@prontomedic.test', 'Paciente E2E', 'paciente')
+    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente@prontomedic.test', 'Paciente E2E', 'paciente'),
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'callcenter@prontomedic.test', 'Call Center E2E', 'callcenter')
 ),
 upsert_auth AS (
   INSERT INTO auth.users (
@@ -124,7 +126,8 @@ WITH seed_users(id, role_name) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid, 'admin'),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid, 'medico'),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 'recepcao'),
-    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente')
+    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente'),
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'callcenter')
 ), base_company AS (
   SELECT id FROM public.companies WHERE id = 'eeeeeeee-1000-4000-8000-000000000001'
 )
@@ -138,7 +141,8 @@ WITH desired(user_id, role_name) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid, 'admin'),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid, 'medico'),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 'recepcao'),
-    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente')
+    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente'),
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'callcenter')
 )
 DELETE FROM public.membership_roles mr
 USING public.memberships m, public.roles r
@@ -156,7 +160,8 @@ WITH seed_users(id, role_name) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid, 'admin'),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid, 'medico'),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 'recepcao'),
-    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente')
+    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente'),
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'callcenter')
 )
 INSERT INTO public.membership_roles (membership_id, role_id)
 SELECT m.id, r.id
@@ -174,6 +179,8 @@ WITH permissions(role_name,module,can_view,can_create,can_edit,can_delete,can_ex
     ('recepcao','agenda',TRUE,FALSE,TRUE,FALSE,FALSE),
     ('recepcao','recepcao',TRUE,TRUE,TRUE,FALSE,FALSE),
     ('recepcao','pacientes',TRUE,FALSE,FALSE,FALSE,FALSE),
+    ('callcenter','recepcao',TRUE,TRUE,TRUE,FALSE,FALSE),
+    ('callcenter','pacientes',TRUE,FALSE,FALSE,FALSE,FALSE),
     ('medico','agenda',TRUE,FALSE,TRUE,FALSE,FALSE),
     ('medico','pacientes',TRUE,FALSE,FALSE,FALSE,FALSE),
     ('medico','prontuario',TRUE,TRUE,TRUE,FALSE,FALSE)
@@ -199,7 +206,8 @@ WITH seed_users(id) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid),
-    ('eeeeeeee-0000-4000-8000-000000000004'::uuid)
+    ('eeeeeeee-0000-4000-8000-000000000004'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid)
 ), base_unit AS (
   SELECT id, company_id FROM public.units WHERE id = 91001
 )
@@ -223,7 +231,8 @@ WITH desired(user_id, unit_id) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid, 91002),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid, 91001),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 91001),
-    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 91001)
+    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 91001),
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 91001)
 )
 DELETE FROM public.membership_units mu
 USING public.memberships m
@@ -444,6 +453,11 @@ ON CONFLICT (id) DO UPDATE SET
   insurance_plan_id = EXCLUDED.insurance_plan_id,
   insurance_card_number = EXCLUDED.insurance_card_number,
   lg_ativo = TRUE;
+
+DELETE FROM public.scheduling_call_center_tasks
+WHERE assigned_to = 'eeeeeeee-0000-4000-8000-000000000005';
+DELETE FROM public.scheduling_contact_logs
+WHERE operator_id = 'eeeeeeee-0000-4000-8000-000000000005';
 
 INSERT INTO public.patient_insurances (
   id, company_id, patient_id, insurance_plan_id, card_number,
