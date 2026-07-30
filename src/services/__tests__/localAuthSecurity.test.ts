@@ -160,6 +160,10 @@ describe("local auth server security invariants", () => {
     expect(source).toContain(
       '`SELECT to_jsonb(public."${fnName}"(${namedArgs})) AS result`',
     );
+    expect(source).toContain(
+      'FROM public."${fnName}"(${namedArgs}) AS result_row',
+    );
+    expect(source).toContain("SELECT to_jsonb(result_row) AS result");
     expect(source).not.toContain(
       '`SELECT public."${fnName}"(${namedArgs}) AS result`',
     );

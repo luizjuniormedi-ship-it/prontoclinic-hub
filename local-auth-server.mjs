@@ -978,12 +978,16 @@ const server = createServer(async (req, res) => {
             LIMIT 1`,
           [fnName],
         );
+        const returnsSet = Boolean(functionMetadata.rows[0]?.proretset);
+        const rpcQuery = returnsSet
+          ? `SELECT to_jsonb(result_row) AS result
+               FROM public."${fnName}"(${namedArgs}) AS result_row`
+          : `SELECT to_jsonb(public."${fnName}"(${namedArgs})) AS result`;
         const result = await client.query(
-          `SELECT to_jsonb(public."${fnName}"(${namedArgs})) AS result`,
+          rpcQuery,
           vals,
         );
         await client.query('COMMIT');
-        const returnsSet = Boolean(functionMetadata.rows[0]?.proretset);
         const val = returnsSet
           ? result.rows.map((row) => row.result)
           : result.rows.length === 0
