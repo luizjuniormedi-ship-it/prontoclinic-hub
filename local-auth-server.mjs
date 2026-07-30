@@ -158,7 +158,8 @@ function tableToModule(table) {
     // cai no default (leitura livre p/ qualquer perfil autenticado, escrita sÃ³ admin).
     [/^encounters?$|^encounter_|^medical_records|^clinical_|^prescricoes|^prontuar|^diagnos|^patient_allergies|^patient_problem|^patient_medication|^alergias/, 'prontuario'],
     [/^patients$|^paciente|^patient_phones|^telxpac/, 'pacientes'],
-    [/^appointments$|^agenda|^professional_schedules|^escala|^professionals$|^specialties$|^appointment_types$|^services_catalog$/, 'agenda'],
+    [/^scheduling_contact_logs|^scheduling_call_center_tasks|^scheduling_confirmation_/, 'recepcao'],
+    [/^appointments$|^agenda|^scheduling_|^professional_schedules|^escala|^professionals$|^specialties$|^appointment_types$|^services_catalog$/, 'agenda'],
     // EvoluÃ§Ã£o/procedimentos/incidentes de enfermagem = conteÃºdo clÃ­nico sensÃ­vel â†’ mÃ³dulo prontuario (recepÃ§Ã£o bloqueada por LGPD)
     [/^nursing_notes|^nursing_procedures|^nursing_incidents|^nursing_medication|^nursing_evolution/, 'prontuario'],
     // Fila de triagem e classificaÃ§Ã£o de risco = mÃ³dulo enfermagem (recepÃ§Ã£o pode ver p/ chamar paciente)
@@ -173,7 +174,6 @@ function tableToModule(table) {
     [/^insurance|^convenio|^plano|^fonte_pagadora/, 'faturamento'],
     // recepÃ§Ã£o: check-in, autorizaÃ§Ã£o, elegibilidade, guias, senhas, documentos
     [/^reception_|^senhas_atendimento/, 'recepcao'],
-    [/^scheduling_contact_logs|^scheduling_call_center_tasks|^scheduling_confirmation_/, 'recepcao'],
     [/^bi_|^nps_|^dashboard/, 'bi'],
     [/^telemedicina/, 'telemedicina'],
     [/^internacao|^leito/, 'internacao'],
@@ -728,15 +728,26 @@ const server = createServer(async (req, res) => {
           [payload.sub, JSON.stringify(payload)],
         );
         await client.query('SET LOCAL ROLE authenticated');
+        const functionMetadata = await client.query(
+          `SELECT routine.proretset
+             FROM pg_catalog.pg_proc routine
+             JOIN pg_catalog.pg_namespace namespace
+               ON namespace.oid = routine.pronamespace
+            WHERE namespace.nspname = 'public'
+              AND routine.proname = $1
+            LIMIT 1`,
+          [fnName],
+        );
         const result = await client.query(
           `SELECT to_jsonb(public."${fnName}"(${namedArgs})) AS result`,
           vals,
         );
         await client.query('COMMIT');
-        const val = result.rows.length === 0
-          ? []
-          : result.rows.length > 1
-            ? result.rows.map((row) => row.result)
+        const returnsSet = Boolean(functionMetadata.rows[0]?.proretset);
+        const val = returnsSet
+          ? result.rows.map((row) => row.result)
+          : result.rows.length === 0
+            ? null
             : result.rows[0].result;
         return json(res, val);
       } catch (e) {

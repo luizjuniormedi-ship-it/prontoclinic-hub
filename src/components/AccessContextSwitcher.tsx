@@ -44,6 +44,7 @@ export function AccessContextSwitcher() {
       setCurrent(option);
     } catch (error) {
       toast({ title: "Não foi possível trocar o contexto", description: error instanceof Error ? error.message : undefined, variant: "destructive" });
+    } finally {
       setLoading(false);
     }
   };

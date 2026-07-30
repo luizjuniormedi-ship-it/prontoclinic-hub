@@ -23,9 +23,13 @@ async function assertAccessible(page: Page, label: string) {
 }
 
 async function selectContext(page: Page, option: RegExp) {
-  await page.getByRole('button', { name: 'Selecionar empresa, unidade e perfil' }).click();
+  const contextSelector = page.getByRole('button', {
+    name: 'Selecionar empresa, unidade e perfil',
+  });
+  await contextSelector.click();
   await page.getByRole('menuitem', { name: option }).click();
   await expect(page.getByText('Selecione seu contexto de acesso')).toBeHidden();
+  await expect(contextSelector).toBeEnabled();
 }
 
 async function authenticatedFetch(page: Page, path: string, init: RequestInit) {

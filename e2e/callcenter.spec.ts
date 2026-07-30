@@ -37,7 +37,7 @@ authed.describe.serial('Call Center — operação e isolamento', () => {
       .fill('Registro sintético criado pela homologação E2E.');
     await dialog.getByRole('button', { name: 'Registrar contato' }).click();
 
-    await expect(page.getByText('Contato registrado')).toBeVisible();
+    await expect(page.getByText('Contato registrado', { exact: true })).toBeVisible();
     await expect(page.getByRole('cell', { name: reason })).toBeVisible();
     await expect(page.getByText(nextAction, { exact: true })).toBeVisible();
 

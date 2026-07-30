@@ -421,7 +421,9 @@ test.describe("Portal do paciente @mutating @local", () => {
       { name: /confirmar reagendamento/i },
     ).click();
 
-    await expect(page.getByText(/agendamento reagendado/i)).toBeVisible();
+    await expect(
+      page.getByText("Agendamento reagendado.", { exact: true }),
+    ).toBeVisible();
     await expect(
       appointmentById(page, fixture!.appointmentIds.reschedule)
         .locator(`time[datetime="${fixture!.targetDate}"]`),

@@ -12,6 +12,7 @@
 \endif
 
 BEGIN;
+SET LOCAL TIME ZONE 'America/Sao_Paulo';
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
@@ -432,18 +433,21 @@ ON CONFLICT (id) DO UPDATE SET
   slot1_unit_id = EXCLUDED.slot1_unit_id;
 
 INSERT INTO public.patients (
-  id, company_id, unit_id, full_name, cpf, birth_date, phone,
+  id, company_id, unit_id, user_id, full_name, cpf, birth_date, phone,
   registration_status, status, insurance_plan_id, insurance_card_number, lg_ativo
 ) VALUES
   (91001, 'eeeeeeee-1000-4000-8000-000000000001', 91001,
+   'eeeeeeee-0000-4000-8000-000000000004',
    'Paciente E2E A', '91000000001', DATE '1990-01-01', '21910000001',
    'complete', 'active', 91001, 'E2E-CARD-91001', TRUE),
   (91002, 'eeeeeeee-1000-4000-8000-000000000001', 91002,
+   NULL,
    'Paciente E2E B', '91000000002', DATE '1991-01-01', '21910000002',
    'complete', 'active', NULL, NULL, TRUE)
 ON CONFLICT (id) DO UPDATE SET
   company_id = EXCLUDED.company_id,
   unit_id = EXCLUDED.unit_id,
+  user_id = EXCLUDED.user_id,
   full_name = EXCLUDED.full_name,
   cpf = EXCLUDED.cpf,
   birth_date = EXCLUDED.birth_date,
