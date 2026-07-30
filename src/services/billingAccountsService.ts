@@ -30,10 +30,40 @@ export interface BillingAccount {
   has_pending_issues: boolean;
   has_denial: boolean;
   is_reopened: boolean;
-  created_at: string;
+  created_at?: string;
   opened_at: string;
   paid_at: string | null;
+  version: number;
+  readiness: BillingReadiness;
   patient_name?: string;
+}
+
+export interface BillingReadinessIssue {
+  code: string;
+  severity: "blocking";
+}
+
+export interface BillingReadiness {
+  account_id: string;
+  version: number;
+  status: BillingStatus;
+  issues: BillingReadinessIssue[];
+  blocking_count: number;
+  can_close: boolean;
+}
+
+export interface BillingCompetence {
+  id: string;
+  competence_month: string;
+  status: "open" | "closed";
+  version: number;
+  closed_at: string | null;
+  close_reason: string | null;
+  reopened_at: string | null;
+  reopen_reason: string | null;
+  account_count: number;
+  account_ids: string[];
+  updated_at: string;
 }
 
 export const BILLING_STATUS_LABELS: Partial<Record<BillingStatus, string>> = {
@@ -46,30 +76,79 @@ export const BILLING_STATUS_LABELS: Partial<Record<BillingStatus, string>> = {
 
 export const billingAccountsService = {
   async list(filters?: { status?: string; billing_type?: string; competence?: string; onlyPending?: boolean }): Promise<BillingAccount[]> {
-    let q = supabase.from("billing_accounts").select("*").is("deleted_at", null)
-      .order("created_at", { ascending: false }).limit(300);
-    if (filters?.status) q = q.eq("status", filters.status);
-    if (filters?.billing_type) q = q.eq("billing_type", filters.billing_type);
-    if (filters?.competence) q = q.eq("competence_month", filters.competence);
-    if (filters?.onlyPending) q = q.eq("has_pending_issues", true);
-    const { data, error } = await q;
+    const { data, error } = await supabase.rpc("m39_list_billing_accounts_secure", {
+      p_status: filters?.status ?? null,
+      p_billing_type: filters?.billing_type ?? null,
+      p_competence: filters?.competence ?? null,
+      p_only_pending: filters?.onlyPending ?? false,
+      p_limit: 300,
+    });
     if (error) throw new Error(error.message);
-    const rows = (data || []) as unknown as BillingAccount[];
-    const pids = [...new Set(rows.map((r) => r.patient_id).filter(Boolean))];
-    const nameById: Record<string, string> = {};
-    if (pids.length > 0) {
-      const { data: pats } = await supabase.from("patients").select("id, full_name").in("id", pids as number[]);
-      for (const p of (pats || []) as Array<{ id: number; full_name: string }>) nameById[String(p.id)] = p.full_name;
-    }
-    return rows.map((r) => ({
+    return ((data || []) as unknown as BillingAccount[]).map((r) => ({
       ...r,
-      opened_at: r.opened_at || r.created_at,
+      opened_at: r.opened_at || r.created_at || "",
       authorization_number: r.authorization_number ?? null,
       has_denial: r.has_denial ?? false,
       is_reopened: r.is_reopened ?? r.status === "reaberta",
       paid_at: r.paid_at ?? null,
-      patient_name: r.patient_id ? nameById[String(r.patient_id)] : undefined,
     }));
+  },
+
+  async review(account: BillingAccount): Promise<BillingReadiness> {
+    const { data, error } = await supabase.rpc("m39_review_billing_account_secure", {
+      p_account_id: account.id,
+      p_expected_version: account.version,
+      p_operation_id: crypto.randomUUID(),
+    });
+    if (error) throw new Error(error.message);
+    return data as unknown as BillingReadiness;
+  },
+
+  async reopen(account: BillingAccount, reason: string): Promise<{ status: BillingStatus; version: number }> {
+    const normalizedReason = reason.trim();
+    if (!normalizedReason) throw new Error("Motivo da reabertura é obrigatório");
+    const { data, error } = await supabase.rpc("m39_reopen_billing_account_secure", {
+      p_account_id: account.id,
+      p_reason: normalizedReason,
+      p_expected_version: account.version,
+      p_operation_id: crypto.randomUUID(),
+    });
+    if (error) throw new Error(error.message);
+    return data as unknown as { status: BillingStatus; version: number };
+  },
+
+  async listCompetences(): Promise<BillingCompetence[]> {
+    const { data, error } = await supabase.rpc("m39_list_billing_competences_secure", {
+      p_limit: 120,
+    });
+    if (error) throw new Error(error.message);
+    return (data || []) as unknown as BillingCompetence[];
+  },
+
+  async closeCompetence(competence: BillingCompetence, reason: string): Promise<BillingCompetence> {
+    const normalizedReason = reason.trim();
+    if (!normalizedReason) throw new Error("Motivo do fechamento é obrigatório");
+    const { data, error } = await supabase.rpc("m39_close_billing_competence_secure", {
+      p_competence: competence.competence_month,
+      p_reason: normalizedReason,
+      p_expected_version: competence.version,
+      p_operation_id: crypto.randomUUID(),
+    });
+    if (error) throw new Error(error.message);
+    return data as unknown as BillingCompetence;
+  },
+
+  async reopenCompetence(competence: BillingCompetence, reason: string): Promise<BillingCompetence> {
+    const normalizedReason = reason.trim();
+    if (!normalizedReason) throw new Error("Motivo da reabertura é obrigatório");
+    const { data, error } = await supabase.rpc("m39_reopen_billing_competence_secure", {
+      p_competence: competence.competence_month,
+      p_reason: normalizedReason,
+      p_expected_version: competence.version,
+      p_operation_id: crypto.randomUUID(),
+    });
+    if (error) throw new Error(error.message);
+    return data as unknown as BillingCompetence;
   },
 
   stats(all: BillingAccount[]): { total: number; abertas: number; prontas: number; comPendencia: number; enviadas: number; pagas: number } {

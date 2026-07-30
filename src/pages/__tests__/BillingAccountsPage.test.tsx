@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import BillingAccountsPage from "@/pages/BillingAccountsPage";
 import { billingAccountsService, type BillingAccount } from "@/services/billingAccountsService";
@@ -13,6 +13,8 @@ vi.mock("@/services/billingAccountsService", async (importOriginal) => {
     billingAccountsService: {
       list: vi.fn(),
       stats: vi.fn(),
+      review: vi.fn(),
+      reopen: vi.fn(),
     },
   };
 });
@@ -37,6 +39,15 @@ const account: BillingAccount = {
   created_at: "2026-07-29T12:00:00Z",
   opened_at: "2026-07-29T12:00:00Z",
   paid_at: null,
+  version: 1,
+  readiness: {
+    account_id: "account-qa",
+    version: 1,
+    status: "aberta",
+    issues: [],
+    blocking_count: 0,
+    can_close: true,
+  },
   patient_name: "Paciente Faturamento QA",
 };
 
@@ -51,6 +62,7 @@ beforeEach(() => {
     enviadas: 0,
     pagas: 0,
   });
+  vi.mocked(billingAccountsService.review).mockResolvedValue(account.readiness);
 });
 
 async function openAccountDetail() {
@@ -65,7 +77,7 @@ describe("BillingAccountsPage — contrato canônico de pré-contas", () => {
     await openAccountDetail();
     expect(billingAccountsService.list).toHaveBeenCalledTimes(1);
     expect(billingAccountsService.stats).toHaveBeenCalledWith([account]);
-    expect(screen.getByText(/comandos transacionais auditáveis/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Revisar pendências" })).toBeEnabled();
   });
 
   it("mantém o carregamento funcional sem relações auxiliares inexistentes", async () => {
@@ -74,5 +86,12 @@ describe("BillingAccountsPage — contrato canônico de pré-contas", () => {
     expect(screen.queryByText("Competências")).not.toBeInTheDocument();
     expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
     expect(mocks.toast).not.toHaveBeenCalled();
+  });
+
+  it("revisa pendências pela RPC canônica", async () => {
+    await openAccountDetail();
+    fireEvent.click(screen.getByRole("button", { name: "Revisar pendências" }));
+
+    await waitFor(() => expect(billingAccountsService.review).toHaveBeenCalledWith(account));
   });
 });

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Receipt, Search, AlertTriangle } from "lucide-react";
+import { Receipt, Search, AlertTriangle, Loader2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState } from "@/components/StateViews";
 import { billingAccountsService, BILLING_STATUS_LABELS, type BillingAccount } from "@/services/billingAccountsService";
@@ -25,6 +26,9 @@ export default function BillingAccountsPage() {
   const [pendingOnly, setPendingOnly] = useState(false);
 
   const [detail, setDetail] = useState<BillingAccount | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const [reopening, setReopening] = useState(false);
+  const [reopenReason, setReopenReason] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -42,6 +46,53 @@ export default function BillingAccountsPage() {
   }, [statusFilter, typeFilter, pendingOnly]);
 
   useEffect(load, [load]);
+
+  const reviewAccount = async () => {
+    if (!detail) return;
+    setReviewing(true);
+    try {
+      const readiness = await billingAccountsService.review(detail);
+      setDetail((current) => current ? {
+        ...current,
+        status: readiness.status,
+        version: readiness.version,
+        has_pending_issues: readiness.blocking_count > 0,
+        readiness,
+      } : current);
+      toast({
+        title: readiness.can_close ? "Conta revisada sem bloqueios" : "Conta revisada com pendências",
+        description: readiness.can_close
+          ? "A conferência financeira foi atualizada."
+          : `${readiness.blocking_count} pendência(s) bloqueadora(s) encontrada(s).`,
+      });
+      load();
+    } catch (error) {
+      toast({ title: "Não foi possível revisar a conta", description: String(error), variant: "destructive" });
+    } finally {
+      setReviewing(false);
+    }
+  };
+
+  const reopenAccount = async () => {
+    if (!detail) return;
+    setReopening(true);
+    try {
+      const result = await billingAccountsService.reopen(detail, reopenReason);
+      setDetail((current) => current ? {
+        ...current,
+        status: result.status,
+        version: result.version,
+        is_reopened: true,
+      } : current);
+      setReopenReason("");
+      toast({ title: "Conta reaberta", description: "A operação foi registrada na trilha de auditoria." });
+      load();
+    } catch (error) {
+      toast({ title: "Não foi possível reabrir a conta", description: String(error), variant: "destructive" });
+    } finally {
+      setReopening(false);
+    }
+  };
 
   const filtered = accounts.filter((a) => !search || a.patient_name?.toLowerCase().includes(search.toLowerCase()) || a.guide_number?.toLowerCase().includes(search.toLowerCase()));
 
@@ -129,12 +180,42 @@ export default function BillingAccountsPage() {
                 <div><Label className="text-xs text-muted-foreground">Guia</Label><p>{detail.guide_number || "—"}</p></div>
                 <div><Label className="text-xs text-muted-foreground">Autorização</Label><p>{detail.authorization_number || "—"}</p></div>
               </div>
-              <div role="status" className="rounded bg-warning/10 p-2 text-xs text-warning">
-                Conferência de glosa, reabertura e fechamento permanecem bloqueados até a publicação dos comandos transacionais auditáveis.
+              <div role="status" className={detail.readiness.blocking_count > 0
+                ? "rounded bg-warning/10 p-2 text-xs text-warning"
+                : "rounded bg-success/10 p-2 text-xs text-success"
+              }>
+                {detail.readiness.blocking_count > 0
+                  ? `${detail.readiness.blocking_count} pendência(s) bloqueadora(s): ${detail.readiness.issues.map((issue) => issue.code).join(", ")}`
+                  : "Nenhuma pendência bloqueadora na última revisão."}
               </div>
+              {(["pronta_envio", "baixada", "cancelada"] as const).includes(
+                detail.status as "pronta_envio" | "baixada" | "cancelada",
+              ) && (
+                <div className="space-y-2 border-t pt-3">
+                  <Label htmlFor="reopen-reason">Motivo da reabertura</Label>
+                  <Textarea
+                    id="reopen-reason"
+                    value={reopenReason}
+                    onChange={(event) => setReopenReason(event.target.value)}
+                    placeholder="Informe o motivo auditável"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => void reopenAccount()}
+                    disabled={reopening || !reopenReason.trim()}
+                  >
+                    {reopening ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                    Reabrir conta
+                  </Button>
+                </div>
+              )}
             </div>
           )}
           <DialogFooter>
+            <Button variant="outline" onClick={() => void reviewAccount()} disabled={reviewing}>
+              {reviewing && <Loader2 className="h-4 w-4 animate-spin" />}
+              Revisar pendências
+            </Button>
             <Button onClick={() => setDetail(null)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
