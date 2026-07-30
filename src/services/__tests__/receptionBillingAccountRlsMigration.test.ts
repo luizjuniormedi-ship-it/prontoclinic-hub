@@ -21,7 +21,7 @@ describe("Reception billing account RLS closure", () => {
 
   it("requires company, active unit and an explicit operational capability", () => {
     const policyBodies = migration.match(
-      /CREATE POLICY billing_accounts_(?:authenticated|runtime)_read[\s\S]*?\n  \);/gi,
+      /CREATE POLICY billing_accounts_(?:authenticated|runtime)_read[\s\S]*?\n {2}\);/gi,
     );
 
     expect(policyBodies).toHaveLength(2);
