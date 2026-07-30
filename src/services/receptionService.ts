@@ -13,7 +13,13 @@ function parseAppointmentId(value: string): number {
   return appointmentId;
 }
 
-export interface CheckinIssue { type: string; severity: "warning" | "blocking"; description: string }
+export interface CheckinIssue {
+  type: string;
+  severity: "warning" | "blocking";
+  description: string;
+  document_id?: string;
+  document_type?: string;
+}
 export interface CheckinReadiness { appointment_id: number; patient_id: number; ready: boolean; issues: CheckinIssue[]; has_authorization_pending: boolean; has_document_pending: boolean }
 export interface ReceptionExceptionCapability { appointment_id: number; unit_id: number; allowed: boolean }
 export interface ReceptionPrecheckinContext { appointment_id: number; patient_id: number | null; unit_id: number | null; ready: boolean; issues: CheckinIssue[]; has_document_pending: boolean; has_consent_pending: boolean; has_insurance_pending?: boolean; has_authorization_pending?: boolean; document_issues: CheckinIssue[]; consent_issues: CheckinIssue[]; insurance_issues?: CheckinIssue[]; authorization_issues?: CheckinIssue[] }

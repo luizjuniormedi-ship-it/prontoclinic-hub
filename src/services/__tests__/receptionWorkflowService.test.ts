@@ -244,6 +244,61 @@ describe("receptionWorkflowService", () => {
     expect(result.workflow.financial_transaction_id).toBe(778);
   });
 
+  it("retoma após falha intermediária com a mesma chave sem duplicar artefatos", async () => {
+    const mock = createDependencies(workflowAt("precheck"));
+    let financialCreations = 0;
+
+    vi.mocked(mock.dependencies.ensureFinancial)
+      .mockRejectedValueOnce(new Error("Falha transitória ao persistir título financeiro"))
+      .mockImplementationOnce(async () => {
+        financialCreations += 1;
+        return { id: 778 };
+      });
+
+    const service = createReceptionWorkflowService(mock.dependencies);
+
+    await expect(service.run(baseInput)).rejects.toMatchObject({
+      name: "ReceptionWorkflowExecutionError",
+      workflow: expect.objectContaining({
+        status: "failed",
+        current_step: "financial",
+        billing_account_id: "3e0cfdf4-66af-44af-a500-81e9f25a7587",
+        tiss_guide_id: "15993f35-ad6b-4585-856c-596a77330468",
+        financial_transaction_id: null,
+        checkin_id: null,
+      }),
+    });
+
+    const result = await service.run(baseInput);
+
+    expect(mock.dependencies.start).toHaveBeenCalledTimes(2);
+    expect(mock.dependencies.start).toHaveBeenNthCalledWith(
+      1,
+      baseInput.appointmentId,
+      baseInput.idempotencyKey,
+      expect.any(Object),
+    );
+    expect(mock.dependencies.start).toHaveBeenNthCalledWith(
+      2,
+      baseInput.appointmentId,
+      baseInput.idempotencyKey,
+      expect.any(Object),
+    );
+    expect(mock.dependencies.ensureBilling).toHaveBeenCalledTimes(1);
+    expect(mock.dependencies.ensureTiss).toHaveBeenCalledTimes(1);
+    expect(mock.dependencies.ensureFinancial).toHaveBeenCalledTimes(2);
+    expect(financialCreations).toBe(1);
+    expect(mock.dependencies.performCheckin).toHaveBeenCalledTimes(1);
+    expect(result.workflow).toMatchObject({
+      status: "completed",
+      current_step: "completed",
+      billing_account_id: "3e0cfdf4-66af-44af-a500-81e9f25a7587",
+      tiss_guide_id: "15993f35-ad6b-4585-856c-596a77330468",
+      financial_transaction_id: 778,
+      checkin_id: 99,
+    });
+  });
+
   it("interrompe o workflow quando o identificador financeiro é inválido", async () => {
     const mock = createDependencies(
       workflowAt("financial", {

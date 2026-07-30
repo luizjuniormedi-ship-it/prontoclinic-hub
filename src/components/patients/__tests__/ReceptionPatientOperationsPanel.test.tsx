@@ -10,6 +10,7 @@ const serviceMocks = vi.hoisted(() => ({
   requestDocumentPickup: vi.fn(),
   releaseDocumentPickup: vi.fn(),
   createWalkin: vi.fn(),
+  resolveDocumentIssue: vi.fn(),
 }));
 
 const toastMock = vi.hoisted(() => vi.fn());
@@ -48,6 +49,7 @@ describe("ReceptionPatientOperationsPanel — integridade do aceite", () => {
     serviceMocks.acceptTerm.mockResolvedValue(
       "4c564f6b-3522-45a5-92fb-c5268e966126",
     );
+    serviceMocks.resolveDocumentIssue.mockResolvedValue(null);
   });
 
   it("remove entradas livres e exige seleção, leitura e manifestação", async () => {
@@ -132,5 +134,47 @@ describe("ReceptionPatientOperationsPanel — integridade do aceite", () => {
       }),
     ).toBeEnabled();
     expect(serviceMocks.listActiveTerms).toHaveBeenCalledTimes(2);
+  });
+
+  it("regulariza documento pendente dentro do check-in e atualiza a prontidão", async () => {
+    const completed = vi.fn();
+    render(
+      <ReceptionPatientOperationsPanel
+        patientId="42"
+        appointmentId="91"
+        mode="checkin"
+        documentIssues={[{
+          type: "document",
+          severity: "blocking",
+          description: "Documento expirado",
+          document_id: "4b8917b2-8f95-4fe4-98f3-7e5900093170",
+          document_type: "identidade",
+        }]}
+        onOperationCompleted={completed}
+      />,
+    );
+
+    const issueSelect = await screen.findByRole("combobox", {
+      name: "Regularizar documento pendente",
+    });
+    fireEvent.keyDown(issueSelect, { key: "Enter", code: "Enter" });
+    fireEvent.click(await screen.findByRole("option", { name: /identidade/i }));
+    fireEvent.change(screen.getByLabelText("Número conferido"), {
+      target: { value: "DOC-2026-001" },
+    });
+    fireEvent.change(screen.getByLabelText("Nova validade"), {
+      target: { value: "2027-07-30" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar regularização" }));
+
+    await waitFor(() =>
+      expect(serviceMocks.resolveDocumentIssue).toHaveBeenCalledWith(
+        "91",
+        "4b8917b2-8f95-4fe4-98f3-7e5900093170",
+        "DOC-2026-001",
+        "2027-07-30",
+      ),
+    );
+    expect(completed).toHaveBeenCalled();
   });
 });

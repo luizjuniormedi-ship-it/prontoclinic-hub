@@ -52,6 +52,23 @@ authed.describe.serial('Recepção — operação básica', () => {
       'O cenário transacional usa uma única massa compartilhada e roda uma vez no Chromium.',
     );
 
+    const databaseUrl = process.env.E2E_PATIENT_FIXTURE_DATABASE_URL
+      || `postgresql://${process.env.PGUSER}:${process.env.PGPASSWORD}@${process.env.PGHOST}:${process.env.PGPORT}/${process.env.PGDATABASE}`;
+    expect(databaseUrl, 'Banco descartável obrigatório para correlacionar a jornada').toBeTruthy();
+    const fixtureClient = new Client({ connectionString: databaseUrl });
+    await fixtureClient.connect();
+    try {
+      await fixtureClient.query(
+        `UPDATE public.insurance_companies
+            SET lg_guia_obrigatoria = TRUE
+          WHERE id = 91001
+            AND company_id = 'eeeeeeee-1000-4000-8000-000000000001'`,
+      );
+    } finally {
+      await fixtureClient.end();
+    }
+    await page.reload();
+
     const patientName = 'Paciente E2E A';
     const appointmentCard = appointmentCardFor(page, patientName);
     const patientHistoryButton = appointmentCard.getByRole('button', {
@@ -103,6 +120,52 @@ authed.describe.serial('Recepção — operação básica', () => {
 
     await page.reload();
     await expect(page.getByText(new RegExp(`^${ticketLabel} · Paciente #91001$`))).toHaveCount(1);
+
+    const client = new Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      const chain = await client.query<{
+        appointment_id: string;
+        checkin_count: string;
+        workflow_count: string;
+        billing_count: string;
+        tiss_count: string;
+        sent_xml_count: string;
+      }>(
+        `SELECT appointment.id::text AS appointment_id,
+                count(DISTINCT checkin.id)::text AS checkin_count,
+                count(DISTINCT workflow.id)::text AS workflow_count,
+                count(DISTINCT billing.id)::text AS billing_count,
+                count(DISTINCT guide.id)::text AS tiss_count,
+                count(DISTINCT xml.id) FILTER (
+                  WHERE lower(COALESCE(xml.status, '')) IN ('enviado', 'transmitido', 'sent')
+                )::text AS sent_xml_count
+           FROM public.appointments appointment
+           LEFT JOIN public.reception_checkins checkin
+             ON checkin.appointment_id = appointment.id
+           LEFT JOIN public.reception_checkin_workflows workflow
+             ON workflow.appointment_id = appointment.id
+           LEFT JOIN public.billing_accounts billing
+             ON billing.appointment_id = appointment.id
+           LEFT JOIN public.tiss_guides guide
+             ON guide.appointment_id = appointment.id
+           LEFT JOIN public.tiss_xml xml
+             ON xml.appointment_id = appointment.id
+          WHERE appointment.id = 91001
+          GROUP BY appointment.id`,
+      );
+
+      expect(chain.rows).toEqual([{
+        appointment_id: '91001',
+        checkin_count: '1',
+        workflow_count: '1',
+        billing_count: '1',
+        tiss_count: '1',
+        sent_xml_count: '0',
+      }]);
+    } finally {
+      await client.end();
+    }
   });
 });
 

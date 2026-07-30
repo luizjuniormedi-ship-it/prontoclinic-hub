@@ -4,6 +4,8 @@ import {
   assertReceptionPriceFound,
   assertReceptionReceivableIntegrity,
   assertReceptionReceivableRequired,
+  clearWorkflowKey,
+  getOrCreateWorkflowKey,
   resolveReceptionPayer,
   type PatientRow,
 } from "@/pages/ReceptionPage";
@@ -31,6 +33,17 @@ const insurer = {
 } as InsuranceCompany;
 
 describe("ReceptionPage — decisão segura do pagador", () => {
+  it("reutiliza a chave do workflow após reabrir e limpa somente ao concluir", () => {
+    const first = getOrCreateWorkflowKey("91001", "company-a", 10);
+    const resumed = getOrCreateWorkflowKey("91001", "company-a", 10);
+    expect(resumed).toBe(first);
+
+    clearWorkflowKey("91001", "company-a", 10);
+    const next = getOrCreateWorkflowKey("91001", "company-a", 10);
+    expect(next).not.toBe(first);
+    clearWorkflowKey("91001", "company-a", 10);
+  });
+
   it("bloqueia quando o cadastro do paciente está indisponível", () => {
     expect(() => resolveReceptionPayer(undefined, [], [], true)).toThrow(
       "Cadastro do paciente indisponível",

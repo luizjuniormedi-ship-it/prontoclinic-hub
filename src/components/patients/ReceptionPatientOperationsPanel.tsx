@@ -16,12 +16,14 @@ import {
   receptionCompletionService,
   type ReceptionTermCatalogItem,
 } from "@/services/receptionCompletionService";
+import type { CheckinIssue } from "@/services/receptionService";
 
 interface Props {
   patientId: string;
   appointmentId?: string;
   unitId?: string;
   mode?: "full" | "checkin";
+  documentIssues?: CheckinIssue[];
   onOperationCompleted?: () => Promise<void> | void;
 }
 
@@ -30,6 +32,7 @@ export function ReceptionPatientOperationsPanel({
   appointmentId: initialAppointmentId,
   unitId: initialUnitId,
   mode = "full",
+  documentIssues = [],
   onOperationCompleted,
 }: Props) {
   const [appointmentId, setAppointmentId] = useState(
@@ -48,6 +51,9 @@ export function ReceptionPatientOperationsPanel({
   const [recipientName, setRecipientName] = useState("");
   const [recipientCpf, setRecipientCpf] = useState("");
   const [busy, setBusy] = useState(false);
+  const [resolvingDocumentId, setResolvingDocumentId] = useState("");
+  const [resolutionNumber, setResolutionNumber] = useState("");
+  const [resolutionExpiry, setResolutionExpiry] = useState("");
   const { toast } = useToast();
   useEffect(() => {
     if (initialAppointmentId) setAppointmentId(initialAppointmentId);
@@ -150,6 +156,83 @@ export function ReceptionPatientOperationsPanel({
         </p>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
+        {mode === "checkin" && documentIssues.length > 0 && (
+          <div className="space-y-3 md:col-span-2">
+            <Label htmlFor="reception-document-issue">
+              Regularizar documento pendente
+            </Label>
+            <Select
+              value={resolvingDocumentId}
+              onValueChange={setResolvingDocumentId}
+              disabled={busy}
+            >
+              <SelectTrigger id="reception-document-issue">
+                <SelectValue placeholder="Selecione o documento" />
+              </SelectTrigger>
+              <SelectContent>
+                {documentIssues
+                  .filter((issue) => issue.document_id)
+                  .map((issue) => (
+                    <SelectItem
+                      key={issue.document_id}
+                      value={String(issue.document_id)}
+                    >
+                      {issue.document_type || "Documento"} - {issue.description}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="reception-document-number">
+                  Número conferido
+                </Label>
+                <Input
+                  id="reception-document-number"
+                  value={resolutionNumber}
+                  onChange={(event) => setResolutionNumber(event.target.value)}
+                  maxLength={120}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="reception-document-expiry">
+                  Nova validade
+                </Label>
+                <Input
+                  id="reception-document-expiry"
+                  type="date"
+                  value={resolutionExpiry}
+                  onChange={(event) => setResolutionExpiry(event.target.value)}
+                />
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy || !resolvingDocumentId || !resolutionNumber.trim()}
+              onClick={() =>
+                void run(
+                  () =>
+                    receptionCompletionService.resolveDocumentIssue(
+                      appointmentId,
+                      resolvingDocumentId,
+                      resolutionNumber,
+                      resolutionExpiry || undefined,
+                    ),
+                  "Documento regularizado e auditado",
+                ).then((completed) => {
+                  if (completed) {
+                    setResolvingDocumentId("");
+                    setResolutionNumber("");
+                    setResolutionExpiry("");
+                  }
+                })
+              }
+            >
+              Confirmar regularização
+            </Button>
+          </div>
+        )}
         {mode === "full" && (
           <div className="space-y-2">
             <Label htmlFor="reception-appointment">
@@ -340,28 +423,6 @@ export function ReceptionPatientOperationsPanel({
               }
             >
               Registrar entrega
-            </Button>
-          </div>
-        )}
-        {mode === "full" && (
-          <div className="space-y-2 md:col-span-2">
-            <Label>Atendimento espontâneo</Label>
-            <Button
-              disabled={busy || !unitId}
-              onClick={() =>
-                void run(
-                  () =>
-                    receptionCompletionService.createWalkin(
-                      patientId,
-                      Number(unitId),
-                      undefined,
-                      undefined,
-                    ),
-                  "Atendimento espontâneo criado",
-                )
-              }
-            >
-              Criar encaixe de recepção
             </Button>
           </div>
         )}

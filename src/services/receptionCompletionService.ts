@@ -134,8 +134,9 @@ export const receptionCompletionService = {
   createWalkin(
     patientId: string,
     unitId: number,
-    appointmentTypeId?: number,
-    professionalId?: number,
+    appointmentTypeId: number,
+    professionalId: number,
+    serviceId: number,
     notes?: string,
   ) {
     return rpc<number>(
@@ -143,11 +144,29 @@ export const receptionCompletionService = {
       {
         p_patient_id: Number(patientId),
         p_unit_id: unitId,
-        p_appointment_type_id: appointmentTypeId ?? null,
-        p_professional_id: professionalId ?? null,
+        p_appointment_type_id: appointmentTypeId,
+        p_professional_id: professionalId,
+        p_service_id: serviceId,
         p_notes: notes || null,
       },
       "Erro ao registrar atendimento espontaneo",
+    );
+  },
+  resolveDocumentIssue(
+    appointmentId: string,
+    documentId: string,
+    documentNumber: string,
+    expiresAt?: string,
+  ) {
+    return rpc<null>(
+      "resolve_reception_document_issue_secure",
+      {
+        p_appointment_id: Number(appointmentId),
+        p_document_id: documentId,
+        p_document_number: documentNumber.trim(),
+        p_expires_at: expiresAt || null,
+      },
+      "Erro ao regularizar documento",
     );
   },
 };

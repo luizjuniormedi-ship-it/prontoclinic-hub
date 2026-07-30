@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Check, Clock, UserCheck, Play, AlertTriangle, Search, Stethoscope, PhoneCall, RotateCcw, ArrowRightLeft, Volume2, Receipt } from "lucide-react";
+import { Check, Clock, UserCheck, Play, AlertTriangle, Search, Stethoscope, PhoneCall, RotateCcw, ArrowRightLeft, Volume2, Receipt, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, EmptyState, ErrorState } from "@/components/StateViews";
 import { AppointmentStatusBadge, AppointmentTypeBadge } from "@/components/StatusBadge";
-import { appointmentsService, professionalsLookup, specialtiesLookup, appointmentTypesLookup, DbAppointment, DbProfessional, DbSpecialty, DbAppointmentType } from "@/services/appointmentsService";
+import { appointmentsService, professionalsLookup, specialtiesLookup, appointmentTypesLookup, servicesCatalogLookup, DbAppointment, DbProfessional, DbSpecialty, DbAppointmentType, DbServiceCatalog } from "@/services/appointmentsService";
 import { unitsService } from "@/services/catalogService";
 import { supabase } from "@/lib/supabase";
 import { Appointment, AppointmentStatus, Patient, Unit } from "@/types";
@@ -34,6 +34,8 @@ import { receptionExceptionReasonLength } from "@/config/receptionPermissions";
 import { AUTHORIZATION_STATUSES } from "@/services/insuranceAuthorizationService";
 import { ELIGIBILITY_STATUSES, type EligibilityStatus } from "@/services/insuranceEligibilityService";
 import { withTimeout } from "@/utils/asyncTimeout";
+import { patientsService } from "@/services/patientsService";
+import { receptionCompletionService } from "@/services/receptionCompletionService";
 
 export interface PatientRow { id: string; full_name: string; cpf: string | null; birth_date: string | null; phone: string | null; allergies: string | null; clinical_alerts?: string | null; insurance_plan_id: string | null; }
 
@@ -159,11 +161,36 @@ export function assertReceptionReceivableRequired(
   }
 }
 
-function createWorkflowKey(appointmentId: string): string {
+function workflowStorageKey(companyId: string | null, unitId: number | null, appointmentId: string): string {
+  return `prontomedic:reception-workflow:${companyId || "company"}:${unitId || "unit"}:${appointmentId}`;
+}
+
+export function getOrCreateWorkflowKey(
+  appointmentId: string,
+  companyId: string | null,
+  unitId: number | null,
+): string {
+  const storageKey = workflowStorageKey(companyId, unitId, appointmentId);
+  const existing = typeof sessionStorage !== "undefined"
+    ? sessionStorage.getItem(storageKey)
+    : null;
+  if (existing) return existing;
   const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return `reception:${appointmentId}:${suffix}`.slice(0, 120);
+  const value = `reception:${appointmentId}:${suffix}`.slice(0, 120);
+  if (typeof sessionStorage !== "undefined") sessionStorage.setItem(storageKey, value);
+  return value;
+}
+
+export function clearWorkflowKey(
+  appointmentId: string,
+  companyId: string | null,
+  unitId: number | null,
+): void {
+  if (typeof sessionStorage !== "undefined") {
+    sessionStorage.removeItem(workflowStorageKey(companyId, unitId, appointmentId));
+  }
 }
 
 function settledValue<T>(
@@ -203,6 +230,7 @@ export default function ReceptionPage() {
   const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
   const [specialties, setSpecialties] = useState<DbSpecialty[]>([]);
   const [appointmentTypes, setAppointmentTypes] = useState<DbAppointmentType[]>([]);
+  const [services, setServices] = useState<DbServiceCatalog[]>([]);
   const [insuranceCompanies, setInsuranceCompanies] = useState<InsuranceCompany[]>([]);
   const [insurancePlans, setInsurancePlans] = useState<InsurancePlan[]>([]);
   const [insuranceCatalogReady, setInsuranceCatalogReady] = useState(false);
@@ -244,6 +272,15 @@ export default function ReceptionPage() {
   const [transferTarget, setTransferTarget] = useState<ReceptionQueueTicket | null>(null);
   const [transferUnitId, setTransferUnitId] = useState("");
   const [historyPatient, setHistoryPatient] = useState<{ id: string; name: string } | null>(null);
+  const [walkinOpen, setWalkinOpen] = useState(false);
+  const [walkinSearch, setWalkinSearch] = useState("");
+  const [walkinPatients, setWalkinPatients] = useState<Patient[]>([]);
+  const [walkinPatientId, setWalkinPatientId] = useState("");
+  const [walkinTypeId, setWalkinTypeId] = useState("");
+  const [walkinProfessionalId, setWalkinProfessionalId] = useState("");
+  const [walkinServiceId, setWalkinServiceId] = useState("");
+  const [walkinNotes, setWalkinNotes] = useState("");
+  const [walkinBusy, setWalkinBusy] = useState(false);
   const debouncedSearch = useDebounce(search, 300);
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -280,6 +317,7 @@ export default function ReceptionPage() {
         withTimeout(unitsService.getAll(true), 15_000, "Unidades não responderam no prazo."),
         withTimeout(insuranceCompanyService.getAll(), 15_000, "Convênios não responderam no prazo."),
         withTimeout(insurancePlanService.getAll(), 15_000, "Planos não responderam no prazo."),
+        withTimeout(servicesCatalogLookup.getAll(), 15_000, "Serviços não responderam no prazo."),
       ]);
       const partialWarnings: string[] = [];
       const profs = settledValue(results[0], [] as DbProfessional[], "profissionais", partialWarnings);
@@ -290,6 +328,7 @@ export default function ReceptionPage() {
       const units = settledValue(results[5], [] as Unit[], "unidades", partialWarnings);
       const insurers = settledValue(results[6], [] as InsuranceCompany[], "convênios", partialWarnings);
       const plans = settledValue(results[7], [] as InsurancePlan[], "planos de convênio", partialWarnings);
+      const serviceRows = settledValue(results[8], [] as DbServiceCatalog[], "serviços", partialWarnings);
 
       // Load patients for today's appointments
       const patientIds = [...new Set(appts.map((a) => a.patient_id).filter(Boolean))];
@@ -313,6 +352,7 @@ export default function ReceptionPage() {
       setProfessionals(profs); setSpecialties(specs); setAppointmentTypes(types); setPatients(pats); setDbAppointments(appts);
       setPendingItems(pendingRows); setQueueItems(queueRows); setQueueUnits(units);
       setInsuranceCompanies(insurers); setInsurancePlans(plans);
+      setServices(serviceRows);
       setInsuranceCatalogReady(
         results[6].status === "fulfilled" && results[7].status === "fulfilled",
       );
@@ -416,7 +456,7 @@ export default function ReceptionPage() {
           + parseCatalogAmount(priceLookup.vl_diaria, "diária")
           + parseCatalogAmount(priceLookup.vl_gases, "gases"),
       );
-      setWorkflowKey(createWorkflowKey(appointment.id));
+      setWorkflowKey(getOrCreateWorkflowKey(appointment.id, activeCompanyId, unitId));
       setBillingType(isInsurance ? "convenio" : "particular");
       setInsuranceId(isInsurance ? String(plan?.insurance_company_id) : "");
       setGrossAmount(estimatedAmount.toFixed(2).replace(".", ","));
@@ -524,6 +564,7 @@ export default function ReceptionPage() {
         ticket,
         totalGrossAmount,
       });
+      clearWorkflowKey(checkinTarget.id, activeCompanyId, unitId);
       toast({
         title: ticket ? `Entrada concluída · Senha ${ticket}` : "Entrada e conta do atendimento concluídas",
         description: billingType === "convenio"
@@ -533,6 +574,47 @@ export default function ReceptionPage() {
       setCheckinTarget(null); setReadiness(null); setCanReleaseByException(false); setValidatedBillingQuote(null); await loadAll();
     } catch (err) { toast({ title: "Check-in bloqueado", description: (err as Error).message, variant: "destructive" }); }
     finally { setCheckingIn(false); }
+  };
+
+  const searchWalkinPatients = async () => {
+    try {
+      setWalkinBusy(true);
+      const rows = await patientsService.search(walkinSearch);
+      setWalkinPatients(rows);
+      if (rows.length === 0) {
+        toast({ title: "Nenhum paciente encontrado" });
+      }
+    } catch (err) {
+      toast({ title: "Erro ao buscar paciente", description: friendlyError(err, "Buscar paciente"), variant: "destructive" });
+    } finally {
+      setWalkinBusy(false);
+    }
+  };
+
+  const createWalkin = async () => {
+    if (unitId === null) return;
+    try {
+      setWalkinBusy(true);
+      const appointmentId = await receptionCompletionService.createWalkin(
+        walkinPatientId,
+        unitId,
+        Number(walkinTypeId),
+        Number(walkinProfessionalId),
+        Number(walkinServiceId),
+        walkinNotes,
+      );
+      setWalkinOpen(false);
+      setWalkinSearch("");
+      setWalkinPatients([]);
+      setWalkinPatientId("");
+      setWalkinNotes("");
+      await loadAll();
+      toast({ title: `Atendimento espontâneo #${appointmentId} criado`, description: "O paciente foi incluído na recepção com status agendado." });
+    } catch (err) {
+      toast({ title: "Atendimento espontâneo não criado", description: friendlyError(err, "Criar atendimento espontâneo"), variant: "destructive" });
+    } finally {
+      setWalkinBusy(false);
+    }
   };
 
   const openPending = (item: ReceptionPendingItem) => {
@@ -682,6 +764,12 @@ export default function ReceptionPage() {
       <PageHeader
         title="Entrada do paciente"
         description={`${sorted.length} pacientes hoje · chegada, pagador, pendências e encaminhamento`}
+        actions={
+          <Button type="button" onClick={() => setWalkinOpen(true)}>
+            <UserPlus className="mr-2 h-4 w-4" />
+            Atendimento espontâneo
+          </Button>
+        }
       />
 
       {warnings.length > 0 && (
@@ -924,6 +1012,7 @@ export default function ReceptionPage() {
                 appointmentId={checkinTarget.id}
                 unitId={checkinTarget.unitId}
                 mode="checkin"
+                documentIssues={readiness.issues.filter((issue) => issue.type === "document")}
                 onOperationCompleted={async () => {
                   setReadiness(await fetchCheckinReadiness(checkinTarget.id));
                 }}
@@ -953,6 +1042,69 @@ export default function ReceptionPage() {
             )}
           </div>}
           <DialogFooter><Button variant="outline" onClick={() => { setCheckinTarget(null); setReadiness(null); setCanReleaseByException(false); }} disabled={checkingIn}>Cancelar</Button><Button onClick={() => void confirmCheckin()} disabled={checkingIn || !readiness || !workflowKey || (!readiness.ready && (!canReleaseByException || exceptionReasonLength < 20))}>{checkingIn ? "Processando..." : !readiness ? "Validando check-in..." : readiness.ready ? "Confirmar entrada e abrir conta" : "Liberar entrada por exceção"}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={walkinOpen} onOpenChange={(open) => { if (!walkinBusy) setWalkinOpen(open); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Atendimento espontâneo</DialogTitle>
+            <DialogDescription>Localize o paciente e defina os dados mínimos para criar a entrada na agenda.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Input
+                aria-label="Buscar paciente para atendimento espontâneo"
+                value={walkinSearch}
+                onChange={(event) => setWalkinSearch(event.target.value)}
+                placeholder="Nome, CPF, telefone ou e-mail"
+                onKeyDown={(event) => { if (event.key === "Enter") void searchWalkinPatients(); }}
+              />
+              <Button type="button" variant="outline" onClick={() => void searchWalkinPatients()} disabled={walkinBusy || walkinSearch.trim().length < 2}>
+                Buscar
+              </Button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Paciente</Label>
+                <Select value={walkinPatientId} onValueChange={setWalkinPatientId}>
+                  <SelectTrigger><SelectValue placeholder="Selecione o paciente" /></SelectTrigger>
+                  <SelectContent>{walkinPatients.map((patient) => <SelectItem key={patient.id} value={patient.id}>{patient.name} · {patient.cpf || "sem CPF"}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Tipo de atendimento</Label>
+                <Select value={walkinTypeId} onValueChange={setWalkinTypeId}>
+                  <SelectTrigger><SelectValue placeholder="Selecione o tipo" /></SelectTrigger>
+                  <SelectContent>{appointmentTypes.map((type) => <SelectItem key={type.id} value={type.id}>{type.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Profissional</Label>
+                <Select value={walkinProfessionalId} onValueChange={setWalkinProfessionalId}>
+                  <SelectTrigger><SelectValue placeholder="Selecione o profissional" /></SelectTrigger>
+                  <SelectContent>{professionals.map((professional) => <SelectItem key={professional.id} value={professional.id}>{professional.full_name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Serviço</Label>
+                <Select value={walkinServiceId} onValueChange={setWalkinServiceId}>
+                  <SelectTrigger><SelectValue placeholder="Selecione o serviço" /></SelectTrigger>
+                  <SelectContent>{services.map((service) => <SelectItem key={service.id} value={service.id}>{service.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="walkin-notes">Observação</Label>
+              <Textarea id="walkin-notes" value={walkinNotes} onChange={(event) => setWalkinNotes(event.target.value)} maxLength={500} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setWalkinOpen(false)} disabled={walkinBusy}>Cancelar</Button>
+            <Button type="button" onClick={() => void createWalkin()} disabled={walkinBusy || !walkinPatientId || !walkinTypeId || !walkinProfessionalId || !walkinServiceId}>
+              {walkinBusy ? "Criando..." : "Criar atendimento"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
