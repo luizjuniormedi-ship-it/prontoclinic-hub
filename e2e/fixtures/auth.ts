@@ -112,7 +112,11 @@ export async function loginAsRole(page: Page, role: UserRole): Promise<void> {
   const mfaCodeInput = page.getByRole('textbox', {
     name: /código 2fa|código de 6 dígitos/i,
   });
-  if (await mfaCodeInput.isVisible({ timeout: 10_000 }).catch(() => false)) {
+  const reachedMfa = await mfaCodeInput
+    .waitFor({ state: 'visible', timeout: 10_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (reachedMfa) {
     const displayedEnrollmentSecret = await page.locator('code').textContent()
       .catch(() => null);
     const secret = displayedEnrollmentSecret?.trim()
