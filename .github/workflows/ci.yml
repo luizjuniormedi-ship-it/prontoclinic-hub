@@ -97,10 +97,13 @@ jobs:
             psql -v ON_ERROR_STOP=1 \
               -h localhost -p 54322 -U postgres -d "$database" \
               -f supabase/tests/patients_definitive_unit_sharing_contract.sql >/dev/null
-            psql -v ON_ERROR_STOP=1 \
-              -h localhost -p 54322 -U postgres -d "$database" \
-              -f supabase/tests/reception_tiss_owner_contract.sql >/dev/null
-          done
+              psql -v ON_ERROR_STOP=1 \
+                -h localhost -p 54322 -U postgres -d "$database" \
+                -f supabase/tests/reception_tiss_owner_contract.sql >/dev/null
+              psql -v ON_ERROR_STOP=1 \
+                -h localhost -p 54322 -U postgres -d "$database" \
+                -f supabase/tests/schedule_rpc_signature_parity.sql >/dev/null
+            done
 
           # Retry das migrations críticas no mesmo banco: qualquer aplicação
           # parcial precisa convergir sem objetos duplicados.

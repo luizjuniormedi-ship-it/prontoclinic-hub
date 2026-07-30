@@ -84,6 +84,19 @@ export async function loginAsRole(page: Page, role: UserRole): Promise<void> {
   const contextSelector = page.getByRole('button', {
     name: /selecionar empresa, unidade e perfil/i,
   });
+
+  const contextIsRequired = await contextRequired
+    .isVisible({ timeout: 2_000 })
+    .catch(() => false);
+  const contextSelectorIsVisible = await contextSelector
+    .isVisible({ timeout: contextIsRequired ? 10_000 : 2_000 })
+    .catch(() => false);
+
+  if (!contextSelectorIsVisible) {
+    await expect(contextRequired).toHaveCount(0);
+    return;
+  }
+
   await expect(contextSelector).toBeEnabled({ timeout: 10_000 });
   if ((await contextSelector.textContent())?.includes('Selecionar contexto')) {
     await contextSelector.click();
