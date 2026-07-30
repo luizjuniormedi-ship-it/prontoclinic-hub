@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { tissService } from "@/services/tissService";
 import {
   finiteTissNumberOrZero,
+  formatTissErrorMessage,
   formatTissCurrency,
   formatTissInteger,
   formatTissPercent,
@@ -92,11 +93,7 @@ export function TissStats({ companyId, ano }: TissStatsProps) {
       <div role="alert" className="rounded border border-red-300 bg-red-50 p-4 text-sm text-red-900">
         <p>Não foi possível carregar os indicadores TISS.</p>
         <p className="mt-1 text-xs">
-          {error instanceof Error
-            ? error.message
-            : statusError instanceof Error
-              ? statusError.message
-              : "Erro desconhecido."}
+          {formatTissErrorMessage(error ?? statusError)}
         </p>
         <Button
           className="mt-3"

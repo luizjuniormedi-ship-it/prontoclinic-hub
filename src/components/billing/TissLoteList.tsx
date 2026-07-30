@@ -44,6 +44,7 @@ import { insuranceCompanyService } from "@/services/insuranceService";
 import {
   downloadTissXml,
   formatTissCurrency,
+  formatTissErrorMessage,
   toFiniteTissNumber,
 } from "./tissDisplay";
 import { toast } from "sonner";
@@ -314,7 +315,7 @@ function TissLoteListImpl({
                   <TableCell colSpan={9} className="py-8">
                     <div role="alert" className="flex flex-col items-center gap-3 text-center text-red-700">
                       <span>
-                        Não foi possível carregar as guias TISS: {faturasError instanceof Error ? faturasError.message : "erro desconhecido"}.
+                        Não foi possível carregar as guias TISS: {formatTissErrorMessage(faturasError)}
                       </span>
                       <Button size="sm" variant="outline" onClick={() => refetchFaturas()}>
                         Tentar novamente

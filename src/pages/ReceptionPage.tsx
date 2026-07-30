@@ -747,11 +747,19 @@ export default function ReceptionPage() {
       </div>
 
       <Tabs defaultValue="queue">
-        <TabsList>
-          <TabsTrigger value="queue">Fila ({scheduled.length + waiting.length})</TabsTrigger>
-          <TabsTrigger value="attending">Em Atendimento ({inProgress.length})</TabsTrigger>
-          <TabsTrigger value="done">Finalizados ({completed.length})</TabsTrigger>
-          <TabsTrigger value="pending">Pendências ({pendingItems.length})</TabsTrigger>
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">
+          <TabsTrigger className="min-w-0 whitespace-normal text-xs sm:text-sm" value="queue">
+            Fila ({scheduled.length + waiting.length})
+          </TabsTrigger>
+          <TabsTrigger className="min-w-0 whitespace-normal text-xs sm:text-sm" value="attending">
+            Em Atendimento ({inProgress.length})
+          </TabsTrigger>
+          <TabsTrigger className="min-w-0 whitespace-normal text-xs sm:text-sm" value="done">
+            Finalizados ({completed.length})
+          </TabsTrigger>
+          <TabsTrigger className="min-w-0 whitespace-normal text-xs sm:text-sm" value="pending">
+            Pendências ({pendingItems.length})
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="queue" className="mt-3 space-y-2">

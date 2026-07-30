@@ -240,15 +240,20 @@ VALUES (91001, 'Clínica Médica E2E', 'E2E-CM', TRUE)
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, lg_ativo = TRUE;
 
 INSERT INTO public.appointment_types (id, company_id, name, default_duration, category, lg_ativo)
-VALUES (91001, 'eeeeeeee-1000-4000-8000-000000000001', 'Consulta E2E', 30, 'consulta', TRUE)
-ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, lg_ativo = TRUE;
+VALUES (91001, 'eeeeeeee-1000-4000-8000-000000000001', 'Exame SADT E2E', 30, 'exame', TRUE)
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  name = EXCLUDED.name,
+  default_duration = EXCLUDED.default_duration,
+  category = EXCLUDED.category,
+  lg_ativo = TRUE;
 
 INSERT INTO public.services_catalog (id, company_id, code, name, price, lg_ativo)
 VALUES (
   91001,
   'eeeeeeee-1000-4000-8000-000000000001',
-  'E2E-CONSULTA',
-  'Consulta clínica E2E',
+  'E2E-SADT-USG',
+  'Ultrassonografia SADT E2E',
   150.00,
   TRUE
 )
@@ -259,6 +264,67 @@ ON CONFLICT (id) DO UPDATE SET
   price = EXCLUDED.price,
   lg_ativo = TRUE;
 
+INSERT INTO public.insurance_companies (
+  id, company_id, name, registro_ans, codigo_prestador,
+  lg_ativo, lg_guia_obrigatoria, lg_cid_obrigatorio,
+  lg_matric_obrigatorio, lg_autorizac_obrigatorio,
+  lg_validade_matricula, lg_val_matricula, lg_val_autorizacao,
+  observacao
+) VALUES (
+  91001,
+  'eeeeeeee-1000-4000-8000-000000000001',
+  'Convênio Sintético E2E',
+  '999999',
+  'E2E-PRESTADOR',
+  TRUE,
+  FALSE,
+  FALSE,
+  TRUE,
+  FALSE,
+  FALSE,
+  FALSE,
+  FALSE,
+  'Fixture exclusivamente local; sem integração externa.'
+)
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  name = EXCLUDED.name,
+  registro_ans = EXCLUDED.registro_ans,
+  codigo_prestador = EXCLUDED.codigo_prestador,
+  lg_ativo = TRUE,
+  lg_guia_obrigatoria = FALSE,
+  lg_cid_obrigatorio = FALSE,
+  lg_matric_obrigatorio = TRUE,
+  lg_autorizac_obrigatorio = FALSE,
+  lg_validade_matricula = FALSE,
+  lg_val_matricula = FALSE,
+  lg_val_autorizacao = FALSE,
+  observacao = EXCLUDED.observacao;
+
+INSERT INTO public.insurance_plans (
+  id, company_id, insurance_company_id, name, codigo, ds_plano,
+  tp_cobertura, lg_ativo, lg_coparticipacao
+) VALUES (
+  91001,
+  'eeeeeeee-1000-4000-8000-000000000001',
+  91001,
+  'Plano SADT Sintético E2E',
+  'E2E-SADT',
+  'Plano de homologação local para Agenda e Recepção',
+  'AMBULATORIAL',
+  TRUE,
+  FALSE
+)
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  insurance_company_id = EXCLUDED.insurance_company_id,
+  name = EXCLUDED.name,
+  codigo = EXCLUDED.codigo,
+  ds_plano = EXCLUDED.ds_plano,
+  tp_cobertura = EXCLUDED.tp_cobertura,
+  lg_ativo = TRUE,
+  lg_coparticipacao = FALSE;
+
 INSERT INTO public.price_tables (
   id, company_id, appointment_type_id, service_id, insurance_plan_id,
   dt_inicio, dt_fim, vl_particular, vl_convenio, active
@@ -267,18 +333,18 @@ INSERT INTO public.price_tables (
   'eeeeeeee-1000-4000-8000-000000000001',
   91001,
   91001,
-  NULL,
+  91001,
   CURRENT_DATE - 1,
   NULL,
   150.00,
-  0.00,
+  125.00,
   TRUE
 )
 ON CONFLICT (id) DO UPDATE SET
   company_id = EXCLUDED.company_id,
   appointment_type_id = EXCLUDED.appointment_type_id,
   service_id = EXCLUDED.service_id,
-  insurance_plan_id = NULL,
+  insurance_plan_id = EXCLUDED.insurance_plan_id,
   dt_inicio = EXCLUDED.dt_inicio,
   dt_fim = NULL,
   vl_particular = EXCLUDED.vl_particular,
@@ -298,16 +364,74 @@ ON CONFLICT (id) DO UPDATE SET
   full_name = EXCLUDED.full_name,
   lg_ativo = TRUE;
 
+INSERT INTO public.professional_insurances (
+  company_id, professional_id, insurance_company_id,
+  lg_clinica, lg_credenciado, ds_observacao,
+  dt_inicio_vinculo, dt_fim_vinculo, lg_ativo
+) VALUES (
+  'eeeeeeee-1000-4000-8000-000000000001',
+  91001,
+  91001,
+  TRUE,
+  TRUE,
+  'Credenciamento sintético E2E',
+  CURRENT_DATE - 1,
+  NULL,
+  TRUE
+)
+ON CONFLICT (professional_id, insurance_company_id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  lg_clinica = TRUE,
+  lg_credenciado = TRUE,
+  ds_observacao = EXCLUDED.ds_observacao,
+  dt_inicio_vinculo = EXCLUDED.dt_inicio_vinculo,
+  dt_fim_vinculo = NULL,
+  lg_ativo = TRUE;
+
+INSERT INTO public.professional_schedules (
+  id, company_id, professional_id, unit_id, day_of_week, lg_habilitado,
+  slot1_start, slot1_end, slot1_duration, slot1_unit_id
+) VALUES (
+  91001,
+  'eeeeeeee-1000-4000-8000-000000000001',
+  91001,
+  91001,
+  CASE EXTRACT(DOW FROM CURRENT_DATE)::INTEGER
+    WHEN 0 THEN 'domingo'
+    WHEN 1 THEN 'segunda-feira'
+    WHEN 2 THEN 'terça-feira'
+    WHEN 3 THEN 'quarta-feira'
+    WHEN 4 THEN 'quinta-feira'
+    WHEN 5 THEN 'sexta-feira'
+    ELSE 'sábado'
+  END,
+  TRUE,
+  800,
+  1800,
+  30,
+  91001
+)
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  professional_id = EXCLUDED.professional_id,
+  unit_id = EXCLUDED.unit_id,
+  day_of_week = EXCLUDED.day_of_week,
+  lg_habilitado = TRUE,
+  slot1_start = EXCLUDED.slot1_start,
+  slot1_end = EXCLUDED.slot1_end,
+  slot1_duration = EXCLUDED.slot1_duration,
+  slot1_unit_id = EXCLUDED.slot1_unit_id;
+
 INSERT INTO public.patients (
   id, company_id, unit_id, full_name, cpf, birth_date, phone,
-  registration_status, status, lg_ativo
+  registration_status, status, insurance_plan_id, insurance_card_number, lg_ativo
 ) VALUES
   (91001, 'eeeeeeee-1000-4000-8000-000000000001', 91001,
    'Paciente E2E A', '91000000001', DATE '1990-01-01', '21910000001',
-   'complete', 'active', TRUE),
+   'complete', 'active', 91001, 'E2E-CARD-91001', TRUE),
   (91002, 'eeeeeeee-1000-4000-8000-000000000001', 91002,
    'Paciente E2E B', '91000000002', DATE '1991-01-01', '21910000002',
-   'complete', 'active', TRUE)
+   'complete', 'active', NULL, NULL, TRUE)
 ON CONFLICT (id) DO UPDATE SET
   company_id = EXCLUDED.company_id,
   unit_id = EXCLUDED.unit_id,
@@ -317,6 +441,8 @@ ON CONFLICT (id) DO UPDATE SET
   phone = EXCLUDED.phone,
   registration_status = 'complete',
   status = 'active',
+  insurance_plan_id = EXCLUDED.insurance_plan_id,
+  insurance_card_number = EXCLUDED.insurance_card_number,
   lg_ativo = TRUE;
 
 DELETE FROM public.reception_checkin_workflows
@@ -337,17 +463,20 @@ DELETE FROM public.medical_records WHERE appointment_id IN (91001, 91002);
 
 INSERT INTO public.appointments (
   id, company_id, unit_id, patient_id, professional_id, specialty_id,
-  service_id, appointment_type_id, appointment_date, start_time, end_time, status,
+  service_id, appointment_type_id, insurance_company_id, insurance_plan_id,
+  appointment_date, start_time, end_time, status,
   tp_status, lg_confirmado, lg_checkin, notes
 ) VALUES
 (
   91001, 'eeeeeeee-1000-4000-8000-000000000001', 91001,
-  91001, 91001, 91001, 91001, 91001, CURRENT_DATE, TIME '14:00', TIME '14:30',
+  91001, 91001, 91001, 91001, 91001, 91001, 91001,
+  CURRENT_DATE, TIME '14:00', TIME '14:30',
   'scheduled', 'agendado', TRUE, FALSE, 'Fixture fase 0/1'
 ),
 (
   91002, 'eeeeeeee-1000-4000-8000-000000000001', 91002,
-  91002, 91001, 91001, 91001, 91001, CURRENT_DATE, TIME '15:00', TIME '15:30',
+  91002, 91001, 91001, 91001, 91001, NULL, NULL,
+  CURRENT_DATE, TIME '15:00', TIME '15:30',
   'scheduled', 'agendado', TRUE, FALSE, 'Fixture de isolamento da unidade B'
 )
 ON CONFLICT (id) DO UPDATE SET
@@ -358,6 +487,8 @@ ON CONFLICT (id) DO UPDATE SET
   specialty_id = EXCLUDED.specialty_id,
   service_id = EXCLUDED.service_id,
   appointment_type_id = EXCLUDED.appointment_type_id,
+  insurance_company_id = EXCLUDED.insurance_company_id,
+  insurance_plan_id = EXCLUDED.insurance_plan_id,
   appointment_date = EXCLUDED.appointment_date,
   start_time = EXCLUDED.start_time,
   end_time = EXCLUDED.end_time,
@@ -366,5 +497,65 @@ ON CONFLICT (id) DO UPDATE SET
   lg_confirmado = EXCLUDED.lg_confirmado,
   lg_checkin = EXCLUDED.lg_checkin,
   notes = EXCLUDED.notes;
+
+DO $fixture_contract$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.appointments appointment
+    JOIN public.patients patient
+      ON patient.id = appointment.patient_id
+     AND patient.company_id = appointment.company_id
+     AND patient.unit_id = appointment.unit_id
+    JOIN public.professionals professional
+      ON professional.id = appointment.professional_id
+     AND professional.company_id = appointment.company_id
+     AND professional.lg_ativo
+    JOIN public.professional_schedules schedule
+      ON schedule.professional_id = professional.id
+     AND schedule.company_id = appointment.company_id
+     AND schedule.unit_id = appointment.unit_id
+     AND schedule.slot1_unit_id = appointment.unit_id
+     AND schedule.lg_habilitado
+     AND schedule.slot1_start <=
+       EXTRACT(HOUR FROM appointment.start_time)::INTEGER * 100
+       + EXTRACT(MINUTE FROM appointment.start_time)::INTEGER
+     AND schedule.slot1_end >=
+       EXTRACT(HOUR FROM appointment.end_time)::INTEGER * 100
+       + EXTRACT(MINUTE FROM appointment.end_time)::INTEGER
+    JOIN public.insurance_plans plan
+      ON plan.id = appointment.insurance_plan_id
+     AND plan.company_id = appointment.company_id
+     AND plan.insurance_company_id = appointment.insurance_company_id
+     AND plan.lg_ativo
+    JOIN public.professional_insurances accreditation
+      ON accreditation.professional_id = professional.id
+     AND accreditation.insurance_company_id = plan.insurance_company_id
+     AND accreditation.company_id = appointment.company_id
+     AND accreditation.lg_credenciado
+     AND accreditation.lg_ativo
+    JOIN public.services_catalog service
+      ON service.id = appointment.service_id
+     AND service.company_id = appointment.company_id
+     AND service.code = 'E2E-SADT-USG'
+     AND service.lg_ativo
+    JOIN public.price_tables price
+      ON price.company_id = appointment.company_id
+     AND price.service_id = service.id
+     AND price.appointment_type_id = appointment.appointment_type_id
+     AND price.insurance_plan_id = plan.id
+     AND price.active
+     AND price.vl_convenio = 125.00
+    WHERE appointment.id = 91001
+      AND appointment.company_id = 'eeeeeeee-1000-4000-8000-000000000001'
+      AND appointment.unit_id = 91001
+      AND patient.insurance_plan_id = plan.id
+      AND patient.insurance_card_number = 'E2E-CARD-91001'
+  ) THEN
+    RAISE EXCEPTION
+      'E2E_FIXTURE_CONTRACT: massa Agenda->Recepcao incompleta ou inconsistente';
+  END IF;
+END;
+$fixture_contract$;
 
 COMMIT;

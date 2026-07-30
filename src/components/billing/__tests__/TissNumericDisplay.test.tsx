@@ -199,17 +199,23 @@ describe("TISS numeric display guards", () => {
   });
 
   it("mostra erro explícito quando a consulta de indicadores falha", async () => {
-    serviceMocks.getEstatisticas.mockRejectedValue(
-      new Error("Falha controlada dos indicadores"),
-    );
+    serviceMocks.getEstatisticas.mockRejectedValue({
+      code: "42501",
+      message: "Permissão canônica de faturamento obrigatória",
+      details: "A operação exige faturamento.view",
+    });
 
     renderWithQueryClient(
       <TissStats companyId="company-1" ano={2026} />,
     );
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Falha controlada dos indicadores",
+      "Permissão canônica de faturamento obrigatória",
     );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "A operação exige faturamento.view (código 42501)",
+    );
+    expect(screen.getByRole("alert")).not.toHaveTextContent("Erro desconhecido");
     expect(screen.getByRole("button", { name: /tentar novamente/i })).toBeInTheDocument();
   });
 
