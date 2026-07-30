@@ -112,11 +112,17 @@ GRANT SELECT, INSERT, UPDATE ON
   public.nursing_shift_handoffs
 TO authenticated, app_prontomedic;
 
-GRANT USAGE, SELECT ON
-  SEQUENCE public.nursing_medication_administrations_id_seq,
-  SEQUENCE public.nursing_incidents_id_seq,
-  SEQUENCE public.nursing_procedures_id_seq,
-  SEQUENCE public.nursing_shift_handoffs_id_seq
+GRANT USAGE, SELECT ON SEQUENCE
+  public.nursing_medication_administrations_id_seq
+TO authenticated, app_prontomedic;
+GRANT USAGE, SELECT ON SEQUENCE
+  public.nursing_incidents_id_seq
+TO authenticated, app_prontomedic;
+GRANT USAGE, SELECT ON SEQUENCE
+  public.nursing_procedures_id_seq
+TO authenticated, app_prontomedic;
+GRANT USAGE, SELECT ON SEQUENCE
+  public.nursing_shift_handoffs_id_seq
 TO authenticated, app_prontomedic;
 
 COMMIT;

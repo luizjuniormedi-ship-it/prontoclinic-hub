@@ -22,7 +22,9 @@ describe("nursing care migration ACL contract", () => {
       "nursing_procedures_id_seq",
       "nursing_shift_handoffs_id_seq",
     ]) {
-      expect(migration).toContain(`SEQUENCE public.${sequence}`);
+      expect(migration).toMatch(
+        new RegExp(`ON\\s+SEQUENCE\\s+public\\.${sequence}`, "i"),
+      );
     }
   });
 });
