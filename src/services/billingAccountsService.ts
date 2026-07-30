@@ -30,6 +30,7 @@ export interface BillingAccount {
   has_pending_issues: boolean;
   has_denial: boolean;
   is_reopened: boolean;
+  created_at: string;
   opened_at: string;
   paid_at: string | null;
   patient_name?: string;
@@ -46,7 +47,7 @@ export const BILLING_STATUS_LABELS: Partial<Record<BillingStatus, string>> = {
 export const billingAccountsService = {
   async list(filters?: { status?: string; billing_type?: string; competence?: string; onlyPending?: boolean }): Promise<BillingAccount[]> {
     let q = supabase.from("billing_accounts").select("*").is("deleted_at", null)
-      .order("opened_at", { ascending: false }).limit(300);
+      .order("created_at", { ascending: false }).limit(300);
     if (filters?.status) q = q.eq("status", filters.status);
     if (filters?.billing_type) q = q.eq("billing_type", filters.billing_type);
     if (filters?.competence) q = q.eq("competence_month", filters.competence);
@@ -60,14 +61,22 @@ export const billingAccountsService = {
       const { data: pats } = await supabase.from("patients").select("id, full_name").in("id", pids as number[]);
       for (const p of (pats || []) as Array<{ id: number; full_name: string }>) nameById[String(p.id)] = p.full_name;
     }
-    return rows.map((r) => ({ ...r, patient_name: r.patient_id ? nameById[String(r.patient_id)] : undefined }));
+    return rows.map((r) => ({
+      ...r,
+      opened_at: r.opened_at || r.created_at,
+      authorization_number: r.authorization_number ?? null,
+      has_denial: r.has_denial ?? false,
+      is_reopened: r.is_reopened ?? r.status === "reaberta",
+      paid_at: r.paid_at ?? null,
+      patient_name: r.patient_id ? nameById[String(r.patient_id)] : undefined,
+    }));
   },
 
   stats(all: BillingAccount[]): { total: number; abertas: number; prontas: number; comPendencia: number; enviadas: number; pagas: number } {
     return {
       total: all.length,
       abertas: all.filter((a) => a.status === "aberta").length,
-      prontas: all.filter((a) => a.status === "aberta" && !a.has_pending_issues).length,
+      prontas: all.filter((a) => a.status === "pronta_envio").length,
       comPendencia: all.filter((a) => a.has_pending_issues).length,
       enviadas: all.filter((a) => a.status === "enviada").length,
       pagas: all.filter((a) => ["paga", "parcialmente_paga", "particular_paga"].includes(a.status)).length,

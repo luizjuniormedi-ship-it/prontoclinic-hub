@@ -34,6 +34,7 @@ const account: BillingAccount = {
   has_pending_issues: false,
   has_denial: false,
   is_reopened: false,
+  created_at: "2026-07-29T12:00:00Z",
   opened_at: "2026-07-29T12:00:00Z",
   paid_at: null,
   patient_name: "Paciente Faturamento QA",
