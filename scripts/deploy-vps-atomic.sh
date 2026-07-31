@@ -25,7 +25,14 @@ cp -a "${dist_dir}/." "${release_dir}/"
 # da troca do symlink. Agregamos os assets imutáveis de todos eles.
 while IFS= read -r previous_release; do
   if [[ "${previous_release}" != "${release_dir}" && -d "${previous_release}/assets" ]]; then
-    cp -an "${previous_release}/assets/." "${release_dir}/assets/"
+    while IFS= read -r -d '' previous_asset; do
+      relative_asset="${previous_asset#"${previous_release}/assets/"}"
+      retained_asset="${release_dir}/assets/${relative_asset}"
+      if [[ ! -e "${retained_asset}" ]]; then
+        mkdir -p "$(dirname "${retained_asset}")"
+        cp -a "${previous_asset}" "${retained_asset}"
+      fi
+    done < <(find "${previous_release}/assets" -type f -print0)
   fi
 done < <(find "${release_root}" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null || true)
 
