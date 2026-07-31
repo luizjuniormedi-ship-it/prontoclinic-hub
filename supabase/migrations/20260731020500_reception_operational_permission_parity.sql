@@ -44,6 +44,9 @@ BEGIN
       ('recepcao', 'reception', TRUE, TRUE, TRUE),
       ('recepcao', 'recepcao', TRUE, TRUE, TRUE),
       ('recepcao', 'callcenter', TRUE, FALSE, FALSE),
+      ('recepcao', 'insurance_companies', TRUE, FALSE, FALSE),
+      ('recepcao', 'insurance_plans', TRUE, FALSE, FALSE),
+      ('recepcao', 'faturamento', TRUE, TRUE, FALSE),
 
       ('supervisor_recepcao', 'dashboard', TRUE, FALSE, FALSE),
       ('supervisor_recepcao', 'patients', TRUE, TRUE, TRUE),
@@ -53,15 +56,20 @@ BEGIN
       ('supervisor_recepcao', 'reception', TRUE, TRUE, TRUE),
       ('supervisor_recepcao', 'recepcao', TRUE, TRUE, TRUE),
       ('supervisor_recepcao', 'callcenter', TRUE, TRUE, TRUE),
+      ('supervisor_recepcao', 'insurance_companies', TRUE, FALSE, FALSE),
+      ('supervisor_recepcao', 'insurance_plans', TRUE, FALSE, FALSE),
+      ('supervisor_recepcao', 'faturamento', TRUE, TRUE, FALSE),
 
       ('callcenter', 'dashboard', TRUE, FALSE, FALSE),
-      ('callcenter', 'patients', TRUE, TRUE, TRUE),
-      ('callcenter', 'pacientes', TRUE, TRUE, TRUE),
+      ('callcenter', 'patients', TRUE, TRUE, FALSE),
+      ('callcenter', 'pacientes', TRUE, TRUE, FALSE),
       ('callcenter', 'schedule', TRUE, TRUE, TRUE),
       ('callcenter', 'agenda', TRUE, TRUE, TRUE),
-      ('callcenter', 'reception', TRUE, FALSE, FALSE),
-      ('callcenter', 'recepcao', TRUE, FALSE, FALSE),
-      ('callcenter', 'callcenter', TRUE, TRUE, TRUE)
+      ('callcenter', 'reception', TRUE, TRUE, TRUE),
+      ('callcenter', 'recepcao', TRUE, TRUE, TRUE),
+      ('callcenter', 'callcenter', TRUE, TRUE, TRUE),
+      ('callcenter', 'insurance_companies', TRUE, FALSE, FALSE),
+      ('callcenter', 'insurance_plans', TRUE, FALSE, FALSE)
   ) AS permission(role_name, module, can_view, can_create, can_edit)
   JOIN public.roles AS role_record
     ON role_record.name = permission.role_name
@@ -138,10 +146,14 @@ BEGIN
         ('recepcao', 'pacientes', TRUE, TRUE, TRUE),
         ('recepcao', 'agenda', TRUE, TRUE, FALSE),
         ('recepcao', 'recepcao', TRUE, TRUE, TRUE),
+        ('recepcao', 'insurance_companies', TRUE, FALSE, FALSE),
+        ('recepcao', 'insurance_plans', TRUE, FALSE, FALSE),
+        ('recepcao', 'faturamento', TRUE, TRUE, FALSE),
         ('supervisor_recepcao', 'agenda', TRUE, TRUE, TRUE),
         ('supervisor_recepcao', 'recepcao', TRUE, TRUE, TRUE),
         ('callcenter', 'agenda', TRUE, TRUE, TRUE),
-        ('callcenter', 'callcenter', TRUE, TRUE, TRUE)
+        ('callcenter', 'callcenter', TRUE, TRUE, TRUE),
+        ('callcenter', 'recepcao', TRUE, TRUE, TRUE)
     ) AS expected(role_name, module, can_view, can_create, can_edit)
     JOIN public.roles AS role_record
       ON role_record.name = expected.role_name

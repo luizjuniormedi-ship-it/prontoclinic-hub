@@ -20,6 +20,9 @@ describe("reception operational permission parity migration", () => {
       "reception",
       "recepcao",
       "callcenter",
+      "insurance_companies",
+      "insurance_plans",
+      "faturamento",
     ]) {
       expect(migration).toContain(`'${module}'`);
     }
@@ -31,6 +34,15 @@ describe("reception operational permission parity migration", () => {
     );
     expect(migration).toContain(
       "('supervisor_recepcao', 'agenda', TRUE, TRUE, TRUE)",
+    );
+    expect(migration).toContain(
+      "('recepcao', 'faturamento', TRUE, TRUE, FALSE)",
+    );
+    expect(migration).toContain(
+      "('callcenter', 'recepcao', TRUE, TRUE, TRUE)",
+    );
+    expect(migration).toContain(
+      "('callcenter', 'patients', TRUE, TRUE, FALSE)",
     );
   });
 
