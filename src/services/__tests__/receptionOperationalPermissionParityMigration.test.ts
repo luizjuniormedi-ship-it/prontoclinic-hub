@@ -45,4 +45,19 @@ describe("reception operational permission parity migration", () => {
       "20260731020500_reception_operational_permission_parity.sql",
     );
   });
+
+  it("bootstraps companies created after the migration replay", () => {
+    expect(migration).toContain(
+      "private.seed_reception_operational_permissions_for_company",
+    );
+    expect(migration).toContain(
+      "CREATE TRIGGER trg_seed_reception_operational_permissions",
+    );
+    expect(migration).toContain(
+      "AFTER INSERT OR UPDATE OF lg_ativo ON public.companies",
+    );
+    expect(migration).toContain("SECURITY DEFINER");
+    expect(migration).toContain("SET row_security = off");
+    expect(migration).toContain("REVOKE ALL ON FUNCTION");
+  });
 });
