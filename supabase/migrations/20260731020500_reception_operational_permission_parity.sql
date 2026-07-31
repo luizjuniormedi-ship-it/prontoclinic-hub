@@ -94,31 +94,6 @@ REVOKE ALL ON FUNCTION
   private.seed_reception_operational_permissions_for_company(UUID)
   FROM PUBLIC;
 
-CREATE OR REPLACE FUNCTION private.seed_reception_operational_permissions_after_company()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = pg_catalog, public, private
-SET row_security = off
-AS $trigger$
-BEGIN
-  PERFORM private.seed_reception_operational_permissions_for_company(NEW.id);
-  RETURN NEW;
-END
-$trigger$;
-
-REVOKE ALL ON FUNCTION
-  private.seed_reception_operational_permissions_after_company()
-  FROM PUBLIC;
-
-DROP TRIGGER IF EXISTS trg_seed_reception_operational_permissions
-  ON public.companies;
-CREATE TRIGGER trg_seed_reception_operational_permissions
-AFTER INSERT OR UPDATE OF lg_ativo ON public.companies
-FOR EACH ROW
-WHEN (NEW.lg_ativo IS TRUE)
-EXECUTE FUNCTION private.seed_reception_operational_permissions_after_company();
-
 DO $seed_existing_companies$
 DECLARE
   company_record RECORD;
