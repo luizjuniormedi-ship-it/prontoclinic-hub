@@ -32,6 +32,9 @@ export function useApplicationSession(
       clearApplicationSession();
       await supabase.auth.signOut({ scope: "local" });
       onRevoked();
+    } catch {
+      // Falhas de transporte e navegacoes interrompidas nao comprovam revogacao.
+      // O proximo heartbeat valida novamente a mesma sessao.
     } finally {
       running.current = false;
     }

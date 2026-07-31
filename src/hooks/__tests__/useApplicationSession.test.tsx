@@ -70,6 +70,22 @@ describe("useApplicationSession", () => {
     expect(supabase.auth.signOut).toHaveBeenCalledWith({ scope: "local" });
   });
 
+  it("preserva a sessão quando o heartbeat falha por transporte", async () => {
+    vi.mocked(authSessionService.heartbeat).mockRejectedValue(
+      new Error("request aborted"),
+    );
+    const onRevoked = vi.fn();
+
+    renderHook(() => useApplicationSession(onRevoked));
+
+    await waitFor(() =>
+      expect(authSessionService.heartbeat).toHaveBeenCalledTimes(1),
+    );
+    expect(clearApplicationSession).not.toHaveBeenCalled();
+    expect(supabase.auth.signOut).not.toHaveBeenCalled();
+    expect(onRevoked).not.toHaveBeenCalled();
+  });
+
   it("repete heartbeat e cancela o intervalo ao desmontar", async () => {
     vi.useFakeTimers();
     vi.mocked(authSessionService.heartbeat).mockResolvedValue(true);
