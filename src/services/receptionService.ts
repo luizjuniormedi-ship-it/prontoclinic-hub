@@ -154,7 +154,10 @@ export const receptionService = {
     const appointments = await supabase
       .from("appointments")
       .select("id")
-      .eq("unit_id", unitId);
+      .eq("unit_id", unitId)
+      .in("status", ["scheduled", "confirmed", "waiting"])
+      .order("appointment_date", { ascending: false })
+      .limit(1000);
     if (appointments.error) {
       throw new Error(`Erro ao delimitar pendências por unidade: ${appointments.error.message}`);
     }

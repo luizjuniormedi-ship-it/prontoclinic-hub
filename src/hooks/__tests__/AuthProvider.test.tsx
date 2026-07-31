@@ -126,4 +126,75 @@ describe("AuthProvider fail-closed restoration", () => {
     await waitFor(() => expect(screen.getByText("password-change")).toBeInTheDocument());
     expect(supabase.from).toHaveBeenCalledWith("user_profiles");
   });
+
+  it("deduplica a restauração concorrente da mesma sessão", async () => {
+    const auth = configureAuth("aal2");
+    let authListener: ((event: string, restored: Session | null) => void) | undefined;
+    let resolveProfile: ((value: {
+      data: {
+        id: string;
+        full_name: string;
+        role_id: number;
+        role_name: string;
+        company_id: string;
+        primary_unit_id: number;
+        lg_ativo: boolean;
+        must_change_password: boolean;
+      };
+      error: null;
+    }) => void) | undefined;
+    auth.onAuthStateChange = vi.fn((listener) => {
+      authListener = listener as typeof authListener;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+
+    const pendingProfile = new Promise<{
+      data: {
+        id: string;
+        full_name: string;
+        role_id: number;
+        role_name: string;
+        company_id: string;
+        primary_unit_id: number;
+        lg_ativo: boolean;
+        must_change_password: boolean;
+      };
+      error: null;
+    }>((resolve) => {
+      resolveProfile = resolve;
+    });
+    const maybeSingle = vi.fn()
+      .mockReturnValueOnce(pendingProfile)
+      .mockResolvedValueOnce({ data: { name: "recepcao" }, error: null });
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle,
+    };
+    vi.mocked(supabase.from).mockReturnValue(query as never);
+
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(maybeSingle).toHaveBeenCalledTimes(1));
+    act(() => authListener?.("INITIAL_SESSION", session));
+    await act(async () => {
+      resolveProfile?.({
+        data: {
+          id: session.user.id,
+          full_name: "Usuário de teste",
+          role_id: 3,
+          role_name: "recepcao",
+          company_id: "10000000-0000-0000-0000-000000000001",
+          primary_unit_id: 1,
+          lg_ativo: true,
+          must_change_password: false,
+        },
+        error: null,
+      });
+      await pendingProfile;
+    });
+
+    await waitFor(() => expect(screen.getByText("authenticated")).toBeInTheDocument());
+    expect(auth.mfa.getAuthenticatorAssuranceLevel).toHaveBeenCalledTimes(1);
+    expect(supabase.from).toHaveBeenCalledTimes(2);
+  });
 });

@@ -138,6 +138,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => readStoredAccessContext<AccessContextOption>()?.unitId ?? null,
   );
   const profileRequestId = useRef(0);
+  const initializationInFlight = useRef<{
+    sessionKey: string;
+    promise: Promise<AuthResult>;
+  } | null>(null);
 
   useEffect(() => {
     const onAccessContextChanged = (event: Event) => {
@@ -151,55 +155,71 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const initializeSession = useCallback(async (sess: Session | null): Promise<AuthResult> => {
-    const requestId = ++profileRequestId.current;
-    if (!sess?.user) {
-      setUser(null);
-      setSession(null);
-      setMfaStep("none");
-      setMfaFactorId(null);
-      setMustChangePassword(false);
-      setIsLoading(false);
-      return { success: false };
+  const initializeSession = useCallback((sess: Session | null): Promise<AuthResult> => {
+    const sessionKey = sess?.access_token ?? "signed-out";
+    const currentInitialization = initializationInFlight.current;
+    if (currentInitialization?.sessionKey === sessionKey) {
+      return currentInitialization.promise;
     }
 
-    setSession(sess);
-    setUser(null);
-    setIsLoading(true);
-    try {
-      const nextMfa = await getMfaNextStep(supabase.auth.mfa);
-      if (requestId !== profileRequestId.current) return { success: false };
-      if (nextMfa.kind !== "verified") {
-        setMfaStep(nextMfa.kind);
-        setMfaFactorId(nextMfa.kind === "challenge" ? nextMfa.factorId : null);
-        return { success: true, next: actionForMfaStep(nextMfa.kind) };
-      }
-
-      setMfaStep("verified");
-      setMfaFactorId(null);
-      const profile = await fetchUserProfileWithTimeout(sess.user);
-      if (requestId !== profileRequestId.current) return { success: false };
-      if (!profile) {
-        await supabase.auth.signOut({ scope: "local" });
-        if (requestId !== profileRequestId.current) return { success: false };
+    const promise = (async (): Promise<AuthResult> => {
+      const requestId = ++profileRequestId.current;
+      if (!sess?.user) {
         setUser(null);
         setSession(null);
         setMfaStep("none");
-        return { success: false, error: "Não foi possível carregar o perfil e as permissões do usuário." };
+        setMfaFactorId(null);
+        setMustChangePassword(false);
+        setIsLoading(false);
+        return { success: false };
       }
-      setUser(profile);
-      const passwordChangeRequired = requiresPasswordChange(profile);
-      setMustChangePassword(passwordChangeRequired);
-      if (passwordChangeRequired) return { success: true, next: "password-change" };
-      return { success: true, next: "authenticated" };
-    } catch (error) {
-      if (requestId !== profileRequestId.current) return { success: false };
-      console.error("Failed to initialize authenticated user:", error);
+
+      setSession(sess);
       setUser(null);
-      return { success: false, error: error instanceof Error ? error.message : "Erro ao validar autenticação" };
-    } finally {
-      if (requestId === profileRequestId.current) setIsLoading(false);
-    }
+      setIsLoading(true);
+      try {
+        const nextMfa = await getMfaNextStep(supabase.auth.mfa);
+        if (requestId !== profileRequestId.current) return { success: false };
+        if (nextMfa.kind !== "verified") {
+          setMfaStep(nextMfa.kind);
+          setMfaFactorId(nextMfa.kind === "challenge" ? nextMfa.factorId : null);
+          return { success: true, next: actionForMfaStep(nextMfa.kind) };
+        }
+
+        setMfaStep("verified");
+        setMfaFactorId(null);
+        const profile = await fetchUserProfileWithTimeout(sess.user);
+        if (requestId !== profileRequestId.current) return { success: false };
+        if (!profile) {
+          await supabase.auth.signOut({ scope: "local" });
+          if (requestId !== profileRequestId.current) return { success: false };
+          setUser(null);
+          setSession(null);
+          setMfaStep("none");
+          return { success: false, error: "Não foi possível carregar o perfil e as permissões do usuário." };
+        }
+        setUser(profile);
+        const passwordChangeRequired = requiresPasswordChange(profile);
+        setMustChangePassword(passwordChangeRequired);
+        if (passwordChangeRequired) return { success: true, next: "password-change" };
+        return { success: true, next: "authenticated" };
+      } catch (error) {
+        if (requestId !== profileRequestId.current) return { success: false };
+        console.error("Failed to initialize authenticated user:", error);
+        setUser(null);
+        return { success: false, error: error instanceof Error ? error.message : "Erro ao validar autenticação" };
+      } finally {
+        if (requestId === profileRequestId.current) setIsLoading(false);
+      }
+    })();
+
+    initializationInFlight.current = { sessionKey, promise };
+    void promise.finally(() => {
+      if (initializationInFlight.current?.promise === promise) {
+        initializationInFlight.current = null;
+      }
+    });
+    return promise;
   }, []);
 
   useEffect(() => {

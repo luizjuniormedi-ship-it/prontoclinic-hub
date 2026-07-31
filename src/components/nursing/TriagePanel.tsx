@@ -61,21 +61,29 @@ function formatarEspera(iso: string): string {
 export function TriagePanel({ companyId, unitId }: TriagePanelProps): JSX.Element {
   const { user } = useAuth();
   const { toast } = useToast();
-  useTicker(1000);
+  useTicker(30_000);
 
   const [fila, setFila] = useState<FilaItem[]>([]);
   const [classificacoes, setClassificacoes] = useState<ClassificacaoRisco[]>([]);
   const [selecionado, setSelecionado] = useState<FilaItem | null>(null);
   const [carregando, setCarregando] = useState<boolean>(true);
+  const [erroFila, setErroFila] = useState<string | null>(null);
   const [showForm, setShowForm] = useState<boolean>(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const queueRequestInFlight = useRef(false);
 
   const carregarFila = useCallback(async (): Promise<void> => {
+    if (queueRequestInFlight.current) return;
+    queueRequestInFlight.current = true;
     try {
       const itens = await nursingService.fila.getFilaAtiva(companyId, unitId);
       setFila(itens);
+      setErroFila(null);
     } catch (err: unknown) {
       console.error("Erro ao carregar fila:", err);
+      setErroFila(friendlyError(err));
+    } finally {
+      queueRequestInFlight.current = false;
     }
   }, [companyId, unitId]);
 
@@ -200,6 +208,14 @@ export function TriagePanel({ companyId, unitId }: TriagePanelProps): JSX.Elemen
             <ScrollArea className="h-[calc(100vh-280px)] min-h-[400px]">
               {carregando ? (
                 <div className="p-4 text-sm text-muted-foreground">Carregando...</div>
+              ) : erroFila ? (
+                <div className="space-y-3 p-4 text-sm" role="alert">
+                  <p className="font-medium text-destructive">Não foi possível carregar a fila.</p>
+                  <p className="text-muted-foreground">{erroFila}</p>
+                  <Button size="sm" variant="outline" onClick={() => void carregarFila()}>
+                    Tentar novamente
+                  </Button>
+                </div>
               ) : fila.length === 0 ? (
                 <div className="p-6 text-center text-sm text-muted-foreground">
                   <Bell className="h-8 w-8 mx-auto mb-2 opacity-30" />

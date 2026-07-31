@@ -18,8 +18,11 @@ export default function NursingTriagePage(): JSX.Element {
   if (params.get("tv") === "1" || params.get("mode") === "tv") {
     if (!companyId || !unitId) {
       return (
-        <div className="p-8 text-center text-muted-foreground">
-          Carregando contexto da empresa...
+        <div className="p-8 text-center" role="alert">
+          <h1 className="text-lg font-semibold">Selecione uma unidade operacional</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            A Triagem precisa de uma unidade ativa. Use o seletor de empresa, unidade e perfil no cabeçalho.
+          </p>
         </div>
       );
     }
@@ -28,8 +31,11 @@ export default function NursingTriagePage(): JSX.Element {
 
   if (!companyId || !unitId) {
     return (
-      <div className="p-8 text-center text-muted-foreground">
-        Carregando contexto da empresa...
+      <div className="p-8 text-center" role="alert">
+        <h1 className="text-lg font-semibold">Selecione uma unidade operacional</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          A Triagem precisa de uma unidade ativa. Use o seletor de empresa, unidade e perfil no cabeçalho.
+        </p>
       </div>
     );
   }
