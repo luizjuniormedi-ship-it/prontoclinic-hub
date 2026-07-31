@@ -194,7 +194,10 @@ describe("AuthProvider fail-closed restoration", () => {
     });
 
     await waitFor(() => expect(screen.getByText("authenticated")).toBeInTheDocument());
-    expect(auth.mfa.getAuthenticatorAssuranceLevel).toHaveBeenCalledTimes(1);
+    const mfa = auth.mfa as {
+      getAuthenticatorAssuranceLevel: ReturnType<typeof vi.fn>;
+    };
+    expect(mfa.getAuthenticatorAssuranceLevel).toHaveBeenCalledTimes(1);
     expect(supabase.from).toHaveBeenCalledTimes(2);
   });
 });
