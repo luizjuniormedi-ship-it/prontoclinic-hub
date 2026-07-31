@@ -18,6 +18,7 @@ export default defineConfig({
   globalSetup: './e2e/global-setup.ts',
   use: {
     baseURL: process.env.E2E_BASE_URL || 'http://localhost:5173',
+    timezoneId: 'America/Sao_Paulo',
     serviceWorkers: serviceWorkersEnabled ? 'allow' : 'block',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
