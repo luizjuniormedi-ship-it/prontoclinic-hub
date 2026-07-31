@@ -33,9 +33,30 @@ describe("billingAccountsService", () => {
     });
   });
 
+  it("localiza o handoff da recepção por conta e agendamento", async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: {
+        id: "account-qa",
+        appointment_id: 91001,
+        status: "aberta",
+        opened_at: "2026-07-29T12:00:00Z",
+      },
+      error: null,
+    });
+
+    const focused = await billingAccountsService.getFocused("account-qa", 91001);
+
+    expect(mocks.rpc).toHaveBeenCalledWith("m39_get_billing_account_secure", {
+      p_account_id: "account-qa",
+      p_appointment_id: 91001,
+    });
+    expect(focused).toMatchObject({ id: "account-qa", appointment_id: 91001 });
+  });
+
   it("considera pronta somente a conta no estado pronta_envio", () => {
     const base = {
       id: "qa",
+      appointment_id: null,
       patient_id: null,
       insurance_id: null,
       billing_type: "convenio",
@@ -212,3 +233,4 @@ describe("billingAccountsService", () => {
     });
   });
 });
+

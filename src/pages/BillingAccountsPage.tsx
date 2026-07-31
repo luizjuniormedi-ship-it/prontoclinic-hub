@@ -27,6 +27,11 @@ const fmtBRL = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currenc
 export default function BillingAccountsPage() {
   const [searchParams] = useSearchParams();
   const requestedAccountId = searchParams.get("account");
+  const requestedAppointmentId = searchParams.get("appointment");
+  const parsedAppointmentId = requestedAppointmentId && /^\d+$/.test(requestedAppointmentId)
+    ? Number(requestedAppointmentId)
+    : null;
+  const hasFocusedHandoff = requestedAccountId !== null || requestedAppointmentId !== null;
   const [accounts, setAccounts] = useState<BillingAccount[]>([]);
   const [stats, setStats] = useState({ total: 0, abertas: 0, prontas: 0, comPendencia: 0, enviadas: 0, pagas: 0 });
   const [loading, setLoading] = useState(true);
@@ -53,9 +58,33 @@ export default function BillingAccountsPage() {
   const [reviewing, setReviewing] = useState(false);
   const [reopening, setReopening] = useState(false);
   const [reopenReason, setReopenReason] = useState("");
+  const [focusedError, setFocusedError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
+    setFocusedError(null);
+    if (hasFocusedHandoff) {
+      if ((requestedAppointmentId !== null && parsedAppointmentId === null) || !requestedAccountId) {
+        setAccounts([]);
+        setStats(billingAccountsService.stats([]));
+        setFocusedError("Referência da conta recebida da Recepção é inválida.");
+        setLoading(false);
+        return;
+      }
+      billingAccountsService.getFocused(requestedAccountId, parsedAppointmentId)
+        .then((focusedAccount) => {
+          setAccounts([focusedAccount]);
+          setStats(billingAccountsService.stats([focusedAccount]));
+          setDetail(focusedAccount);
+        })
+        .catch((error) => {
+          setAccounts([]);
+          setStats(billingAccountsService.stats([]));
+          setFocusedError(String(error));
+        })
+        .finally(() => setLoading(false));
+      return;
+    }
     billingAccountsService.list({
         status: statusFilter !== "all" ? statusFilter : undefined,
         billing_type: typeFilter !== "all" ? typeFilter : undefined,
@@ -64,22 +93,10 @@ export default function BillingAccountsPage() {
       .then((nextAccounts) => {
         setAccounts(nextAccounts);
         setStats(billingAccountsService.stats(nextAccounts));
-        if (requestedAccountId) {
-          const focusedAccount = nextAccounts.find((account) => account.id === requestedAccountId);
-          if (focusedAccount) {
-            setDetail(focusedAccount);
-          } else {
-            toast({
-              title: "Conta da recepção não localizada",
-              description: "A lista geral foi mantida para conferência manual.",
-              variant: "destructive",
-            });
-          }
-        }
       })
       .catch((e) => toast({ title: "Erro ao carregar faturamento", description: String(e), variant: "destructive" }))
       .finally(() => setLoading(false));
-  }, [statusFilter, typeFilter, pendingOnly, requestedAccountId]);
+  }, [statusFilter, typeFilter, pendingOnly, hasFocusedHandoff, requestedAccountId, requestedAppointmentId, parsedAppointmentId]);
 
   useEffect(load, [load]);
 
@@ -221,6 +238,18 @@ export default function BillingAccountsPage() {
   const filtered = accounts.filter((a) => !search || a.patient_name?.toLowerCase().includes(search.toLowerCase()) || a.guide_number?.toLowerCase().includes(search.toLowerCase()));
 
   if (loading) return <LoadingState />;
+
+  if (focusedError) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <PageHeader title="Faturamento" description="Pré-contas abertas pelos atendimentos da Recepção" />
+        <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-4">
+          <p className="font-medium text-destructive">Conta da recepção não localizada</p>
+          <p className="text-sm text-muted-foreground">{focusedError}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -594,3 +623,4 @@ export default function BillingAccountsPage() {
     </div>
   );
 }
+

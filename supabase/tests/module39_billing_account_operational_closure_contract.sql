@@ -72,6 +72,11 @@ SELECT pg_temp.assert_true(
   )
   AND has_function_privilege(
     'authenticated',
+    'public.m39_get_billing_account_secure(uuid,bigint)',
+    'EXECUTE'
+  )
+  AND has_function_privilege(
+    'authenticated',
     'public.m39_review_billing_account_secure(uuid,integer,uuid)',
     'EXECUTE'
   )
@@ -99,6 +104,11 @@ SELECT pg_temp.assert_true(
     'anon',
     'public.m39_review_billing_account_secure(uuid,integer,uuid)',
     'EXECUTE'
+  )
+  AND NOT has_function_privilege(
+    'anon',
+    'public.m39_get_billing_account_secure(uuid,bigint)',
+    'EXECUTE'
   ),
   'Only application roles may execute Module 39 RPCs'
 );
@@ -109,6 +119,7 @@ SELECT pg_temp.assert_true(
     FROM pg_proc procedure
     WHERE procedure.oid IN (
       'public.m39_list_billing_accounts_secure(text,text,date,boolean,integer)'::REGPROCEDURE,
+      'public.m39_get_billing_account_secure(uuid,bigint)'::REGPROCEDURE,
       'public.m39_review_billing_account_secure(uuid,integer,uuid)'::REGPROCEDURE,
       'public.m39_reopen_billing_account_secure(uuid,text,integer,uuid)'::REGPROCEDURE,
       'public.m39_list_billing_competences_secure(integer)'::REGPROCEDURE,
@@ -497,6 +508,30 @@ SELECT pg_temp.assert_true(
 );
 
 SELECT pg_temp.assert_true(
+  public.m39_get_billing_account_secure(
+    '39000000-0000-4000-8000-000000000101',
+    NULL
+  ) ->> 'id' = '39000000-0000-4000-8000-000000000101',
+  'Focused handoff must resolve the exact account in the active context'
+);
+
+DO $focused_handoff_mismatch$
+BEGIN
+  PERFORM public.m39_get_billing_account_secure(
+    '39000000-0000-4000-8000-000000000101',
+    999999999
+  );
+  RAISE EXCEPTION
+    'MODULE39_BILLING_ASSERTION_FAILED: mismatched handoff was accepted';
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLERRM NOT ILIKE '%não localizada no contexto ativo%' THEN
+      RAISE;
+    END IF;
+END
+$focused_handoff_mismatch$;
+
+SELECT pg_temp.assert_true(
   (
     SELECT count(*)
     FROM public.m39_list_billing_competences_secure() competence
@@ -635,6 +670,24 @@ SELECT
     '39000000-0000-4000-8000-000000000205'
   );
 
+DO $closed_competence_immutable$
+BEGIN
+  PERFORM public.m39_review_billing_account_secure(
+    '39000000-0000-4000-8000-000000000105',
+    1,
+    '39000000-0000-4000-8000-000000000207'
+  );
+
+  RAISE EXCEPTION
+    'MODULE39_BILLING_ASSERTION_FAILED: closed competence account was mutable';
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLERRM NOT ILIKE '%competência fechada é imutável%' THEN
+      RAISE;
+    END IF;
+END
+$closed_competence_immutable$;
+
 SELECT pg_temp.assert_true(
   (
     SELECT payload FROM module39_runtime_results
@@ -693,3 +746,4 @@ $aal1_denied$;
 RESET ROLE;
 
 ROLLBACK;
+

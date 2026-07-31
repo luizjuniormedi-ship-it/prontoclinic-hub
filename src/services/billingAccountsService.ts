@@ -15,6 +15,7 @@ export type BillingStatus =
 
 export interface BillingAccount {
   id: string;
+  appointment_id: number | null;
   patient_id: number | null;
   insurance_id: number | null;
   billing_type: string;
@@ -109,6 +110,24 @@ export const BILLING_STATUS_LABELS: Partial<Record<BillingStatus, string>> = {
 };
 
 export const billingAccountsService = {
+  async getFocused(accountId?: string | null, appointmentId?: number | null): Promise<BillingAccount> {
+    if (!accountId && !appointmentId) throw new Error("Conta ou agendamento é obrigatório");
+    const { data, error } = await supabase.rpc("m39_get_billing_account_secure", {
+      p_account_id: accountId ?? null,
+      p_appointment_id: appointmentId ?? null,
+    });
+    if (error) throw new Error(error.message);
+    const account = data as unknown as BillingAccount;
+    return {
+      ...account,
+      opened_at: account.opened_at || account.created_at || "",
+      authorization_number: account.authorization_number ?? null,
+      has_denial: account.has_denial ?? false,
+      is_reopened: account.is_reopened ?? account.status === "reaberta",
+      paid_at: account.paid_at ?? null,
+    };
+  },
+
   async list(filters?: { status?: string; billing_type?: string; competence?: string; onlyPending?: boolean }): Promise<BillingAccount[]> {
     const { data, error } = await supabase.rpc("m39_list_billing_accounts_secure", {
       p_status: filters?.status ?? null,
@@ -243,3 +262,4 @@ export const billingAccountsService = {
     };
   },
 };
+

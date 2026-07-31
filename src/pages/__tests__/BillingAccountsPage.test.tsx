@@ -13,6 +13,7 @@ vi.mock("@/services/billingAccountsService", async (importOriginal) => {
     ...original,
     billingAccountsService: {
       list: vi.fn(),
+      getFocused: vi.fn(),
       stats: vi.fn(),
       review: vi.fn(),
       reopen: vi.fn(),
@@ -28,6 +29,7 @@ vi.mock("@/services/billingAccountsService", async (importOriginal) => {
 
 const account: BillingAccount = {
   id: "account-qa",
+  appointment_id: 91001,
   patient_id: 101,
   insurance_id: 10,
   billing_type: "convenio",
@@ -61,6 +63,7 @@ const account: BillingAccount = {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(billingAccountsService.list).mockResolvedValue([account]);
+  vi.mocked(billingAccountsService.getFocused).mockResolvedValue(account);
   vi.mocked(billingAccountsService.stats).mockReturnValue({
     total: 1,
     abertas: 1,
@@ -144,7 +147,21 @@ describe("BillingAccountsPage — contrato canônico de pré-contas", () => {
 
     expect(await screen.findByRole("dialog", { name: "Conferência da Conta" })).toBeInTheDocument();
     expect(screen.getAllByText("Paciente Faturamento QA").length).toBeGreaterThan(0);
+    expect(billingAccountsService.getFocused).toHaveBeenCalledWith("account-qa", 91001);
+    expect(billingAccountsService.list).not.toHaveBeenCalled();
     expect(mocks.toast).not.toHaveBeenCalled();
+  });
+
+  it("falha fechado quando conta e agendamento não correspondem", async () => {
+    vi.mocked(billingAccountsService.getFocused).mockRejectedValue(
+      new Error("Conta da recepção não localizada no contexto ativo"),
+    );
+
+    renderBillingAccountsPage("/billing-accounts?account=account-qa&appointment=99999");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Conta da recepção não localizada");
+    expect(screen.queryByText("Paciente Faturamento QA")).not.toBeInTheDocument();
+    expect(billingAccountsService.list).not.toHaveBeenCalled();
   });
 
   it("revisa pendências pela RPC canônica", async () => {
@@ -218,3 +235,4 @@ describe("BillingAccountsPage — contrato canônico de pré-contas", () => {
     ));
   });
 });
+
