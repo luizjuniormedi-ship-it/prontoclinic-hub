@@ -22,7 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 import { calculateAge, localDateKey } from "@/utils/formatters";
 import { friendlyError } from "@/utils/friendlyError";
 import { useDebounce } from "@/hooks/useDebounce";
-import { CheckinReadiness, formatReceptionQueueTicketLabel, ReceptionPendingItem, ReceptionQueueTicket, receptionService } from "@/services/receptionService";
+import { CheckinReadiness, formatReceptionQueueTicketLabel, ReceptionPendingItem, ReceptionPrecheckinContext, ReceptionQueueTicket, receptionService } from "@/services/receptionService";
 import { insuranceCompanyService, insurancePlanService, type InsuranceCompany, type InsurancePlan } from "@/services/insuranceService";
 import { receptionWorkflowService, type ReceptionWorkflowInput } from "@/services/receptionWorkflowService";
 import { priceTableService } from "@/services/priceTableService";
@@ -271,6 +271,7 @@ export default function ReceptionPage() {
   const [search, setSearch] = useState("");
   const [checkinTarget, setCheckinTarget] = useState<Appointment | null>(null);
   const [readiness, setReadiness] = useState<CheckinReadiness | null>(null);
+  const [precheckContext, setPrecheckContext] = useState<ReceptionPrecheckinContext | null>(null);
   const [canReleaseByException, setCanReleaseByException] = useState(false);
   const [priority, setPriority] = useState<"normal" | "legal" | "urgent">("normal");
   const [exceptionReason, setExceptionReason] = useState("");
@@ -432,6 +433,7 @@ export default function ReceptionPage() {
       receptionService.getReadiness(appointmentId),
       receptionService.getPrecheckinContext(appointmentId),
     ]);
+    setPrecheckContext(precheck);
     return {
       ...baseReadiness,
       ready: baseReadiness.ready && precheck.ready,
@@ -442,7 +444,7 @@ export default function ReceptionPage() {
 
   const openCheckin = async (appointment: Appointment) => {
     try {
-      setCheckingIn(true); setCheckinTarget(appointment); setReadiness(null); setCanReleaseByException(false); setExceptionReason(""); setPriority("normal");
+      setCheckingIn(true); setCheckinTarget(appointment); setReadiness(null); setPrecheckContext(null); setCanReleaseByException(false); setExceptionReason(""); setPriority("normal");
       const patient = patients.find((item) => item.id === appointment.patientId);
       const {
         plan,
@@ -511,7 +513,7 @@ export default function ReceptionPage() {
       ]);
       setReadiness(nextReadiness);
       setCanReleaseByException(exceptionCapability);
-    } catch (err) { setCheckinTarget(null); setCanReleaseByException(false); toast({ title: "Erro ao validar check-in", description: (err as Error).message, variant: "destructive" }); }
+    } catch (err) { setCheckinTarget(null); setPrecheckContext(null); setCanReleaseByException(false); toast({ title: "Erro ao validar check-in", description: (err as Error).message, variant: "destructive" }); }
     finally { setCheckingIn(false); }
   };
   const openCheckinRef = useRef(openCheckin);
@@ -604,7 +606,7 @@ export default function ReceptionPage() {
           ? "A conta foi aberta e seguirá para conferência do faturamento."
           : "A conta foi aberta e o recebimento deve ser confirmado no Caixa.",
       });
-      setCheckinTarget(null); setReadiness(null); setCanReleaseByException(false); setValidatedBillingQuote(null); await loadAll();
+      setCheckinTarget(null); setReadiness(null); setPrecheckContext(null); setCanReleaseByException(false); setValidatedBillingQuote(null); await loadAll();
     } catch (err) { toast({ title: "Check-in bloqueado", description: (err as Error).message, variant: "destructive" }); }
     finally { setCheckingIn(false); }
   };
@@ -960,7 +962,7 @@ export default function ReceptionPage() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={Boolean(checkinTarget)} onOpenChange={(open) => { if (!open && !checkingIn) { setCheckinTarget(null); setReadiness(null); setCanReleaseByException(false); setValidatedBillingQuote(null); } }}>
+      <Dialog open={Boolean(checkinTarget)} onOpenChange={(open) => { if (!open && !checkingIn) { setCheckinTarget(null); setReadiness(null); setPrecheckContext(null); setCanReleaseByException(false); setValidatedBillingQuote(null); } }}>
         <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
           <DialogHeader><DialogTitle>Entrada do paciente</DialogTitle><DialogDescription>{checkinTarget?.patientName} · {checkinTarget?.time} · {checkinTarget?.doctorName}</DialogDescription></DialogHeader>
           {!readiness ? <p role="status" className="text-sm text-muted-foreground">Validando cadastro, convênio e autorização...</p> : <div className="space-y-4">
@@ -999,14 +1001,29 @@ export default function ReceptionPage() {
                   </p>
                 </div>
                 {billingType === "convenio" && (
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label htmlFor="reception-insurance">Convênio</Label>
-                    <Select value={insuranceId} disabled>
-                      <SelectTrigger id="reception-insurance"><SelectValue placeholder="Selecione o convênio" /></SelectTrigger>
-                      <SelectContent>
-                        {insuranceCompanies.map((item) => <SelectItem key={item.id} value={String(item.id)}>{item.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                  <div className="grid gap-3 sm:col-span-2 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="reception-insurance">Convênio</Label>
+                      <Select value={insuranceId} disabled>
+                        <SelectTrigger id="reception-insurance"><SelectValue placeholder="Selecione o convênio" /></SelectTrigger>
+                        <SelectContent>
+                          {insuranceCompanies.map((item) => <SelectItem key={item.id} value={String(item.id)}>{item.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="reception-insurance-card">Carteirinha</Label>
+                      <Input id="reception-insurance-card" value={precheckContext?.insurance_card_number || "Não informada"} readOnly />
+                    </div>
+                    {precheckContext?.authorization_required && (
+                      <div className="space-y-2 sm:col-span-2 rounded-md border p-3">
+                        <p className="text-sm font-medium">Autorização do procedimento</p>
+                        <p className="text-xs">Número: {precheckContext.authorization_number || "Não informado"}</p>
+                        <p className="text-xs">Senha: {precheckContext.authorization_password || "Não informada"}</p>
+                        <p className="text-xs">Validade: {precheckContext.authorization_valid_until || "Não informada"}</p>
+                        <p className="text-xs">Procedimento: {precheckContext.authorization_procedure_desc || `#${precheckContext.authorization_procedure_id || "não vinculado"}`}</p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1104,7 +1121,7 @@ export default function ReceptionPage() {
               </div>
             )}
           </div>}
-          <DialogFooter><Button variant="outline" onClick={() => { setCheckinTarget(null); setReadiness(null); setCanReleaseByException(false); }} disabled={checkingIn}>Cancelar</Button><Button onClick={() => void confirmCheckin()} disabled={checkingIn || !readiness || !workflowKey || (!readiness.ready && (!canReleaseByException || exceptionReasonLength < 20))}>{checkingIn ? "Processando..." : !readiness ? "Validando check-in..." : readiness.ready ? "Confirmar entrada e abrir conta" : "Liberar entrada por exceção"}</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => { setCheckinTarget(null); setReadiness(null); setPrecheckContext(null); setCanReleaseByException(false); }} disabled={checkingIn}>Cancelar</Button><Button onClick={() => void confirmCheckin()} disabled={checkingIn || !readiness || !workflowKey || (!readiness.ready && (!canReleaseByException || exceptionReasonLength < 20))}>{checkingIn ? "Processando..." : !readiness ? "Validando check-in..." : readiness.ready ? "Confirmar entrada e abrir conta" : "Liberar entrada por exceção"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
