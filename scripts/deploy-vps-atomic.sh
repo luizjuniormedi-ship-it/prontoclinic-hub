@@ -21,13 +21,13 @@ test ! -e "${release_dir}"
 mkdir -p "${release_root}" "${release_dir}"
 cp -a "${dist_dir}/." "${release_dir}/"
 
-# Abas abertas podem solicitar chunks de releases anteriores depois da troca
-# do symlink. Mantemos os assets dos cinco releases mais recentes.
+# Abas abertas podem solicitar chunks de qualquer release ainda retido depois
+# da troca do symlink. Agregamos os assets imutáveis de todos eles.
 while IFS= read -r previous_release; do
   if [[ "${previous_release}" != "${release_dir}" && -d "${previous_release}/assets" ]]; then
     cp -an "${previous_release}/assets/." "${release_dir}/assets/"
   fi
-done < <(ls -1dt "${release_root}"/* 2>/dev/null | head -n 6 || true)
+done < <(find "${release_root}" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null || true)
 
 printf '%s\n' "${release_id}" > "${release_dir}/RELEASE_ID"
 find "${release_dir}" -type d -exec chmod 0755 {} +
