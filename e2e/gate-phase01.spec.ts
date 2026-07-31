@@ -1,11 +1,10 @@
 import AxeBuilder from '@axe-core/playwright';
-import { E2E_PASSWORD } from './env';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, loginAsRole, test } from './fixtures/auth';
+import type { Page } from '@playwright/test';
 
-const PASSWORD = E2E_PASSWORD;
-const UNIT_A = /Empresa E2E · Unidade E2E A admin/;
-const UNIT_A_RECEPTION = /Empresa E2E · Unidade E2E A recepcao/;
-const UNIT_B = /Empresa E2E · Unidade E2E B admin/;
+const UNIT_A = /Empresa E2E.*Unidade E2E A.*admin/;
+const UNIT_A_RECEPTION = /Empresa E2E.*Unidade E2E A.*recepcao/;
+const UNIT_B = /Empresa E2E.*Unidade E2E B.*admin/;
 const RECORD_MARKER = 'Queixa E2E persistida fase 0/1';
 
 async function assertAccessible(page: Page, label: string) {
@@ -30,6 +29,19 @@ async function selectContext(page: Page, option: RegExp) {
   await page.getByRole('menuitem', { name: option }).click();
   await expect(page.getByText('Selecione seu contexto de acesso')).toBeHidden();
   await expect(contextSelector).toBeEnabled();
+  await expect(page.locator('#main-content')).toHaveAttribute(
+    'data-access-context-status',
+    'ready',
+    { timeout: 15_000 },
+  );
+  await expect.poll(
+    () => page.evaluate(
+      () => JSON.parse(
+        sessionStorage.getItem('prontomedic-application-session') || 'null',
+      )?.session_id ?? null,
+    ),
+    { timeout: 15_000, message: 'sessão de aplicação deve estar ativa' },
+  ).not.toBeNull();
 }
 
 async function authenticatedFetch(page: Page, path: string, init: RequestInit) {
@@ -59,12 +71,10 @@ test.describe('Gate fase 0/1', () => {
   );
 
   test('recepção não contorna o workflow pela transição direta da Agenda', async ({ page }) => {
-    await page.goto('/login');
-    await page.getByLabel('E-mail').fill('recepcao@prontomedic.test');
-    await page.getByRole('textbox', { name: 'Senha' }).fill(PASSWORD);
-    await page.getByRole('button', { name: /^entrar$/i }).click();
-    await expect(page).not.toHaveURL(/\/login/, { timeout: 10_000 });
-    await selectContext(page, UNIT_A_RECEPTION);
+    await loginAsRole(page, 'reception');
+    await expect(page.getByRole('button', {
+      name: 'Selecionar empresa, unidade e perfil',
+    })).toContainText(UNIT_A_RECEPTION);
 
     const blockedDirectWaiting = await authenticatedFetch(
       page,
@@ -105,12 +115,11 @@ test.describe('Gate fase 0/1', () => {
   test('contexto, RLS A/B, recepção, atendimento, prontuário e Axe', async ({ page }) => {
     await page.goto('/login');
     await assertAccessible(page, 'login');
-    await page.getByLabel('E-mail').fill('admin@prontomedic.test');
-    await page.getByRole('textbox', { name: 'Senha' }).fill(PASSWORD);
-    await page.getByRole('button', { name: /^entrar$/i }).click();
-    await expect(page).not.toHaveURL(/\/login/, { timeout: 10_000 });
+    await loginAsRole(page, 'admin');
 
-    await selectContext(page, UNIT_A);
+    await expect(page.getByRole('button', {
+      name: 'Selecionar empresa, unidade e perfil',
+    })).toContainText(UNIT_A);
     const beforeReload = await page.evaluate(() => JSON.parse(sessionStorage.getItem('prontomedic-application-session') || 'null'));
     expect(beforeReload?.session_id).toBeTruthy();
     await page.reload();
