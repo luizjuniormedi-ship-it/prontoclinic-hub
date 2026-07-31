@@ -2,6 +2,8 @@
 -- The previous compatibility migration emitted YYYY-MM text, which fails on a
 -- clean replay after the billing closure module normalizes competence_month.
 
+BEGIN;
+
 DO $migration$
 DECLARE
   v_signature REGPROCEDURE :=
@@ -41,3 +43,9 @@ REVOKE ALL ON FUNCTION private.m11_ensure_billing_preaccount(
 GRANT EXECUTE ON FUNCTION private.m11_ensure_billing_preaccount(
   UUID, TEXT, TEXT, BIGINT, NUMERIC
 ) TO prontomedic_reception_rpc_owner;
+
+INSERT INTO public.prontomedic_deployment_migrations(filename)
+VALUES ('20260731025500_reception_preaccount_competence_date_contract.sql')
+ON CONFLICT (filename) DO NOTHING;
+
+COMMIT;

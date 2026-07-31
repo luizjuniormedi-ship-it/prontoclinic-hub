@@ -24,4 +24,12 @@ describe("reception preaccount competence contract migration", () => {
       /REVOKE ALL ON FUNCTION private\.m11_ensure_billing_preaccount[\s\S]*FROM PUBLIC, anon, authenticated, app_prontomedic/i,
     );
   });
+
+  it("is transactional and records the production deployment", () => {
+    expect(migration).toMatch(/^--[\s\S]*\nBEGIN;/i);
+    expect(migration).toContain(
+      "20260731025500_reception_preaccount_competence_date_contract.sql",
+    );
+    expect(migration.trim()).toMatch(/COMMIT;$/i);
+  });
 });
