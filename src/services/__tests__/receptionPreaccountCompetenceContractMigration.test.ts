@@ -2,17 +2,17 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const migration = readFileSync(
-  "supabase/migrations/20260731023500_reception_preaccount_competence_contract.sql",
+  "supabase/migrations/20260731025500_reception_preaccount_competence_date_contract.sql",
   "utf8",
 );
 
 describe("reception preaccount competence contract migration", () => {
-  it("writes competence_month in its canonical seven-character format", () => {
+  it("writes competence_month as the canonical first-day DATE", () => {
     expect(migration).toMatch(
-      /competence_month[\s\S]*to_char\(CURRENT_DATE, 'YYYY-MM'\)/i,
+      /date_trunc\(''month'', CURRENT_DATE\)::DATE/i,
     );
-    expect(migration).not.toMatch(
-      /competence_month[\s\S]*date_trunc\('month', CURRENT_DATE\)::DATE/i,
+    expect(migration).toMatch(
+      /replace\([\s\S]*to_char\(CURRENT_DATE, ''YYYY-MM''\)[\s\S]*date_trunc/i,
     );
   });
 
