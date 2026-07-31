@@ -19,5 +19,14 @@ describe("reception document lock contract migration", () => {
       /FROM public\.patient_documents[\s\S]*?FOR UPDATE/i,
     );
     expect(migration).toContain("RETURNS JSONB");
+    expect(migration).toMatch(
+      /GRANT SELECT, UPDATE ON TABLE public\.patient_documents\s+TO prontomedic_reception_rpc_owner/i,
+    );
+    expect(migration).toContain(
+      "CREATE POLICY patient_documents_reception_rpc_update",
+    );
+    expect(migration).toMatch(
+      /WITH CHECK \(company_id = public\.current_company_id\(\)\)/i,
+    );
   });
 });

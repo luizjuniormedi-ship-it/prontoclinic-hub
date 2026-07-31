@@ -100,6 +100,26 @@ ALTER FUNCTION public.resolve_reception_document_issue_secure(
   BIGINT, UUID, TEXT, DATE
 ) OWNER TO prontomedic_reception_rpc_owner;
 
+GRANT SELECT, UPDATE ON TABLE public.patient_documents
+  TO prontomedic_reception_rpc_owner;
+
+DROP POLICY IF EXISTS patient_documents_reception_rpc_select
+  ON public.patient_documents;
+CREATE POLICY patient_documents_reception_rpc_select
+  ON public.patient_documents
+  FOR SELECT
+  TO prontomedic_reception_rpc_owner
+  USING (company_id = public.current_company_id());
+
+DROP POLICY IF EXISTS patient_documents_reception_rpc_update
+  ON public.patient_documents;
+CREATE POLICY patient_documents_reception_rpc_update
+  ON public.patient_documents
+  FOR UPDATE
+  TO prontomedic_reception_rpc_owner
+  USING (company_id = public.current_company_id())
+  WITH CHECK (company_id = public.current_company_id());
+
 REVOKE ALL ON FUNCTION public.resolve_reception_document_issue_secure(
   BIGINT, UUID, TEXT, DATE
 ) FROM PUBLIC;
