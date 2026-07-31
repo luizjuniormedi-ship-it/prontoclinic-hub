@@ -13,7 +13,11 @@ describe("reception document lock contract migration", () => {
     );
     expect(migration).toContain("UPDATE public.patient_documents");
     expect(migration).not.toMatch(
-      /FROM public\.appointments[\s\S]*?FOR UPDATE/,
+      /FROM public\.appointments\s+WHERE id = p_appointment_id\s+FOR UPDATE/i,
     );
+    expect(migration).toMatch(
+      /FROM public\.patient_documents[\s\S]*?FOR UPDATE/i,
+    );
+    expect(migration).toContain("RETURNS JSONB");
   });
 });
