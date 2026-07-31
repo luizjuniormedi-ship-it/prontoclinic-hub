@@ -618,6 +618,15 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const path = url.pathname;
 
+  if (req.method === 'GET' && path === '/health') {
+    try {
+      await pool.query('SELECT 1');
+      return json(res, { status: 'ok', database: 'reachable' });
+    } catch {
+      return json(res, { status: 'error', database: 'unreachable' }, 503);
+    }
+  }
+
   // Support HEAD with count (supabase-js uses HEAD for count)
   if (req.method === 'HEAD' && path.startsWith('/rest/v1/')) {
     const table = path.replace('/rest/v1/', '').split('?')[0];

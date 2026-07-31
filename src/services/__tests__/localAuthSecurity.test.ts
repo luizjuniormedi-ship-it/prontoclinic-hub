@@ -15,6 +15,15 @@ describe("local auth server security invariants", () => {
     expect(source).toContain("PGPASSWORD obrigatorio em producao");
   });
 
+  it("mantem health check dependente do PostgreSQL", () => {
+    expect(source).toContain("req.method === 'GET' && path === '/health'");
+    expect(source).toContain("await pool.query('SELECT 1')");
+    expect(source).toContain("{ status: 'ok', database: 'reachable' }");
+    expect(source).toContain(
+      "{ status: 'error', database: 'unreachable' }, 503",
+    );
+  });
+
   it("nega RPC que nao esteja na allowlist", () => {
     expect(source).not.toContain("if (!required) return { ok: true }");
     expect(source).toContain("if (!required) return { ok: false");
