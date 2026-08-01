@@ -7,6 +7,7 @@
     ".env.example",
     ".gitignore",
     ".github",
+    "AUDIT_PROMPT.md",
     "CONTRIBUTING.md",
     "DEPLOY.md",
     "INSTALL.md",
