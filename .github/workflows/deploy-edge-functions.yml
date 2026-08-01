@@ -63,6 +63,8 @@ jobs:
             -v "$PWD:/app" -w /app \
             --entrypoint deno denoland/deno:2.5.6 \
             test --allow-env supabase/functions/_shared/cors_test.ts
+      - name: Test Edge runtime deployment contract
+        run: bash deploy/edge-runtime/deploy-functions.test.sh
       - run: |
           if grep -R '"Access-Control-Allow-Origin": "\*"' \
             supabase/functions/auth-admin \

@@ -57,6 +57,7 @@ jobs:
             -v "$PWD:/app" -w /app \
             --entrypoint deno denoland/deno:2.5.6 \
             test --allow-env supabase/functions/_shared/cors_test.ts
+          bash deploy/edge-runtime/deploy-functions.test.sh
           if grep -R '"Access-Control-Allow-Origin": "\*"' \
             supabase/functions/auth-admin \
             supabase/functions/dicom-bridge \

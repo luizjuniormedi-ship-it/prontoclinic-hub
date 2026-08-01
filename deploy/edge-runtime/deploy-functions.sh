@@ -72,6 +72,26 @@ test ! -e "$release" || {
   echo "Release imutável já existe: ${release}" >&2
   exit 22
 }
+
+previous=""
+activated=0
+rollback() {
+  status=$?
+  trap - ERR
+  set +e
+  if test "$activated" = "1" && test -n "$previous"; then
+    ln -sfn "$previous" "${current}.next"
+    mv -Tf "${current}.next" "$current"
+    docker compose -f "$compose" up -d --no-deps --force-recreate functions
+  fi
+  current_target="$(readlink -f "$current" 2>/dev/null || true)"
+  if test "$current_target" != "${release}/functions"; then
+    rm -rf -- "$release"
+  fi
+  exit "$status"
+}
+trap rollback ERR
+
 mkdir "$release"
 tar --no-same-owner --no-same-permissions -xzf "$archive" -C "$release"
 
@@ -83,7 +103,6 @@ for path in \
   test -f "$path"
 done
 
-previous=""
 if test -L "$current"; then
   previous="$(readlink -f "$current")"
 fi
@@ -100,17 +119,9 @@ for function_name in _shared auth-admin dicom-bridge telemedicina-daily; do
   cp -a "${release}/supabase/functions/${function_name}" "${release}/functions/${function_name}"
 done
 
-rollback() {
-  if test -n "$previous"; then
-    ln -sfn "$previous" "${current}.next"
-    mv -Tf "${current}.next" "$current"
-    docker compose -f "$compose" up -d --no-deps --force-recreate functions
-  fi
-}
-trap rollback ERR
-
 ln -sfn "$release/functions" "${current}.next"
 mv -Tf "${current}.next" "$current"
+activated=1
 docker compose -f "$compose" up -d --no-deps --force-recreate functions
 
 for attempt in $(seq 1 20); do
