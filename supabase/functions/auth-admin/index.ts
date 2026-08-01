@@ -1,9 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.99.3";
-import { corsDenied, corsHeaders } from "../_shared/cors.ts";
+import { allowedRedirectUrl, corsDenied, corsHeaders } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const ADMIN_REDIRECT_PATHS = new Set(["/reset-password"]);
 
 interface AccessTransition {
   found: boolean;
@@ -84,9 +85,11 @@ Deno.serve(async (req: Request) => {
       const companyId = String(body.companyId ?? "");
       const roleId = Number(body.roleId);
       const primaryUnitId = body.primaryUnitId == null ? null : Number(body.primaryUnitId);
+      const redirectTo = allowedRedirectUrl(body.redirectTo, ADMIN_REDIRECT_PATHS);
       if (!email || !fullName || !Number.isInteger(roleId)) {
         return respond({ error: "Dados de convite inválidos." }, 400);
       }
+      if (!redirectTo) return respond({ error: "Destino de convite inválido." }, 400);
       if (!await isCompanyAdmin(companyId)) {
         return respond({ error: "Acesso administrativo negado." }, 403);
       }
@@ -103,7 +106,7 @@ Deno.serve(async (req: Request) => {
       if (!userId) {
         const { data: invited, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
           data: { full_name: fullName },
-          redirectTo: typeof body.redirectTo === "string" ? body.redirectTo : undefined,
+          redirectTo,
         });
         if (inviteError || !invited.user) throw inviteError ?? new Error("Convite não criado.");
         userId = invited.user.id;
@@ -142,6 +145,8 @@ Deno.serve(async (req: Request) => {
     if (action === "send-recovery") {
       const userId = String(body.userId ?? "");
       const companyId = String(body.companyId ?? "");
+      const redirectTo = allowedRedirectUrl(body.redirectTo, ADMIN_REDIRECT_PATHS);
+      if (!redirectTo) return respond({ error: "Destino de recuperação inválido." }, 400);
       const { data: target } = await adminClient
         .from("user_profiles")
         .select("id, email")
@@ -158,7 +163,7 @@ Deno.serve(async (req: Request) => {
         return respond({ error: "Acesso administrativo negado." }, 403);
       }
       const { error } = await userClient.auth.resetPasswordForEmail(target.email, {
-        redirectTo: typeof body.redirectTo === "string" ? body.redirectTo : undefined,
+        redirectTo,
       });
       if (error) throw error;
       return respond({ ok: true });

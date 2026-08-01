@@ -64,13 +64,13 @@ jobs:
             --entrypoint deno denoland/deno:2.5.6 \
             test --allow-env supabase/functions/_shared/cors_test.ts
       - run: |
-          grep -R '"Access-Control-Allow-Origin": "\*"' \
+          if grep -R '"Access-Control-Allow-Origin": "\*"' \
             supabase/functions/auth-admin \
             supabase/functions/dicom-bridge \
-            supabase/functions/telemedicina-daily && {
+            supabase/functions/telemedicina-daily; then
             echo "::error::CORS wildcard encontrado nas Edge Functions"
             exit 1
-          } || true
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: edge-functions-${{ inputs.commit_sha }}
@@ -141,12 +141,14 @@ jobs:
 
           smoke_failed=0
           for function_name in auth-admin dicom-bridge telemedicina-daily; do
-            status="$(curl -sS -o /tmp/response -w '%{http_code}' \
-              -X POST \
+            status="$(curl -sS --connect-timeout 5 --max-time 15 \
+              -D /tmp/headers -o /tmp/response -w '%{http_code}' \
+              -X OPTIONS \
               -H 'Origin: https://prontomedic.191-252-196-6.sslip.io' \
               "${PUBLIC_URL}/functions/v1/${function_name}")"
-            test "$status" = "401" || {
-              echo "::error::${function_name} retornou HTTP ${status}, esperado 401 sem JWT"
+            grep -Fqi 'Access-Control-Allow-Origin: https://prontomedic.191-252-196-6.sslip.io' /tmp/headers || status="cors-${status}"
+            test "$status" = "200" || {
+              echo "::error::${function_name} falhou no preflight CORS: ${status}"
               cat /tmp/response
               smoke_failed=1
             }

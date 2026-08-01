@@ -14,11 +14,30 @@ export function corsHeaders(request: Request): HeadersInit | null {
   }
   return {
     "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
+    "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-application-name, x-client-info, x-supabase-api-version",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Max-Age": "600",
     Vary: "Origin",
   };
+}
+
+export function allowedRedirectUrl(value: unknown, allowedPaths: ReadonlySet<string>): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    const allowedOrigins = new Set(
+      (Deno.env.get("ALLOWED_ORIGINS") ?? "")
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean),
+    );
+    if (!allowedOrigins.has(url.origin) || !allowedPaths.has(url.pathname)) return null;
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 export function corsDenied(): Response {

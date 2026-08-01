@@ -46,6 +46,10 @@ for variable in \
     exit 27
   }
 done
+set -a
+# shellcheck disable=SC1091
+. "${root}/secrets/.env.functions"
+set +a
 (
   cd "$(dirname "$archive")"
   sha256sum -c "$(basename "$checksum")"
@@ -90,9 +94,11 @@ test -n "$previous" && test -f "${previous}/main/index.ts" || {
 ln -sfn "$previous" "${previous_link}.next"
 mv -Tf "${previous_link}.next" "$previous_link"
 
-mkdir "${release}/functions"
-cp -a "${previous}/." "${release}/functions/"
-cp -a "${release}/supabase/functions/." "${release}/functions/"
+mkdir -p "${release}/functions/main"
+cp "${previous}/main/index.ts" "${release}/functions/main/index.ts"
+for function_name in _shared auth-admin dicom-bridge telemedicina-daily; do
+  cp -a "${release}/supabase/functions/${function_name}" "${release}/functions/${function_name}"
+done
 
 rollback() {
   if test -n "$previous"; then
@@ -110,10 +116,20 @@ docker compose -f "$compose" up -d --no-deps --force-recreate functions
 for attempt in $(seq 1 20); do
   all_healthy=1
   for function_name in auth-admin dicom-bridge telemedicina-daily; do
-    status="$(curl -sS -o /dev/null -w '%{http_code}' \
-      -X POST "http://127.0.0.1:9000/${function_name}" 2>/dev/null || true)"
-    test "$status" = "401" || all_healthy=0
+    status="$(curl -sS --connect-timeout 2 --max-time 5 \
+      -D /tmp/prontomedic-edge-headers -o /dev/null -w '%{http_code}' \
+      -X OPTIONS -H "Origin: ${ALLOWED_ORIGINS%%,*}" \
+      "http://127.0.0.1:9000/${function_name}" 2>/dev/null || true)"
+    grep -Fqi "Access-Control-Allow-Origin: ${ALLOWED_ORIGINS%%,*}" \
+      /tmp/prontomedic-edge-headers 2>/dev/null || all_healthy=0
+    test "$status" = "200" || all_healthy=0
   done
+  auth_status="$(curl -sS --connect-timeout 2 --max-time 5 \
+    -o /tmp/prontomedic-auth-admin-response -w '%{http_code}' \
+    -X POST -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+    "http://127.0.0.1:9000/auth-admin" 2>/dev/null || true)"
+  test "$auth_status" = "401" || all_healthy=0
+  grep -Fq 'Não autorizado' /tmp/prontomedic-auth-admin-response 2>/dev/null || all_healthy=0
   if test "$all_healthy" = "1"; then
     break
   fi
