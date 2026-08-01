@@ -120,6 +120,33 @@ jobs:
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      - name: Audit Nginx Edge routes
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh "${VPS_USER}@${VPS_HOST}" 'bash -s' <<'EOF'
+          set -Eeuo pipefail
+          sudo nginx -T 2>&1 |
+            awk '
+              /^# configuration file/ { source = $0 }
+              /server_name|listen|location|proxy_pass/ {
+                if (source != previous) {
+                  print source
+                  previous = source
+                }
+                print
+              }
+            '
+          config="$(sudo nginx -T 2>&1)"
+          for route in auth-admin dicom-bridge telemedicina-daily; do
+            grep -Fq "location = /functions/v1/${route}" <<<"$config" || {
+              echo "Rota Nginx ausente: /functions/v1/${route}" >&2
+              exit 28
+            }
+          done
+          EOF
+
       - name: Upload immutable release
         env:
           COMMIT_SHA: ${{ inputs.commit_sha }}
