@@ -9,7 +9,7 @@ import {
   readApplicationSession,
   readStoredAccessContext,
 } from "@/services/applicationSessionStorage";
-import type { AccessContextOption } from "@/services/accessContextService";
+import { accessContextService, type AccessContextOption } from "@/services/accessContextService";
 
 export interface UserProfile {
   id: string;
@@ -72,7 +72,7 @@ async function fetchUserProfile(supabaseUser: SupabaseUser): Promise<UserProfile
   try {
     const { data, error } = await supabase
       .from("user_profiles")
-      .select("id, full_name, role_id, role_name, company_id, primary_unit_id, lg_ativo, must_change_password")
+      .select("id, full_name, lg_ativo, must_change_password")
       .eq("id", supabaseUser.id)
       .maybeSingle();
     if (error) {
@@ -81,27 +81,41 @@ async function fetchUserProfile(supabaseUser: SupabaseUser): Promise<UserProfile
     }
     if (!data) return null;
 
-    let role_name: string | null = data.role_name ?? null;
-    if (data.role_id) {
-      const { data: roleData } = await supabase.from("roles").select("name").eq("id", data.role_id).maybeSingle();
-      role_name = roleData?.name || role_name;
-    }
     const profile: UserProfile = {
       id: data.id,
       email: supabaseUser.email || "",
       full_name: data.full_name || supabaseUser.email || "Usuário",
-      role_id: data.role_id,
-      role_name,
-      company_id: data.company_id,
-      primary_unit_id: data.primary_unit_id,
+      role_id: null,
+      role_name: null,
+      company_id: null,
+      primary_unit_id: null,
       lg_ativo: data.lg_ativo === true,
       must_change_password: data.must_change_password === true,
     };
-    return isProfileAccessAllowed(profile) ? profile : null;
+    return profile.lg_ativo ? profile : null;
   } catch (error) {
     console.error("Failed to fetch user profile:", error);
     return null;
   }
+}
+
+function sameAccessContext(option: AccessContextOption, stored: Partial<AccessContextOption>): boolean {
+  const sameIdentifier = (left: string | number | null, right: string | number | null | undefined) =>
+    left == null || right == null ? left == null && right == null : String(left) === String(right);
+  return sameIdentifier(option.membershipId, stored.membershipId)
+    && sameIdentifier(option.companyId, stored.companyId)
+    && sameIdentifier(option.roleId, stored.roleId)
+    && sameIdentifier(option.unitId, stored.unitId);
+}
+
+function projectAccessContext(profile: UserProfile, option: AccessContextOption): UserProfile {
+  return {
+    ...profile,
+    company_id: option.companyId,
+    primary_unit_id: option.unitId,
+    role_id: option.roleId,
+    role_name: option.roleName,
+  };
 }
 
 const PROFILE_TIMEOUT_MS = 12_000;
@@ -131,12 +145,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [passwordRecoveryAuthorized, setPasswordRecoveryAuthorized] = useState(false);
-  const [activeCompanyId, setActiveCompanyId] = useState<string | null>(
-    () => readStoredAccessContext<AccessContextOption>()?.companyId ?? null,
-  );
-  const [activeUnitId, setActiveUnitId] = useState<number | null>(
-    () => readStoredAccessContext<AccessContextOption>()?.unitId ?? null,
-  );
+  const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
+  const [activeUnitId, setActiveUnitId] = useState<number | null>(null);
+  const authorizedContexts = useRef<AccessContextOption[]>([]);
   const profileRequestId = useRef(0);
   const initializationInFlight = useRef<{
     sessionKey: string;
@@ -146,8 +157,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const onAccessContextChanged = (event: Event) => {
       const option = (event as CustomEvent<AccessContextOption>).detail;
-      setActiveCompanyId(option?.companyId ?? null);
-      setActiveUnitId(option?.unitId ?? null);
+      const authorized = option
+        ? authorizedContexts.current.find((candidate) => sameAccessContext(candidate, option))
+        : null;
+      if (!authorized) return;
+      setActiveCompanyId(authorized.companyId);
+      setActiveUnitId(authorized.unitId);
+      setUser((current) => current ? projectAccessContext(current, authorized) : current);
     };
     window.addEventListener("prontomedic:access-context-changed", onAccessContextChanged);
     return () => {
@@ -165,6 +181,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const promise = (async (): Promise<AuthResult> => {
       const requestId = ++profileRequestId.current;
       if (!sess?.user) {
+        authorizedContexts.current = [];
         setUser(null);
         setSession(null);
         setMfaStep("none");
@@ -198,7 +215,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setMfaStep("none");
           return { success: false, error: "Não foi possível carregar o perfil e as permissões do usuário." };
         }
-        setUser(profile);
+        const availableContexts = await accessContextService.listAuthorized();
+        if (requestId !== profileRequestId.current) return { success: false };
+        authorizedContexts.current = availableContexts;
+        const storedContext = readStoredAccessContext<AccessContextOption>();
+        const selectedContext = storedContext
+          ? availableContexts.find((option) => sameAccessContext(option, storedContext)) ?? null
+          : null;
+        const functionalProfile = selectedContext ? projectAccessContext(profile, selectedContext) : profile;
+        setActiveCompanyId(selectedContext?.companyId ?? null);
+        setActiveUnitId(selectedContext?.unitId ?? null);
+        setUser(functionalProfile);
         const passwordChangeRequired = requiresPasswordChange(profile);
         setMustChangePassword(passwordChangeRequired);
         if (passwordChangeRequired) return { success: true, next: "password-change" };
@@ -284,6 +311,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await supabase.auth.signOut({ scope: "local" });
     }
     clearApplicationSession();
+    authorizedContexts.current = [];
     profileRequestId.current += 1;
     setUser(null);
     setSession(null);
