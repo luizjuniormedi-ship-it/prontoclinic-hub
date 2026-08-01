@@ -654,11 +654,20 @@ AS $$
 DECLARE
   v_key TEXT;
 BEGIN
-  SELECT decrypted_secret INTO v_key
-  FROM vault.decrypted_secrets
-  WHERE name = 'secure_clinical_drafts_key'
-  ORDER BY created_at DESC
-  LIMIT 1;
+  IF to_regclass('vault.decrypted_secrets') IS NULL THEN
+    RAISE EXCEPTION
+      'Rascunhos clínicos indisponíveis: Supabase Vault não instalado'
+      USING ERRCODE = '55000';
+  END IF;
+
+  EXECUTE
+    'SELECT decrypted_secret
+       FROM vault.decrypted_secrets
+      WHERE name = $1
+      ORDER BY created_at DESC
+      LIMIT 1'
+    INTO v_key
+    USING 'secure_clinical_drafts_key';
 
   IF v_key IS NULL OR octet_length(v_key) < 32 THEN
     RAISE EXCEPTION 'Chave de rascunhos ausente ou inválida no Supabase Vault'
@@ -901,10 +910,10 @@ REVOKE ALL ON FUNCTION public.revoke_application_session(UUID, TEXT) FROM PUBLIC
 REVOKE ALL ON FUNCTION public.revoke_all_application_sessions(TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.revoke_application_device(UUID, TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.list_application_devices() FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.save_secure_clinical_draft(UUID, UUID, UUID, INTEGER, TEXT, TEXT, JSONB, INTEGER) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.get_secure_clinical_draft(UUID, UUID, UUID) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.list_secure_clinical_drafts(UUID, UUID) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.delete_secure_clinical_draft(UUID, UUID, UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.save_secure_clinical_draft(UUID, UUID, UUID, INTEGER, TEXT, TEXT, JSONB, INTEGER) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.get_secure_clinical_draft(UUID, UUID, UUID) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.list_secure_clinical_drafts(UUID, UUID) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.delete_secure_clinical_draft(UUID, UUID, UUID) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.cleanup_expired_secure_clinical_drafts() FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION public.is_application_session_allowed(UUID, UUID, INTEGER) TO authenticated;
@@ -914,10 +923,16 @@ GRANT EXECUTE ON FUNCTION public.revoke_application_session(UUID, TEXT) TO authe
 GRANT EXECUTE ON FUNCTION public.revoke_all_application_sessions(TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.revoke_application_device(UUID, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.list_application_devices() TO authenticated;
-GRANT EXECUTE ON FUNCTION public.save_secure_clinical_draft(UUID, UUID, UUID, INTEGER, TEXT, TEXT, JSONB, INTEGER) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_secure_clinical_draft(UUID, UUID, UUID) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.list_secure_clinical_drafts(UUID, UUID) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.delete_secure_clinical_draft(UUID, UUID, UUID) TO authenticated;
+DO $secure_draft_acl$
+BEGIN
+  IF to_regclass('vault.decrypted_secrets') IS NOT NULL THEN
+    EXECUTE 'GRANT EXECUTE ON FUNCTION public.save_secure_clinical_draft(UUID, UUID, UUID, INTEGER, TEXT, TEXT, JSONB, INTEGER) TO authenticated';
+    EXECUTE 'GRANT EXECUTE ON FUNCTION public.get_secure_clinical_draft(UUID, UUID, UUID) TO authenticated';
+    EXECUTE 'GRANT EXECUTE ON FUNCTION public.list_secure_clinical_drafts(UUID, UUID) TO authenticated';
+    EXECUTE 'GRANT EXECUTE ON FUNCTION public.delete_secure_clinical_draft(UUID, UUID, UUID) TO authenticated';
+  END IF;
+END
+$secure_draft_acl$;
 GRANT EXECUTE ON FUNCTION public.cleanup_expired_secure_clinical_drafts() TO service_role;
 
 COMMENT ON TABLE public.secure_clinical_drafts IS

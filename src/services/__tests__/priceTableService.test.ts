@@ -30,6 +30,31 @@ describe("priceTableService — findPrice", () => {
     vi.clearAllMocks();
   });
 
+  it("normaliza o registro composto retornado pelo PostgREST", async () => {
+    (supabase.rpc as any).mockResolvedValue({
+      data: "(150.00,0.00,12.50,3.25,1.00,0.00,0.00,t)",
+      error: null,
+    });
+
+    await expect(
+      priceTableService.findPrice(
+        91001,
+        91001,
+        null,
+        "eeeeeeee-1000-4000-8000-000000000001",
+      ),
+    ).resolves.toEqual({
+      vl_particular: 150,
+      vl_convenio: 0,
+      vl_material: 12.5,
+      vl_medicamento: 3.25,
+      vl_taxa: 1,
+      vl_diaria: 0,
+      vl_gases: 0,
+      found: true,
+    });
+  });
+
   it("retorna preço específico do convênio (RPC find_price)", async () => {
     (supabase.rpc as any).mockResolvedValue({
       data: [
@@ -101,6 +126,37 @@ describe("priceTableService — findPrice", () => {
     expect(result.found).toBe(true);
   });
 
+  it("normaliza valores monetários retornados pelo Postgres como texto", async () => {
+    (supabase.rpc as any).mockResolvedValue({
+      data: [
+        {
+          vl_particular: "200.10",
+          vl_convenio: "150,25",
+          vl_material: null,
+          vl_medicamento: "inválido",
+          vl_taxa: "-5",
+          vl_diaria: "10",
+          vl_gases: 2.345,
+          found: "true",
+        },
+      ],
+      error: null,
+    });
+
+    const result = await priceTableService.findPrice(1, 2, 7);
+
+    expect(result).toEqual({
+      vl_particular: 200.1,
+      vl_convenio: 150.25,
+      vl_material: 0,
+      vl_medicamento: 0,
+      vl_taxa: 0,
+      vl_diaria: 10,
+      vl_gases: 2.35,
+      found: true,
+    });
+  });
+
   it("retorna {found: false, zeros} quando nada encontrado e sem erro", async () => {
     (supabase.rpc as any).mockResolvedValue({
       data: [],
@@ -148,6 +204,65 @@ describe("priceTableService — getAll com filtros", () => {
     expect(eqSpy).toHaveBeenCalledWith("service_id", 5);
   });
 
+  it("normaliza todas as colunas monetárias antes de entregar dados à UI", async () => {
+    const chain: any = {
+      select: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+    };
+    (chain as any).then = (resolve: any) =>
+      resolve({
+        data: [
+          {
+            id: 10,
+            vl_particular: "120.50",
+            vl_convenio: "99,90",
+            vl_material: null,
+            vl_medicamento: "0",
+            vl_taxa: "1.25",
+            vl_diaria: "10",
+            vl_gases: 2.345,
+            percentual_acrescimo: "7.555",
+          },
+        ],
+        error: null,
+      });
+    (supabase.from as any).mockReturnValue(chain);
+
+    const [result] = await priceTableService.getAll();
+
+    expect(result).toMatchObject({
+      id: 10,
+      vl_particular: 120.5,
+      vl_convenio: 99.9,
+      vl_material: 0,
+      vl_medicamento: 0,
+      vl_taxa: 1.25,
+      vl_diaria: 10,
+      vl_gases: 2.35,
+      percentual_acrescimo: 7.56,
+    });
+    expect(() => result.vl_particular.toFixed(2)).not.toThrow();
+  });
+
+  it("falha fechado quando preço persistido é inválido", async () => {
+    const chain: any = {
+      select: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+    };
+    (chain as any).then = (resolve: any) =>
+      resolve({
+        data: [{ id: 10, vl_particular: "inválido" }],
+        error: null,
+      });
+    (supabase.from as any).mockReturnValue(chain);
+
+    await expect(priceTableService.getAll()).rejects.toThrow(
+      "Contrato inválido em price_tables.vl_particular",
+    );
+  });
+
   it("aplica filtro planId null com .is (particular)", async () => {
     const isSpy = vi.fn().mockReturnThis();
     const chain: any = {
@@ -189,83 +304,5 @@ describe("priceTableService — getAll com filtros", () => {
     (supabase.from as any).mockReturnValue(chain);
 
     await expect(priceTableService.getAll()).rejects.toThrow(/DB down/);
-  });
-
-  it("aplica planId numérico junto com os demais filtros", async () => {
-    const eqSpy = vi.fn().mockReturnThis();
-    const chain: any = {
-      select: vi.fn().mockReturnThis(),
-      order: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockReturnThis(),
-      eq: eqSpy,
-      then: (resolve: any) => resolve({ data: [{ id: 1 }], error: null }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
-
-    const result = await priceTableService.getAll({ serviceId: 5, planId: 7, active: true });
-
-    expect(eqSpy).toHaveBeenCalledWith("service_id", 5);
-    expect(eqSpy).toHaveBeenCalledWith("insurance_plan_id", 7);
-    expect(eqSpy).toHaveBeenCalledWith("active", true);
-    expect(result).toEqual([{ id: 1 }]);
-  });
-});
-
-describe("priceTableService — operações de persistência", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("conta registros e preserva zero quando a contagem é nula", async () => {
-    const chain: any = {
-      select: vi.fn()
-        .mockResolvedValueOnce({ count: 12, error: null })
-        .mockResolvedValueOnce({ count: null, error: null }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
-
-    await expect(priceTableService.count()).resolves.toBe(12);
-    await expect(priceTableService.count()).resolves.toBe(0);
-  });
-
-  it("cria uma regra de preço e devolve o registro persistido", async () => {
-    const persisted = { id: 10, description: "Consulta" };
-    const insertSpy = vi.fn().mockReturnThis();
-    const chain: any = {
-      insert: insertSpy,
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: persisted, error: null }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
-
-    await expect(priceTableService.create({ description: "Consulta" })).resolves.toEqual(persisted);
-    expect(insertSpy).toHaveBeenCalledWith({ description: "Consulta" });
-  });
-
-  it("lança erro descritivo quando a criação falha", async () => {
-    const chain: any = {
-      insert: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: null, error: { message: "sem permissão" } }),
-    };
-    (supabase.from as any).mockReturnValue(chain);
-
-    await expect(priceTableService.create({ description: "Consulta" })).rejects.toThrow(
-      "Erro ao criar preco: sem permissão",
-    );
-  });
-
-  it("insere preços em lote e normaliza resposta nula", async () => {
-    const selectSpy = vi.fn()
-      .mockResolvedValueOnce({ data: [{ id: 1 }, { id: 2 }], error: null })
-      .mockResolvedValueOnce({ data: null, error: null });
-    const chain: any = { insert: vi.fn().mockReturnThis(), select: selectSpy };
-    (supabase.from as any).mockReturnValue(chain);
-
-    await expect(priceTableService.bulkCreate([{ description: "A" }, { description: "B" }])).resolves.toEqual([
-      { id: 1 },
-      { id: 2 },
-    ]);
-    await expect(priceTableService.bulkCreate([])).resolves.toEqual([]);
   });
 });

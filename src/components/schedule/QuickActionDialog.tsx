@@ -82,8 +82,14 @@ export function QuickActionDialog({ open, onOpenChange, action, appointment, onC
           )}
           {config.needsReason && (
             <div className="space-y-1">
-              <Label className="text-xs">Motivo *</Label>
-              <Textarea placeholder="Informe o motivo..." value={reason} onChange={(e) => setReason(e.target.value)} rows={2} />
+              <Label htmlFor="quick-action-reason" className="text-xs">Motivo *</Label>
+              <Textarea
+                id="quick-action-reason"
+                placeholder="Informe o motivo..."
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                rows={2}
+              />
             </div>
           )}
         </div>

@@ -15,6 +15,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { TissXml } from "@/services/tissService";
+import {
+  formatTissCurrency,
+  formatTissInteger,
+} from "./tissDisplay";
 
 export interface TissXmlPreviewProps {
   xml: TissXml | null;
@@ -25,25 +29,40 @@ export interface TissXmlPreviewProps {
 export function TissXmlPreview({ xml, open, onOpenChange }: TissXmlPreviewProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-        {xml && (
+      <DialogContent className="max-h-[80vh] w-[calc(100vw-2rem)] max-w-4xl overflow-y-auto">
+        {!xml ? (
           <>
             <DialogHeader>
-              <DialogTitle>Detalhes da Fatura #{xml.id}</DialogTitle>
-              <DialogDescription>
-                {xml.ds_descricao} — {xml.dt_fatura}
+              <DialogTitle>Detalhes da Fatura</DialogTitle>
+              <DialogDescription>Nenhuma fatura TISS foi selecionada.</DialogDescription>
+            </DialogHeader>
+            <div role="status" className="rounded border p-6 text-center text-sm text-muted-foreground">
+              Selecione uma guia para visualizar seus dados.
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => onOpenChange(false)}>Fechar</Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle className="break-words">
+                Detalhes da Fatura #{formatTissInteger(xml.id)}
+              </DialogTitle>
+              <DialogDescription className="break-words">
+                {xml.ds_descricao || "Sem descrição"} — {xml.dt_fatura || "data não informada"}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div><b>Status:</b> {xml.status}</div>
-                <div><b>Tipo Guia:</b> {xml.ds_tipo_guia}</div>
-                <div><b>Lote:</b> {xml.cd_lote || "—"}</div>
-                <div><b>Protocolo:</b> {xml.ds_protocolo || "—"}</div>
-                <div><b>Informado:</b> R$ {(xml.vl_informado || 0).toFixed(2)}</div>
-                <div><b>Liberado:</b> R$ {(xml.vl_liberado || 0).toFixed(2)}</div>
-                <div><b>Glosa:</b> R$ {(xml.vl_glosa || 0).toFixed(2)}</div>
-                <div><b>Versao TISS:</b> {xml.ds_versao_tiss}</div>
+              <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                <div className="min-w-0 break-words"><b>Status:</b> {xml.status || "—"}</div>
+                <div className="min-w-0 break-words"><b>Tipo Guia:</b> {xml.ds_tipo_guia || "—"}</div>
+                <div className="min-w-0 break-words"><b>Lote:</b> {formatTissInteger(xml.cd_lote)}</div>
+                <div className="min-w-0 break-all"><b>Protocolo:</b> {xml.ds_protocolo || "—"}</div>
+                <div className="min-w-0 break-words"><b>Informado:</b> {formatTissCurrency(xml.vl_informado)}</div>
+                <div className="min-w-0 break-words"><b>Liberado:</b> {formatTissCurrency(xml.vl_liberado)}</div>
+                <div className="min-w-0 break-words"><b>Glosa:</b> {formatTissCurrency(xml.vl_glosa)}</div>
+                <div className="min-w-0 break-words"><b>Versao TISS:</b> {xml.ds_versao_tiss || "—"}</div>
               </div>
 
               {xml.bl_xml_enviado && (
@@ -72,17 +91,6 @@ export function TissXmlPreview({ xml, open, onOpenChange }: TissXmlPreviewProps)
       </DialogContent>
     </Dialog>
   );
-}
-
-export function downloadXml(f: TissXml) {
-  if (!f.bl_xml_enviado) return;
-  const blob = new Blob([f.bl_xml_enviado], { type: "text/xml" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = f.ds_filename || `tiss_${f.id}.xml`;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 export default TissXmlPreview;

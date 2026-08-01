@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { DollarSign, Search, TrendingUp, TrendingDown, Calendar, Plus, Receipt } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -16,7 +17,6 @@ import { financialService, DbFinancialTransaction } from "@/services/financialSe
 import { billingsService } from "@/services/financialService";
 import { professionalsLookup, DbProfessional } from "@/services/appointmentsService";
 import { Patient } from "@/types";
-import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 
@@ -29,6 +29,9 @@ const methodLabels: Record<string, string> = { dinheiro: "Dinheiro", pix: "PIX",
 const allMethods = ["dinheiro", "pix", "cartao_debito", "cartao_credito", "transferencia", "convenio"];
 
 export default function FinancialPage() {
+  const [searchParams] = useSearchParams();
+  const requestedTransactionId = searchParams.get("transaction");
+  const requestedAppointmentId = searchParams.get("appointment");
   const [transactions, setTransactions] = useState<DbFinancialTransaction[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
@@ -36,12 +39,13 @@ export default function FinancialPage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [focusedTransactionId, setFocusedTransactionId] = useState<string | null>(null);
   const [paymentDialog, setPaymentDialog] = useState<DbFinancialTransaction | null>(null);
   const [paymentMethod, setPaymentMethod] = useState("pix");
   const [newOpen, setNewOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const { user } = useAuth();
   const { toast } = useToast();
+  const createIdempotencyKey = useRef<string | null>(null);
 
   // New transaction form
   const [newPatientId, setNewPatientId] = useState("");
@@ -69,6 +73,17 @@ export default function FinancialPage() {
         return data || [];
       });
       setTransactions(txns);
+      const focusedTransaction =
+        txns.find((transaction) => requestedTransactionId && transaction.id === requestedTransactionId)
+        ?? txns.find((transaction) => requestedAppointmentId && transaction.appointment_id === requestedAppointmentId);
+      setFocusedTransactionId(focusedTransaction?.id ?? null);
+      if ((requestedTransactionId || requestedAppointmentId) && !focusedTransaction) {
+        toast({
+          title: "Cobrança da recepção não localizada",
+          description: "A lista geral foi mantida para conferência manual.",
+          variant: "destructive",
+        });
+      }
       setPatients(patientRows.map((p: any) => ({ id: String(p.id), name: p.full_name || "" } as Patient)));
       setProfessionals(profs);
     } catch (err) {
@@ -76,7 +91,7 @@ export default function FinancialPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [requestedAppointmentId, requestedTransactionId, toast]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -118,24 +133,33 @@ export default function FinancialPage() {
     try {
       await financialService.create({
         patient_id: newPatientId,
-        company_id: user?.company_id || undefined,
-        unit_id: user?.primary_unit_id || undefined,
         amount: Number(newAmount),
         payment_method: newMethod,
         due_date: newDueDate,
         notes: newNotes.trim() || undefined,
-        status: "pendente",
+        idempotency_key: createIdempotencyKey.current
+          || (createIdempotencyKey.current = crypto.randomUUID()),
       });
       toast({ title: "Cobrança criada!" });
       setNewOpen(false);
       setNewPatientId("");
       setNewAmount("");
       setNewNotes("");
+      createIdempotencyKey.current = null;
       loadAll();
     } catch (err) {
       toast({ title: "Erro", description: (err as Error).message, variant: "destructive" });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleNewOpenChange = (open: boolean) => {
+    setNewOpen(open);
+    if (open) {
+      createIdempotencyKey.current ||= crypto.randomUUID();
+    } else if (!saving) {
+      createIdempotencyKey.current = null;
     }
   };
 
@@ -147,7 +171,9 @@ export default function FinancialPage() {
       <PageHeader
         title="Financeiro"
         description="Transações e cobranças"
-        actions={<Button onClick={() => setNewOpen(true)}><Plus className="mr-2 h-4 w-4" />Nova Cobrança</Button>}
+        actions={<Button onClick={() => {
+          handleNewOpenChange(true);
+        }}><Plus className="mr-2 h-4 w-4" />Nova Cobrança</Button>}
       />
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
@@ -199,7 +225,14 @@ export default function FinancialPage() {
             </TableHeader>
             <TableBody>
               {filtered.map((t) => (
-                <TableRow key={t.id} className={t.status === "pendente" ? "" : t.status === "cancelado" ? "opacity-50" : ""}>
+                <TableRow
+                  key={t.id}
+                  data-focused={t.id === focusedTransactionId ? "true" : undefined}
+                  className={[
+                    t.id === focusedTransactionId ? "bg-primary/10 ring-1 ring-inset ring-primary/30" : "",
+                    t.status === "cancelado" ? "opacity-50" : "",
+                  ].filter(Boolean).join(" ")}
+                >
                   <TableCell className="font-medium text-sm">{getPatientName(t.patient_id, t.patient_name)}</TableCell>
                   <TableCell className="font-medium text-sm">{formatCurrency(t.amount)}</TableCell>
                   <TableCell className="text-xs">{t.discount > 0 ? `-${formatCurrency(t.discount)}` : "—"}</TableCell>
@@ -257,7 +290,7 @@ export default function FinancialPage() {
       </Dialog>
 
       {/* New transaction dialog */}
-      <Dialog open={newOpen} onOpenChange={setNewOpen}>
+      <Dialog open={newOpen} onOpenChange={handleNewOpenChange}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Nova Cobrança</DialogTitle>
@@ -289,7 +322,7 @@ export default function FinancialPage() {
             <div className="space-y-2"><Label>Observações</Label><Textarea rows={2} value={newNotes} onChange={(e) => setNewNotes(e.target.value)} /></div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setNewOpen(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => handleNewOpenChange(false)}>Cancelar</Button>
             <Button onClick={handleCreateTransaction} disabled={saving}>{saving ? "Salvando..." : "Registrar"}</Button>
           </DialogFooter>
         </DialogContent>

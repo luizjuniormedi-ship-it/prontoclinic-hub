@@ -5,8 +5,7 @@
  * responda a pesquisa via link enviado por e-mail/WhatsApp/SMS.
  *
  * Decisões:
- *   - Acesso público — não exige login. RLS permite INSERT em nps_respostas
- *     tanto para anon quanto para authenticated.
+ *   - Acesso público sem login, exclusivamente por token opaco de uso único.
  *   - UI simples e acessível (HTML semântico, foco visível, contraste AA).
  *   - Perguntas dinâmicas (lê de cd_template_perguntas JSONB).
  *   - Estado de sucesso ao final, sem expor dados sensíveis.
@@ -18,24 +17,22 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Heart, Star, CheckCircle2, Loader2 } from "lucide-react";
-import { pesquisasService, respostasService, type Pesquisa, type Pergunta } from "@/services/npsService";
+import { pesquisasService, respostasService, type Pergunta } from "@/services/npsService";
 import { toast } from "@/hooks/use-toast";
 
 export function NpsSurveyPublic() {
   const { token } = useParams<{ token: string }>();
-  const pesquisaId = Number(token);
   const [notaNps, setNotaNps] = useState<number | null>(null);
   const [comentario, setComentario] = useState<string>("");
-  const [pacienteId, setPacienteId] = useState<string>("");
   const [enviado, setEnviado] = useState(false);
 
-  const { data: pesquisa, isLoading } = useQuery({
-    queryKey: ["nps-pesquisa-publica", pesquisaId],
-    queryFn: () => pesquisasService.getById(pesquisaId),
-    enabled: !!pesquisaId && !Number.isNaN(pesquisaId),
+  const { data: pesquisa, isLoading, isError } = useQuery({
+    queryKey: ["nps-pesquisa-publica", token],
+    queryFn: () => pesquisasService.getPublicByToken(token ?? ""),
+    enabled: !!token,
+    retry: false,
   });
 
   useEffect(() => {
@@ -47,22 +44,22 @@ export function NpsSurveyPublic() {
   const enviarMut = useMutation({
     mutationFn: respostasService.create,
     onSuccess: () => setEnviado(true),
+    onError: (error: Error) => {
+      toast({
+        title: "Não foi possível enviar",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (notaNps === null) return;
-    const id = Number(pacienteId);
-    if (!id || id <= 0) {
-      toast({ title: "Informe o ID do paciente", description: "Fornecido no e-mail/SMS.", variant: "destructive" });
-      return;
-    }
     enviarMut.mutate({
-      cd_pesquisa: pesquisaId,
-      cd_paciente: id,
+      token: token ?? "",
       nr_nota_nps: notaNps,
       ds_comentario: comentario || null,
-      ds_origem: "EMAIL",
     });
   };
 
@@ -74,13 +71,13 @@ export function NpsSurveyPublic() {
     );
   }
 
-  if (!pesquisa) {
+  if (isError || !pesquisa) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-br from-blue-50 to-white">
         <Card className="max-w-md w-full">
           <CardHeader>
-            <CardTitle>Pesquisa não encontrada</CardTitle>
-            <CardDescription>Verifique o link enviado.</CardDescription>
+            <CardTitle>Pesquisa indisponível</CardTitle>
+            <CardDescription>O link é inválido, expirou ou já foi utilizado.</CardDescription>
           </CardHeader>
         </Card>
       </div>
@@ -117,24 +114,6 @@ export function NpsSurveyPublic() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* ID do paciente — fornecido no link/email */}
-            <div>
-              <Label htmlFor="paciente-id">ID do Paciente *</Label>
-              <Input
-                id="paciente-id"
-                type="number"
-                min={1}
-                required
-                value={pacienteId}
-                onChange={(e) => setPacienteId(e.target.value)}
-                placeholder="Informe o número do seu prontuário"
-                aria-describedby="paciente-help"
-              />
-              <p id="paciente-help" className="text-xs text-muted-foreground mt-1">
-                Enviado no link/e-mail. Em caso de dúvida, entre em contato com a clínica.
-              </p>
-            </div>
-
             {/* Pergunta NPS principal */}
             {perguntas.filter((p) => p.tipo === "NPS").map((p) => (
               <div key={p.id}>

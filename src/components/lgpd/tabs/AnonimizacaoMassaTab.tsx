@@ -90,8 +90,9 @@ export function AnonimizacaoMassaTab() {
 
         <div className="flex items-end gap-2">
           <div className="flex-1">
-            <Label>Limite de execucao</Label>
+            <Label htmlFor="lgpd-anonymization-limit">Limite de execucao</Label>
             <Input
+              id="lgpd-anonymization-limit"
               type="number"
               value={limit}
               onChange={(e) => setLimit(Number(e.target.value))}

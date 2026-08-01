@@ -72,6 +72,65 @@ export interface DbAppointment {
   updated_at: string;
 }
 
+function normalizeLookupId(value: unknown, entity: string): string {
+  if (value === null || value === undefined) {
+    throw new Error(`${entity} retornou um identificador ausente.`);
+  }
+
+  const normalized = String(value).trim();
+  if (!normalized) {
+    throw new Error(`${entity} retornou um identificador vazio.`);
+  }
+  return normalized;
+}
+
+function normalizeNullableLookupId(value: unknown, entity: string): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  return normalizeLookupId(value, entity);
+}
+
+function normalizeNullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const normalized = Number(value);
+  return Number.isFinite(normalized) ? normalized : null;
+}
+
+function normalizeProfessional(row: DbProfessional): DbProfessional {
+  return {
+    ...row,
+    id: normalizeLookupId(row.id, 'Profissional'),
+    company_id: normalizeNullableLookupId(row.company_id, 'Empresa do profissional'),
+    default_duration_minutes: normalizeNullableNumber(row.default_duration_minutes),
+  };
+}
+
+function normalizeSpecialty(row: DbSpecialty): DbSpecialty {
+  return {
+    ...row,
+    id: normalizeLookupId(row.id, 'Especialidade'),
+  };
+}
+
+function normalizeAppointmentType(row: DbAppointmentType): DbAppointmentType {
+  return {
+    ...row,
+    id: normalizeLookupId(row.id, 'Tipo de atendimento'),
+    default_duration_minutes: normalizeNullableNumber(row.default_duration_minutes),
+  };
+}
+
+function normalizeServiceCatalog(row: DbServiceCatalog): DbServiceCatalog {
+  return {
+    ...row,
+    id: normalizeLookupId(row.id, 'Serviço'),
+    specialty_id: normalizeNullableLookupId(row.specialty_id, 'Especialidade do serviço'),
+    default_duration_minutes: normalizeNullableNumber(row.default_duration_minutes),
+    price: normalizeNullableNumber(row.price),
+    vl_particular: normalizeNullableNumber(row.vl_particular),
+    lg_autorizacao: normalizeNullableNumber(row.lg_autorizacao),
+  };
+}
+
 // ── Lookup services ──
 
 export const professionalsLookup = {
@@ -81,7 +140,7 @@ export const professionalsLookup = {
       .select('*')
       .order('full_name');
     if (error) throw new Error(`Erro ao buscar profissionais: ${error.message}`);
-    return data || [];
+    return ((data || []) as DbProfessional[]).map(normalizeProfessional);
   },
 };
 
@@ -92,7 +151,7 @@ export const specialtiesLookup = {
       .select('*')
       .order('name');
     if (error) throw new Error(`Erro ao buscar especialidades: ${error.message}`);
-    return data || [];
+    return ((data || []) as DbSpecialty[]).map(normalizeSpecialty);
   },
 };
 
@@ -103,7 +162,7 @@ export const appointmentTypesLookup = {
       .select('*')
       .order('name');
     if (error) throw new Error(`Erro ao buscar tipos de atendimento: ${error.message}`);
-    return data || [];
+    return ((data || []) as DbAppointmentType[]).map(normalizeAppointmentType);
   },
 };
 
@@ -114,7 +173,7 @@ export const servicesCatalogLookup = {
       .select('*')
       .order('name');
     if (error) throw new Error(`Erro ao buscar serviços: ${error.message}`);
-    return data || [];
+    return ((data || []) as DbServiceCatalog[]).map(normalizeServiceCatalog);
   },
 };
 
@@ -179,19 +238,88 @@ function requiredBigIntParam(value: string | undefined, field: string): number {
 
 export const appointmentsService = {
   async getByDateRange(startDate: string, endDate: string): Promise<DbAppointment[]> {
-    const { data, error } = await supabase
-      .from('appointments')
-      .select('*')
-      .gte('appointment_date', startDate)
-      .lte('appointment_date', endDate)
-      .order('appointment_date')
-      .order('start_time');
-    if (error) throw new Error(`Erro ao buscar agendamentos: ${error.message}`);
-    return data || [];
+    const pageSize = 500;
+    const maxPages = 40;
+    const rows: DbAppointment[] = [];
+
+    for (let page = 0; page < maxPages; page += 1) {
+      const from = page * pageSize;
+      const { data, error } = await supabase
+        .from('appointments')
+        .select('*')
+        .gte('appointment_date', startDate)
+        .lte('appointment_date', endDate)
+        .order('appointment_date')
+        .order('start_time')
+        .order('id')
+        .range(from, from + pageSize - 1);
+      if (error) throw new Error(`Erro ao buscar agendamentos: ${error.message}`);
+
+      const pageRows = (data || []) as DbAppointment[];
+      rows.push(...pageRows);
+      if (pageRows.length < pageSize) return rows;
+    }
+
+    throw new Error(
+      'A agenda excedeu 20.000 registros no período. Reduza o intervalo ou os filtros.',
+    );
   },
 
   async getByDate(date: string): Promise<DbAppointment[]> {
     return this.getByDateRange(date, date);
+  },
+
+  async getByDateRangeForUnit(
+    startDate: string,
+    endDate: string,
+    unitId: number,
+  ): Promise<DbAppointment[]> {
+    if (!Number.isInteger(unitId) || unitId <= 0) {
+      throw new Error('Unidade operacional inválida.');
+    }
+
+    const pageSize = 500;
+    const maxPages = 40;
+    const rows: DbAppointment[] = [];
+
+    for (let page = 0; page < maxPages; page += 1) {
+      const from = page * pageSize;
+      const { data, error } = await supabase
+        .from('appointments')
+        .select('*')
+        .eq('unit_id', unitId)
+        .gte('appointment_date', startDate)
+        .lte('appointment_date', endDate)
+        .order('appointment_date')
+        .order('start_time')
+        .order('id')
+        .range(from, from + pageSize - 1);
+      if (error) throw new Error(`Erro ao buscar agenda da unidade: ${error.message}`);
+
+      const pageRows = (data || []) as DbAppointment[];
+      rows.push(...pageRows);
+      if (pageRows.length < pageSize) return rows;
+    }
+
+    throw new Error(
+      'A agenda da unidade excedeu 20.000 registros no período. Reduza o intervalo ou os filtros.',
+    );
+  },
+
+  async getByDateForUnit(date: string, unitId: number): Promise<DbAppointment[]> {
+    if (!Number.isInteger(unitId) || unitId <= 0) {
+      throw new Error('Unidade operacional inválida.');
+    }
+
+    const { data, error } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('appointment_date', date)
+      .eq('unit_id', unitId)
+      .order('start_time')
+      .order('id');
+    if (error) throw new Error(`Erro ao buscar agendamentos da unidade: ${error.message}`);
+    return (data || []) as DbAppointment[];
   },
 
   async create(input: AppointmentCreateInput): Promise<DbAppointment> {
@@ -206,7 +334,7 @@ export const appointmentsService = {
       p_specialty_id: toBigIntParam(input.specialty_id, 'Especialidade'),
       p_service_id: toBigIntParam(input.service_id, 'Serviço'),
       p_appointment_type_id: toBigIntParam(input.appointment_type_id, 'Tipo de atendimento'),
-      p_status: input.status || 'scheduled',
+      p_status: 'scheduled',
       p_is_return: !!input.is_return,
       p_is_walkin: !!input.is_walkin,
       p_notes: input.notes || null,
@@ -259,7 +387,7 @@ export const appointmentsService = {
   },
 
   async update(id: string, input: Partial<AppointmentCreateInput>): Promise<DbAppointment> {
-    const row: Record<string, any> = { ...input, updated_at: new Date().toISOString() };
+    const row: Record<string, unknown> = { ...input, updated_at: new Date().toISOString() };
 
     const { data, error } = await supabase
       .from('appointments')

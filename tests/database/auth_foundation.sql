@@ -48,12 +48,43 @@ SELECT pg_temp.assert_true(
 SELECT pg_temp.assert_true(
   EXISTS (
     SELECT 1
-    FROM pg_index
-    WHERE indrelid = 'public.role_permissions'::regclass
-      AND indisunique
-      AND pg_get_indexdef(indexrelid) ~ '\(company_id, role_id, module\)'
+    FROM pg_index index_record
+    WHERE index_record.indrelid = 'public.role_permissions'::regclass
+      AND index_record.indisunique
+      AND index_record.indisvalid
+      AND index_record.indpred IS NULL
+      AND index_record.indexprs IS NULL
+      AND (
+        SELECT array_agg(attribute_record.attname ORDER BY key.ordinality)
+        FROM unnest(index_record.indkey::SMALLINT[])
+          WITH ORDINALITY AS key(attnum, ordinality)
+        JOIN pg_attribute attribute_record
+          ON attribute_record.attrelid = index_record.indrelid
+         AND attribute_record.attnum = key.attnum
+        WHERE key.ordinality <= index_record.indnkeyatts
+      ) = ARRAY['company_id', 'role_id', 'module']::NAME[]
   ),
   'role_permissions must enforce unique (company_id, role_id, module)'
+);
+SELECT pg_temp.assert_true(
+  NOT EXISTS (
+    SELECT 1
+    FROM pg_index index_record
+    WHERE index_record.indrelid = 'public.role_permissions'::regclass
+      AND index_record.indisunique
+      AND index_record.indpred IS NULL
+      AND index_record.indexprs IS NULL
+      AND (
+        SELECT array_agg(attribute_record.attname ORDER BY key.ordinality)
+        FROM unnest(index_record.indkey::SMALLINT[])
+          WITH ORDINALITY AS key(attnum, ordinality)
+        JOIN pg_attribute attribute_record
+          ON attribute_record.attrelid = index_record.indrelid
+         AND attribute_record.attnum = key.attnum
+        WHERE key.ordinality <= index_record.indnkeyatts
+      ) = ARRAY['role_id', 'module']::NAME[]
+  ),
+  'legacy global unique (role_id, module) must be absent'
 );
 SELECT pg_temp.assert_true(
   pg_get_function_result('public.log_data_access(text,text,text,jsonb)'::regprocedure) = 'bigint',
@@ -216,7 +247,16 @@ SET LOCAL request.jwt.claims = '{"sub":"a0000000-0000-0000-0000-000000000001","r
 SELECT public.activate_application_context(
   'aa000000-0000-0000-0000-000000000001',
   (SELECT id FROM public.roles WHERE name = 'admin'),
-  (SELECT id FROM public.units WHERE cd_codigo = 'AUTH-A'),
+  (
+    SELECT (access_option ->> 'unit_id')::INTEGER
+    FROM jsonb_array_elements(
+      public.list_authorized_access_contexts()
+    ) access_option
+    WHERE access_option ->> 'company_id' =
+      '10000000-0000-0000-0000-000000000001'
+      AND access_option ->> 'unit_id' IS NOT NULL
+    LIMIT 1
+  ),
   'aa000000-0000-0000-0000-000000000077',
   'Teste auth foundation',
   'psql',
@@ -259,7 +299,7 @@ END;
 $$;
 
 SELECT pg_temp.assert_true(
-  public.log_data_access('user_profiles', 'self', 'SELECT', '{}'::jsonb) > 0,
+  public.log_data_access('user_profiles', 'self', 'VIEW_RECORD', '{}'::jsonb) > 0,
   'log_data_access must return the persisted audit id'
 );
 SELECT pg_temp.assert_true(

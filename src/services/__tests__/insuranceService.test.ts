@@ -29,6 +29,50 @@ vi.mock("@/lib/supabase", () => {
 
 import { supabase } from "@/lib/supabase";
 
+describe("insuranceService — projeção segura", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("não solicita credenciais de portal ao listar convênios", async () => {
+    const selectSpy = vi.fn().mockReturnThis();
+    const chain: any = {
+      select: selectSpy,
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+    };
+    (chain as any).then = (resolve: any) => resolve({ data: [], error: null });
+    (supabase.from as any).mockReturnValue(chain);
+
+    await insuranceCompanyService.getAll();
+
+    const projection = selectSpy.mock.calls[0]?.[0];
+    expect(projection).not.toBe("*");
+    expect(projection).not.toContain("login_prestador");
+    expect(projection).not.toContain("senha_prestador");
+    expect(projection).toContain("id");
+    expect(projection).toContain("name");
+  });
+
+  it("lista planos sem depender de relacionamento embutido da operadora", async () => {
+    const selectSpy = vi.fn().mockReturnThis();
+    const chain: any = {
+      select: selectSpy,
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+    };
+    (chain as any).then = (resolve: any) => resolve({ data: [], error: null });
+    (supabase.from as any).mockReturnValue(chain);
+
+    await insurancePlanService.getAll();
+
+    const projection = selectSpy.mock.calls[0]?.[0];
+    expect(projection).not.toBe("*");
+    expect(projection).not.toContain("insurance_companies");
+    expect(projection).toContain("insurance_company_id");
+  });
+});
+
 describe("insuranceService — search (LIKE injection safe)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -196,7 +240,7 @@ describe("insuranceService — getById (insuranceCompany)", () => {
     expect(result).toBeNull();
   });
 
-  it("retorna convênio + payment_source quando existe", async () => {
+  it("retorna o convênio operacional quando existe", async () => {
     const fakeRow = {
       id: 1,
       name: "SulAmérica",
@@ -365,5 +409,74 @@ describe("insuranceService — demais operações e erros", () => {
     await expect(professionalInsuranceService.delete(15)).resolves.toBeUndefined();
     expect(deleteSpy).toHaveBeenCalledOnce();
     expect(eqSpy).toHaveBeenCalledWith("id", 15);
+  });
+
+  it("normaliza catálogos nulos de convênios e planos", async () => {
+    const chain: any = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+    };
+    chain.then = (resolve: any) => resolve({ data: null, error: null });
+    (supabase.from as any).mockReturnValue(chain);
+
+    await expect(insuranceCompanyService.getAll()).resolves.toEqual([]);
+    await expect(insurancePlanService.getAll()).resolves.toEqual([]);
+  });
+
+  it("bloqueia a recepção quando os catálogos de convênio falham", async () => {
+    const companyChain: any = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+    };
+    companyChain.then = (resolve: any) =>
+      resolve({ data: null, error: { message: "RLS indisponível" } });
+    (supabase.from as any).mockReturnValueOnce(companyChain);
+
+    await expect(insuranceCompanyService.getAll()).rejects.toThrow(
+      "Erro ao listar convenios: RLS indisponível",
+    );
+
+    const planChain: any = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+    };
+    planChain.then = (resolve: any) =>
+      resolve({ data: null, error: { message: "planos indisponíveis" } });
+    (supabase.from as any).mockReturnValueOnce(planChain);
+
+    await expect(insurancePlanService.getAll()).rejects.toThrow(
+      "Erro: planos indisponíveis",
+    );
+  });
+
+  it("propaga falha ao criar plano ou credenciamento", async () => {
+    const planChain: any = {
+      insert: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: "plano duplicado" },
+      }),
+    };
+    (supabase.from as any).mockReturnValueOnce(planChain);
+    await expect(
+      insurancePlanService.create({ name: "Plano QA" }),
+    ).rejects.toThrow("Erro ao criar plano: plano duplicado");
+
+    const credentialChain: any = {
+      insert: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: "credenciamento inválido" },
+      }),
+    };
+    (supabase.from as any).mockReturnValueOnce(credentialChain);
+    await expect(
+      professionalInsuranceService.create({ professional_id: 10 }),
+    ).rejects.toThrow("Erro: credenciamento inválido");
   });
 });

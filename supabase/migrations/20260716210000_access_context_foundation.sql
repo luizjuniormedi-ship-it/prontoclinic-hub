@@ -495,6 +495,55 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.enforce_patient_company_scope()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+SET row_security = off
+AS $$
+DECLARE
+  v_action TEXT := CASE TG_OP
+    WHEN 'INSERT' THEN 'create'
+    WHEN 'UPDATE' THEN 'edit'
+  END;
+BEGIN
+  IF TG_OP = 'INSERT' AND auth.uid() IS NOT NULL THEN
+    NEW.company_id := COALESCE(NEW.company_id, public.active_company_id());
+    NEW.unit_id := COALESCE(NEW.unit_id, public.active_unit_id());
+  END IF;
+
+  IF NEW.company_id IS NULL
+     OR (
+       NEW.unit_id IS NOT NULL
+       AND NOT EXISTS (
+         SELECT 1
+         FROM public.units u
+         WHERE u.id = NEW.unit_id
+           AND u.company_id = NEW.company_id
+           AND u.lg_ativo = TRUE
+       )
+     ) THEN
+    RAISE EXCEPTION 'Empresa e unidade de origem do paciente devem ser consistentes'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF auth.uid() IS NOT NULL AND (
+    NEW.company_id IS DISTINCT FROM public.active_company_id()
+    OR public.active_unit_id() IS NULL
+    OR NOT (
+      public.can_access('patients', v_action)
+      OR public.can_access('pacientes', v_action)
+    )
+  ) THEN
+    RAISE EXCEPTION 'Escrita de paciente fora da empresa ativa ou sem permissão'
+      USING ERRCODE = '42501';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
 DO $$
 DECLARE
   v_table TEXT;
@@ -590,17 +639,24 @@ BEGIN
       v_table
     ) INTO v_has_unscoped;
     IF v_has_unscoped THEN
-      RAISE EXCEPTION
-        'ACCESS_CONTEXT_PREFLIGHT: % contém dados sem empresa/unidade; reconciliação manual obrigatória',
+      RAISE NOTICE
+        'ACCESS_CONTEXT_RECONCILIATION: % contém legado sem empresa/unidade; linhas permanecem fail-closed',
         v_table;
     END IF;
 
     EXECUTE format('DROP TRIGGER IF EXISTS %I ON public.%I',
                    'trg_' || v_table || '_unit_company', v_table);
-    EXECUTE format(
-      'CREATE TRIGGER %I BEFORE INSERT OR UPDATE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.enforce_clinical_unit_company()',
-      'trg_' || v_table || '_unit_company', v_table
-    );
+    IF v_table = 'patients' THEN
+      EXECUTE
+        'CREATE TRIGGER trg_patients_unit_company
+         BEFORE INSERT OR UPDATE ON public.patients
+         FOR EACH ROW EXECUTE FUNCTION public.enforce_patient_company_scope()';
+    ELSE
+      EXECUTE format(
+        'CREATE TRIGGER %I BEFORE INSERT OR UPDATE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.enforce_clinical_unit_company()',
+        'trg_' || v_table || '_unit_company', v_table
+      );
+    END IF;
 
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', v_table);
 
@@ -621,51 +677,98 @@ BEGIN
       WHEN 'medical_records' THEN 'prontuario'
     END;
 
-    EXECUTE format($policy$
-      CREATE POLICY %I ON public.%I
-      FOR SELECT TO authenticated
-      USING (
-        company_id = public.active_company_id()
-        AND unit_id = public.active_unit_id()
-        AND (public.can_access(%L, 'view') OR public.can_access(%L, 'view'))
-      )
-    $policy$, v_table || '_access_select', v_table, v_module, v_alt_module);
+    IF v_table = 'patients' THEN
+      EXECUTE format($policy$
+        CREATE POLICY patients_access_select ON public.patients
+        FOR SELECT TO authenticated
+        USING (
+          company_id = public.active_company_id()
+          AND public.active_unit_id() IS NOT NULL
+          AND (public.can_access(%L, 'view') OR public.can_access(%L, 'view'))
+        )
+      $policy$, v_module, v_alt_module);
 
-    EXECUTE format($policy$
-      CREATE POLICY %I ON public.%I
-      FOR INSERT TO authenticated
-      WITH CHECK (
-        company_id = public.active_company_id()
-        AND unit_id = public.active_unit_id()
-        AND (public.can_access(%L, 'create') OR public.can_access(%L, 'create'))
-      )
-    $policy$, v_table || '_access_insert', v_table, v_module, v_alt_module);
+      EXECUTE format($policy$
+        CREATE POLICY patients_access_insert ON public.patients
+        FOR INSERT TO authenticated
+        WITH CHECK (
+          company_id = public.active_company_id()
+          AND unit_id = public.active_unit_id()
+          AND (public.can_access(%L, 'create') OR public.can_access(%L, 'create'))
+        )
+      $policy$, v_module, v_alt_module);
 
-    EXECUTE format($policy$
-      CREATE POLICY %I ON public.%I
-      FOR UPDATE TO authenticated
-      USING (
-        company_id = public.active_company_id()
-        AND unit_id = public.active_unit_id()
-        AND (public.can_access(%L, 'edit') OR public.can_access(%L, 'edit'))
-      )
-      WITH CHECK (
-        company_id = public.active_company_id()
-        AND unit_id = public.active_unit_id()
-        AND (public.can_access(%L, 'edit') OR public.can_access(%L, 'edit'))
-      )
-    $policy$, v_table || '_access_update', v_table,
-       v_module, v_alt_module, v_module, v_alt_module);
+      EXECUTE format($policy$
+        CREATE POLICY patients_access_update ON public.patients
+        FOR UPDATE TO authenticated
+        USING (
+          company_id = public.active_company_id()
+          AND public.active_unit_id() IS NOT NULL
+          AND (public.can_access(%L, 'edit') OR public.can_access(%L, 'edit'))
+        )
+        WITH CHECK (
+          company_id = public.active_company_id()
+          AND public.active_unit_id() IS NOT NULL
+          AND (public.can_access(%L, 'edit') OR public.can_access(%L, 'edit'))
+        )
+      $policy$, v_module, v_alt_module, v_module, v_alt_module);
 
-    EXECUTE format($policy$
-      CREATE POLICY %I ON public.%I
-      FOR DELETE TO authenticated
-      USING (
-        company_id = public.active_company_id()
-        AND unit_id = public.active_unit_id()
-        AND (public.can_access(%L, 'delete') OR public.can_access(%L, 'delete'))
-      )
-    $policy$, v_table || '_access_delete', v_table, v_module, v_alt_module);
+      EXECUTE format($policy$
+        CREATE POLICY patients_access_delete ON public.patients
+        FOR DELETE TO authenticated
+        USING (
+          company_id = public.active_company_id()
+          AND public.active_unit_id() IS NOT NULL
+          AND (public.can_access(%L, 'delete') OR public.can_access(%L, 'delete'))
+        )
+      $policy$, v_module, v_alt_module);
+    ELSE
+      EXECUTE format($policy$
+        CREATE POLICY %I ON public.%I
+        FOR SELECT TO authenticated
+        USING (
+          company_id = public.active_company_id()
+          AND unit_id = public.active_unit_id()
+          AND (public.can_access(%L, 'view') OR public.can_access(%L, 'view'))
+        )
+      $policy$, v_table || '_access_select', v_table, v_module, v_alt_module);
+
+      EXECUTE format($policy$
+        CREATE POLICY %I ON public.%I
+        FOR INSERT TO authenticated
+        WITH CHECK (
+          company_id = public.active_company_id()
+          AND unit_id = public.active_unit_id()
+          AND (public.can_access(%L, 'create') OR public.can_access(%L, 'create'))
+        )
+      $policy$, v_table || '_access_insert', v_table, v_module, v_alt_module);
+
+      EXECUTE format($policy$
+        CREATE POLICY %I ON public.%I
+        FOR UPDATE TO authenticated
+        USING (
+          company_id = public.active_company_id()
+          AND unit_id = public.active_unit_id()
+          AND (public.can_access(%L, 'edit') OR public.can_access(%L, 'edit'))
+        )
+        WITH CHECK (
+          company_id = public.active_company_id()
+          AND unit_id = public.active_unit_id()
+          AND (public.can_access(%L, 'edit') OR public.can_access(%L, 'edit'))
+        )
+      $policy$, v_table || '_access_update', v_table,
+         v_module, v_alt_module, v_module, v_alt_module);
+
+      EXECUTE format($policy$
+        CREATE POLICY %I ON public.%I
+        FOR DELETE TO authenticated
+        USING (
+          company_id = public.active_company_id()
+          AND unit_id = public.active_unit_id()
+          AND (public.can_access(%L, 'delete') OR public.can_access(%L, 'delete'))
+        )
+      $policy$, v_table || '_access_delete', v_table, v_module, v_alt_module);
+    END IF;
 
     EXECUTE format('REVOKE ALL ON public.%I FROM anon', v_table);
     EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON public.%I TO authenticated', v_table);

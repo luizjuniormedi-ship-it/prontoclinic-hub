@@ -1,79 +1,100 @@
-import { test as base, expect } from '@playwright/test';
+import { expect, test as base } from '@playwright/test';
 import { test as authed } from './fixtures/auth';
 
-/**
- * E2E — Notificações Multicanal
- *
- * Cobre:
- *   - Fila tem notificação pendente
- *   - Worker processa e marca como SENT
- *   - Retry após falha
- *   - Respeita rate limit
- *   - Multicanal (e-mail, WhatsApp, SMS)
- *   - Opt-in/out por canal
- *   - Confirmação de leitura
- *   - Histórico do destinatário
- */
+const NOTIFICATIONS_ROUTE = '/admin/notifications';
 
-authed.describe('Notificações Multicanal', () => {
+type ExternalDependency = {
+  name: string;
+  readyEnv: string;
+  healthUrlEnv: string;
+};
+
+const externalDependencies: ExternalDependency[] = [
+  {
+    name: 'worker de notificações',
+    readyEnv: 'E2E_NOTIFICATIONS_WORKER_READY',
+    healthUrlEnv: 'E2E_NOTIFICATIONS_WORKER_HEALTH_URL',
+  },
+  {
+    name: 'provedor de e-mail',
+    readyEnv: 'E2E_EMAIL_PROVIDER_READY',
+    healthUrlEnv: 'E2E_EMAIL_PROVIDER_HEALTH_URL',
+  },
+  {
+    name: 'provedor de SMS',
+    readyEnv: 'E2E_SMS_PROVIDER_READY',
+    healthUrlEnv: 'E2E_SMS_PROVIDER_HEALTH_URL',
+  },
+  {
+    name: 'provedor de WhatsApp',
+    readyEnv: 'E2E_WHATSAPP_PROVIDER_READY',
+    healthUrlEnv: 'E2E_WHATSAPP_PROVIDER_HEALTH_URL',
+  },
+];
+
+authed.describe('Central de Notificações', () => {
   authed.beforeEach(async ({ loginAs }) => {
     await loginAs('admin');
   });
 
-  authed('fila tem notificação pendente', async ({ page }) => {
-    await page.goto('/notifications');
-    await expect(page.getByRole('heading', { name: /notificaç/i })).toBeVisible();
-    await expect(page.getByText(/pendente|aguardando envio/i).first()).toBeVisible();
+  authed('abre a rota canônica e exibe os controles disponíveis', async ({ page }) => {
+    await page.goto(NOTIFICATIONS_ROUTE);
+
+    await expect(page).toHaveURL(new RegExp(`${NOTIFICATIONS_ROUTE}$`));
+    await expect(page.getByRole('heading', { name: 'Central de Notificações' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Não lidas' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Todas' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Configurações' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Marcar todas como lidas' })).toBeVisible();
   });
 
-  authed('worker processa e marca como SENT', async ({ page }) => {
-    await page.goto('/notifications');
-    await page.getByRole('button', { name: /processar agora|worker/i }).click();
-    await expect(page.getByText(/enviado|sent|sucesso/i).first()).toBeVisible({ timeout: 10000 });
+  authed('alterna entre notificações não lidas e todas', async ({ page }) => {
+    await page.goto(NOTIFICATIONS_ROUTE);
+
+    const unreadTab = page.getByRole('tab', { name: 'Não lidas' });
+    const allTab = page.getByRole('tab', { name: 'Todas' });
+
+    await expect(unreadTab).toHaveAttribute('aria-selected', 'true');
+    await allTab.click();
+    await expect(allTab).toHaveAttribute('aria-selected', 'true');
+
+    const visibleState = page
+      .getByText('Sem notificações', { exact: true })
+      .or(page.getByRole('button', { name: 'Marcar como lida' }).first());
+    await expect(visibleState).toBeVisible();
   });
 
-  authed('retry automático após falha', async ({ page }) => {
-    await page.goto('/notifications');
-    await page.getByRole('row', { name: /falhou|erro/i }).first().getByRole('button', { name: /reenviar|retry/i }).click();
-    await expect(page.getByText(/reenviado|retry.*agendado/i)).toBeVisible();
-  });
+  authed('exibe somente as preferências de canais implementadas', async ({ page }) => {
+    await page.goto(NOTIFICATIONS_ROUTE);
+    await page.getByRole('tab', { name: 'Configurações' }).click();
 
-  authed('respeita rate limit por destinatário', async ({ page }) => {
-    await page.goto('/notifications');
-    await page.getByRole('row').first().click();
-    await expect(page.getByText(/rate limit|aguarde.*minutos/i).first()).toBeVisible();
-  });
-
-  authed('multicanal — enviar por e-mail', async ({ page }) => {
-    await page.goto('/notifications/new');
-    await page.getByLabel(/canal/i).selectOption('email');
-    await page.getByLabel(/destinatário/i).fill('paciente@example.com');
-    await page.getByLabel(/assunto/i).fill('Lembrete de consulta');
-    await page.getByLabel(/mensagem/i).fill('Sua consulta é amanhã às 14h');
-    await page.getByRole('button', { name: /enviar/i }).click();
-    await expect(page.getByText(/enviado|e-?mail/i).first()).toBeVisible();
-  });
-
-  authed('opt-in/out por canal (consentimento LGPD)', async ({ page }) => {
-    await page.goto('/patients');
-    await page.getByRole('row').first().getByRole('button', { name: /consentimento|lgpd/i }).click();
-    await page.getByRole('switch', { name: /whatsapp/i }).click();
-    await page.getByRole('switch', { name: /sms/i }).click();
-    await page.getByRole('button', { name: /salvar/i }).click();
-    await expect(page.getByText(/consentimento.*atualizado/i)).toBeVisible();
-  });
-
-  authed('confirmação de leitura (read receipt)', async ({ page }) => {
-    await page.goto('/notifications');
-    await page.getByRole('row', { name: /entregue|delivered/i }).first().click();
-    await expect(page.getByText(/lido|read|visualizado/i).first()).toBeVisible();
-  });
-
-  authed('histórico do destinatário (timeline)', async ({ page }) => {
-    await page.goto('/notifications/history');
-    await page.getByLabel(/destinatário|paciente/i).click();
-    await page.getByRole('option').first().click();
-    await expect(page.getByRole('heading', { name: /histórico|timeline/i })).toBeVisible();
-    await expect(page.getByText(/enviado|recebido|aberto/i).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Canais de comunicação' })).toBeVisible();
+    await expect(page.getByRole('switch', { name: 'Ativar Notificações no app' })).toBeVisible();
+    await expect(page.getByRole('switch', { name: 'Ativar E-mail' })).toBeVisible();
+    await expect(page.getByRole('switch', { name: 'Ativar SMS' })).toBeVisible();
+    await expect(page.getByRole('switch', { name: 'Ativar WhatsApp' })).toBeVisible();
+    await expect(page.getByText(/notificações críticas.*não podem ser desativadas/i)).toBeVisible();
   });
 });
+
+for (const dependency of externalDependencies) {
+  base(`${dependency.name} responde no endpoint de readiness configurado`, async ({ request }) => {
+    const ready = process.env[dependency.readyEnv] === 'true';
+    const healthUrl = process.env[dependency.healthUrlEnv];
+
+    base.skip(
+      !ready,
+      `Defina ${dependency.readyEnv}=true somente após homologar a dependência externa.`,
+    );
+    expect(
+      healthUrl,
+      `${dependency.healthUrlEnv} é obrigatório quando ${dependency.readyEnv}=true.`,
+    ).toBeTruthy();
+
+    const response = await request.get(healthUrl!);
+    expect(
+      response.ok(),
+      `${dependency.name} indisponível: HTTP ${response.status()}.`,
+    ).toBeTruthy();
+  });
+}

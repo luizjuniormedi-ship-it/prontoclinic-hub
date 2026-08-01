@@ -206,6 +206,24 @@ SELECT pg_temp.assert_true(
 SELECT pg_temp.assert_true(public.active_unit_id() IS NULL, 'papel corporativo deve manter unidade nula');
 SELECT pg_temp.assert_true(public.can_access('admin', 'edit'), 'papel corporativo deve usar RBAC no contexto sem unidade');
 SELECT pg_temp.assert_true((SELECT count(*) FROM public.patients) = 0, 'contexto corporativo sem unidade não pode abrir dados clínicos');
+SELECT pg_temp.assert_true(
+  (SELECT array_agg(id ORDER BY id) FROM public.companies)
+    = ARRAY['31000000-0000-0000-0000-000000000001'::UUID],
+  'contexto corporativo A deve ver somente a empresa A'
+);
+SELECT pg_temp.assert_true(
+  (SELECT relrowsecurity AND relforcerowsecurity
+     FROM pg_class
+    WHERE oid = 'public.companies'::REGCLASS),
+  'companies deve manter RLS habilitada e forçada'
+);
+SELECT pg_temp.assert_true(
+  NOT has_table_privilege('authenticated', 'public.companies', 'INSERT')
+  AND NOT has_table_privilege('authenticated', 'public.companies', 'UPDATE')
+  AND NOT has_table_privilege('authenticated', 'public.companies', 'DELETE')
+  AND NOT has_table_privilege('anon', 'public.companies', 'SELECT'),
+  'clientes não podem escrever nem consultar companies sem autenticação'
+);
 
 -- Não confiar em membership/company/unit arbitrários enviados pelo cliente.
 DO $$
@@ -241,7 +259,10 @@ SELECT pg_temp.activate_context(
 SELECT pg_temp.assert_true(public.active_unit_id() = 910001, 'unidade A1 deve ficar ativa');
 SELECT pg_temp.assert_true(public.can_access('patients', 'view'), 'recepção deve visualizar patients');
 SELECT pg_temp.assert_true(NOT public.can_access('patients', 'edit'), 'ação não concedida deve falhar fechada');
-SELECT pg_temp.assert_true((SELECT count(*) FROM public.patients) = 1, 'patients deve filtrar empresa e unidade A1');
+SELECT pg_temp.assert_true(
+  (SELECT array_agg(id ORDER BY id) FROM public.patients) = ARRAY[930001, 930002]::BIGINT[],
+  'patients deve compartilhar o cadastro mestre dentro da empresa A'
+);
 SELECT pg_temp.assert_true((SELECT count(*) FROM public.appointments) = 1, 'appointments deve filtrar empresa e unidade A1');
 SELECT pg_temp.assert_true((SELECT count(*) FROM public.medical_records) = 1, 'medical_records deve filtrar empresa e unidade A1');
 SELECT pg_temp.assert_true(NOT EXISTS (SELECT 1 FROM public.patients WHERE company_id = '32000000-0000-0000-0000-000000000002'), 'outra empresa não pode vazar');
@@ -250,12 +271,14 @@ SELECT pg_temp.assert_true(NOT EXISTS (SELECT 1 FROM public.patients WHERE compa
 SET LOCAL request.jwt.claims = '{"sub":"c1000000-0000-0000-0000-000000000001","role":"authenticated","session_id":"c1000000-0000-0000-0000-000000000098"}';
 SELECT pg_temp.assert_true(public.active_unit_id() IS NULL, 'outra sessão do mesmo usuário não pode reutilizar o contexto');
 SELECT pg_temp.assert_true((SELECT count(*) FROM public.patients) = 0, 'RLS deve fechar quando a sessão não possui contexto');
+SELECT pg_temp.assert_true((SELECT count(*) FROM public.companies) = 0, 'companies deve fechar quando a sessão não possui contexto');
 SET LOCAL request.jwt.claims = '{"sub":"c1000000-0000-0000-0000-000000000001","role":"authenticated","session_id":"c1000000-0000-0000-0000-000000000099"}';
 
 -- Um contexto previamente selecionado também fica inoperante se a sessão cai para AAL1.
 SET LOCAL request.jwt.claim.aal = 'aal1';
 SELECT pg_temp.assert_true(public.active_unit_id() IS NULL, 'AAL1 não pode reutilizar contexto AAL2 persistido');
 SELECT pg_temp.assert_true((SELECT count(*) FROM public.patients) = 0, 'RLS deve fechar ao perder AAL2');
+SELECT pg_temp.assert_true((SELECT count(*) FROM public.companies) = 0, 'companies deve fechar ao perder AAL2');
 SET LOCAL request.jwt.claim.aal = 'aal2';
 
 -- Papel vinculado, porém sem permissão explícita, continua deny-by-default.
@@ -274,7 +297,10 @@ SELECT pg_temp.activate_context(
   910002
 );
 SELECT pg_temp.assert_true(public.active_unit_id() = 910002, 'troca válida para A2 deve funcionar');
-SELECT pg_temp.assert_true((SELECT id FROM public.patients) = 930002, 'contexto A2 deve ver apenas paciente A2');
+SELECT pg_temp.assert_true(
+  (SELECT array_agg(id ORDER BY id) FROM public.patients) = ARRAY[930001, 930002]::BIGINT[],
+  'contexto A2 deve ver o cadastro mestre da empresa A'
+);
 
 SELECT pg_temp.activate_context(
   'd1000000-0000-0000-0000-000000000002',
@@ -283,6 +309,11 @@ SELECT pg_temp.activate_context(
 );
 SELECT pg_temp.assert_true(public.active_company_id() = '32000000-0000-0000-0000-000000000002', 'troca válida de empresa deve funcionar');
 SELECT pg_temp.assert_true((SELECT id FROM public.patients) = 930003, 'contexto B1 deve ver apenas paciente B1');
+SELECT pg_temp.assert_true(
+  (SELECT array_agg(id ORDER BY id) FROM public.companies)
+    = ARRAY['32000000-0000-0000-0000-000000000002'::UUID],
+  'contexto B1 deve ver somente a empresa B'
+);
 
 RESET ROLE;
 ROLLBACK;

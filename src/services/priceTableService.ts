@@ -50,6 +50,90 @@ export interface PriceLookup {
   found: boolean;
 }
 
+const EMPTY_PRICE_LOOKUP: PriceLookup = {
+  vl_particular: 0,
+  vl_convenio: 0,
+  vl_material: 0,
+  vl_medicamento: 0,
+  vl_taxa: 0,
+  vl_diaria: 0,
+  vl_gases: 0,
+  found: false,
+};
+
+function normalizeMoney(value: unknown): number {
+  const normalized = typeof value === "string"
+    ? value.trim().replace(",", ".")
+    : value;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed >= 0
+    ? Math.round(parsed * 100) / 100
+    : 0;
+}
+
+function normalizePriceLookup(value: unknown): PriceLookup {
+  if (typeof value === "string") {
+    const record = value.trim();
+    if (record.startsWith("(") && record.endsWith(")")) {
+      const fields = record.slice(1, -1).split(",");
+      if (fields.length === 8) {
+        return {
+          vl_particular: normalizeMoney(fields[0]),
+          vl_convenio: normalizeMoney(fields[1]),
+          vl_material: normalizeMoney(fields[2]),
+          vl_medicamento: normalizeMoney(fields[3]),
+          vl_taxa: normalizeMoney(fields[4]),
+          vl_diaria: normalizeMoney(fields[5]),
+          vl_gases: normalizeMoney(fields[6]),
+          found: fields[7] === "t" || fields[7] === "true",
+        };
+      }
+    }
+  }
+  if (!value || typeof value !== "object") return { ...EMPTY_PRICE_LOOKUP };
+  const row = value as Record<string, unknown>;
+  return {
+    vl_particular: normalizeMoney(row.vl_particular),
+    vl_convenio: normalizeMoney(row.vl_convenio),
+    vl_material: normalizeMoney(row.vl_material),
+    vl_medicamento: normalizeMoney(row.vl_medicamento),
+    vl_taxa: normalizeMoney(row.vl_taxa),
+    vl_diaria: normalizeMoney(row.vl_diaria),
+    vl_gases: normalizeMoney(row.vl_gases),
+    found: row.found === true || row.found === 1 || row.found === "true",
+  };
+}
+
+function normalizePersistedMoney(value: unknown, field: string): number {
+  if (value === null || value === undefined) return 0;
+  const normalized = typeof value === "string"
+    ? value.trim().replace(",", ".")
+    : value;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`Contrato inválido em price_tables.${field}`);
+  }
+  return Math.round(parsed * 100) / 100;
+}
+
+function normalizePriceTable(value: unknown): PriceTable {
+  const row = value as Record<string, unknown>;
+  return {
+    ...(row as unknown as PriceTable),
+    vl_particular: normalizePersistedMoney(row.vl_particular, "vl_particular"),
+    vl_convenio: normalizePersistedMoney(row.vl_convenio, "vl_convenio"),
+    vl_material: normalizePersistedMoney(row.vl_material, "vl_material"),
+    vl_medicamento: normalizePersistedMoney(row.vl_medicamento, "vl_medicamento"),
+    vl_taxa: normalizePersistedMoney(row.vl_taxa, "vl_taxa"),
+    vl_diaria: normalizePersistedMoney(row.vl_diaria, "vl_diaria"),
+    vl_gases: normalizePersistedMoney(row.vl_gases, "vl_gases"),
+    percentual_acrescimo: normalizePersistedMoney(
+      row.percentual_acrescimo,
+      "percentual_acrescimo",
+    ),
+  };
+}
+
 export const priceTableService = {
   async getAll(filters?: {
     serviceId?: number;
@@ -71,7 +155,7 @@ export const priceTableService = {
 
     const { data, error } = await q;
     if (error) throw new Error(`Erro: ${error.message}`);
-    return data || [];
+    return (data || []).map(normalizePriceTable);
   },
 
   async count(): Promise<number> {
@@ -85,25 +169,20 @@ export const priceTableService = {
   async findPrice(
     serviceId: number,
     appointmentTypeId: number,
-    insurancePlanId: number | null = null
+    insurancePlanId: number | null = null,
+    companyId?: string | null,
   ): Promise<PriceLookup> {
     const { data, error } = await supabase.rpc("find_price", {
-      p_company_id: null,
+      p_company_id: companyId || null,
       p_service_id: serviceId,
       p_appointment_type_id: appointmentTypeId,
       p_insurance_plan_id: insurancePlanId,
     });
     if (error) {
       console.warn("find_price RPC falhou, retornando 0:", error);
-      return {
-        vl_particular: 0, vl_convenio: 0, vl_material: 0, vl_medicamento: 0,
-        vl_taxa: 0, vl_diaria: 0, vl_gases: 0, found: false,
-      };
+      return { ...EMPTY_PRICE_LOOKUP };
     }
-    return data?.[0] || {
-      vl_particular: 0, vl_convenio: 0, vl_material: 0, vl_medicamento: 0,
-      vl_taxa: 0, vl_diaria: 0, vl_gases: 0, found: false,
-    };
+    return normalizePriceLookup(Array.isArray(data) ? data[0] : data);
   },
 
   async create(input: Partial<PriceTable>): Promise<PriceTable> {
@@ -113,7 +192,7 @@ export const priceTableService = {
       .select()
       .single();
     if (error) throw new Error(`Erro ao criar preco: ${error.message}`);
-    return data;
+    return normalizePriceTable(data);
   },
 
   async update(id: number, input: Partial<PriceTable>): Promise<PriceTable> {
@@ -124,7 +203,7 @@ export const priceTableService = {
       .select()
       .single();
     if (error) throw new Error(`Erro: ${error.message}`);
-    return data;
+    return normalizePriceTable(data);
   },
 
   async delete(id: number): Promise<void> {
@@ -138,6 +217,6 @@ export const priceTableService = {
       .insert(inputs)
       .select();
     if (error) throw new Error(`Erro no bulk: ${error.message}`);
-    return data || [];
+    return (data || []).map(normalizePriceTable);
   },
 };

@@ -307,8 +307,8 @@ solicitado → agendado → realizado → imagem recebida → laudando → laudo
 ## TESTES TÉCNICOS OBRIGATÓRIOS
 
 ### Frontend
-- [ ] TypeScript build sem erros (`bun run build`)
-- [ ] ESLint sem erros críticos (`bun run lint`)
+- [ ] TypeScript build sem erros (`npm run build`)
+- [ ] ESLint sem erros críticos (`npm run lint`)
 - [ ] Todas as rotas acessíveis e renderizando
 - [ ] Lazy loading implementado para páginas pesadas
 - [ ] Suspense boundaries para carregamento

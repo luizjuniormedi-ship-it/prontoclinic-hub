@@ -4,14 +4,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export function LoadingState({ message = "Carregando..." }: { message?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-      <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+    <div role="status" aria-live="polite" className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+      <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" aria-hidden="true" />
       <p className="text-sm">{message}</p>
     </div>
   );
 }
 
-export function EmptyState({ icon: Icon, title, description, action }: { icon?: LucideIcon | any; title: string; description?: string; action?: React.ReactNode }) {
+export function EmptyState({ icon: Icon, title, description, action }: { icon?: LucideIcon | React.ElementType; title: string; description?: string; action?: React.ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
       {Icon && <Icon className="h-12 w-12 text-muted-foreground/50 mb-4" />}
@@ -82,9 +82,9 @@ export function IllustratedEmptyState({
 
 export function ErrorState({ message = "Ocorreu um erro ao carregar os dados.", onRetry }: { message?: string; onRetry?: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center py-12 text-center">
+    <div role="alert" className="flex flex-col items-center justify-center py-12 text-center">
       <div className="rounded-full bg-destructive/10 p-3 mb-4">
-        <span className="text-2xl">⚠️</span>
+        <span className="text-2xl" aria-hidden="true">⚠️</span>
       </div>
       <h3 className="text-lg font-semibold">Erro</h3>
       <p className="text-sm text-muted-foreground mt-1 max-w-md">{message}</p>

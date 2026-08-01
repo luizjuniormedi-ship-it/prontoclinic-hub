@@ -1,16 +1,16 @@
 import AxeBuilder from '@axe-core/playwright';
-import { E2E_PASSWORD } from './env';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, loginAsRole, test } from './fixtures/auth';
+import type { Page } from '@playwright/test';
 
-const PASSWORD = E2E_PASSWORD;
-const UNIT_A = /Empresa E2E · Unidade E2E A admin/;
-const UNIT_B = /Empresa E2E · Unidade E2E B admin/;
+const UNIT_A = /Empresa E2E.*Unidade E2E A.*admin/;
+const UNIT_A_RECEPTION = /Empresa E2E.*Unidade E2E A.*recepcao/;
+const UNIT_B = /Empresa E2E.*Unidade E2E B.*admin/;
 const RECORD_MARKER = 'Queixa E2E persistida fase 0/1';
 
 async function assertAccessible(page: Page, label: string) {
   const closeNotification = page.getByRole('button', { name: 'Fechar notificação' });
   if (await closeNotification.isVisible().catch(() => false)) {
-    await closeNotification.click();
+    await closeNotification.click({ force: true });
     await expect(closeNotification).toBeHidden();
   }
   await page.evaluate(() => {
@@ -22,9 +22,26 @@ async function assertAccessible(page: Page, label: string) {
 }
 
 async function selectContext(page: Page, option: RegExp) {
-  await page.getByRole('button', { name: 'Selecionar empresa, unidade e perfil' }).click();
+  const contextSelector = page.getByRole('button', {
+    name: 'Selecionar empresa, unidade e perfil',
+  });
+  await contextSelector.click();
   await page.getByRole('menuitem', { name: option }).click();
   await expect(page.getByText('Selecione seu contexto de acesso')).toBeHidden();
+  await expect(contextSelector).toBeEnabled();
+  await expect(page.locator('#main-content')).toHaveAttribute(
+    'data-access-context-status',
+    'ready',
+    { timeout: 15_000 },
+  );
+  await expect.poll(
+    () => page.evaluate(
+      () => JSON.parse(
+        sessionStorage.getItem('prontomedic-application-session') || 'null',
+      )?.session_id ?? null,
+    ),
+    { timeout: 15_000, message: 'sessão de aplicação deve estar ativa' },
+  ).not.toBeNull();
 }
 
 async function authenticatedFetch(page: Page, path: string, init: RequestInit) {
@@ -47,37 +64,81 @@ async function authenticatedFetch(page: Page, path: string, init: RequestInit) {
 }
 
 test.describe('Gate fase 0/1', () => {
-  test.describe.configure({ mode: 'serial' });
+  test.describe.configure({ mode: 'serial', retries: 0 });
   test.skip(
     ({ browserName }) => browserName !== 'chromium',
     'Gate stateful canônico: a fixture compartilhada é consumida uma única vez',
   );
 
+  test('recepção não contorna o workflow pela transição direta da Agenda', async ({ page }) => {
+    await loginAsRole(page, 'reception');
+    await expect(page.getByRole('button', {
+      name: 'Selecionar empresa, unidade e perfil',
+    })).toContainText(UNIT_A_RECEPTION);
+
+    const blockedDirectWaiting = await authenticatedFetch(
+      page,
+      '/rest/v1/rpc/update_appointment_status_secure',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          p_appointment_id: 91001,
+          p_new_status: 'waiting',
+          p_reason: 'Tentativa direta fora do workflow E2E',
+        }),
+      },
+    );
+    expect(blockedDirectWaiting.status, blockedDirectWaiting.body).toBe(403);
+    expect(JSON.parse(blockedDirectWaiting.body)).toMatchObject({ code: '42501' });
+
+    await page.goto('/reception');
+    const patientAButton = page.getByRole('button', {
+      name: 'Ver agendamentos de Paciente E2E A',
+      exact: true,
+    }).first();
+    await expect(patientAButton).toBeVisible();
+    await expect(page.getByText('Paciente E2E B')).toBeHidden();
+    const patientA = patientAButton.locator('xpath=ancestor::*[contains(@class,"rounded-lg") or contains(@class,"border")][1]');
+    await patientA.getByRole('button', { name: 'Check-in' }).click();
+    const checkinDialog = page.getByRole('dialog', { name: 'Entrada do paciente' });
+    await expect(checkinDialog).toBeVisible();
+    await expect(checkinDialog.getByText('Paciente liberado para check-in')).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByRole('button', { name: 'Confirmar entrada e abrir conta' }).click();
+    await expect(page.getByText(/^Entrada concluída · Senha C\d{3}$/).first()).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Entrada do paciente' })).toBeHidden();
+    await page.getByRole('button', { name: 'Fechar', exact: true }).click();
+    await assertAccessible(page, 'recepção após check-in pelo perfil recepcao');
+  });
+
   test('contexto, RLS A/B, recepção, atendimento, prontuário e Axe', async ({ page }) => {
     await page.goto('/login');
     await assertAccessible(page, 'login');
-    await page.getByLabel('E-mail').fill('admin@prontomedic.test');
-    await page.getByRole('textbox', { name: 'Senha' }).fill(PASSWORD);
-    await page.getByRole('button', { name: /^entrar$/i }).click();
-    await expect(page).not.toHaveURL(/\/login/, { timeout: 10_000 });
+    await loginAsRole(page, 'admin');
 
-    await selectContext(page, UNIT_A);
+    await expect(page.getByRole('button', {
+      name: 'Selecionar empresa, unidade e perfil',
+    })).toContainText(UNIT_A);
     const beforeReload = await page.evaluate(() => JSON.parse(sessionStorage.getItem('prontomedic-application-session') || 'null'));
     expect(beforeReload?.session_id).toBeTruthy();
     await page.reload();
-    await expect(page.getByText('Selecione seu contexto de acesso')).toBeHidden();
+    await expect(page.locator('#main-content')).toHaveAttribute('data-access-context-status', 'ready');
+    await expect(page.getByRole('button', {
+      name: /selecionar empresa, unidade e perfil/i,
+    })).toContainText(/Empresa E2E.*Unidade E2E A.*admin/i);
     const afterReload = await page.evaluate(() => JSON.parse(sessionStorage.getItem('prontomedic-application-session') || 'null'));
     expect(afterReload?.session_id).toBe(beforeReload.session_id);
 
     await page.goto('/patients');
     await expect(page.getByText('Paciente E2E A')).toBeVisible();
-    await expect(page.getByText('Paciente E2E B')).toBeHidden();
+    await expect(page.getByText('Paciente E2E B')).toBeVisible();
 
     const unitARead = await authenticatedFetch(page, '/rest/v1/patients?select=id&order=id.asc', { method: 'GET' });
     expect(unitARead.status, unitARead.body).toBe(200);
     const unitAIds = (JSON.parse(unitARead.body) as Array<{ id: string }>).map(({ id }) => id);
     expect(unitAIds).toContain('91001');
-    expect(unitAIds).not.toContain('91002');
+    expect(unitAIds).toContain('91002');
 
     const blockedWrite = await authenticatedFetch(page, '/rest/v1/patients', {
       method: 'POST',
@@ -94,20 +155,14 @@ test.describe('Gate fase 0/1', () => {
     await assertAccessible(page, 'pacientes unidade A');
 
     await page.goto('/reception');
-    await expect(page.getByText('Paciente E2E A')).toBeVisible();
+    const patientAButton = page.getByRole('button', {
+      name: 'Ver agendamentos de Paciente E2E A',
+      exact: true,
+    }).first();
+    await expect(patientAButton).toBeVisible();
     await expect(page.getByText('Paciente E2E B')).toBeHidden();
-    const patientA = page.getByText('Paciente E2E A').locator('xpath=ancestor::*[contains(@class,"rounded-lg") or contains(@class,"border")][1]');
-    await patientA.getByRole('button', { name: 'Check-in' }).click();
-    await expect(page.getByRole('dialog', { name: 'Check-in administrativo' })).toBeVisible();
-    await expect(page.getByText('Paciente liberado para check-in')).toBeVisible();
-    await page.getByRole('button', { name: 'Concluir check-in' }).click();
-    await expect(page.getByText(/^Check-in concluído · Senha C\d{3}$/).first()).toBeVisible();
-    await expect(page.getByRole('dialog', { name: 'Check-in administrativo' })).toBeHidden();
-    await expect(page.getByRole('heading', { name: 'Recepção', level: 1 })).toBeVisible();
-    await assertAccessible(page, 'recepção após check-in');
 
-    const waitingA = page.getByText('Paciente E2E A').locator('xpath=ancestor::*[contains(@class,"rounded-lg") or contains(@class,"border")][1]');
-    await waitingA.getByRole('button', { name: 'Iniciar' }).click();
+    await page.getByRole('button', { name: 'Iniciar', exact: true }).click();
     await expect(page).toHaveURL(/\/attendance\/91001/);
     await expect(page.getByRole('heading', { name: 'Atendimento' })).toBeVisible();
     await assertAccessible(page, 'atendimento');
@@ -125,16 +180,25 @@ test.describe('Gate fase 0/1', () => {
     await selectContext(page, UNIT_B);
     await page.goto('/patients');
     await expect(page.getByText('Paciente E2E B')).toBeVisible();
-    await expect(page.getByText('Paciente E2E A')).toBeHidden();
+    await expect(page.getByText('Paciente E2E A')).toBeVisible();
     const unitBRead = await authenticatedFetch(page, '/rest/v1/patients?select=id&order=id.asc', { method: 'GET' });
     expect(unitBRead.status, unitBRead.body).toBe(200);
     const unitBIds = (JSON.parse(unitBRead.body) as Array<{ id: string }>).map(({ id }) => id);
     expect(unitBIds).toContain('91002');
-    expect(unitBIds).not.toContain('91001');
+    expect(unitBIds).toContain('91001');
     await assertAccessible(page, 'pacientes unidade B');
 
+    await page.goto('/reception');
+    await expect(page.getByText('Paciente E2E B')).toBeVisible();
+    await expect(page.getByText('Paciente E2E A')).toBeHidden();
+
     await page.goto('/records');
-    await page.getByPlaceholder('Buscar por nome...').fill('Paciente E2E A');
-    await expect(page.getByText('Nenhum paciente encontrado')).toBeVisible();
+    const isolatedRecordRead = await authenticatedFetch(
+      page,
+      '/rest/v1/medical_records?select=id&appointment_id=eq.91001',
+      { method: 'GET' },
+    );
+    expect(isolatedRecordRead.status, isolatedRecordRead.body).toBe(200);
+    expect(JSON.parse(isolatedRecordRead.body)).toEqual([]);
   });
 });

@@ -1,6 +1,5 @@
 /**
- * Local Auth Server â€” harness exclusivo para desenvolvimento e testes.
- * Nao substitui GoTrue/Supabase Auth em producao e nao implementa MFA real.
+ * ProntoMedic Auth Gateway.
  * Simula os endpoints que o supabase-js usa:
  *   POST /auth/v1/token?grant_type=password
  *   GET  /auth/v1/user
@@ -10,13 +9,30 @@
  * Roda em http://localhost:8000
  */
 import { createServer } from 'http';
-import { createHash, createHmac, randomUUID, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'crypto';
 import pg from 'pg';
+import QRCode from 'qrcode';
+import { parseSelectProjection } from './local-auth-projection.mjs';
 const { Pool } = pg;
 
 const LOCAL_AUTH_MODE = process.env.LOCAL_AUTH_MODE;
-if (!['development', 'test'].includes(LOCAL_AUTH_MODE)) {
-  throw new Error('local-auth-server.mjs e exclusivo para desenvolvimento/testes; use GoTrue/Supabase Auth em producao');
+if (!['development', 'test', 'production'].includes(LOCAL_AUTH_MODE)) {
+  throw new Error('LOCAL_AUTH_MODE deve ser development, test ou production');
+}
+if (LOCAL_AUTH_MODE === 'production') {
+  const productionOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (
+    productionOrigins.length === 0
+    || productionOrigins.some((origin) => origin === '*' || /localhost|127\.0\.0\.1/i.test(origin))
+  ) {
+    throw new Error('CORS_ALLOWED_ORIGINS de producao deve conter somente origens publicas explicitas');
+  }
+  if (!process.env.PGPASSWORD) {
+    throw new Error('PGPASSWORD obrigatorio em producao');
+  }
 }
 
 const PORT = Number(process.env.LOCAL_AUTH_PORT || 8000);
@@ -41,18 +57,26 @@ const pool = new Pool({
   user: PGUSER,
   password: process.env.PGPASSWORD,
   database: PGDATABASE,
+  max: Number(process.env.LOCAL_AUTH_POOL_MAX || 10),
+  connectionTimeoutMillis: Number(process.env.LOCAL_AUTH_POOL_TIMEOUT_MS || 5000),
 });
+
+async function queryAsAuthenticatedInTransaction(client, payload, text, values = []) {
+  await client.query(
+    `SELECT set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claims', $2, true)`,
+    [payload.sub, JSON.stringify(payload)],
+  );
+  await client.query('SET LOCAL ROLE authenticated');
+  const result = await client.query(text, values);
+  await client.query('RESET ROLE');
+  return result;
+}
 
 async function queryAsAuthenticated(payload, text, values = []) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query(
-      `SELECT set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claims', $2, true)`,
-      [payload.sub, JSON.stringify(payload)],
-    );
-    await client.query('SET LOCAL ROLE authenticated');
-    const result = await client.query(text, values);
+    const result = await queryAsAuthenticatedInTransaction(client, payload, text, values);
     await client.query('COMMIT');
     return result;
   } catch (error) {
@@ -112,11 +136,12 @@ async function verifyPassword(email, password) {
   return user;
 }
 
-async function getUserProfile(userId) {
-  const res = await pool.query(
+async function getUserProfile(payload) {
+  const res = await queryAsAuthenticated(
+    payload,
     `SELECT id, full_name, email, role_name, company_id, primary_unit_id, lg_ativo
      FROM public.user_profiles WHERE id = $1`,
-    [userId]
+    [payload.sub],
   );
   return res.rows[0] || null;
 }
@@ -130,6 +155,16 @@ const REFERENCE_TABLES = new Set([
   'countries', 'states', 'racas', 'etnias', 'nacionalidades',
 ]);
 
+const SHARED_CATALOG_ACCESS = Object.freeze({
+  companies: { readModules: [], writeModule: 'admin' },
+  units: { readModules: [], writeModule: 'admin' },
+  roles: { readModules: [], writeModule: 'admin' },
+  insurance_companies: { readModules: ['recepcao', 'faturamento'], writeModule: 'faturamento' },
+  insurance_plans: { readModules: ['recepcao', 'faturamento'], writeModule: 'faturamento' },
+  payment_sources: { readModules: ['recepcao', 'faturamento'], writeModule: 'faturamento' },
+  lgpd_termos: { readModules: ['recepcao', 'auditoria'], writeModule: 'auditoria' },
+});
+
 function tableToModule(table) {
   const t = table.toLowerCase();
   // match por prefixo/nome exato
@@ -137,11 +172,14 @@ function tableToModule(table) {
     // prontuÃ¡rio/clÃ­nico ANTES de pacientes (patient_allergies, patient_problem_list, patient_medications sÃ£o atos clÃ­nicos)
     // NOTA: 'cid' (catÃ¡logo CID-10) Ã© tabela de REFERÃŠNCIA universal â€” NÃƒO entra aqui,
     // cai no default (leitura livre p/ qualquer perfil autenticado, escrita sÃ³ admin).
+    [/^exam_requests?$|^exam_request_/, 'solicitacoes_exames'],
     [/^encounters?$|^encounter_|^medical_records|^clinical_|^prescricoes|^prontuar|^diagnos|^patient_allergies|^patient_problem|^patient_medication|^alergias/, 'prontuario'],
     [/^patients$|^paciente|^patient_phones|^telxpac/, 'pacientes'],
-    [/^appointments$|^agenda|^professional_schedules|^escala|^professionals$|^specialties$|^appointment_types$|^services_catalog$/, 'agenda'],
+    [/^scheduling_contact_logs|^scheduling_call_center_tasks|^scheduling_confirmation_/, 'recepcao'],
+    [/^appointments$|^agenda|^scheduling_|^professional_schedules|^escala|^professionals$|^specialties$|^appointment_types$|^services_catalog$/, 'agenda'],
     // EvoluÃ§Ã£o/procedimentos/incidentes de enfermagem = conteÃºdo clÃ­nico sensÃ­vel â†’ mÃ³dulo prontuario (recepÃ§Ã£o bloqueada por LGPD)
     [/^nursing_notes|^nursing_procedures|^nursing_incidents|^nursing_medication|^nursing_evolution/, 'prontuario'],
+    [/^care_protocol_/, 'protocolos_assistenciais'],
     // Fila de triagem e classificaÃ§Ã£o de risco = mÃ³dulo enfermagem (recepÃ§Ã£o pode ver p/ chamar paciente)
     [/^triagens?$|^triagem_|^nursing_|^mnct_/, 'enfermagem'],
     [/^exames_lab|^lab_/, 'laboratorio'],
@@ -154,7 +192,6 @@ function tableToModule(table) {
     [/^insurance|^convenio|^plano|^fonte_pagadora/, 'faturamento'],
     // recepÃ§Ã£o: check-in, autorizaÃ§Ã£o, elegibilidade, guias, senhas, documentos
     [/^reception_|^senhas_atendimento/, 'recepcao'],
-    [/^scheduling_contact_logs|^scheduling_call_center_tasks|^scheduling_confirmation_/, 'recepcao'],
     [/^bi_|^nps_|^dashboard/, 'bi'],
     [/^telemedicina/, 'telemedicina'],
     [/^internacao|^leito/, 'internacao'],
@@ -168,45 +205,92 @@ function tableToModule(table) {
   return REFERENCE_TABLES.has(t) ? null : '__unmapped__';
 }
 
-const METHOD_TO_ACTION = { GET: 'can_view', HEAD: 'can_view', POST: 'can_create', PATCH: 'can_edit', PUT: 'can_edit', DELETE: 'can_delete' };
+const METHOD_TO_ACTION = { GET: 'view', HEAD: 'view', POST: 'create', PATCH: 'edit', PUT: 'edit', DELETE: 'delete' };
 const IDENT = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 const isIdentifier = (value) => IDENT.test(value);
 const quoteIdent = (value) => `"${value}"`;
 
-
-// cache de permissÃµes por role (evita query a cada request)
-const permCache = new Map();
-async function loadRolePerms(role) {
-  if (permCache.has(role)) return permCache.get(role);
-  const r = await pool.query(
-    `SELECT rp.module, rp.can_view, rp.can_create, rp.can_edit, rp.can_delete
-       FROM role_permissions rp JOIN roles ro ON ro.id = rp.role_id
-      WHERE ro.name = $1`, [role]);
-  const m = {};
-  for (const row of r.rows) m[row.module] = row;
-  permCache.set(role, m);
-  return m;
+async function getActiveAccessContext(payload) {
+  const result = await queryAsAuthenticated(
+    payload,
+    `SELECT m.company_id, ctx.unit_id, r.name AS role_name
+       FROM public.user_access_context ctx
+       JOIN public.memberships m
+         ON m.id = ctx.membership_id
+        AND m.user_id = ctx.user_id
+        AND m.status = 'active'
+       JOIN public.membership_roles mr
+         ON mr.membership_id = ctx.membership_id
+        AND mr.role_id = ctx.role_id
+       JOIN public.roles r
+         ON r.id = ctx.role_id
+        AND r.lg_ativo = true
+      WHERE ctx.user_id = $1
+        AND ctx.session_id = $2::uuid
+        AND m.company_id = public.active_company_id()
+        AND ctx.unit_id IS NOT DISTINCT FROM public.active_unit_id()
+      LIMIT 1`,
+    [payload.sub, payload.session_id],
+  );
+  return result.rows[0] || null;
 }
 
-/** Retorna {ok:true} ou {ok:false, reason}. Somente admin tem bypass total. */
-async function authorize(profile, table, method) {
+async function canAccess(payload, module, action) {
+  const result = await queryAsAuthenticated(
+    payload,
+    `SELECT public.active_company_id() AS company_id,
+            public.can_access($1, $2) AS allowed`,
+    [module, action],
+  );
+  return Boolean(result.rows[0]?.company_id && result.rows[0]?.allowed);
+}
+
+function permissionAction(action) {
+  return {
+    can_view: 'view',
+    can_create: 'create',
+    can_edit: 'edit',
+    can_delete: 'delete',
+    can_export: 'export',
+  }[action] || action;
+}
+
+/** Retorna {ok:true} ou {ok:false, reason} usando o contexto ativo da sessão. */
+async function authorize(profile, table, method, payload) {
   if (!profile) return { ok: false, reason: 'sem perfil' };
   if (!profile.lg_ativo) return { ok: false, reason: 'usuÃ¡rio inativo' };
-  const role = (profile.role_name || '').toLowerCase();
-  if (role === 'admin') return { ok: true };
+  const context = await getActiveAccessContext(payload);
+  if (!context) return { ok: false, reason: 'contexto de acesso inativo' };
+  const action = METHOD_TO_ACTION[method] || 'view';
+  const sharedCatalog = SHARED_CATALOG_ACCESS[table.toLowerCase()];
+  if (sharedCatalog) {
+    if (action === 'view') {
+      if (sharedCatalog.readModules.length === 0) return { ok: true };
+      for (const readModule of sharedCatalog.readModules) {
+        if (await canAccess(payload, readModule, 'view')) return { ok: true };
+      }
+      return { ok: false, reason: `contexto ativo nao pode consultar o catalogo '${table}'` };
+    }
+    if (!(await canAccess(payload, sharedCatalog.writeModule, action))) {
+      return {
+        ok: false,
+        reason: `contexto ativo nao pode '${action}' no catalogo '${table}'`,
+      };
+    }
+    return { ok: true };
+  }
   const module = tableToModule(table);
   if (module === '__unmapped__') {
     return { ok: false, reason: `tabela '${table}' nao esta explicitamente autorizada` };
   }
   if (module === null) {
-    // tabelas de referÃªncia: leitura liberada, escrita sÃ³ admin (jÃ¡ retornou acima)
-    return METHOD_TO_ACTION[method] === 'can_view' ? { ok: true } : { ok: false, reason: 'escrita em tabela de referÃªncia exige admin' };
+    return METHOD_TO_ACTION[method] === 'view'
+      ? { ok: true }
+      : { ok: false, reason: 'escrita em tabela de referencia nao autorizada pelo gateway' };
   }
-  const perms = await loadRolePerms(role);
-  const rule = perms[module];
-  if (!rule) return { ok: false, reason: `role '${role}' sem acesso ao mÃ³dulo '${module}'` };
-  const action = METHOD_TO_ACTION[method] || 'can_view';
-  if (!rule[action]) return { ok: false, reason: `role '${role}' nÃ£o pode '${action}' em '${module}'` };
+  if (!(await canAccess(payload, module, action))) {
+    return { ok: false, reason: `contexto ativo nao pode '${action}' em '${module}'` };
+  }
   return { ok: true };
 }
 
@@ -232,28 +316,96 @@ const RPC_PERMISSIONS = {
   refresh_confirmation_queue_secure: { module: 'agenda', action: 'can_edit' },
   record_confirmation_attempt_secure: { module: 'agenda', action: 'can_edit' },
   mark_overdue_appointments_no_show_secure: { module: 'agenda', action: 'can_edit' },
+  record_call_center_contact_secure: { module: 'recepcao', action: 'can_create' },
+  complete_call_center_task_secure: { module: 'recepcao', action: 'can_edit' },
+  search_patients_secure: { module: 'pacientes', action: 'can_view' },
   get_reception_checkin_readiness: { module: 'recepcao', action: 'can_view' },
+  get_reception_precheckin_context: { module: 'recepcao', action: 'can_view' },
+  get_reception_patient_appointments_secure: { module: 'recepcao', action: 'can_view' },
+  get_reception_exception_capability: { module: 'recepcao', action: 'can_view' },
+  find_price: { module: 'recepcao', action: 'can_view' },
   perform_reception_checkin_secure: { module: 'recepcao', action: 'can_create' },
+  transition_reception_queue_ticket_secure: { module: 'recepcao', action: 'can_edit' },
+  create_insurance_authorization_secure: { module: 'recepcao', action: 'can_create' },
+  transition_insurance_authorization_secure: { module: 'recepcao', action: 'can_edit' },
+  create_insurance_authorization_followup_secure: { module: 'recepcao', action: 'can_create' },
+  add_insurance_authorization_attachment_secure: { module: 'recepcao', action: 'can_create' },
+  consume_insurance_authorization: { module: 'recepcao', action: 'can_edit' },
+  create_insurance_eligibility_check_secure: { module: 'recepcao', action: 'can_create' },
+  update_insurance_eligibility_check_secure: { module: 'recepcao', action: 'can_edit' },
+  record_reception_term_acceptance_secure: { module: 'recepcao', action: 'can_create' },
+  create_reception_document_pickup_secure: { module: 'recepcao', action: 'can_create' },
+  release_reception_document_pickup_secure: { module: 'recepcao', action: 'can_edit' },
+  resolve_reception_document_issue_secure: { module: 'recepcao', action: 'can_edit' },
+  create_reception_walkin_secure: { module: 'recepcao', action: 'can_create' },
+  start_reception_checkin_workflow_secure: { module: 'recepcao', action: 'can_create' },
+  advance_reception_checkin_workflow_secure: { module: 'recepcao', action: 'can_edit' },
+  ensure_billing_preaccount_for_checkin_secure: { module: 'recepcao', action: 'can_create' },
+  ensure_tiss_guide_for_checkin_secure: { module: 'recepcao', action: 'can_create' },
+  ensure_financial_receivable_for_checkin_secure: { module: 'recepcao', action: 'can_create' },
   finalize_attendance_secure: { module: 'prontuario', action: 'can_create' },
-  update_reception_authorization_secure: { module: 'recepcao', action: 'can_edit' },
-  update_reception_eligibility_secure: { module: 'recepcao', action: 'can_edit' },
+  finalize_attendance_with_billing_secure: { module: 'prontuario', action: 'can_create' },
+  tiss_get_stats: { module: 'faturamento', action: 'can_view' },
+  m16_list_xml_secure: { module: 'faturamento', action: 'can_view' },
+  m16_get_xml_document_secure: { module: 'faturamento', action: 'can_view' },
+  m16_list_denials_secure: { module: 'faturamento', action: 'can_view' },
+  m16_list_protocols_secure: { module: 'faturamento', action: 'can_view' },
+  m16_list_guides_secure: { module: 'faturamento', action: 'can_view' },
+  m16_generate_monthly_batch_secure: { module: 'faturamento', action: 'can_edit' },
+  m16_persist_xml_secure: { module: 'faturamento', action: 'can_edit' },
+  m16_process_return_secure: { module: 'faturamento', action: 'can_edit' },
+  m16_record_manual_denial_secure: { module: 'faturamento', action: 'can_edit' },
+  m16_save_protocol_secure: { module: 'faturamento', action: 'can_edit' },
+  m39_list_billing_accounts_secure: { module: 'faturamento', action: 'can_view' },
+  m39_review_billing_account_secure: { module: 'faturamento', action: 'can_edit' },
+  m39_reopen_billing_account_secure: { module: 'faturamento', action: 'can_edit' },
+  m39_list_billing_competences_secure: { module: 'faturamento', action: 'can_view' },
+  m39_close_billing_competence_secure: { module: 'faturamento', action: 'can_edit' },
+  m39_reopen_billing_competence_secure: { module: 'faturamento', action: 'can_edit' },
+  m37_list_billing_audit_queue_secure: { module: 'faturamento', action: 'can_view' },
+  m37_claim_billing_audit_secure: { module: 'faturamento', action: 'can_edit' },
+  m37_decide_billing_audit_secure: { module: 'faturamento', action: 'can_edit' },
+  patient_portal_list_appointments_secure: { scope: 'self' },
+  patient_portal_confirm_appointment_secure: { scope: 'self' },
+  patient_portal_cancel_appointment_secure: { scope: 'self' },
+  patient_portal_reschedule_appointment_secure: { scope: 'self' },
+  current_company_id: { scope: 'self' },
+  save_secure_clinical_draft: { scope: 'self' },
+  get_secure_clinical_draft: { scope: 'self' },
+  list_secure_clinical_drafts: { scope: 'self' },
+  delete_secure_clinical_draft: { scope: 'self' },
+  list_application_devices: { scope: 'self' },
+  revoke_application_device: { scope: 'self' },
+  log_data_access: { scope: 'self' },
+  request_anonymize_patient: { module: 'auditoria', action: 'can_edit' },
+  criar_sala_telemedicina: { module: 'telemedicina', action: 'can_create' },
+  detectar_alertas_bi: { module: 'bi', action: 'can_edit' },
+  gerar_senha_triagem: { module: 'enfermagem', action: 'can_create' },
+  upsert_role_permission: { module: 'admin', action: 'can_edit' },
+  m23_upsert_exam_catalog_secure: { module: 'laboratorio', action: 'can_edit' },
+  m23_upsert_reference_range_secure: { module: 'laboratorio', action: 'can_edit' },
+  m23_create_lab_order_secure: { module: 'laboratorio', action: 'can_create' },
+  m23_collect_specimen_secure: { module: 'laboratorio', action: 'can_create' },
+  m23_transition_specimen_secure: { module: 'laboratorio', action: 'can_edit' },
+  m23_record_results_secure: { module: 'laboratorio', action: 'can_create' },
+  m23_record_results_idempotent_secure: { module: 'laboratorio', action: 'can_create' },
+  m23_validate_result_secure: { module: 'laboratorio', action: 'can_edit' },
+  m23_acknowledge_critical_alert_secure: { module: 'laboratorio', action: 'can_edit' },
+  m23_deliver_order_secure: { module: 'laboratorio', action: 'can_edit' },
 };
 
-async function authorizeRpc(profile, functionName) {
+async function authorizeRpc(profile, functionName, payload) {
   const required = RPC_PERMISSIONS[functionName];
   if (!required) return { ok: false, reason: `RPC '${functionName}' nao autorizada` };
   if (!profile || !profile.lg_ativo) return { ok: false, reason: 'usuario invalido/inativo' };
   if (required.scope === 'self') return { ok: true };
 
-  const role = (profile.role_name || '').toLowerCase();
-  if (role === 'admin') {
-    return { ok: true };
+  if (!await getActiveAccessContext(payload)) {
+    return { ok: false, reason: 'contexto de acesso inativo' };
   }
-
-  const permissions = await loadRolePerms(role);
-  const rule = permissions[required.module];
-  if (!rule?.[required.action]) {
-    return { ok: false, reason: `role '${role}' nao pode '${required.action}' em '${required.module}'` };
+  const action = permissionAction(required.action);
+  if (!(await canAccess(payload, required.module, action))) {
+    return { ok: false, reason: `contexto ativo nao pode '${action}' em '${required.module}'` };
   }
   return { ok: true };
 }
@@ -312,6 +464,120 @@ const loginAttempts = new Map();
 const LOGIN_MAX_ATTEMPTS = Number(process.env.LOGIN_MAX_ATTEMPTS || 5);
 const LOGIN_WINDOW_MS = Number(process.env.LOGIN_WINDOW_MS || 15 * 60 * 1000);
 const LOGIN_BLOCK_MS = Number(process.env.LOGIN_BLOCK_MS || 15 * 60 * 1000);
+const LOGIN_RATE_LIMIT_ENABLED = process.env.LOCAL_AUTH_MODE !== 'test';
+
+const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+function decodeBase32(value) {
+  const normalized = String(value || '').toUpperCase().replace(/[^A-Z2-7]/g, '');
+  let bits = '';
+  for (const char of normalized) {
+    const index = BASE32_ALPHABET.indexOf(char);
+    if (index < 0) throw new Error('segredo TOTP invalido');
+    bits += index.toString(2).padStart(5, '0');
+  }
+  const bytes = [];
+  for (let i = 0; i + 8 <= bits.length; i += 8) {
+    bytes.push(Number.parseInt(bits.slice(i, i + 8), 2));
+  }
+  return Buffer.from(bytes);
+}
+
+function totpCode(secret, timestamp = Date.now()) {
+  const counter = Math.floor(timestamp / 1000 / 30);
+  const counterBuffer = Buffer.alloc(8);
+  counterBuffer.writeBigUInt64BE(BigInt(counter));
+  const digest = createHmac('sha1', decodeBase32(secret)).update(counterBuffer).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary = ((digest[offset] & 0x7f) << 24)
+    | ((digest[offset + 1] & 0xff) << 16)
+    | ((digest[offset + 2] & 0xff) << 8)
+    | (digest[offset + 3] & 0xff);
+  return String(binary % 1000000).padStart(6, '0');
+}
+
+function randomBase32Secret() {
+  const bytes = randomBytes(20);
+  let bits = '';
+  for (const byte of bytes) bits += byte.toString(2).padStart(8, '0');
+  let result = '';
+  for (let i = 0; i < bits.length; i += 5) {
+    result += BASE32_ALPHABET[Number.parseInt(bits.slice(i, i + 5).padEnd(5, '0'), 2)];
+  }
+  return result;
+}
+
+function requireMfaEncryptionKey() {
+  const key = process.env.AUTH_MFA_ENCRYPTION_KEY;
+  if (!key || key.length < 16) {
+    const error = new Error('AUTH_MFA_ENCRYPTION_KEY nao configurada');
+    error.statusCode = 503;
+    throw error;
+  }
+  return key;
+}
+
+async function loadMfaFactors(payload) {
+  const result = await queryAsAuthenticated(
+    payload,
+    `SELECT id, friendly_name, factor_type, status, created_at, updated_at
+       FROM public.auth_mfa_factors
+      WHERE user_id = $1
+      ORDER BY created_at`,
+    [payload.sub],
+  );
+  return result.rows;
+}
+
+async function decryptMfaSecret(payload, ciphertext) {
+  const key = requireMfaEncryptionKey();
+  const result = await queryAsAuthenticated(
+    payload,
+    'SELECT pgp_sym_decrypt($1::bytea, $2) AS secret',
+    [ciphertext, key],
+  );
+  return result.rows[0]?.secret;
+}
+
+async function issueMfaVerifiedSession(user, factors) {
+  const now = Math.floor(Date.now() / 1000);
+  const sessionId = randomUUID();
+  const refreshToken = randomUUID();
+  const payload = {
+    sub: user.id,
+    email: user.email,
+    role: 'authenticated',
+    aud: 'authenticated',
+    aal: 'aal2',
+    session_id: sessionId,
+    iat: now,
+    exp: now + 3600,
+    app_metadata: user.raw_app_meta_data,
+    user_metadata: user.raw_user_meta_data,
+  };
+  const accessToken = signJwt(payload);
+  await pool.query(
+    'INSERT INTO auth.refresh_tokens (token, user_id, session_jti) VALUES ($1, $2, $3)',
+    [refreshToken, user.id, sessionId],
+  );
+  return {
+    access_token: accessToken,
+    token_type: 'bearer',
+    expires_in: 3600,
+    refresh_token: refreshToken,
+    user: {
+      id: user.id,
+      aud: 'authenticated',
+      role: 'authenticated',
+      email: user.email,
+      email_confirmed_at: user.email_confirmed_at,
+      app_metadata: user.raw_app_meta_data,
+      user_metadata: user.raw_user_meta_data,
+      factors,
+      created_at: user.created_at,
+    },
+  };
+}
 
 function loginAttemptKey(req, email) {
   const forwarded = process.env.TRUST_PROXY === 'true' ? req.headers['x-forwarded-for'] : null;
@@ -320,6 +586,7 @@ function loginAttemptKey(req, email) {
 }
 
 function loginBlocked(key, now = Date.now()) {
+  if (!LOGIN_RATE_LIMIT_ENABLED) return false;
   const attempt = loginAttempts.get(key);
   if (!attempt) return false;
   if (attempt.blockedUntil > now) return true;
@@ -328,6 +595,7 @@ function loginBlocked(key, now = Date.now()) {
 }
 
 function recordLoginFailure(key, now = Date.now()) {
+  if (!LOGIN_RATE_LIMIT_ENABLED) return;
   const previous = loginAttempts.get(key);
   const attempt = !previous || now - previous.firstAttempt > LOGIN_WINDOW_MS
     ? { count: 0, firstAttempt: now, blockedUntil: 0 }
@@ -350,6 +618,15 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const path = url.pathname;
 
+  if (req.method === 'GET' && path === '/health') {
+    try {
+      await pool.query('SELECT 1');
+      return json(res, { status: 'ok', database: 'reachable' });
+    } catch {
+      return json(res, { status: 'error', database: 'unreachable' }, 503);
+    }
+  }
+
   // Support HEAD with count (supabase-js uses HEAD for count)
   if (req.method === 'HEAD' && path.startsWith('/rest/v1/')) {
     const table = path.replace('/rest/v1/', '').split('?')[0];
@@ -359,8 +636,8 @@ const server = createServer(async (req, res) => {
     if (!hPayload || !hPayload.sub) { res.writeHead(401); res.end(); return; }
     // valida nome de tabela (anti-injection) e permissÃ£o
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(table)) { res.writeHead(400); res.end(); return; }
-    const hProfile = await getUserProfile(hPayload.sub);
-    const hDecision = await authorize(hProfile, table, 'GET');
+    const hProfile = await getUserProfile(hPayload);
+    const hDecision = await authorize(hProfile, table, 'GET', hPayload);
     if (!hDecision.ok) { res.writeHead(403); res.end(); return; }
     try {
       const countResult = await queryAsAuthenticated(
@@ -391,7 +668,7 @@ const server = createServer(async (req, res) => {
           `UPDATE auth.refresh_tokens
               SET revoked = true, updated_at = now()
             WHERE token = $1 AND revoked = false
-          RETURNING user_id, session_id`,
+          RETURNING user_id, session_jti`,
           [tokenValue],
         );
         if (rt.rows.length === 0) {
@@ -399,10 +676,9 @@ const server = createServer(async (req, res) => {
           return json(res, { error: 'invalid refresh token', error_description: 'Token expired or revoked' }, 401);
         }
         const userRes = await client.query(
-          `SELECT u.*
-             FROM auth.users u
-             JOIN public.user_profiles p ON p.id = u.id
-            WHERE u.id = $1 AND p.lg_ativo IS TRUE`,
+          `SELECT *
+             FROM auth.users
+            WHERE id = $1`,
           [rt.rows[0].user_id],
         );
         if (userRes.rows.length === 0) {
@@ -411,11 +687,25 @@ const server = createServer(async (req, res) => {
         }
         const u = userRes.rows[0];
         const now = Math.floor(Date.now() / 1000);
-        const sessionId = rt.rows[0].session_id || randomUUID();
-        const accessToken = signJwt({ sub: u.id, email: u.email, role: 'authenticated', aud: 'authenticated', aal: 'aal2', session_id: sessionId, iat: now, exp: now + 3600, app_metadata: u.raw_app_meta_data, user_metadata: u.raw_user_meta_data });
+        const sessionId = rt.rows[0].session_jti || randomUUID();
+        const nextPayload = { sub: u.id, email: u.email, role: 'authenticated', aud: 'authenticated', aal: 'aal1', session_id: sessionId, iat: now, exp: now + 3600, app_metadata: u.raw_app_meta_data, user_metadata: u.raw_user_meta_data };
+        const profileResult = await queryAsAuthenticatedInTransaction(
+          client,
+          nextPayload,
+          `SELECT id, full_name, email, role_name, company_id, primary_unit_id, lg_ativo
+             FROM public.user_profiles
+            WHERE id = $1`,
+          [u.id],
+        );
+        const profile = profileResult.rows[0] || null;
+        if (!profile?.lg_ativo) {
+          await client.query('ROLLBACK');
+          return json(res, { error: 'invalid refresh token', error_description: 'User inactive or missing' }, 401);
+        }
+        const accessToken = signJwt(nextPayload);
         const newRefreshToken = randomUUID();
         await client.query(
-          'INSERT INTO auth.refresh_tokens (token, user_id, parent, session_id) VALUES ($1, $2, $3, $4)',
+          'INSERT INTO auth.refresh_tokens (token, user_id, parent, session_jti) VALUES ($1, $2, $3, $4)',
           [newRefreshToken, u.id, tokenValue, sessionId],
         );
         await client.query('COMMIT');
@@ -449,22 +739,29 @@ const server = createServer(async (req, res) => {
       loginAttempts.delete(attemptKey);
       const now = Math.floor(Date.now() / 1000);
       const sessionId = randomUUID();
-      const accessToken = signJwt({
+      const refreshToken = randomUUID();
+      const loginPayload = {
         sub: user.id,
         email: user.email,
         role: 'authenticated',
         aud: 'authenticated',
-        aal: 'aal2',
+        aal: 'aal1',
         session_id: sessionId,
         iat: now,
         exp: now + 3600,
         app_metadata: user.raw_app_meta_data,
         user_metadata: user.raw_user_meta_data,
-      });
-      const refreshToken = randomUUID();
+      };
+      const profile = await getUserProfile(loginPayload);
+      if (!profile?.lg_ativo) {
+        recordLoginFailure(attemptKey);
+        return json(res, { error: 'invalid_grant', error_description: 'Invalid login credentials' }, 400);
+      }
+      const accessToken = signJwt(loginPayload);
+      const factors = await loadMfaFactors(loginPayload);
       // Save refresh token
       await pool.query(
-        `INSERT INTO auth.refresh_tokens (token, user_id, session_id) VALUES ($1, $2, $3)`,
+        `INSERT INTO auth.refresh_tokens (token, user_id, session_jti) VALUES ($1, $2, $3)`,
         [refreshToken, user.id, sessionId]
       );
       return json(res, {
@@ -480,6 +777,7 @@ const server = createServer(async (req, res) => {
           email_confirmed_at: user.email_confirmed_at,
           app_metadata: user.raw_app_meta_data,
           user_metadata: user.raw_user_meta_data,
+          factors,
           created_at: user.created_at,
         },
       });
@@ -490,20 +788,23 @@ const server = createServer(async (req, res) => {
       const auth = req.headers.authorization?.replace('Bearer ', '');
       const payload = verifyJwt(auth);
       if (!payload) return json(res, { error: 'unauthorized' }, 401);
+      const profile = await getUserProfile(payload);
+      if (!profile?.lg_ativo) return json(res, { error: 'user not found' }, 404);
       const userRes = await pool.query(
-        `SELECT u.*
-           FROM auth.users u
-           JOIN public.user_profiles p ON p.id = u.id
-          WHERE u.id = $1 AND p.lg_ativo IS TRUE`,
+        `SELECT *
+           FROM auth.users
+          WHERE id = $1`,
         [payload.sub],
       );
       if (userRes.rows.length === 0) return json(res, { error: 'user not found' }, 404);
       const u = userRes.rows[0];
+      const factors = await loadMfaFactors(payload);
       return json(res, {
-        id: u.id, aud: u.aud, role: u.role, email: u.email,
+        id: u.id, aud: 'authenticated', role: 'authenticated', email: u.email,
         email_confirmed_at: u.email_confirmed_at,
         app_metadata: u.raw_app_meta_data,
         user_metadata: u.raw_user_meta_data,
+        factors,
         created_at: u.created_at,
       });
     }
@@ -523,6 +824,122 @@ const server = createServer(async (req, res) => {
 
     // (refresh token handler moved to top of chain)
 
+    if (path === '/auth/v1/factors' && req.method === 'GET') {
+      const payload = verifyJwt(req.headers.authorization?.replace('Bearer ', ''));
+      if (!payload) return json(res, { error: 'unauthorized' }, 401);
+      const factors = await loadMfaFactors(payload);
+      return json(res, { all: factors, totp: factors, phone: [] });
+    }
+
+    if (path === '/auth/v1/factors' && req.method === 'POST') {
+      const payload = verifyJwt(req.headers.authorization?.replace('Bearer ', ''));
+      if (!payload) return json(res, { error: 'unauthorized' }, 401);
+      const encryptionKey = requireMfaEncryptionKey();
+      const body = await parseBody(req);
+      if (body.factor_type && body.factor_type !== 'totp') {
+        return json(res, { error: 'unsupported_factor_type' }, 422);
+      }
+      const secret = randomBase32Secret();
+      const friendlyName = typeof body.friendly_name === 'string' && body.friendly_name.trim()
+        ? body.friendly_name.trim().slice(0, 80)
+        : 'ProntoMedic';
+      const result = await queryAsAuthenticated(
+        payload,
+        `INSERT INTO public.auth_mfa_factors (user_id, friendly_name, secret_ciphertext, status)
+         VALUES ($1, $2, pgp_sym_encrypt($3, $4), 'unverified')
+         ON CONFLICT (user_id, friendly_name) DO UPDATE SET
+           updated_at = public.auth_mfa_factors.updated_at
+         WHERE public.auth_mfa_factors.status = 'unverified'
+         RETURNING id, friendly_name, status, created_at,
+           pgp_sym_decrypt(secret_ciphertext, $4) AS persisted_secret`,
+        [payload.sub, friendlyName, secret, encryptionKey],
+      );
+      if (!result.rowCount) return json(res, { error: 'verified_factor_exists' }, 409);
+      const factor = result.rows[0];
+      const persistedSecret = factor.persisted_secret;
+      const issuer = encodeURIComponent('ProntoMedic');
+      const account = encodeURIComponent(payload.email || payload.sub);
+      const otpauth = `otpauth://totp/${issuer}:${account}?secret=${persistedSecret}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`;
+      const qrSvg = await QRCode.toString(otpauth, {
+        type: 'svg',
+        errorCorrectionLevel: 'M',
+        margin: 1,
+        width: 240,
+      });
+      return json(res, {
+        id: factor.id,
+        type: 'totp',
+        status: factor.status,
+        totp: { secret: persistedSecret, uri: otpauth, qr_code: encodeURIComponent(qrSvg) },
+      });
+    }
+
+    const factorChallenge = path.match(/^\/auth\/v1\/factors\/([0-9a-f-]{36})\/challenge$/i);
+    if (factorChallenge && req.method === 'POST') {
+      const payload = verifyJwt(req.headers.authorization?.replace('Bearer ', ''));
+      if (!payload) return json(res, { error: 'unauthorized' }, 401);
+      const factor = await queryAsAuthenticated(
+        payload,
+        'SELECT id FROM public.auth_mfa_factors WHERE id = $1 AND user_id = $2',
+        [factorChallenge[1], payload.sub],
+      );
+      if (!factor.rowCount) return json(res, { error: 'factor_not_found' }, 404);
+      return json(res, {
+        id: randomUUID(),
+        factor_id: factorChallenge[1],
+        expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      });
+    }
+
+    const factorVerify = path.match(/^\/auth\/v1\/factors\/([0-9a-f-]{36})\/verify$/i);
+    if (factorVerify && req.method === 'POST') {
+      const payload = verifyJwt(req.headers.authorization?.replace('Bearer ', ''));
+      if (!payload) return json(res, { error: 'unauthorized' }, 401);
+      const body = await parseBody(req);
+      if (!/^\d{6}$/.test(String(body.code || ''))) {
+        return json(res, { error: 'invalid_code' }, 403);
+      }
+      const factor = await queryAsAuthenticated(
+        payload,
+        `SELECT id, secret_ciphertext
+           FROM public.auth_mfa_factors
+          WHERE id = $1 AND user_id = $2 AND status <> 'disabled'`,
+        [factorVerify[1], payload.sub],
+      );
+      if (!factor.rowCount) return json(res, { error: 'factor_not_found' }, 404);
+      const secret = await decryptMfaSecret(payload, factor.rows[0].secret_ciphertext);
+      const valid = [-30_000, 0, 30_000].some(
+        (offset) => totpCode(secret, Date.now() + offset) === String(body.code),
+      );
+      if (!valid) return json(res, { error: 'invalid_code' }, 403);
+      await queryAsAuthenticated(
+        payload,
+        `UPDATE public.auth_mfa_factors
+            SET status = 'verified', updated_at = now()
+          WHERE id = $1 AND user_id = $2`,
+        [factorVerify[1], payload.sub],
+      );
+      const userResult = await pool.query(
+        'SELECT * FROM auth.users WHERE id = $1',
+        [payload.sub],
+      );
+      if (!userResult.rowCount) return json(res, { error: 'user_not_found' }, 404);
+      const factors = await loadMfaFactors(payload);
+      return json(res, await issueMfaVerifiedSession(userResult.rows[0], factors));
+    }
+
+    const factorDelete = path.match(/^\/auth\/v1\/factors\/([0-9a-f-]{36})$/i);
+    if (factorDelete && req.method === 'DELETE') {
+      const payload = verifyJwt(req.headers.authorization?.replace('Bearer ', ''));
+      if (!payload) return json(res, { error: 'unauthorized' }, 401);
+      const result = await queryAsAuthenticated(
+        payload,
+        'DELETE FROM public.auth_mfa_factors WHERE id = $1 AND user_id = $2 RETURNING id',
+        [factorDelete[1], payload.sub],
+      );
+      return json(res, {}, result.rowCount ? 200 : 404);
+    }
+
     // â”€â”€â”€ AUTH: Settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (path === '/auth/v1/settings') {
       return json(res, { external: {}, disable_signup: false, mailer_autoconfirm: true });
@@ -533,18 +950,32 @@ const server = createServer(async (req, res) => {
       const auth = req.headers.authorization?.replace('Bearer ', '');
       const payload = verifyJwt(auth);
       if (!payload || !payload.sub) return json(res, { error: 'unauthorized', message: 'JWT vÃ¡lido obrigatÃ³rio' }, 401);
-      const profile = await getUserProfile(payload.sub);
+      const profile = await getUserProfile(payload);
       if (!profile || !profile.lg_ativo) return json(res, { error: 'forbidden', message: 'usuÃ¡rio invÃ¡lido/inativo' }, 403);
       const fnName = decodeURIComponent(path.replace('/rest/v1/rpc/', '').split('?')[0]);
       const IDENT = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
       if (!IDENT.test(fnName)) {
         return json(res, { error: 'bad_request', message: `funÃ§Ã£o RPC invÃ¡lida: ${fnName}` }, 400);
       }
-      const rpcDecision = await authorizeRpc(profile, fnName);
+      const rpcDecision = await authorizeRpc(profile, fnName, payload);
       if (!rpcDecision.ok) {
         return json(res, { error: 'forbidden', message: rpcDecision.reason }, 403);
       }
       const body = await parseBody(req);
+      if (
+        fnName === 'update_appointment_status_secure' &&
+        body.p_new_status === 'waiting'
+      ) {
+        return json(
+          res,
+          {
+            error: 'forbidden',
+            message: 'Entrada em espera exige o workflow transacional da recepcao',
+            code: '42501',
+          },
+          403,
+        );
+      }
       const keys = Object.keys(body);
       for (const key of keys) {
         if (!IDENT.test(key)) {
@@ -562,17 +993,40 @@ const server = createServer(async (req, res) => {
           [payload.sub, JSON.stringify(payload)],
         );
         await client.query('SET LOCAL ROLE authenticated');
-        const result = await client.query(`SELECT public."${fnName}"(${namedArgs}) AS result`, vals);
+        const functionMetadata = await client.query(
+          `SELECT routine.proretset
+             FROM pg_catalog.pg_proc routine
+             JOIN pg_catalog.pg_namespace namespace
+               ON namespace.oid = routine.pronamespace
+            WHERE namespace.nspname = 'public'
+              AND routine.proname = $1
+            LIMIT 1`,
+          [fnName],
+        );
+        const returnsSet = Boolean(functionMetadata.rows[0]?.proretset);
+        const rpcQuery = returnsSet
+          ? `SELECT to_jsonb(result_row) AS result
+               FROM public."${fnName}"(${namedArgs}) AS result_row`
+          : `SELECT to_jsonb(public."${fnName}"(${namedArgs})) AS result`;
+        const result = await client.query(
+          rpcQuery,
+          vals,
+        );
         await client.query('COMMIT');
-        const val = result.rows.length === 0
-          ? []
-          : result.rows.length > 1
-            ? result.rows.map((row) => row.result)
+        const val = returnsSet
+          ? result.rows.map((row) => row.result)
+          : result.rows.length === 0
+            ? null
             : result.rows[0].result;
         return json(res, val);
       } catch (e) {
         await client.query('ROLLBACK');
-        return json(res, { error: e.message, message: e.message, code: 'PGRST202' }, 400);
+        const status = e.code === '42501' ? 403 : 400;
+        return json(
+          res,
+          { error: e.message, message: e.message, code: e.code || 'PGRST202' },
+          status,
+        );
       } finally {
         client.release();
       }
@@ -591,32 +1045,16 @@ const server = createServer(async (req, res) => {
       if (!payload || !payload.sub) return json(res, { error: 'unauthorized', message: 'JWT vÃ¡lido obrigatÃ³rio' }, 401);
 
       // Enforcement RBAC: role Ã— mÃ³dulo Ã— aÃ§Ã£o
-      const profile = await getUserProfile(payload.sub);
+      const profile = await getUserProfile(payload);
       const isSelfProfileRead =
         req.method === 'GET' &&
         table === 'user_profiles' &&
         url.searchParams.get('id') === `eq.${payload.sub}`;
-      const decision = isSelfProfileRead ? { ok: true } : await authorize(profile, table, req.method);
+      const decision = isSelfProfileRead ? { ok: true } : await authorize(profile, table, req.method, payload);
       if (!decision.ok) return json(res, { error: 'forbidden', message: decision.reason }, 403);
       if (req.method === 'GET') {
         // Parse select columns (strip embedded relations like "payment_source:payment_sources(name,type)")
-        const selectParam = url.searchParams.get('select');
-        let columns = '*';
-        if (selectParam && selectParam !== '*') {
-          // Remove embedded relations: alias:table(cols) e table(cols)
-          const withoutAliasEmbeds = selectParam.replace(/,?\s*\w+:\w+\([^)]*\)/g, '');
-          const withoutEmbeds = withoutAliasEmbeds.replace(/,?\s*\w+\([^)]*\)/g, '');
-          const rawCols = withoutEmbeds.split(',').map(c => c.trim()).filter(c => c.length > 0);
-          // SEGURANÃ‡A: cada coluna DEVE ser um identificador SQL simples (anti SQL-injection).
-          // Rejeita subqueries, parÃªnteses, espaÃ§os, aspas, operadores â€” bloqueia select=id,(SELECT ...).
-          for (const col of rawCols) {
-            if (!isIdentifier(col)) {
-              return json(res, { error: 'bad_request', message: `coluna invÃ¡lida no select: ${col}` }, 400);
-            }
-          }
-          const safe = rawCols.map(quoteIdent).join(', ');
-          columns = safe || '*';
-        }
+        const columns = parseSelectProjection(url.searchParams.get('select')) || '*';
 
         let query = `SELECT ${columns} FROM public."${table}"`;
         const conditions = [];
@@ -777,7 +1215,18 @@ const server = createServer(async (req, res) => {
       }
 
       if (req.method === 'POST') {
-        const body = await parseBody(req);
+        const parsedBody = await parseBody(req);
+        if (Array.isArray(parsedBody) && parsedBody.length !== 1) {
+          return json(
+            res,
+            { error: 'bad_request', message: 'insert em lote ainda não suportado no auth local' },
+            400,
+          );
+        }
+        const body = Array.isArray(parsedBody) ? parsedBody[0] : parsedBody;
+        if (!body || typeof body !== 'object') {
+          return json(res, { error: 'bad_request', message: 'body inválido' }, 400);
+        }
         const keys = Object.keys(body);
         if (keys.length === 0) return json(res, { error: 'bad_request', message: 'body vazio' }, 400);
         for (const key of keys) {
@@ -788,13 +1237,15 @@ const server = createServer(async (req, res) => {
         const vals = Object.values(body);
         const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
         const columns = keys.map(quoteIdent).join(', ');
+        const returningProjection = parseSelectProjection(url.searchParams.get('select'));
+        const returningClause = returningProjection ? ` RETURNING ${returningProjection}` : '';
         try {
           const result = await queryAsAuthenticated(payload,
-            `INSERT INTO public."${table}" (${columns}) VALUES (${placeholders}) RETURNING *`,
+            `INSERT INTO public."${table}" (${columns}) VALUES (${placeholders})${returningClause}`,
             vals
           );
           const prefer = req.headers.prefer || '';
-          if (prefer.includes('return=representation')) {
+          if (prefer.includes('return=representation') && returningProjection) {
             return json(res, result.rows[0], 201);
           }
           return json(res, {}, 201);
@@ -818,12 +1269,14 @@ const server = createServer(async (req, res) => {
         const idParam = url.searchParams.get('id');
         const id = idParam?.replace('eq.', '');
         if (!id) return json(res, { error: 'id required for PATCH' }, 400);
+        const returningProjection = parseSelectProjection(url.searchParams.get('select'));
+        const returningClause = returningProjection ? ` RETURNING ${returningProjection}` : '';
         try {
           const result = await queryAsAuthenticated(payload,
-            `UPDATE public."${table}" SET ${setClause} WHERE id = $${keys.length + 1} RETURNING *`,
+            `UPDATE public."${table}" SET ${setClause} WHERE id = $${keys.length + 1}${returningClause}`,
             [...vals, id]
           );
-          return json(res, result.rows[0] || {});
+          return json(res, returningProjection ? (result.rows[0] || {}) : {});
         } catch (e) {
           return json(res, { error: e.message, message: e.message }, 400);
         }

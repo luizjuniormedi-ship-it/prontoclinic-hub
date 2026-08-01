@@ -1,12 +1,13 @@
 import { lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConfirmProvider } from "@/hooks/useConfirm";
 import { AuthProvider } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/AppLayout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { isWaveModuleEnabled } from "@/config/moduleRollout";
 
 // Public pages — eager import for fast FCP/TTI on login + pre-cadastro
 import LoginPage from "@/pages/LoginPage";
@@ -58,15 +59,20 @@ const FinancialPage = lazy(() => import("@/pages/FinancialPage"));
 
 // Settings + Admin
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
+const AccountSecurityPage = lazy(() => import("@/pages/AccountSecurityPage"));
 const AdminUsersPage = lazy(() => import("@/pages/AdminUsersPage"));
 const AdminProfilesPage = lazy(() => import("@/pages/AdminProfilesPage"));
 const AdminPermissionsPage = lazy(() => import("@/pages/AdminPermissionsPage"));
+const AdminAccessPage = lazy(() => import("@/pages/AdminAccessPage"));
 const CompaniesPage = lazy(() => import("@/pages/CompaniesPage"));
+const OrganizationalStructurePage = lazy(() => import("@/pages/OrganizationalStructurePage"));
 
 // Feature components (admin)
 const InsuranceManager = lazy(() =>
   import("@/components/insurance/InsuranceManager").then((m) => ({ default: m.InsuranceManager })),
 );
+const InsuranceEligibilityPage = lazy(() => import("@/pages/InsuranceEligibilityPage"));
+const InsuranceAuthorizationPage = lazy(() => import("@/pages/InsuranceAuthorizationsPage"));
 const PriceTableEditor = lazy(() =>
   import("@/components/price-table/PriceTableEditor").then((m) => ({ default: m.PriceTableEditor })),
 );
@@ -99,7 +105,12 @@ const MeusAgendamentosPage = lazy(() => import("@/pages/MeusAgendamentosPage"));
 const ShortcutsHelp = lazy(() => import("@/pages/ShortcutsHelp").then((m) => ({ default: m.ShortcutsHelp })));
 const PharmacyPage = lazy(() => import("@/pages/PharmacyPage"));
 const NursingTriagePage = lazy(() => import("@/pages/NursingTriagePage"));
+const NursingQueuePage = lazy(() => import("@/pages/NursingQueuePage"));
 const NursingCarePage = lazy(() => import("@/pages/NursingCarePage"));
+const Module19NursingPage = lazy(() => import("@/pages/Module19NursingPage"));
+const ElectronicPrescriptionsPage = lazy(() => import("@/pages/ElectronicPrescriptionsPage"));
+const CareProtocolsPage = lazy(() => import("@/pages/CareProtocolsPage"));
+const ExamRequestsPage = lazy(() => import("@/pages/ExamRequestsPage"));
 const BiDashboardPage = lazy(() => import("@/pages/BiDashboardPage"));
 const BiMetasPage = lazy(() => import("@/pages/BiMetasPage"));
 const BiAlertasPage = lazy(() => import("@/pages/BiAlertasPage"));
@@ -181,6 +192,7 @@ const App = () => (
 
             {/* Authenticated — lazy */}
             <Route path="/" element={<AppLayout><ProtectedRoute path="/"><LazyRoute><DashboardPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/account/security" element={<AppLayout><ProtectedRoute path="/account/security"><LazyRoute><AccountSecurityPage /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* Patients */}
             <Route path="/patients" element={<AppLayout><ProtectedRoute path="/patients"><LazyRoute><PatientsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
@@ -203,8 +215,12 @@ const App = () => (
             <Route path="/pacs" element={<AppLayout><ProtectedRoute path="/pacs"><LazyRoute><PACSPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/dicom/nodes" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomNodesPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/dicom/modalities" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomModalitiesPage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/dicom/orders" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><ImagingOrdersPage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/dicom/worklist" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomWorklistPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            {isWaveModuleEnabled(24) && (
+              <Route path="/dicom/orders" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><ImagingOrdersPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            )}
+            {isWaveModuleEnabled(24) && (
+              <Route path="/dicom/worklist" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomWorklistPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            )}
             <Route path="/dicom/dashboard" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomDashboardPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/dicom/reports" element={<AppLayout><ProtectedRoute path="/dicom/reports"><LazyRoute><RadiologyReportsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/admin/dicom" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><DicomEquipmentManager /></LazyRoute></ProtectedRoute></AppLayout>} />
@@ -221,14 +237,18 @@ const App = () => (
             <Route path="/settings" element={<AppLayout><ProtectedRoute path="/settings"><LazyRoute><SettingsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/master-data" element={<AppLayout><ProtectedRoute path="/master-data"><LazyRoute><MasterDataPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/companies" element={<AppLayout><ProtectedRoute path="/companies"><LazyRoute><CompaniesPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/organization" element={<AppLayout><ProtectedRoute path="/admin/organization"><LazyRoute><OrganizationalStructurePage /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* Admin (users/profiles/permissions) */}
             <Route path="/admin/users" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><AdminUsersPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/admin/profiles" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><AdminProfilesPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/admin/permissions" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><AdminPermissionsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/access" element={<AppLayout><ProtectedRoute path="/admin/access"><LazyRoute><AdminAccessPage /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* Admin (insurances / price tables / LGPD / audit / notifications) */}
             <Route path="/admin/insurances" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><InsuranceManager /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/eligibility" element={<AppLayout><ProtectedRoute path="/admin/eligibility"><LazyRoute><InsuranceEligibilityPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/admin/authorizations" element={<AppLayout><ProtectedRoute path="/admin/authorizations"><LazyRoute><InsuranceAuthorizationPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/admin/price-tables" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><PriceTableEditor /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/admin/credentialing" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><ProfessionalCredentialingPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/admin/lgpd" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><LGPDManager /></LazyRoute></ProtectedRoute></AppLayout>} />
@@ -236,7 +256,9 @@ const App = () => (
             <Route path="/admin/notifications" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><NotificationCenter /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* LIS / Laboratório */}
-            <Route path="/lab" element={<AppLayout><ProtectedRoute path="/lab"><LazyRoute><LabPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            {isWaveModuleEnabled(23) && (
+              <Route path="/lab" element={<AppLayout><ProtectedRoute path="/lab"><LazyRoute><LabPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            )}
 
             {/* Patient portal */}
             <Route path="/meus-agendamentos" element={<AppLayout><ProtectedRoute path="/meus-agendamentos"><LazyRoute><MeusAgendamentosPage /></LazyRoute></ProtectedRoute></AppLayout>} />
@@ -249,8 +271,20 @@ const App = () => (
 
             {/* Nursing / Triage */}
             <Route path="/nursing/triage" element={<AppLayout><ProtectedRoute path="/nursing"><LazyRoute><NursingTriagePage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/nursing/queue" element={<AppLayout><ProtectedRoute path="/nursing"><LazyRoute><NursingTriagePage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/nursing/queue" element={<AppLayout><ProtectedRoute path="/nursing"><LazyRoute><NursingQueuePage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/nursing/care" element={<AppLayout><ProtectedRoute path="/nursing"><LazyRoute><NursingCarePage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            {isWaveModuleEnabled(19) && (
+              <Route path="/nursing/clinical" element={<AppLayout><ProtectedRoute path="/nursing/clinical"><LazyRoute><Module19NursingPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            )}
+            {isWaveModuleEnabled(20) && (
+              <Route path="/prescriptions" element={<AppLayout><ProtectedRoute path="/prescriptions"><LazyRoute><ElectronicPrescriptionsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            )}
+            {isWaveModuleEnabled(21) && (
+              <Route path="/care-protocols" element={<AppLayout><ProtectedRoute path="/care-protocols"><LazyRoute><CareProtocolsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            )}
+            {isWaveModuleEnabled(22) && (
+              <Route path="/exam-requests" element={<AppLayout><ProtectedRoute path="/exam-requests"><LazyRoute><ExamRequestsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            )}
 
             {/* BI / Indicadores */}
             <Route path="/bi" element={<AppLayout><ProtectedRoute path="/bi"><LazyRoute><BiDashboardPage /></LazyRoute></ProtectedRoute></AppLayout>} />
@@ -270,6 +304,12 @@ const App = () => (
             <Route path="/nps" element={<AppLayout><ProtectedRoute path="/nps"><LazyRoute><NpsDashboardPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             {/* NPS público — sem auth, sem layout */}
             <Route path="/nps/:token" element={<NpsSurveyPage />} />
+
+            {/* Legacy aliases kept for bookmarked operational URLs. */}
+            <Route path="/agenda" element={<Navigate to="/schedule" replace />} />
+            <Route path="/billing" element={<Navigate to="/billing-accounts" replace />} />
+            <Route path="/convenios" element={<Navigate to="/admin/insurances" replace />} />
+            <Route path="/prontuario" element={<Navigate to="/records" replace />} />
 
             {/* 404 */}
             <Route path="*" element={<NotFound />} />

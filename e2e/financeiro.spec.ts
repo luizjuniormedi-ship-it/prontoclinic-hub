@@ -1,94 +1,115 @@
 import { test as authed, expect } from './fixtures/auth';
 
-authed.describe('Faturamento', () => {
+const providerHealthUrl = process.env.E2E_TISS_PROVIDER_HEALTH_URL?.trim();
+const providerToken = process.env.E2E_TISS_PROVIDER_TOKEN?.trim();
+const syntheticInsuranceName = `Convenio E2E ${Date.now()}`;
+
+authed.describe.serial('Financeiro - operacoes locais sinteticas', () => {
   authed.beforeEach(async ({ loginAs }) => {
     await loginAs('admin');
   });
 
-  authed('criar convênio', async ({ page }) => {
-    await page.goto('/admin/convenios');
-    await page.getByRole('button', { name: /novo convênio|criar/i }).click();
-    await page.getByLabel(/nome/i).fill('Unimed E2E');
-    await page.getByLabel(/razão social/i).fill('Unimed Federação E2E LTDA');
-    await page.getByLabel(/cnpj/i).fill('11.222.333/0001-81');
-    await page.getByLabel(/registro ans/i).fill('123456');
-    await page.getByRole('button', { name: /salvar/i }).click();
-    await expect(page.getByText(/convênio criado/i)).toBeVisible();
+  authed('cadastra convenio pela rota canonica', async ({ page }) => {
+    await page.goto('/admin/insurances');
+    await expect(
+      page.getByRole('heading', { name: 'Convenios e Planos' }),
+    ).toBeVisible();
+
+    await page.getByRole('button', { name: 'Novo Convenio' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Novo Convenio' });
+    await dialog.getByLabel('Nome do Convenio *').fill(syntheticInsuranceName);
+    await dialog.getByLabel('Registro ANS').fill('999999');
+    await dialog.getByLabel('CNPJ').fill('11222333000181');
+    await dialog.getByRole('button', { name: 'Salvar' }).click();
+
+    await expect(dialog).toBeHidden();
+    await page.getByPlaceholder('Buscar por nome...').fill(syntheticInsuranceName);
+    const row = page.getByRole('row').filter({ hasText: syntheticInsuranceName });
+    await expect(row).toBeVisible();
+    await expect(row).toContainText('999999');
+    await expect(row).toContainText('Ativo');
   });
 
-  authed('criar plano dentro do convênio', async ({ page }) => {
-    await page.goto('/admin/convenios');
-    await page.getByText('Unimed E2E').first().click();
-    await page.getByRole('tab', { name: /planos/i }).click();
-    await page.getByRole('button', { name: /novo plano/i }).click();
-    await page.getByLabel(/nome/i).fill('Plano E2E Básico');
-    await page.getByLabel(/cobertura/i).fill('Ambulatorial');
-    await page.getByRole('button', { name: /salvar/i }).click();
-    await expect(page.getByText('Plano E2E Básico')).toBeVisible();
+  authed('consulta planos do convenio pela UI existente', async ({ page }) => {
+    await page.goto('/admin/insurances');
+    await page.getByPlaceholder('Buscar por nome...').fill(syntheticInsuranceName);
+    await page.getByRole('row').filter({ hasText: syntheticInsuranceName }).click();
+    await page.getByRole('tab', { name: /^Planos/ }).click();
+
+    await expect(
+      page.getByRole('heading', { name: `Planos: ${syntheticInsuranceName}` }),
+    ).toBeVisible();
+    await expect(page.getByText(/0 plano\(s\) cadastrado\(s\)/i)).toBeVisible();
   });
 
-  authed('definir preço particular', async ({ page }) => {
-    await page.goto('/admin/tabelas-precos');
-    await page.getByRole('button', { name: /nova tabela/i }).click();
-    await page.getByLabel(/nome/i).fill('Particular E2E');
-    await page.getByLabel(/tipo/i).selectOption({ label: 'Particular' });
-    await page.getByRole('button', { name: /salvar/i }).click();
-    await expect(page.getByText('Particular E2E')).toBeVisible();
+  authed('consulta preco com fallback pela rota canonica', async ({ page }) => {
+    await page.goto('/admin/price-tables');
+    await expect(
+      page.getByRole('heading', { name: 'Tabela de Precos' }),
+    ).toBeVisible();
+    await expect(page.getByText('Testar busca de preco')).toBeVisible();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+
+    const lookup = page
+      .getByText('Testar busca de preco')
+      .locator('..')
+      .locator('..');
+    const selects = lookup.getByRole('combobox');
+    await selects.nth(0).click();
+    const firstService = page.getByRole('option').first();
+    await expect(firstService).toBeVisible();
+    await firstService.click();
+
+    await lookup.getByRole('button', { name: 'Buscar' }).click();
+    await expect(lookup.locator('pre')).toBeVisible();
+    await expect(lookup.locator('pre')).not.toContainText(/\b(?:NaN|undefined)\b/);
   });
 
-  authed('definir preço por convênio', async ({ page }) => {
-    await page.goto('/admin/tabelas-precos');
-    await page.getByText('Particular E2E').first().click();
-    await page.getByRole('button', { name: /adicionar procedimento/i }).click();
-    await page.getByLabel(/procedimento/i).click();
-    await page.getByRole('option').first().click();
-    await page.getByLabel(/preço/i).fill('150.00');
-    await page.getByRole('button', { name: /salvar/i }).click();
-    await expect(page.getByText(/R\$ ?150/i)).toBeVisible();
+  authed('renderiza os modulos financeiro e faturamento atuais', async ({ page }) => {
+    await page.goto('/financial');
+    await expect(page.getByRole('heading', { name: 'Financeiro' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Nova Cobrança' })).toBeVisible();
+    await expect(page.getByRole('main').getByText(/\b(?:NaN|undefined)\b/)).toHaveCount(0);
+    await expect(page.getByRole('main').getByRole('alert')).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: /algo deu errado/i })).toHaveCount(0);
+
+    await page.goto('/billing-production');
+    await expect(page.getByRole('heading', { name: 'Faturamento', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Novo Faturamento' })).toBeVisible();
+    await expect(page.getByRole('main').getByText(/\b(?:NaN|undefined)\b/)).toHaveCount(0);
+    await expect(page.getByRole('main').getByRole('alert')).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: /algo deu errado/i })).toHaveCount(0);
   });
 
-  authed('testar find_price (resolver com fallback)', async ({ page, request }) => {
-    // Chamar diretamente a função via API do Supabase Edge Function ou RPC
-    const res = await request.post(
-      `${process.env.VITE_SUPABASE_URL}/rest/v1/rpc/find_price`,
-      {
-        headers: {
-          apikey: process.env.VITE_SUPABASE_ANON_KEY!,
-          Authorization: `Bearer ${process.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        data: {
-          p_procedure_code: 'CONSULTA',
-          p_insurance_id: 'unimed-e2e',
-          p_company_id: 'default'
-        }
-      }
+  authed('renderiza a administracao TISS local sem transmitir XML', async ({ page }) => {
+    await page.goto('/admin/tiss');
+    await expect(
+      page.getByRole('heading', { name: 'Faturamento TISS' }),
+    ).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Guias TISS' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Gerar Fatura do Mes' })).toBeVisible();
+    await expect(page.getByText(/\b(?:NaN|undefined)\b/)).toHaveCount(0);
+  });
+});
+
+authed.describe('Financeiro - integracao TISS externa', () => {
+  authed('valida provider homologado sem transmitir XML', async ({ request }) => {
+    authed.skip(
+      !providerHealthUrl || !providerToken,
+      'Provider TISS externo ausente: defina E2E_TISS_PROVIDER_HEALTH_URL e E2E_TISS_PROVIDER_TOKEN.',
     );
-    expect([200, 204]).toContain(res.status());
-  });
 
-  authed('gerar fatura mensal', async ({ page }) => {
-    await page.goto('/financial');
-    await page.getByRole('button', { name: /gerar fatura|fatura mensal/i }).click();
-    await page.getByLabel(/mês/i).fill('2026-06');
-    await page.getByRole('button', { name: /gerar/i }).click();
-    await expect(page.getByText(/fatura gerada|R\$/i)).toBeVisible({ timeout: 30000 });
-  });
+    const response = await request.get(providerHealthUrl!, {
+      headers: {
+        Authorization: `Bearer ${providerToken}`,
+        Accept: 'application/json',
+      },
+      timeout: 30_000,
+    });
 
-  authed('visualizar glosa', async ({ page }) => {
-    await page.goto('/financial');
-    await page.getByRole('tab', { name: /glosas/i }).click();
-    await expect(page.getByRole('row').first()).toBeVisible();
-    const motivo = await page.getByRole('row').first().textContent();
-    expect(motivo).toBeTruthy();
-  });
-
-  authed('enviar recurso de glosa', async ({ page }) => {
-    await page.goto('/financial');
-    await page.getByRole('tab', { name: /glosas/i }).click();
-    await page.getByRole('row').first().getByRole('button', { name: /recurso/i }).click();
-    await page.getByLabel(/justificativa/i).fill('Procedimento coberto pelo contrato — recurso E2E');
-    await page.getByRole('button', { name: /enviar/i }).click();
-    await expect(page.getByText(/recurso enviado/i)).toBeVisible();
+    expect(
+      response.ok(),
+      `Provider TISS indisponivel: HTTP ${response.status()} ${await response.text()}`,
+    ).toBeTruthy();
   });
 });

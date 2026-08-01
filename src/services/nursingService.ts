@@ -588,47 +588,20 @@ export const nursingService = {
 
   fila: {
     /**
-     * Gera a próxima senha sequencial (T001, T002...) para a empresa.
-     * Tenta usar a função SQL gerar_senha_triagem; em fallback (modo offline
-     * / mock) gera localmente.
-     */
-    async gerarSenha(companyId: string): Promise<string> {
-      try {
-        const { data, error } = await supabase.rpc("gerar_senha_triagem", {
-          p_company_id: companyId,
-        });
-        if (!error && typeof data === "string") return data;
-      } catch {
-        // Ignora — usa fallback
-      }
-      // Fallback local
-      const stamp = new Date();
-      const dd = String(stamp.getDate()).padStart(2, "0");
-      const hh = String(stamp.getHours()).padStart(2, "0");
-      const mm = String(stamp.getMinutes()).padStart(2, "0");
-      const ss = String(stamp.getSeconds()).padStart(2, "0");
-      return `T${dd}${hh}${mm}${ss}`.slice(0, 12);
-    },
-
-    /**
      * Adiciona paciente à fila de triagem.
      */
     async adicionar(
-      companyId: string,
+      unitId: number,
       cdPaciente: number,
       queixaInicial: string,
       cdClassificacaoId?: number | null,
     ): Promise<FilaItem> {
-      const senha = await nursingService.fila.gerarSenha(companyId);
-      const row: Record<string, unknown> = {
-        company_id: companyId,
-        cd_paciente: cdPaciente,
-        cd_senha: senha,
-        tp_status: "AGUARDANDO",
-        ds_queixa_inicial: queixaInicial,
-      };
-      if (cdClassificacaoId !== undefined) row.cd_classificacao_id = cdClassificacaoId;
-      const { data, error } = await supabase.from("triagem_fila").insert(row).select().single();
+      const { data, error } = await supabase.rpc("issue_triage_queue_ticket_secure", {
+        p_unit_id: unitId,
+        p_patient_id: cdPaciente,
+        p_complaint: queixaInicial || null,
+        p_classification_id: cdClassificacaoId ?? null,
+      });
       if (error) throw new Error(`Erro ao adicionar à fila: ${error.message}`);
       return data as FilaItem;
     },
@@ -636,10 +609,12 @@ export const nursingService = {
     /**
      * Retorna itens em AGUARDANDO/CHAMADO, ordenados por gravidade e chegada.
      */
-    async getFilaAtiva(companyId: string): Promise<FilaItem[]> {
+    async getFilaAtiva(companyId: string, unitId: number): Promise<FilaItem[]> {
       const { data, error } = await supabase
         .from("triagem_fila")
         .select("*")
+        .eq("company_id", companyId)
+        .eq("unit_id", unitId)
         .in("tp_status", ["AGUARDANDO", "CHAMADO", "EM_TRIAGEM"])
         .order("dt_chegada", { ascending: true });
       if (error) throw new Error(`Erro ao listar fila: ${error.message}`);
@@ -650,12 +625,11 @@ export const nursingService = {
      * Chama o próximo da fila (altera status para CHAMADO e seta dt_chamada).
      */
     async chamar(senhaId: number): Promise<FilaItem> {
-      const { data, error } = await supabase
-        .from("triagem_fila")
-        .update({ tp_status: "CHAMADO", dt_chamada: new Date().toISOString() })
-        .eq("id", senhaId)
-        .select()
-        .single();
+      const { data, error } = await supabase.rpc("transition_triage_queue_secure", {
+        p_queue_id: senhaId,
+        p_to_status: "CHAMADO",
+        p_reason: "Paciente chamado pela fila de triagem",
+      });
       if (error) throw new Error(`Erro ao chamar senha: ${error.message}`);
       return data as FilaItem;
     },
@@ -664,12 +638,11 @@ export const nursingService = {
      * Marca senha como TRIADO.
      */
     async marcarTriado(senhaId: number): Promise<FilaItem> {
-      const { data, error } = await supabase
-        .from("triagem_fila")
-        .update({ tp_status: "TRIADO" })
-        .eq("id", senhaId)
-        .select()
-        .single();
+      const { data, error } = await supabase.rpc("transition_triage_queue_secure", {
+        p_queue_id: senhaId,
+        p_to_status: "TRIADO",
+        p_reason: "Triagem concluída",
+      });
       if (error) throw new Error(`Erro ao marcar triado: ${error.message}`);
       return data as FilaItem;
     },

@@ -238,25 +238,20 @@ describe("patientsService — getAll (mapeamento)", () => {
   });
 
   it("busca por texto sanitizado e limita o resultado", async () => {
-    const orSpy = vi.fn().mockReturnThis();
-    const limitSpy = vi.fn().mockResolvedValue({
+    const abortSignalSpy = vi.fn().mockResolvedValue({
       data: [{ id: "patient-2", full_name: "João Silva", sex: null }],
       error: null,
     });
-    const chain: any = {
-      select: vi.fn().mockReturnThis(),
-      or: orSpy,
-      order: vi.fn().mockReturnThis(),
-      limit: limitSpy,
-    };
-    (supabase.from as any).mockReturnValue(chain);
+    (supabase.rpc as any).mockReturnValue({ abortSignal: abortSignalSpy });
+    const controller = new AbortController();
 
-    const result = await patientsService.search(" João%, (Silva) ");
+    const result = await patientsService.search(" João%, (Silva) ", controller.signal);
 
-    expect(orSpy).toHaveBeenCalledWith(
-      "full_name.ilike.%João    Silva %,cpf.ilike.%João    Silva %,phone.ilike.%João    Silva %,email.ilike.%João    Silva %",
-    );
-    expect(limitSpy).toHaveBeenCalledWith(50);
+    expect(supabase.rpc).toHaveBeenCalledWith("search_patients_secure", {
+      p_query: "João%, (Silva)",
+      p_limit: 50,
+    });
+    expect(abortSignalSpy).toHaveBeenCalledWith(controller.signal);
     expect(result[0]).toMatchObject({ name: "João Silva", gender: "O" });
   });
 

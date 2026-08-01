@@ -31,12 +31,10 @@ vi.mock("@/services/dicomService", () => ({
     list: vi.fn(),
     markExported: vi.fn(),
     cancel: vi.fn(),
-    createFromOrderItem: vi.fn(),
   } as unknown as typeof import("@/services/dicomService").worklistQueueService & {
     list: ReturnType<typeof vi.fn>;
     markExported: ReturnType<typeof vi.fn>;
     cancel: ReturnType<typeof vi.fn>;
-    createFromOrderItem: ReturnType<typeof vi.fn>;
   },
 }));
 
@@ -45,7 +43,11 @@ import { supabase } from "@/lib/supabase";
 
 const mockWorklistItem: DicomWorklistItem = {
   id: "wl1",
+  company_id: "company-1",
+  unit_id: 1,
+  appointment_id: 42,
   imaging_order_item_id: "i1",
+  idempotency_key: "reception:42:attempt-1",
   patient_id: "p1",
   patient_name: "João Silva",
   patient_birth_date: "1985-03-10",

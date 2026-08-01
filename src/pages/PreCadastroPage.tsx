@@ -258,7 +258,7 @@ export default function PreCadastroPage() {
                         ? "font-semibold text-primary"
                         : s.id < step
                         ? "text-muted-foreground"
-                        : "text-muted-foreground/60"
+                        : "text-muted-foreground"
                     }
                     aria-current={s.id === step ? "step" : undefined}
                   >

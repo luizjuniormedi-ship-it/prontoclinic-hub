@@ -7,15 +7,13 @@
  *   - Lei 14.063/2020 (assinatura eletrônica)
  *
  * Integração: Daily.co (https://docs.daily.co/reference/rest-api)
- * Env vars: VITE_DAILY_API_KEY, VITE_DAILY_DOMAIN, VITE_DAILY_WEBHOOK_SECRET
+ * Secrets server-side: DAILY_API_KEY, DAILY_WEBHOOK_SECRET
  *
  * Migration relacionada: 20260101000017_telemedicina.sql
  *
  * IMPORTANTE: nenhum segredo/credencial é embarcado no bundle do cliente.
- * Em produção, a chave de API Daily.co deve ser intermediada por uma
- * Supabase Edge Function (ver supabase/functions/daily-webhook/index.ts).
- * Para DEV, este service pode chamar a API REST diretamente se
- * VITE_DAILY_API_KEY estiver definida no .env.
+ * Criação de sala, emissão de token e remoção de sala são executadas pela
+ * Edge Function autenticada `telemedicina-daily`.
  */
 
 import { supabase } from "@/lib/supabase";
@@ -139,106 +137,34 @@ export interface EntrarSalaResult {
   meetingUrl: string;
 }
 
-// ── Daily.co API helpers ──────────────────────────────────────────
+// ── Daily.co Edge Function client ─────────────────────────────────
 
-const DAILY_API_BASE = "https://api.daily.co/v1";
+type DailyEdgeRequest =
+  | { action: "create-room"; appointmentId: number }
+  | {
+      action: "join-room";
+      accessToken: string;
+      participant: Pick<ParticipanteInfo, "nome" | "role">;
+      userAgent: string | null;
+    }
+  | { action: "delete-room"; salaId: string };
 
-interface DailyRoomConfig {
-  name: string;
-  privacy?: "public" | "private";
-  properties?: {
-    exp?: number;                       // epoch seconds
-    enable_chat?: boolean;
-    enable_screenshare?: boolean;
-    enable_recording?: "cloud" | "local" | "raw-tracks";
-    start_video_off?: boolean;
-    start_audio_off?: boolean;
-    eject_at_room_exp?: boolean;
-    eject_after_elapsed?: number;       // segundos
-  };
+interface DailyEdgeResponse {
+  sala?: TelemedSala;
+  meetingToken?: string;
+  meetingUrl?: string;
+  deleted?: boolean;
 }
 
-interface DailyRoomResponse {
-  id: string;
-  name: string;
-  url: string;
-  privacy: string;
-  config?: { exp?: number; [k: string]: unknown };
-}
-
-interface DailyMeetingTokenResponse {
-  token: string;
-}
-
-/**
- * Chama a API REST do Daily.co.
- * Em produção, isto deve ser roteado por uma Edge Function para não
- * expor a chave de API no bundle. Aqui o guard "VITE_DAILY_API_KEY"
- * garante que falhamos de forma explícita quando a chave não está
- * configurada — nunca embarcamos credenciais.
- */
-async function dailyRequest<T>(
-  path: string,
-  method: "GET" | "POST" | "DELETE" = "GET",
-  body?: unknown,
-): Promise<T> {
-  if (!env.VITE_DAILY_API_KEY) {
-    throw new Error(
-      "VITE_DAILY_API_KEY não configurada. Em produção, exponha a chave apenas via Supabase Edge Function.",
-    );
+async function invokeDaily<T extends DailyEdgeResponse>(body: DailyEdgeRequest): Promise<T> {
+  const { data, error } = await supabase.functions.invoke("telemedicina-daily", { body });
+  if (error) {
+    throw new Error(`Telemedicina indisponível: ${error.message}`);
   }
-  const res = await fetch(`${DAILY_API_BASE}${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${env.VITE_DAILY_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Daily.co API error ${res.status}: ${text || res.statusText}`);
+  if (!data || typeof data !== "object") {
+    throw new Error("Telemedicina indisponível: resposta inválida do backend");
   }
-  return (await res.json()) as T;
-}
-
-async function createDailyRoom(config: DailyRoomConfig): Promise<DailyRoomResponse> {
-  return dailyRequest<DailyRoomResponse>("/rooms", "POST", config);
-}
-
-async function deleteDailyRoom(name: string): Promise<void> {
-  await dailyRequest(`/rooms/${encodeURIComponent(name)}`, "DELETE");
-}
-
-async function createMeetingToken(
-  roomName: string,
-  opts: { userName: string; isOwner: boolean; expSecs?: number },
-): Promise<string> {
-  const res = await dailyRequest<DailyMeetingTokenResponse>(
-    "/meeting-tokens",
-    "POST",
-    {
-      properties: {
-        room_name: roomName,
-        user_name: opts.userName,
-        is_owner: opts.isOwner,
-        exp: opts.expSecs
-          ? Math.floor(Date.now() / 1000) + opts.expSecs
-          : Math.floor(Date.now() / 1000) + 60 * 60 * 2, // 2h default
-      },
-    },
-  );
-  return res.token;
-}
-
-function buildMeetingUrl(domain: string, roomName: string): string {
-  // Domain pode ser "exemplo.daily.co/exemplo" ou apenas "exemplo"
-  // Quando o domain é um subdomínio curinga, basta juntar com /<room>
-  if (!domain) {
-    throw new Error("VITE_DAILY_DOMAIN não configurado");
-  }
-  const cleanDomain = domain.replace(/\/+$/, "");
-  return `https://${cleanDomain}.daily.co/${encodeURIComponent(roomName)}`;
+  return data as T;
 }
 
 // ── Service ────────────────────────────────────────────────────────
@@ -246,55 +172,14 @@ function buildMeetingUrl(domain: string, roomName: string): string {
 class TelemedicinaService {
   // 2.1. Criar sala a partir de um agendamento
   async criarSala(appointmentId: number): Promise<TelemedSala> {
-    // 1. RPC cria a linha no banco (gera token, ds_sala_daily)
-    const { data: salaId, error: rpcErr } = await supabase.rpc(
-      "criar_sala_telemedicina",
-      { p_appointment_id: appointmentId },
-    );
-    if (rpcErr) throw new Error(rpcErr.message);
-
-    // 2. Buscar a sala recém-criada
-    const { data: sala, error: selErr } = await supabase
-      .from("telemedicina_salas")
-      .select("*")
-      .eq("id", salaId)
-      .single();
-    if (selErr || !sala) throw new Error(selErr?.message ?? "Sala não encontrada");
-
-    // 3. Criar a sala no Daily.co (best-effort — se falhar, ainda retornamos
-    //    a sala local para que o médico possa tentar novamente)
-    let meetingUrl: string | null = null;
-    if (env.VITE_DAILY_API_KEY && env.VITE_DAILY_DOMAIN && sala.ds_sala_daily) {
-      try {
-        const dailyRoom = await createDailyRoom({
-          name: sala.ds_sala_daily,
-          privacy: "private",
-          properties: {
-            exp: Math.floor(Date.now() / 1000) + 60 * 60 * 8, // 8h
-            enable_chat: true,
-            enable_screenshare: true,
-            enable_recording: "cloud",
-            eject_at_room_exp: true,
-            start_video_off: false,
-            start_audio_off: false,
-          },
-        });
-        meetingUrl = dailyRoom.url;
-        const { data: upd, error: updErr } = await supabase
-          .from("telemedicina_salas")
-          .update({ ds_url_daily: meetingUrl })
-          .eq("id", sala.id)
-          .select("*")
-          .single();
-        if (updErr) throw new Error(updErr.message);
-        return upd as TelemedSala;
-      } catch (err) {
-        // Mantém a sala local mesmo se Daily falhar — UI mostra retry
-        console.warn("[telemedicina] Daily.co room create falhou:", err);
-        return sala as TelemedSala;
-      }
+    const result = await invokeDaily<{ sala?: TelemedSala }>({
+      action: "create-room",
+      appointmentId,
+    });
+    if (!result.sala?.ds_url_daily || !result.sala.ds_sala_daily) {
+      throw new Error("Telemedicina indisponível: sala remota não foi provisionada");
     }
-    return sala as TelemedSala;
+    return result.sala;
   }
 
   // 2.2. Entrar na sala com token de acesso
@@ -302,55 +187,22 @@ class TelemedicinaService {
     token: string,
     participante: ParticipanteInfo,
   ): Promise<EntrarSalaResult> {
-    // 1. Validar token
-    const { data: sala, error } = await supabase
-      .from("telemedicina_salas")
-      .select("*")
-      .eq("ds_token_acesso", token)
-      .single();
-    if (error || !sala) throw new Error("Token inválido ou sala não encontrada");
-    if (sala.tp_status === "FINALIZADA" || sala.tp_status === "CANCELADA") {
-      throw new Error(`Sala ${sala.tp_status.toLowerCase()}`);
-    }
-
-    // 2. Marcar EM_ANDAMENTO se for a primeira entrada
-    if (sala.tp_status === "AGUARDANDO") {
-      await supabase
-        .from("telemedicina_salas")
-        .update({ tp_status: "EM_ANDAMENTO", dt_inicio: new Date().toISOString() })
-        .eq("id", sala.id);
-    }
-
-    // 3. Logar participação
-    await supabase.from("telemedicina_participantes").insert({
-      cd_sala: sala.id,
-      cd_usuario: participante.userId,
-      tp_participante: participante.role,
-      nm_nome: participante.nome,
-      ip_origem: null,         // preenchido no backend em produção
-      user_agent: typeof navigator !== "undefined" ? navigator.userAgent : null,
+    const result = await invokeDaily<DailyEdgeResponse>({
+      action: "join-room",
+      accessToken: token,
+      participant: {
+        nome: participante.nome,
+        role: participante.role,
+      },
+      userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null,
     });
-
-    // 4. Gerar meeting token no Daily.co
-    let meetingToken = "";
-    if (env.VITE_DAILY_API_KEY && sala.ds_sala_daily) {
-      meetingToken = await createMeetingToken(sala.ds_sala_daily, {
-        userName: participante.nome,
-        isOwner: participante.role === "MEDICO",
-        expSecs: 60 * 60 * 2,
-      });
+    if (!result.sala || !result.meetingToken || !result.meetingUrl) {
+      throw new Error("Telemedicina indisponível: acesso remoto não foi provisionado");
     }
-
-    const meetingUrl =
-      sala.ds_url_daily ||
-      (env.VITE_DAILY_DOMAIN && sala.ds_sala_daily
-        ? buildMeetingUrl(env.VITE_DAILY_DOMAIN, sala.ds_sala_daily)
-        : "");
-
     return {
-      sala: { ...(sala as TelemedSala), tp_status: "EM_ANDAMENTO" },
-      meetingToken,
-      meetingUrl,
+      sala: result.sala,
+      meetingToken: result.meetingToken,
+      meetingUrl: result.meetingUrl,
     };
   }
 
@@ -590,7 +442,7 @@ class TelemedicinaService {
 
   // Helpers públicos
   isConfigured(): boolean {
-    return Boolean(env.VITE_DAILY_API_KEY && env.VITE_DAILY_DOMAIN);
+    return env.VITE_ENABLE_TELEMEDICINE;
   }
 
   /**
@@ -599,12 +451,7 @@ class TelemedicinaService {
    */
   async cleanupDailyRoom(sala: TelemedSala): Promise<void> {
     if (!sala.ds_sala_daily) return;
-    if (!env.VITE_DAILY_API_KEY) return;
-    try {
-      await deleteDailyRoom(sala.ds_sala_daily);
-    } catch (err) {
-      console.warn("[telemedicina] Falha ao deletar Daily room:", err);
-    }
+    await invokeDaily({ action: "delete-room", salaId: sala.id });
   }
 }
 

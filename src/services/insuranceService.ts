@@ -13,6 +13,12 @@
 
 import { supabase } from "@/lib/supabase";
 
+const INSURANCE_COMPANY_SAFE_SELECT =
+  "id, company_id, payment_source_id, name, registro_ans, cnpj, razao_social, telefone1, telefone2, percentual_desconto, lg_ativo, lg_guia_obrigatoria, lg_cid_obrigatorio, lg_matric_obrigatorio, lg_autorizac_obrigatorio, cd_origem_sigh, created_at, updated_at" as const;
+
+const INSURANCE_PLAN_SAFE_SELECT =
+  "id, company_id, insurance_company_id, name, codigo, lg_ativo, lg_coparticipacao, percentual_coparticipacao, tipo_acomodacao, cd_origem_sigh, created_at, updated_at" as const;
+
 export type PaymentSourceType = "SUS" | "PARTICULAR" | "CORTESIA" | "CONVENIO";
 
 export interface PaymentSource {
@@ -114,7 +120,7 @@ export const insuranceCompanyService = {
   async getAll(): Promise<InsuranceCompany[]> {
     const { data, error } = await supabase
       .from("insurance_companies")
-      .select("*")
+      .select(INSURANCE_COMPANY_SAFE_SELECT)
       .eq("lg_ativo", true)
       .order("name");
     if (error) throw new Error(`Erro ao listar convenios: ${error.message}`);
@@ -124,7 +130,7 @@ export const insuranceCompanyService = {
   async getById(id: number): Promise<InsuranceCompany | null> {
     const { data, error } = await supabase
       .from("insurance_companies")
-      .select("*, payment_source:payment_sources(*)")
+      .select(INSURANCE_COMPANY_SAFE_SELECT)
       .eq("id", id)
       .maybeSingle();
     if (error) throw new Error(`Erro: ${error.message}`);
@@ -134,7 +140,7 @@ export const insuranceCompanyService = {
   async search(query: string, limit = 20): Promise<InsuranceCompany[]> {
     const { data, error } = await supabase
       .from("insurance_companies")
-      .select("id, name, registro_ans, company_id, lg_ativo, percentual_desconto, lg_guia_obrigatoria, lg_cid_obrigatorio, lg_matric_obrigatorio, lg_autorizac_obrigatorio, created_at, updated_at")
+      .select(INSURANCE_COMPANY_SAFE_SELECT)
       .ilike("name", `%${query}%`)
       .eq("lg_ativo", true)
       .limit(limit);
@@ -146,7 +152,7 @@ export const insuranceCompanyService = {
     const { data, error } = await supabase
       .from("insurance_companies")
       .insert(input)
-      .select()
+      .select(INSURANCE_COMPANY_SAFE_SELECT)
       .single();
     if (error) throw new Error(`Erro ao criar convenio: ${error.message}`);
     return data;
@@ -157,7 +163,7 @@ export const insuranceCompanyService = {
       .from("insurance_companies")
       .update(input)
       .eq("id", id)
-      .select()
+      .select(INSURANCE_COMPANY_SAFE_SELECT)
       .single();
     if (error) throw new Error(`Erro ao atualizar convenio: ${error.message}`);
     return data;
@@ -176,7 +182,7 @@ export const insurancePlanService = {
   async getAll(): Promise<InsurancePlan[]> {
     const { data, error } = await supabase
       .from("insurance_plans")
-      .select("*, insurance_company:insurance_companies(name)")
+      .select(INSURANCE_PLAN_SAFE_SELECT)
       .eq("lg_ativo", true)
       .order("name");
     if (error) throw new Error(`Erro: ${error.message}`);
@@ -186,7 +192,7 @@ export const insurancePlanService = {
   async getByInsurance(insuranceCompanyId: number): Promise<InsurancePlan[]> {
     const { data, error } = await supabase
       .from("insurance_plans")
-      .select("*")
+      .select(INSURANCE_PLAN_SAFE_SELECT)
       .eq("insurance_company_id", insuranceCompanyId)
       .eq("lg_ativo", true)
       .order("name");
@@ -198,7 +204,7 @@ export const insurancePlanService = {
     const { data, error } = await supabase
       .from("insurance_plans")
       .insert(input)
-      .select()
+      .select(INSURANCE_PLAN_SAFE_SELECT)
       .single();
     if (error) throw new Error(`Erro ao criar plano: ${error.message}`);
     return data;
@@ -209,7 +215,7 @@ export const insurancePlanService = {
       .from("insurance_plans")
       .update(input)
       .eq("id", id)
-      .select()
+      .select(INSURANCE_PLAN_SAFE_SELECT)
       .single();
     if (error) throw new Error(`Erro: ${error.message}`);
     return data;

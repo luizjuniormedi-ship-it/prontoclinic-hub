@@ -17,10 +17,19 @@ import { Appointment, AppointmentStatus, Patient } from "@/types";
 import type { AppointmentTypeLiteral, PatientDbRow } from "@/types/missing";
 import { useToast } from "@/hooks/use-toast";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useAuth } from "@/hooks/useAuth";
 import { friendlyError } from "@/utils/friendlyError";
 import { mapSchedulePatient } from "@/pages/schedulePatientMapper";
+import { accessContextService } from "@/services/accessContextService";
 
 const weekDays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
+interface InsuranceLookupRow {
+  id: string | number;
+  name: string;
+}
+
+type ScheduleAppointment = Appointment & { insuranceName?: string };
 
 function localDateKey(date = new Date()): string {
   const year = date.getFullYear();
@@ -66,7 +75,7 @@ function toDisplayAppointment(
     doctorName: professional?.full_name || "Profissional não encontrado",
     specialty: specialty?.name,
     unitId: db.unit_id || undefined,
-    insuranceCompanyId: (db as any).insurance_company_id || undefined,
+    insuranceCompanyId: db.insurance_company_id || undefined,
     date: db.appointment_date,
     time: db.start_time?.substring(0, 5) || "00:00",
     duration,
@@ -79,6 +88,7 @@ function toDisplayAppointment(
 }
 
 export default function SchedulePage() {
+  const { activeUnitId } = useAuth();
   const [dbAppointments, setDbAppointments] = useState<DbAppointment[]>([]);
   const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
   const [specialties, setSpecialties] = useState<DbSpecialty[]>([]);
@@ -109,8 +119,19 @@ export default function SchedulePage() {
   const [quickAction, setQuickAction] = useState("");
   const [quickActionAppointment, setQuickActionAppointment] = useState<Appointment | null>(null);
   const [quickActionOpen, setQuickActionOpen] = useState(false);
+  const initialLoadRef = useRef(false);
+  const skipInitialDateRefreshRef = useRef(true);
+
+  useEffect(() => {
+    initialLoadRef.current = false;
+    skipInitialDateRefreshRef.current = true;
+  }, [activeUnitId]);
 
   const loadLookups = useCallback(async () => {
+    if (!activeUnitId) {
+      throw new Error("Selecione uma unidade ativa antes de acessar a agenda.");
+    }
+
     const [profs, specs, types, serviceRows] = await Promise.all([
       professionalsLookup.getAll(),
       specialtiesLookup.getAll(),
@@ -122,24 +143,37 @@ export default function SchedulePage() {
     setAppointmentTypes(types);
     setServices(serviceRows);
 
-    try {
-      const [{ data: ins }, { data: unitRows }] = await Promise.all([
-        supabase.from("insurance_companies").select("id, name"),
-        supabase.from("units").select("id, name").order("name"),
-      ]);
-      if (ins) {
-        setInsuranceNames(Object.fromEntries(ins.map((i: any) => [String(i.id), i.name])));
-        setInsurances(ins.map((i: any) => ({ id: String(i.id), name: i.name })).sort((a, b) => a.name.localeCompare(b.name)));
-      }
-      if (unitRows) {
-        setUnits(unitRows.map((u: any) => ({ id: String(u.id), name: u.name })));
-      }
-    } catch {
-      setUnits([]);
+    const [{ data: ins, error: insuranceError }, authorizedContexts] = await Promise.all([
+      supabase.from("insurance_companies").select("id, name"),
+      accessContextService.listAuthorized(),
+    ]);
+    if (insuranceError) {
+      throw new Error(`Erro ao carregar convênios da agenda: ${insuranceError.message}`);
     }
-  }, []);
+    const activeContext = authorizedContexts.find(
+      (context) => context.unitId === activeUnitId,
+    );
+    if (!activeContext) {
+      throw new Error("A unidade ativa não está disponível para agendamento.");
+    }
+
+    const insuranceRows = (ins || []) as InsuranceLookupRow[];
+    setInsuranceNames(
+      Object.fromEntries(insuranceRows.map((item) => [String(item.id), item.name])),
+    );
+    setInsurances(
+      insuranceRows
+        .map((item) => ({ id: String(item.id), name: item.name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    );
+    setUnits([{ id: String(activeUnitId), name: activeContext.unitName }]);
+  }, [activeUnitId]);
 
   const loadAppointments = useCallback(async (date: string) => {
+    if (!activeUnitId) {
+      throw new Error("Selecione uma unidade ativa antes de carregar a agenda.");
+    }
+
     const d = new Date(date + "T00:00:00");
     const dayOfWeek = d.getDay();
     const startOfWeek = new Date(d);
@@ -147,10 +181,14 @@ export default function SchedulePage() {
     const endOfWeek = new Date(startOfWeek);
     endOfWeek.setDate(startOfWeek.getDate() + 6);
 
-    const startStr = startOfWeek.toISOString().split("T")[0];
-    const endStr = endOfWeek.toISOString().split("T")[0];
+    const startStr = localDateKey(startOfWeek);
+    const endStr = localDateKey(endOfWeek);
 
-    const data = await appointmentsService.getByDateRange(startStr, endStr);
+    const data = await appointmentsService.getByDateRangeForUnit(
+      startStr,
+      endStr,
+      activeUnitId,
+    );
     setDbAppointments(data);
 
     // Load only patients referenced in these appointments
@@ -164,40 +202,62 @@ export default function SchedulePage() {
     } else {
       setPatients([]);
     }
-  }, []);
+  }, [activeUnitId]);
+
+  const refreshAppointments = useCallback(async (date: string) => {
+    try {
+      setError(null);
+      await loadAppointments(date);
+    } catch (err) {
+      const message = friendlyError(err, "Carregar agenda");
+      setError(message);
+      throw err;
+    }
+  }, [loadAppointments]);
 
   const loadAll = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       await loadLookups();
-      await loadAppointments(selectedDate);
+      await refreshAppointments(selectedDate);
      } catch (err) {
       setError(friendlyError(err, "Carregar agenda"));
     } finally {
       setLoading(false);
     }
-  }, [loadLookups, loadAppointments, selectedDate]);
+  }, [loadLookups, refreshAppointments, selectedDate]);
 
   useEffect(() => {
-    loadAll();
-  }, []);
+    if (initialLoadRef.current) return;
+    initialLoadRef.current = true;
+    void loadAll();
+  }, [loadAll]);
 
   // Reload appointments when date changes (without reloading lookups)
   useEffect(() => {
-    if (!loading) {
-      loadAppointments(selectedDate).catch(() => {});
+    if (skipInitialDateRefreshRef.current) {
+      skipInitialDateRefreshRef.current = false;
+      return;
     }
-  }, [selectedDate]);
+
+    refreshAppointments(selectedDate).catch(() => {});
+  }, [selectedDate, refreshAppointments]);
 
   // Convert all DB appointments to display format
   const appointments = useMemo(() =>
     dbAppointments.map((db) => {
-      const appt = toDisplayAppointment(db, patients, professionals, specialties, appointmentTypes);
+      const appt: ScheduleAppointment = toDisplayAppointment(
+        db,
+        patients,
+        professionals,
+        specialties,
+        appointmentTypes,
+      );
       // Resolve insurance name from appointment's insurance_company_id
-       const icId = db.insurance_company_id;
+      const icId = db.insurance_company_id;
       if (icId && insuranceNames[String(icId)]) {
-        (appt as any).insuranceName = insuranceNames[String(icId)];
+        appt.insuranceName = insuranceNames[String(icId)];
       }
       return appt;
     }),
@@ -215,8 +275,7 @@ export default function SchedulePage() {
     setUnitFilter("all");
   };
 
-  const dayAppointments = appointments
-    .filter((a) => a.date === selectedDate)
+  const filteredAppointments = appointments
     .filter((a) => {
       if (debouncedSearch) {
         const q = debouncedSearch.toLowerCase();
@@ -230,7 +289,10 @@ export default function SchedulePage() {
       if (statusFilter !== "all" && a.status !== statusFilter) return false;
       if (unitFilter !== "all" && a.unitId !== unitFilter) return false;
       return true;
-    })
+    });
+
+  const dayAppointments = filteredAppointments
+    .filter((a) => a.date === selectedDate)
     .sort((a, b) => a.time.localeCompare(b.time));
 
   const dateObj = new Date(selectedDate + "T00:00:00");
@@ -239,7 +301,7 @@ export default function SchedulePage() {
   const changeDate = (dir: number) => {
     const d = new Date(selectedDate + "T00:00:00");
     d.setDate(d.getDate() + (view === "week" ? dir * 7 : dir));
-    setSelectedDate(d.toISOString().split("T")[0]);
+    setSelectedDate(localDateKey(d));
   };
 
   const getWeekDates = () => {
@@ -250,7 +312,7 @@ export default function SchedulePage() {
     return Array.from({ length: 7 }, (_, i) => {
       const date = new Date(start);
       date.setDate(start.getDate() + i);
-      return date.toISOString().split("T")[0];
+      return localDateKey(date);
     });
   };
 
@@ -285,7 +347,7 @@ export default function SchedulePage() {
       } else {
         await appointmentsService.updateStatus(appointment.id, newStatus, details?.reason);
       }
-      await loadAppointments(selectedDate);
+      await refreshAppointments(selectedDate);
       const labels: Record<string, string> = {
         waiting: "Check-in realizado",
         in_progress: "Atendimento iniciado",
@@ -355,7 +417,7 @@ export default function SchedulePage() {
 
       {/* Date navigation */}
       <div
-        className="flex items-center justify-between"
+        className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between"
         role="toolbar"
         aria-label="Navegação de data e visualização"
       >
@@ -430,21 +492,24 @@ export default function SchedulePage() {
         professionals={professionals}
         specialties={specialties}
         appointmentTypes={appointmentTypes}
+        services={services}
+        units={units}
         selectedDate={selectedDate}
-        onAppointmentCreated={() => loadAppointments(selectedDate)}
+        onAppointmentCreated={() => refreshAppointments(selectedDate)}
       />
 
       {/* Content */}
       {view === "week" ? (
-        <div
-          className="grid grid-cols-7 gap-2"
-          role="grid"
-          aria-label={`Semana de ${formattedDate}`}
-          aria-rowcount={1}
-          aria-colcount={7}
-        >
+        <div className="overflow-x-auto">
+          <div
+            className="grid min-w-[760px] grid-cols-7 gap-2"
+            role="grid"
+            aria-label={`Semana de ${formattedDate}`}
+            aria-rowcount={1}
+            aria-colcount={7}
+          >
           {getWeekDates().map((date, i) => {
-            const dayApps = appointments.filter((a) => a.date === date);
+            const dayApps = filteredAppointments.filter((a) => a.date === date);
             const isSelected = date === selectedDate;
             const isToday = date === localDateKey();
             const waiting = dayApps.filter((a) => a.status === "waiting").length;
@@ -477,6 +542,7 @@ export default function SchedulePage() {
               </Card>
             );
           })}
+          </div>
         </div>
       ) : dayAppointments.length === 0 ? (
         <EmptyState
@@ -502,8 +568,10 @@ export default function SchedulePage() {
         appointmentTypes={appointmentTypes}
         services={services}
         insurances={insurances}
+        units={units}
         patients={patients}
         selectedDate={selectedDate}
+        defaultUnitId={activeUnitId ? String(activeUnitId) : ""}
         onCreated={handleAppointmentCreated}
       />
       <EncaixeDialog

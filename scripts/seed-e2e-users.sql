@@ -1,13 +1,30 @@
 -- Seed local idempotente para Playwright/E2E.
 -- Nao usar em producao. Nao altera usuarios migrados do DataSIGH.
 -- Uso:
---   psql -v e2e_password='<senha temporaria>' -f scripts/seed-e2e-users.sql
+--   $env:E2E_PASSWORD='<senha temporaria>'
+--   psql -X -v ON_ERROR_STOP=1 -f scripts/seed-e2e-users.sql
 
+\getenv e2e_password E2E_PASSWORD
 \if :{?e2e_password}
 \else
-  \echo 'Variavel psql obrigatoria ausente: -v e2e_password=<senha temporaria>'
+  \echo 'Variavel de ambiente obrigatoria ausente: E2E_PASSWORD'
   \quit 1
 \endif
+\getenv e2e_mfa_secret E2E_MFA_SECRET
+\if :{?e2e_mfa_secret}
+\else
+  \echo 'Variavel de ambiente obrigatoria ausente: E2E_MFA_SECRET'
+  \quit 1
+\endif
+\getenv e2e_mfa_encryption_key AUTH_MFA_ENCRYPTION_KEY
+\if :{?e2e_mfa_encryption_key}
+\else
+  \echo 'Variavel de ambiente obrigatoria ausente: AUTH_MFA_ENCRYPTION_KEY'
+  \quit 1
+\endif
+
+BEGIN;
+SET LOCAL TIME ZONE 'America/Sao_Paulo';
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
@@ -32,7 +49,9 @@ VALUES
   ('admin', 'Administrador E2E', true),
   ('medico', 'Medico E2E', true),
   ('recepcao', 'Recepcao E2E', true),
-  ('paciente', 'Paciente E2E', true)
+  ('supervisor_recepcao', 'Supervisor de recepcao E2E', true),
+  ('paciente', 'Paciente E2E', true),
+  ('callcenter', 'Call Center E2E', true)
 ON CONFLICT (name) DO UPDATE SET lg_ativo = true;
 
 WITH base_company AS (
@@ -51,30 +70,24 @@ seed_users(id, email, full_name, role_name) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid, 'admin@prontomedic.test', 'Admin E2E', 'admin'),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid, 'doctor@prontomedic.test', 'Medico E2E', 'medico'),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 'recepcao@prontomedic.test', 'Recepcao E2E', 'recepcao'),
-    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente@prontomedic.test', 'Paciente E2E', 'paciente')
+    ('eeeeeeee-0000-4000-8000-000000000006'::uuid, 'supervisor.recepcao@prontomedic.test', 'Supervisor Recepcao E2E', 'supervisor_recepcao'),
+    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente@prontomedic.test', 'Paciente E2E', 'paciente'),
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'callcenter@prontomedic.test', 'Call Center E2E', 'callcenter')
 ),
 upsert_auth AS (
   INSERT INTO auth.users (
-    instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
-    raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
-    confirmation_token, email_change, email_change_token_new, recovery_token
+    id, email, encrypted_password, email_confirmed_at,
+    raw_app_meta_data, raw_user_meta_data, created_at, updated_at
   )
   SELECT
-    '00000000-0000-0000-0000-000000000000',
     su.id,
-    'authenticated',
-    'authenticated',
     su.email,
     crypt(:'e2e_password', gen_salt('bf')),
     now(),
     '{"provider":"email","providers":["email"],"e2e":true}'::jsonb,
     jsonb_build_object('full_name', su.full_name, 'role', su.role_name, 'e2e', true),
     now(),
-    now(),
-    '',
-    '',
-    '',
-    ''
+    now()
   FROM seed_users su
   ON CONFLICT (id) DO UPDATE SET
     email = EXCLUDED.email,
@@ -108,6 +121,34 @@ ON CONFLICT (id) DO UPDATE SET
   company_id = EXCLUDED.company_id,
   primary_unit_id = EXCLUDED.primary_unit_id,
   lg_ativo = true,
+    updated_at = now();
+
+WITH seed_users(id) AS (
+  VALUES
+    ('eeeeeeee-0000-4000-8000-000000000001'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000002'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000003'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000006'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000004'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid)
+)
+INSERT INTO public.auth_mfa_factors(
+  id, user_id, factor_type, friendly_name, secret_ciphertext,
+  status, created_at, updated_at
+)
+SELECT
+  md5(seed_users.id::text || ':e2e-totp')::uuid,
+  seed_users.id,
+  'totp',
+  'ProntoMedic E2E',
+  pgp_sym_encrypt(:'e2e_mfa_secret', :'e2e_mfa_encryption_key'),
+  'verified',
+  now(),
+  now()
+FROM seed_users
+ON CONFLICT (user_id, friendly_name) DO UPDATE SET
+  secret_ciphertext = EXCLUDED.secret_ciphertext,
+  status = 'verified',
   updated_at = now();
 
 UPDATE public.user_profiles
@@ -128,7 +169,9 @@ WITH seed_users(id, role_name) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid, 'admin'),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid, 'medico'),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 'recepcao'),
-    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente')
+    ('eeeeeeee-0000-4000-8000-000000000006'::uuid, 'supervisor_recepcao'),
+    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente'),
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'callcenter')
 ), base_company AS (
   SELECT id FROM public.companies WHERE id = 'eeeeeeee-1000-4000-8000-000000000001'
 )
@@ -142,7 +185,9 @@ WITH desired(user_id, role_name) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid, 'admin'),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid, 'medico'),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 'recepcao'),
-    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente')
+    ('eeeeeeee-0000-4000-8000-000000000006'::uuid, 'supervisor_recepcao'),
+    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente'),
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'callcenter')
 )
 DELETE FROM public.membership_roles mr
 USING public.memberships m, public.roles r
@@ -160,7 +205,9 @@ WITH seed_users(id, role_name) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid, 'admin'),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid, 'medico'),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 'recepcao'),
-    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente')
+    ('eeeeeeee-0000-4000-8000-000000000006'::uuid, 'supervisor_recepcao'),
+    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente'),
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'callcenter')
 )
 INSERT INTO public.membership_roles (membership_id, role_id)
 SELECT m.id, r.id
@@ -175,9 +222,27 @@ WITH permissions(role_name,module,can_view,can_create,can_edit,can_delete,can_ex
     ('admin','recepcao',TRUE,TRUE,TRUE,TRUE,TRUE),
     ('admin','pacientes',TRUE,TRUE,TRUE,TRUE,TRUE),
     ('admin','prontuario',TRUE,TRUE,TRUE,TRUE,TRUE),
+    ('admin','faturamento',TRUE,TRUE,TRUE,TRUE,TRUE),
+    ('admin','financeiro',TRUE,TRUE,TRUE,TRUE,TRUE),
+    ('admin','dicom',TRUE,TRUE,TRUE,TRUE,TRUE),
+    ('admin','laboratorio',TRUE,TRUE,TRUE,TRUE,TRUE),
+    ('admin','enfermagem',TRUE,TRUE,TRUE,TRUE,TRUE),
+    ('admin','farmacia',TRUE,TRUE,TRUE,TRUE,TRUE),
+    ('admin','auditoria',TRUE,TRUE,TRUE,TRUE,TRUE),
+    ('admin','admin',TRUE,TRUE,TRUE,TRUE,TRUE),
+    ('admin','bi',TRUE,TRUE,TRUE,TRUE,TRUE),
+    ('admin','telemedicina',TRUE,TRUE,TRUE,TRUE,TRUE),
+    ('admin','internacao',TRUE,TRUE,TRUE,TRUE,TRUE),
+    ('admin','cirurgia',TRUE,TRUE,TRUE,TRUE,TRUE),
+    ('admin','ia',TRUE,TRUE,TRUE,TRUE,TRUE),
     ('recepcao','agenda',TRUE,FALSE,TRUE,FALSE,FALSE),
     ('recepcao','recepcao',TRUE,TRUE,TRUE,FALSE,FALSE),
     ('recepcao','pacientes',TRUE,FALSE,FALSE,FALSE,FALSE),
+    ('supervisor_recepcao','agenda',TRUE,FALSE,TRUE,FALSE,FALSE),
+    ('supervisor_recepcao','recepcao',TRUE,TRUE,TRUE,FALSE,FALSE),
+    ('supervisor_recepcao','pacientes',TRUE,FALSE,FALSE,FALSE,FALSE),
+    ('callcenter','recepcao',TRUE,TRUE,TRUE,FALSE,FALSE),
+    ('callcenter','pacientes',TRUE,FALSE,FALSE,FALSE,FALSE),
     ('medico','agenda',TRUE,FALSE,TRUE,FALSE,FALSE),
     ('medico','pacientes',TRUE,FALSE,FALSE,FALSE,FALSE),
     ('medico','prontuario',TRUE,TRUE,TRUE,FALSE,FALSE)
@@ -203,7 +268,9 @@ WITH seed_users(id) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid),
-    ('eeeeeeee-0000-4000-8000-000000000004'::uuid)
+    ('eeeeeeee-0000-4000-8000-000000000006'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000004'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid)
 ), base_unit AS (
   SELECT id, company_id FROM public.units WHERE id = 91001
 )
@@ -227,7 +294,9 @@ WITH desired(user_id, unit_id) AS (
     ('eeeeeeee-0000-4000-8000-000000000001'::uuid, 91002),
     ('eeeeeeee-0000-4000-8000-000000000002'::uuid, 91001),
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 91001),
-    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 91001)
+    ('eeeeeeee-0000-4000-8000-000000000006'::uuid, 91001),
+    ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 91001),
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 91001)
 )
 DELETE FROM public.membership_units mu
 USING public.memberships m
@@ -244,8 +313,116 @@ VALUES (91001, 'Clínica Médica E2E', 'E2E-CM', TRUE)
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, lg_ativo = TRUE;
 
 INSERT INTO public.appointment_types (id, company_id, name, default_duration, category, lg_ativo)
-VALUES (91001, 'eeeeeeee-1000-4000-8000-000000000001', 'Consulta E2E', 30, 'consulta', TRUE)
-ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, lg_ativo = TRUE;
+VALUES (91001, 'eeeeeeee-1000-4000-8000-000000000001', 'Exame SADT E2E', 30, 'exame', TRUE)
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  name = EXCLUDED.name,
+  default_duration = EXCLUDED.default_duration,
+  category = EXCLUDED.category,
+  lg_ativo = TRUE;
+
+INSERT INTO public.services_catalog (id, company_id, code, name, price, lg_ativo)
+VALUES (
+  91001,
+  'eeeeeeee-1000-4000-8000-000000000001',
+  'E2E-SADT-USG',
+  'Ultrassonografia SADT E2E',
+  150.00,
+  TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  code = EXCLUDED.code,
+  name = EXCLUDED.name,
+  price = EXCLUDED.price,
+  lg_ativo = TRUE;
+
+INSERT INTO public.insurance_companies (
+  id, company_id, name, registro_ans, codigo_prestador,
+  lg_ativo, lg_guia_obrigatoria, lg_cid_obrigatorio,
+  lg_matric_obrigatorio, lg_autorizac_obrigatorio,
+  lg_validade_matricula, lg_val_matricula, lg_val_autorizacao,
+  observacao
+) VALUES (
+  91001,
+  'eeeeeeee-1000-4000-8000-000000000001',
+  'Convênio Sintético E2E',
+  '999999',
+  'E2E-PRESTADOR',
+  TRUE,
+  FALSE,
+  FALSE,
+  TRUE,
+  FALSE,
+  FALSE,
+  FALSE,
+  FALSE,
+  'Fixture exclusivamente local; sem integração externa.'
+)
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  name = EXCLUDED.name,
+  registro_ans = EXCLUDED.registro_ans,
+  codigo_prestador = EXCLUDED.codigo_prestador,
+  lg_ativo = TRUE,
+  lg_guia_obrigatoria = FALSE,
+  lg_cid_obrigatorio = FALSE,
+  lg_matric_obrigatorio = TRUE,
+  lg_autorizac_obrigatorio = FALSE,
+  lg_validade_matricula = FALSE,
+  lg_val_matricula = FALSE,
+  lg_val_autorizacao = FALSE,
+  observacao = EXCLUDED.observacao;
+
+INSERT INTO public.insurance_plans (
+  id, company_id, insurance_company_id, name, codigo, ds_plano,
+  tp_cobertura, lg_ativo, lg_coparticipacao
+) VALUES (
+  91001,
+  'eeeeeeee-1000-4000-8000-000000000001',
+  91001,
+  'Plano SADT Sintético E2E',
+  'E2E-SADT',
+  'Plano de homologação local para Agenda e Recepção',
+  'AMBULATORIAL',
+  TRUE,
+  FALSE
+)
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  insurance_company_id = EXCLUDED.insurance_company_id,
+  name = EXCLUDED.name,
+  codigo = EXCLUDED.codigo,
+  ds_plano = EXCLUDED.ds_plano,
+  tp_cobertura = EXCLUDED.tp_cobertura,
+  lg_ativo = TRUE,
+  lg_coparticipacao = FALSE;
+
+INSERT INTO public.price_tables (
+  id, company_id, appointment_type_id, service_id, insurance_plan_id,
+  dt_inicio, dt_fim, vl_particular, vl_convenio, active
+) VALUES (
+  91001,
+  'eeeeeeee-1000-4000-8000-000000000001',
+  91001,
+  91001,
+  91001,
+  CURRENT_DATE - 1,
+  NULL,
+  150.00,
+  125.00,
+  TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  appointment_type_id = EXCLUDED.appointment_type_id,
+  service_id = EXCLUDED.service_id,
+  insurance_plan_id = EXCLUDED.insurance_plan_id,
+  dt_inicio = EXCLUDED.dt_inicio,
+  dt_fim = NULL,
+  vl_particular = EXCLUDED.vl_particular,
+  vl_convenio = EXCLUDED.vl_convenio,
+  active = TRUE;
 
 INSERT INTO public.professionals (
   id, company_id, user_id, full_name, crm, specialty, email, lg_ativo
@@ -260,45 +437,161 @@ ON CONFLICT (id) DO UPDATE SET
   full_name = EXCLUDED.full_name,
   lg_ativo = TRUE;
 
+INSERT INTO public.professional_insurances (
+  company_id, professional_id, insurance_company_id,
+  lg_clinica, lg_credenciado, ds_observacao,
+  dt_inicio_vinculo, dt_fim_vinculo, lg_ativo
+) VALUES (
+  'eeeeeeee-1000-4000-8000-000000000001',
+  91001,
+  91001,
+  TRUE,
+  TRUE,
+  'Credenciamento sintético E2E',
+  CURRENT_DATE - 1,
+  NULL,
+  TRUE
+)
+ON CONFLICT (professional_id, insurance_company_id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  lg_clinica = TRUE,
+  lg_credenciado = TRUE,
+  ds_observacao = EXCLUDED.ds_observacao,
+  dt_inicio_vinculo = EXCLUDED.dt_inicio_vinculo,
+  dt_fim_vinculo = NULL,
+  lg_ativo = TRUE;
+
+INSERT INTO public.professional_schedules (
+  id, company_id, professional_id, unit_id, day_of_week, lg_habilitado,
+  slot1_start, slot1_end, slot1_duration, slot1_unit_id
+) VALUES (
+  91001,
+  'eeeeeeee-1000-4000-8000-000000000001',
+  91001,
+  91001,
+  CASE EXTRACT(DOW FROM CURRENT_DATE)::INTEGER
+    WHEN 0 THEN 'domingo'
+    WHEN 1 THEN 'segunda-feira'
+    WHEN 2 THEN 'terça-feira'
+    WHEN 3 THEN 'quarta-feira'
+    WHEN 4 THEN 'quinta-feira'
+    WHEN 5 THEN 'sexta-feira'
+    ELSE 'sábado'
+  END,
+  TRUE,
+  800,
+  1800,
+  30,
+  91001
+)
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  professional_id = EXCLUDED.professional_id,
+  unit_id = EXCLUDED.unit_id,
+  day_of_week = EXCLUDED.day_of_week,
+  lg_habilitado = TRUE,
+  slot1_start = EXCLUDED.slot1_start,
+  slot1_end = EXCLUDED.slot1_end,
+  slot1_duration = EXCLUDED.slot1_duration,
+  slot1_unit_id = EXCLUDED.slot1_unit_id;
+
 INSERT INTO public.patients (
-  id, company_id, unit_id, full_name, cpf, birth_date, phone,
-  registration_status, status, lg_ativo
+  id, company_id, unit_id, user_id, full_name, cpf, birth_date, phone,
+  registration_status, status, insurance_plan_id, insurance_card_number, lg_ativo
 ) VALUES
   (91001, 'eeeeeeee-1000-4000-8000-000000000001', 91001,
+   'eeeeeeee-0000-4000-8000-000000000004',
    'Paciente E2E A', '91000000001', DATE '1990-01-01', '21910000001',
-   'complete', 'active', TRUE),
+   'complete', 'active', 91001, 'E2E-CARD-91001', TRUE),
   (91002, 'eeeeeeee-1000-4000-8000-000000000001', 91002,
+   NULL,
    'Paciente E2E B', '91000000002', DATE '1991-01-01', '21910000002',
-   'complete', 'active', TRUE)
+   'complete', 'active', NULL, NULL, TRUE)
 ON CONFLICT (id) DO UPDATE SET
   company_id = EXCLUDED.company_id,
   unit_id = EXCLUDED.unit_id,
+  user_id = EXCLUDED.user_id,
   full_name = EXCLUDED.full_name,
+  cpf = EXCLUDED.cpf,
+  birth_date = EXCLUDED.birth_date,
+  phone = EXCLUDED.phone,
+  registration_status = 'complete',
   status = 'active',
+  insurance_plan_id = EXCLUDED.insurance_plan_id,
+  insurance_card_number = EXCLUDED.insurance_card_number,
   lg_ativo = TRUE;
 
+DELETE FROM public.scheduling_call_center_tasks
+WHERE assigned_to = 'eeeeeeee-0000-4000-8000-000000000005';
+DELETE FROM public.scheduling_contact_logs
+WHERE operator_id = 'eeeeeeee-0000-4000-8000-000000000005';
+
+INSERT INTO public.patient_insurances (
+  id, company_id, patient_id, insurance_plan_id, card_number,
+  holder_name, holder_cpf, valid_until, is_primary, status
+) VALUES (
+  91001,
+  'eeeeeeee-1000-4000-8000-000000000001',
+  91001,
+  91001,
+  'E2E-CARD-91001',
+  'Paciente E2E A',
+  '91000000001',
+  CURRENT_DATE + 365,
+  TRUE,
+  'active'
+)
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  patient_id = EXCLUDED.patient_id,
+  insurance_plan_id = EXCLUDED.insurance_plan_id,
+  card_number = EXCLUDED.card_number,
+  holder_name = EXCLUDED.holder_name,
+  holder_cpf = EXCLUDED.holder_cpf,
+  valid_until = EXCLUDED.valid_until,
+  is_primary = TRUE,
+  status = 'active',
+  updated_at = now();
+
+DELETE FROM public.reception_checkin_workflows
+WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.tiss_xml WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.billings WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.tiss_guides WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.reception_payments WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.financial_transactions WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.billing_accounts WHERE appointment_id IN (91001, 91002, 91003);
 DELETE FROM public.reception_checkin_status_history
-WHERE checkin_id IN (SELECT id FROM public.reception_checkins WHERE appointment_id IN (91001, 91002));
-DELETE FROM public.reception_exception_releases WHERE appointment_id IN (91001, 91002);
-DELETE FROM public.reception_patient_pending_issues WHERE appointment_id IN (91001, 91002);
-DELETE FROM public.reception_queue_tickets WHERE appointment_id IN (91001, 91002);
-DELETE FROM public.reception_checkins WHERE appointment_id IN (91001, 91002);
-DELETE FROM public.medical_records WHERE appointment_id IN (91001, 91002);
+WHERE checkin_id IN (SELECT id FROM public.reception_checkins WHERE appointment_id IN (91001, 91002, 91003));
+DELETE FROM public.reception_exception_releases WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.reception_patient_pending_issues WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.reception_queue_tickets WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.reception_checkins WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.medical_records WHERE appointment_id IN (91001, 91002, 91003);
 
 INSERT INTO public.appointments (
   id, company_id, unit_id, patient_id, professional_id, specialty_id,
-  appointment_type_id, appointment_date, start_time, end_time, status,
+  service_id, appointment_type_id, insurance_company_id, insurance_plan_id,
+  appointment_date, start_time, end_time, status,
   tp_status, lg_confirmado, lg_checkin, notes
 ) VALUES
 (
   91001, 'eeeeeeee-1000-4000-8000-000000000001', 91001,
-  91001, 91001, 91001, 91001, CURRENT_DATE, TIME '14:00', TIME '14:30',
+  91001, 91001, 91001, 91001, 91001, 91001, 91001,
+  CURRENT_DATE, TIME '14:00', TIME '14:30',
   'scheduled', 'agendado', TRUE, FALSE, 'Fixture fase 0/1'
 ),
 (
   91002, 'eeeeeeee-1000-4000-8000-000000000001', 91002,
-  91002, 91001, 91001, 91001, CURRENT_DATE, TIME '15:00', TIME '15:30',
+  91002, 91001, 91001, 91001, 91001, NULL, NULL,
+  CURRENT_DATE, TIME '15:00', TIME '15:30',
   'scheduled', 'agendado', TRUE, FALSE, 'Fixture de isolamento da unidade B'
+),
+(
+  91003, 'eeeeeeee-1000-4000-8000-000000000001', 91001,
+  91001, 91001, 91001, 91001, 91001, 91001, 91001,
+  CURRENT_DATE, TIME '16:00', TIME '16:30',
+  'scheduled', 'agendado', TRUE, FALSE, 'Fixture de excecao sem elegibilidade'
 )
 ON CONFLICT (id) DO UPDATE SET
   company_id = EXCLUDED.company_id,
@@ -306,7 +599,10 @@ ON CONFLICT (id) DO UPDATE SET
   patient_id = EXCLUDED.patient_id,
   professional_id = EXCLUDED.professional_id,
   specialty_id = EXCLUDED.specialty_id,
+  service_id = EXCLUDED.service_id,
   appointment_type_id = EXCLUDED.appointment_type_id,
+  insurance_company_id = EXCLUDED.insurance_company_id,
+  insurance_plan_id = EXCLUDED.insurance_plan_id,
   appointment_date = EXCLUDED.appointment_date,
   start_time = EXCLUDED.start_time,
   end_time = EXCLUDED.end_time,
@@ -315,3 +611,138 @@ ON CONFLICT (id) DO UPDATE SET
   lg_confirmado = EXCLUDED.lg_confirmado,
   lg_checkin = EXCLUDED.lg_checkin,
   notes = EXCLUDED.notes;
+
+-- O evento de auditoria da elegibilidade e gravado por uma funcao SECURITY
+-- DEFINER e exige o tenant explicito mesmo durante o seed local.
+SELECT set_config(
+  'request.jwt.claim.company_id',
+  'eeeeeeee-1000-4000-8000-000000000001',
+  TRUE
+);
+
+INSERT INTO public.insurance_eligibility_checks (
+  id, company_id, unit_id, patient_id, appointment_id,
+  insurance_id, insurance_plan_id, card_number,
+  status, protocol_number, result_detail, source,
+  checked_at, request_channel, valid_from, valid_until,
+  result_code, external_request_id, requested_at, completed_at
+) VALUES (
+  'eeeeeeee-9100-4000-8000-000000000001',
+  'eeeeeeee-1000-4000-8000-000000000001',
+  91001,
+  91001,
+  91001,
+  91001,
+  91001,
+  'E2E-CARD-91001',
+  'elegivel',
+  'E2E-ELIG-91001',
+  'Elegibilidade sintética aprovada exclusivamente para homologação E2E.',
+  'fixture_e2e',
+  now(),
+  'manual',
+  CURRENT_DATE,
+  CURRENT_DATE + 30,
+  'E2E_APPROVED',
+  'E2E-REQ-91001',
+  now(),
+  now()
+)
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  unit_id = EXCLUDED.unit_id,
+  patient_id = EXCLUDED.patient_id,
+  appointment_id = EXCLUDED.appointment_id,
+  insurance_id = EXCLUDED.insurance_id,
+  insurance_plan_id = EXCLUDED.insurance_plan_id,
+  card_number = EXCLUDED.card_number,
+  status = 'elegivel',
+  protocol_number = EXCLUDED.protocol_number,
+  result_detail = EXCLUDED.result_detail,
+  source = EXCLUDED.source,
+  checked_at = EXCLUDED.checked_at,
+  request_channel = EXCLUDED.request_channel,
+  valid_from = EXCLUDED.valid_from,
+  valid_until = EXCLUDED.valid_until,
+  result_code = EXCLUDED.result_code,
+  external_request_id = EXCLUDED.external_request_id,
+  requested_at = EXCLUDED.requested_at,
+  completed_at = EXCLUDED.completed_at,
+  updated_at = now();
+
+DO $fixture_contract$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.appointments appointment
+    JOIN public.patients patient
+      ON patient.id = appointment.patient_id
+     AND patient.company_id = appointment.company_id
+     AND patient.unit_id = appointment.unit_id
+    JOIN public.professionals professional
+      ON professional.id = appointment.professional_id
+     AND professional.company_id = appointment.company_id
+     AND professional.lg_ativo
+    JOIN public.professional_schedules schedule
+      ON schedule.professional_id = professional.id
+     AND schedule.company_id = appointment.company_id
+     AND schedule.unit_id = appointment.unit_id
+     AND schedule.slot1_unit_id = appointment.unit_id
+     AND schedule.lg_habilitado
+     AND schedule.slot1_start <=
+       EXTRACT(HOUR FROM appointment.start_time)::INTEGER * 100
+       + EXTRACT(MINUTE FROM appointment.start_time)::INTEGER
+     AND schedule.slot1_end >=
+       EXTRACT(HOUR FROM appointment.end_time)::INTEGER * 100
+       + EXTRACT(MINUTE FROM appointment.end_time)::INTEGER
+    JOIN public.insurance_plans plan
+      ON plan.id = appointment.insurance_plan_id
+     AND plan.company_id = appointment.company_id
+     AND plan.insurance_company_id = appointment.insurance_company_id
+     AND plan.lg_ativo
+    JOIN public.patient_insurances patient_insurance
+      ON patient_insurance.company_id = appointment.company_id
+     AND patient_insurance.patient_id = appointment.patient_id
+     AND patient_insurance.insurance_plan_id = appointment.insurance_plan_id
+     AND patient_insurance.status = 'active'
+     AND patient_insurance.valid_until >= CURRENT_DATE
+    JOIN public.insurance_eligibility_checks eligibility
+      ON eligibility.company_id = appointment.company_id
+     AND eligibility.unit_id = appointment.unit_id
+     AND eligibility.patient_id = appointment.patient_id
+     AND eligibility.appointment_id = appointment.id
+     AND eligibility.insurance_id = appointment.insurance_company_id
+     AND eligibility.insurance_plan_id = appointment.insurance_plan_id
+     AND eligibility.status = 'elegivel'
+     AND eligibility.valid_until >= CURRENT_DATE
+    JOIN public.professional_insurances accreditation
+      ON accreditation.professional_id = professional.id
+     AND accreditation.insurance_company_id = plan.insurance_company_id
+     AND accreditation.company_id = appointment.company_id
+     AND accreditation.lg_credenciado
+     AND accreditation.lg_ativo
+    JOIN public.services_catalog service
+      ON service.id = appointment.service_id
+     AND service.company_id = appointment.company_id
+     AND service.code = 'E2E-SADT-USG'
+     AND service.lg_ativo
+    JOIN public.price_tables price
+      ON price.company_id = appointment.company_id
+     AND price.service_id = service.id
+     AND price.appointment_type_id = appointment.appointment_type_id
+     AND price.insurance_plan_id = plan.id
+     AND price.active
+     AND price.vl_convenio = 125.00
+    WHERE appointment.id = 91001
+      AND appointment.company_id = 'eeeeeeee-1000-4000-8000-000000000001'
+      AND appointment.unit_id = 91001
+      AND patient.insurance_plan_id = plan.id
+      AND patient.insurance_card_number = 'E2E-CARD-91001'
+  ) THEN
+    RAISE EXCEPTION
+      'E2E_FIXTURE_CONTRACT: massa Agenda->Recepcao incompleta ou inconsistente';
+  END IF;
+END;
+$fixture_contract$;
+
+COMMIT;

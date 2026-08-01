@@ -11,6 +11,13 @@ export function formatDate(date: string): string {
   return Number.isNaN(parsed.getTime()) ? "—" : parsed.toLocaleDateString("pt-BR");
 }
 
+export function localDateKey(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function formatCPF(cpf: string): string {
   return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
 }
@@ -90,5 +97,5 @@ export function daysBetween(dateA: string, dateB: string): number {
 export function addDays(date: string, days: number): string {
   const d = new Date(date + "T00:00:00");
   d.setDate(d.getDate() + days);
-  return d.toISOString().split("T")[0];
+  return localDateKey(d);
 }

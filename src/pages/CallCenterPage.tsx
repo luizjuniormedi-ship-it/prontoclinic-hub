@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Phone, Search, Plus, Calendar, CheckCircle, PhoneMissed, ListTodo, RefreshCw, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,9 +8,20 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/PageHeader";
-import { LoadingState, EmptyState } from "@/components/StateViews";
+import { LoadingState, EmptyState, ErrorState } from "@/components/StateViews";
 import { callCenterService, CallCenterContactLog, CallCenterResult, CallCenterChannel, CallCenterDirection, CallCenterTask, ConfirmationQueueItem } from "@/services/callCenterService";
 import { patientsService } from "@/services/patientsService";
 import { Patient } from "@/types";
@@ -60,15 +71,17 @@ export default function CallCenterPage() {
   const [tasks, setTasks] = useState<CallCenterTask[]>([]);
   const [confirmations, setConfirmations] = useState<ConfirmationQueueItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [resultFilter, setResultFilter] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [materializingQueue, setMaterializingQueue] = useState(false);
   const { toast } = useToast();
 
-  const reload = async () => {
+  const reload = useCallback(async (showLoading = true) => {
     try {
-      setLoading(true);
-      await callCenterService.refreshConfirmationQueue(3);
+      if (showLoading) setLoading(true);
+      setError(null);
       const [contactRows, taskRows, confirmationRows] = await Promise.all([
         callCenterService.listContacts(),
         callCenterService.listTasks("pending"),
@@ -78,13 +91,33 @@ export default function CallCenterPage() {
       setTasks(taskRows);
       setConfirmations(confirmationRows);
     } catch (err) {
-      toast({ title: friendlyError(err, "Carregar call center"), variant: "destructive" });
+      setError(friendlyError(err, "Carregar call center"));
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void reload(); }, [reload]);
+
+  const materializeConfirmationQueue = async () => {
+    if (materializingQueue) return;
+    try {
+      setMaterializingQueue(true);
+      const affectedRows = await callCenterService.materializeConfirmationQueue(3);
+      await reload(false);
+      toast({
+        title: "Fila de confirmação atualizada",
+        description: `${affectedRows} agendamento(s) processado(s).`,
+      });
+    } catch (err) {
+      toast({
+        title: friendlyError(err, "Atualizar fila de confirmação"),
+        variant: "destructive",
+      });
+    } finally {
+      setMaterializingQueue(false);
     }
   };
-
-  useEffect(() => { void reload(); }, []);
 
   const filtered = contacts.filter((r) => {
     const q = search.trim().toLowerCase();
@@ -111,13 +144,29 @@ export default function CallCenterPage() {
     try {
       await callCenterService.recordConfirmation(item.id, outcome, notes);
       toast({ title: outcome === "confirmed" ? "Presença confirmada" : "Tentativa registrada" });
-      await reload();
+      await reload(false);
     } catch (error) {
       toast({ title: friendlyError(error, "Registrar confirmação"), variant: "destructive" });
     }
   };
 
+  const [completingTaskId, setCompletingTaskId] = useState<number | null>(null);
+  const completeTask = async (task: CallCenterTask) => {
+    if (completingTaskId) return;
+    try {
+      setCompletingTaskId(task.id);
+      await callCenterService.completeTask(task.id);
+      toast({ title: "Tarefa concluída" });
+      await reload(false);
+    } catch (err) {
+      toast({ title: friendlyError(err, "Concluir tarefa"), variant: "destructive" });
+    } finally {
+      setCompletingTaskId(null);
+    }
+  };
+
   if (loading) return <LoadingState />;
+  if (error) return <ErrorState message={error} onRetry={() => void reload()} />;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -135,8 +184,45 @@ export default function CallCenterPage() {
 
       <Card>
         <CardContent className="p-4 space-y-3">
-          <div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Fila de confirmação</h2><p className="text-xs text-muted-foreground">Próximos 3 dias · envio automático externo ainda não configurado</p></div><Badge variant="outline">{confirmations.length} pendentes</Badge></div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold">Fila de confirmação</h2>
+              <p className="text-xs text-muted-foreground">Próximos 3 dias · envio automático externo ainda não configurado</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">{confirmations.length} pendentes</Badge>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button size="sm" variant="outline" disabled={materializingQueue}>
+                    <RefreshCw className={`mr-2 h-4 w-4 ${materializingQueue ? "animate-spin" : ""}`} />
+                    {materializingQueue ? "Atualizando..." : "Atualizar fila"}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Atualizar fila de confirmação?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Esta ação materializa no banco os agendamentos dos próximos 3 dias. A abertura e a recarga da tela permanecem somente leitura.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => void materializeConfirmationQueue()}>
+                      Confirmar atualização
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          </div>
           {confirmations.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma confirmação pendente.</p> : confirmations.slice(0, 20).map((item) => <div key={item.id} className="flex items-center justify-between gap-3 border-b py-2 last:border-0"><div><p className="text-sm font-medium">{item.patient_name || `Paciente #${item.patient_id || "-"}`}</p><p className="text-xs text-muted-foreground">{item.patient_phone || "Sem telefone"} · Agendamento #{item.appointment_id} · {item.attempt_count} tentativa(s)</p></div><div className="flex gap-1"><Button size="sm" variant="outline" onClick={() => void registerConfirmation(item, "no_answer")}><RefreshCw className="mr-1 h-3 w-3" />Não atendeu</Button><Button size="sm" onClick={() => void registerConfirmation(item, "confirmed")}><CheckCircle className="mr-1 h-3 w-3" />Confirmar</Button><Button size="icon" variant="ghost" title="Cancelar agendamento" onClick={() => void registerConfirmation(item, "cancelled")}><XCircle className="h-4 w-4 text-destructive" /></Button></div></div>)}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Tarefas pendentes</h2><p className="text-xs text-muted-foreground">Retornos e ações vinculadas aos contatos.</p></div><Badge variant="outline">{tasks.length}</Badge></div>
+          {tasks.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma tarefa pendente.</p> : tasks.slice(0, 20).map((task) => <div key={task.id} className="flex items-center justify-between gap-3 border-b py-2 last:border-0"><div className="min-w-0"><p className="text-sm font-medium truncate">{task.description}</p><p className="text-xs text-muted-foreground">{task.task_type} · prioridade {task.priority}{task.due_at ? ` · ${new Date(task.due_at).toLocaleString("pt-BR")}` : ""}</p></div><Button size="sm" variant="outline" onClick={() => void completeTask(task)} disabled={completingTaskId === task.id}>{completingTaskId === task.id ? "Concluindo..." : "Concluir"}</Button></div>)}
         </CardContent>
       </Card>
 
@@ -146,7 +232,7 @@ export default function CallCenterPage() {
           <Input placeholder="Buscar por paciente, CPF, telefone ou motivo..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <Select value={resultFilter} onValueChange={setResultFilter}>
-          <SelectTrigger className="w-[180px]"><SelectValue placeholder="Resultado" /></SelectTrigger>
+          <SelectTrigger className="w-[180px]" aria-label="Filtrar por resultado"><SelectValue placeholder="Resultado" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
             {(Object.keys(resultLabels) as CallCenterResult[]).map((s) => <SelectItem key={s} value={s}>{resultLabels[s]}</SelectItem>)}
@@ -281,7 +367,7 @@ function NewContactDialog({ open, onOpenChange, onCreated }: NewContactDialogPro
             <Input placeholder="Buscar por nome, CPF, telefone ou e-mail" value={patientSearch} onChange={(e) => setPatientSearch(e.target.value)} />
             {patientResults.length > 0 && (
               <Select value={patientId} onValueChange={setPatientId}>
-                <SelectTrigger><SelectValue placeholder="Selecione o paciente" /></SelectTrigger>
+                <SelectTrigger aria-label="Paciente do contato"><SelectValue placeholder="Selecione o paciente" /></SelectTrigger>
                 <SelectContent>
                   {patientResults.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}{p.cpf ? ` — ${p.cpf}` : ""}{p.phone ? ` — ${p.phone}` : ""}</SelectItem>)}
                 </SelectContent>
@@ -292,21 +378,21 @@ function NewContactDialog({ open, onOpenChange, onCreated }: NewContactDialogPro
             <div className="space-y-2">
               <Label>Canal</Label>
               <Select value={channel} onValueChange={(v) => setChannel(v as CallCenterChannel)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label="Canal do contato"><SelectValue /></SelectTrigger>
                 <SelectContent>{(Object.keys(channelLabels) as CallCenterChannel[]).map((c) => <SelectItem key={c} value={c}>{channelLabels[c]}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
               <Label>Direção</Label>
               <Select value={direction} onValueChange={(v) => setDirection(v as CallCenterDirection)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label="Resultado do contato"><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="inbound">Recebido</SelectItem><SelectItem value="outbound">Ativo</SelectItem></SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
               <Label>Resultado</Label>
               <Select value={result} onValueChange={(v) => setResult(v as CallCenterResult)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label="Motivo do contato"><SelectValue /></SelectTrigger>
                 <SelectContent>{(Object.keys(resultLabels) as CallCenterResult[]).map((r) => <SelectItem key={r} value={r}>{resultLabels[r]}</SelectItem>)}</SelectContent>
               </Select>
             </div>

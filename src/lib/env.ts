@@ -19,7 +19,12 @@ const envSchema = z.object({
     .refine(
       (u) => {
         const { hostname } = new URL(u);
-        return hostname.endsWith("supabase.co") || hostname === "localhost" || hostname === "127.0.0.1" || hostname === "191.252.196.6" || hostname === "vps68804.publiccloud.com.br";
+        return hostname.endsWith("supabase.co")
+          || hostname === "localhost"
+          || hostname === "127.0.0.1"
+          || hostname === "191.252.196.6"
+          || hostname === "vps68804.publiccloud.com.br"
+          || hostname === "prontomedic.191-252-196-6.sslip.io";
       },
       "VITE_SUPABASE_URL deve apontar para um projeto Supabase ou servidor local"
     ),
@@ -38,27 +43,19 @@ const envSchema = z.object({
   VITE_TWILIO_ACCOUNT_SID: z.string().optional(),
   VITE_TWILIO_AUTH_TOKEN: z.string().optional(),
   VITE_TWILIO_FROM_NUMBER: z.string().optional(),
-  VITE_DAILY_API_KEY: z.string().optional(),
   VITE_DAILY_DOMAIN: z.string().optional(),
-  VITE_DAILY_WEBHOOK_SECRET: z.string().optional(),
   VITE_S3_BUCKET: z.string().optional(),
   VITE_S3_REGION: z.string().default("us-east-1"),
   VITE_ENABLE_TELEMEDICINE: z.string().transform((v) => v === "true").default("false"),
   VITE_ENABLE_WHATSAPP: z.string().transform((v) => v === "true").default("false"),
-  VITE_ORTHANC_URL: z.string().url().optional(),
-  VITE_ORTHANC_USER: z.string().min(4).optional(),
-  VITE_ORTHANC_PASS: z
-    .string()
-    .min(8, "VITE_ORTHANC_PASS deve ter no mínimo 8 caracteres")
-    .optional()
-    .refine(
-      (v) => !v || v !== "orthanc",
-      "VITE_ORTHANC_PASS não pode ser 'orthanc' (credencial padrão insegura)"
-    ),
+  VITE_ENABLE_MODULE_19: z.string().transform((v) => v === "true").default("false"),
+  VITE_ENABLE_MODULE_20: z.string().transform((v) => v === "true").default("false"),
+  VITE_ENABLE_MODULE_21: z.string().transform((v) => v === "true").default("false"),
+  VITE_ENABLE_MODULE_22: z.string().transform((v) => v === "true").default("false"),
+  VITE_ENABLE_MODULE_23: z.string().transform((v) => v === "true").default("false"),
+  VITE_ENABLE_MODULE_24: z.string().transform((v) => v === "true").default("false"),
   VITE_DICOM_BUCKET: z.string().optional(),
-  VITE_TISS_VERSION: z.string().default("3.05.00"),
-  VITE_TISS_CERT_PATH: z.string().optional(),
-  VITE_TISS_CERT_PASSWORD: z.string().optional(),
+  VITE_TISS_VERSION: z.literal("4.03.00").default("4.03.00"),
   VITE_TISS_AMBIENTE: z.enum(["HOMOLOGACAO", "PRODUCAO"]).default("HOMOLOGACAO"),
 });
 
@@ -79,4 +76,10 @@ export const isStaging = env.VITE_APP_ENV === "staging";
 export const features = {
   telemedicine: env.VITE_ENABLE_TELEMEDICINE,
   whatsapp: env.VITE_ENABLE_WHATSAPP,
+  module19: env.VITE_ENABLE_MODULE_19,
+  module20: env.VITE_ENABLE_MODULE_20,
+  module21: env.VITE_ENABLE_MODULE_21,
+  module22: env.VITE_ENABLE_MODULE_22,
+  module23: env.VITE_ENABLE_MODULE_23,
+  module24: env.VITE_ENABLE_MODULE_24,
 } as const;

@@ -38,7 +38,7 @@ authed.describe('Agendamento', () => {
     await expect(page.getByText(/paciente.*obrigatório|profissional.*obrigatório|início.*obrigatório/i).first()).toBeVisible();
   });
 
-  authed('permite preencher dados minimos de novo agendamento sem salvar', async ({ page }) => {
+  authed('persiste agendamento sintetico e permite cancelamento pela agenda', async ({ page }) => {
     await page.goto('/schedule');
     await page.getByRole('button', { name: /criar novo agendamento/i }).click();
 
@@ -49,12 +49,22 @@ authed.describe('Agendamento', () => {
     await page.getByRole('combobox', { name: /selecionar profissional/i }).click();
     await page.getByRole('option').first().click();
 
-    await page.getByLabel('Data *').fill('2026-12-31');
     await page.getByLabel('Início *').fill('22:45');
+    await page.getByLabel(/observações/i).fill('E2E_AGENDA_PERSISTENCIA');
 
     await expect(page.getByLabel('Fim')).toHaveValue(/.+/);
-    await page.getByRole('button', { name: /cancelar/i }).click();
+    await page.getByRole('button', { name: /^agendar$/i }).click();
     await expect(page.getByRole('dialog', { name: /novo agendamento/i })).toHaveCount(0);
+    await expect(page.getByText('✓ Agendamento criado com sucesso!', { exact: true })).toBeVisible();
+
+    await page.getByRole('textbox', { name: /buscar agendamento/i }).fill('PACIENTE');
+    const createdRow = page.getByRole('gridcell', { name: /22:45, PACIENTE/i }).first();
+    await expect(createdRow).toBeVisible();
+    await createdRow.getByRole('button', { name: /mais ações para/i }).click();
+    await page.getByRole('menuitem', { name: /cancelar/i }).click();
+    await page.getByRole('dialog', { name: /cancelar agendamento/i }).getByLabel(/motivo/i).fill('Limpeza da fixture E2E');
+    await page.getByRole('dialog', { name: /cancelar agendamento/i }).getByRole('button', { name: /confirmar/i }).click();
+    await expect(page.getByText('Agendamento cancelado', { exact: true })).toBeVisible();
   });
 
   authed('abre menu de acao rapida de um agendamento existente', async ({ page }) => {

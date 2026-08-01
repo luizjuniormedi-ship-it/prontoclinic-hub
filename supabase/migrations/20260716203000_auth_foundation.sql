@@ -1,6 +1,37 @@
 -- Módulo 1: fundação canônica de identidade, RBAC, RLS e auditoria.
 -- Esta migration é incremental: não reescreve o histórico já aplicado em produção.
 
+CREATE SCHEMA IF NOT EXISTS auth;
+
+DO $role$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    CREATE ROLE service_role
+      NOLOGIN
+      NOINHERIT
+      NOCREATEDB
+      NOCREATEROLE
+      NOSUPERUSER
+      NOBYPASSRLS;
+  END IF;
+END
+$role$;
+
+CREATE OR REPLACE FUNCTION auth.jwt()
+RETURNS JSONB
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog
+AS $function$
+  SELECT COALESCE(
+    NULLIF(current_setting('request.jwt.claims', TRUE), '')::JSONB,
+    '{}'::JSONB
+  );
+$function$;
+
+REVOKE ALL ON FUNCTION auth.jwt() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION auth.jwt() TO authenticated, app_prontomedic;
+
 -- ---------------------------------------------------------------------------
 -- Papéis e matriz de permissões por empresa
 -- ---------------------------------------------------------------------------
@@ -73,7 +104,7 @@ DECLARE
   v_company_id UUID;
 BEGIN
   IF EXISTS (SELECT 1 FROM public.role_permissions WHERE company_id IS NULL) THEN
-    SELECT COUNT(*), MIN(id) INTO v_company_count, v_company_id
+    SELECT COUNT(*) INTO v_company_count
     FROM public.companies;
 
     IF v_company_count <> 1 THEN
@@ -81,6 +112,11 @@ BEGIN
         'AUTH_FOUNDATION_PREFLIGHT: role_permissions sem company_id e % empresas; mapeamento manual obrigatório',
         v_company_count;
     END IF;
+
+    SELECT id INTO v_company_id
+    FROM public.companies
+    ORDER BY id
+    LIMIT 1;
 
     UPDATE public.role_permissions
        SET company_id = v_company_id
@@ -94,10 +130,37 @@ ALTER TABLE public.role_permissions
   ALTER COLUMN role_id SET NOT NULL,
   ALTER COLUMN module SET NOT NULL;
 
+CREATE UNIQUE INDEX IF NOT EXISTS role_permissions_company_role_module_idx
+  ON public.role_permissions (company_id, role_id, module);
+
 DO $$
 DECLARE
   v_constraint RECORD;
+  v_index RECORD;
 BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_index index_record
+    WHERE index_record.indrelid = 'public.role_permissions'::regclass
+      AND index_record.indisunique
+      AND NOT index_record.indisprimary
+      AND (index_record.indisreplident OR index_record.indisclustered)
+      AND index_record.indpred IS NULL
+      AND index_record.indexprs IS NULL
+      AND (
+        SELECT array_agg(attribute_record.attname ORDER BY key.ordinality)
+        FROM unnest(index_record.indkey::SMALLINT[])
+          WITH ORDINALITY AS key(attnum, ordinality)
+        JOIN pg_attribute attribute_record
+          ON attribute_record.attrelid = index_record.indrelid
+         AND attribute_record.attnum = key.attnum
+        WHERE key.ordinality <= index_record.indnkeyatts
+      ) = ARRAY['role_id', 'module']::NAME[]
+  ) THEN
+    RAISE EXCEPTION
+      'AUTH_FOUNDATION_PREFLIGHT: índice legado é REPLICA IDENTITY ou CLUSTER; reconciliação manual obrigatória';
+  END IF;
+
   -- Remove apenas uniques legadas exatamente sobre (role_id,module).
   FOR v_constraint IN
     SELECT c.conname
@@ -114,11 +177,46 @@ BEGIN
   LOOP
     EXECUTE format('ALTER TABLE public.role_permissions DROP CONSTRAINT %I', v_constraint.conname);
   END LOOP;
+
+  -- Remove também uniques legadas independentes, sem constraint associada,
+  -- exatamente sobre (role_id,module). Elas impedem permissões por empresa.
+  FOR v_index IN
+    SELECT
+      index_namespace.nspname AS schema_name,
+      index_relation.relname AS index_name
+    FROM pg_index index_record
+    JOIN pg_class index_relation
+      ON index_relation.oid = index_record.indexrelid
+    JOIN pg_namespace index_namespace
+      ON index_namespace.oid = index_relation.relnamespace
+    WHERE index_record.indrelid = 'public.role_permissions'::regclass
+      AND index_record.indisunique
+      AND NOT index_record.indisprimary
+      AND index_record.indpred IS NULL
+      AND index_record.indexprs IS NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint constraint_record
+        WHERE constraint_record.conindid = index_record.indexrelid
+      )
+      AND (
+        SELECT array_agg(attribute_record.attname ORDER BY key.ordinality)
+        FROM unnest(index_record.indkey::SMALLINT[])
+          WITH ORDINALITY AS key(attnum, ordinality)
+        JOIN pg_attribute attribute_record
+          ON attribute_record.attrelid = index_record.indrelid
+         AND attribute_record.attnum = key.attnum
+        WHERE key.ordinality <= index_record.indnkeyatts
+      ) = ARRAY['role_id', 'module']::NAME[]
+  LOOP
+    EXECUTE format(
+      'DROP INDEX %I.%I',
+      v_index.schema_name,
+      v_index.index_name
+    );
+  END LOOP;
 END;
 $$;
-
-CREATE UNIQUE INDEX IF NOT EXISTS role_permissions_company_role_module_idx
-  ON public.role_permissions (company_id, role_id, module);
 
 DO $$
 BEGIN
@@ -346,7 +444,20 @@ BEGIN
       'roles_select_authenticated',
       'role_permissions_select_company',
       'role_permissions_insert_company_admin',
-      'role_permissions_update_company_admin'
+      'role_permissions_update_company_admin',
+      -- Policies nativas seguras já presentes em instalações evoluídas.
+      'module2_roles_admin',
+      'module2_roles_select',
+      'module2_role_permissions_admin',
+      'module2_role_permissions_select',
+      'app_imaging_user_profile_self',
+      'module_roles_admin',
+      'module_roles_select',
+      'module_role_permissions_admin',
+      'module_role_permissions_select',
+      'm11_reception_owner_profiles_read',
+      'm23_owner_profile_self_read',
+      'user_profiles_financial_rpc_select'
     );
 
   IF v_unknown_policies IS NOT NULL THEN

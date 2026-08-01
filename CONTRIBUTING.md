@@ -29,6 +29,11 @@ npm run dev
 
 ## Estrutura de branches
 
+Antes de criar qualquer branch manualmente, use o coordenador descrito em
+[docs/DEVELOPMENT_ORCHESTRATION.md](docs/DEVELOPMENT_ORCHESTRATION.md).
+O checkout principal é somente leitura; cada tarefa usa um worktree e uma
+claim de caminhos própria.
+
 | Branch | Propósito |
 |---|---|
 | `main` | Produção (protegida) |

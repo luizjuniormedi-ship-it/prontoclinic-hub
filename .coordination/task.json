@@ -1,0 +1,33 @@
+{
+  "taskId": "integration-modules-01-23-20260728",
+  "module": "01-23",
+  "baseCommit": "f1cd2ce46a10da718de5e53b29e90adc276d091f",
+  "paths": [
+    ".coordination/task.example.json",
+    ".env.example",
+    ".gitignore",
+    ".github",
+    "AUDIT_PROMPT.md",
+    "CONTRIBUTING.md",
+    "DEPLOY.md",
+    "INSTALL.md",
+    "INTEGRATIONS.md",
+    "deno.lock",
+    "deploy/edge-runtime",
+    "docs",
+    "e2e",
+    "local-auth-projection.d.ts",
+    "local-auth-projection.mjs",
+    "local-auth-server.mjs",
+    "package-lock.json",
+    "package.json",
+    "playwright.config.ts",
+    "scripts",
+    "src",
+    "supabase",
+    "tests",
+    "vitest.config.ts"
+  ],
+  "sharedPaths": [],
+  "status": "active"
+}

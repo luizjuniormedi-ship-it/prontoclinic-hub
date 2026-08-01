@@ -4,7 +4,12 @@ import { normalizeRoleName } from "@/config/routePermissions";
 import { supabase } from "@/lib/supabase";
 import { getMfaNextStep, verifyTotpFactor } from "@/services/authMfaService";
 import { authSessionService } from "@/services/authSessionService";
-import { clearApplicationSession, readApplicationSession } from "@/services/applicationSessionStorage";
+import {
+  clearApplicationSession,
+  readApplicationSession,
+  readStoredAccessContext,
+} from "@/services/applicationSessionStorage";
+import { accessContextService, type AccessContextOption } from "@/services/accessContextService";
 
 export interface UserProfile {
   id: string;
@@ -50,6 +55,8 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   companyId: string | null;
+  activeCompanyId: string | null;
+  activeUnitId: number | null;
   mfaStep: MfaStep;
   mfaFactorId: string | null;
   mustChangePassword: boolean;
@@ -65,7 +72,7 @@ async function fetchUserProfile(supabaseUser: SupabaseUser): Promise<UserProfile
   try {
     const { data, error } = await supabase
       .from("user_profiles")
-      .select("id, full_name, role_id, role_name, company_id, primary_unit_id, lg_ativo, must_change_password")
+      .select("id, full_name, lg_ativo, must_change_password")
       .eq("id", supabaseUser.id)
       .maybeSingle();
     if (error) {
@@ -74,27 +81,41 @@ async function fetchUserProfile(supabaseUser: SupabaseUser): Promise<UserProfile
     }
     if (!data) return null;
 
-    let role_name: string | null = data.role_name ?? null;
-    if (data.role_id) {
-      const { data: roleData } = await supabase.from("roles").select("name").eq("id", data.role_id).maybeSingle();
-      role_name = roleData?.name || role_name;
-    }
     const profile: UserProfile = {
       id: data.id,
       email: supabaseUser.email || "",
       full_name: data.full_name || supabaseUser.email || "Usuário",
-      role_id: data.role_id,
-      role_name,
-      company_id: data.company_id,
-      primary_unit_id: data.primary_unit_id,
+      role_id: null,
+      role_name: null,
+      company_id: null,
+      primary_unit_id: null,
       lg_ativo: data.lg_ativo === true,
       must_change_password: data.must_change_password === true,
     };
-    return isProfileAccessAllowed(profile) ? profile : null;
+    return profile.lg_ativo ? profile : null;
   } catch (error) {
     console.error("Failed to fetch user profile:", error);
     return null;
   }
+}
+
+function sameAccessContext(option: AccessContextOption, stored: Partial<AccessContextOption>): boolean {
+  const sameIdentifier = (left: string | number | null, right: string | number | null | undefined) =>
+    left == null || right == null ? left == null && right == null : String(left) === String(right);
+  return sameIdentifier(option.membershipId, stored.membershipId)
+    && sameIdentifier(option.companyId, stored.companyId)
+    && sameIdentifier(option.roleId, stored.roleId)
+    && sameIdentifier(option.unitId, stored.unitId);
+}
+
+function projectAccessContext(profile: UserProfile, option: AccessContextOption): UserProfile {
+  return {
+    ...profile,
+    company_id: option.companyId,
+    primary_unit_id: option.unitId,
+    role_id: option.roleId,
+    role_name: option.roleName,
+  };
 }
 
 const PROFILE_TIMEOUT_MS = 12_000;
@@ -124,57 +145,108 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [passwordRecoveryAuthorized, setPasswordRecoveryAuthorized] = useState(false);
+  const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
+  const [activeUnitId, setActiveUnitId] = useState<number | null>(null);
+  const authorizedContexts = useRef<AccessContextOption[]>([]);
   const profileRequestId = useRef(0);
+  const initializationInFlight = useRef<{
+    sessionKey: string;
+    promise: Promise<AuthResult>;
+  } | null>(null);
 
-  const initializeSession = useCallback(async (sess: Session | null): Promise<AuthResult> => {
-    const requestId = ++profileRequestId.current;
-    if (!sess?.user) {
-      setUser(null);
-      setSession(null);
-      setMfaStep("none");
-      setMfaFactorId(null);
-      setMustChangePassword(false);
-      setIsLoading(false);
-      return { success: false };
+  useEffect(() => {
+    const onAccessContextChanged = (event: Event) => {
+      const option = (event as CustomEvent<AccessContextOption>).detail;
+      const authorized = option
+        ? authorizedContexts.current.find((candidate) => sameAccessContext(candidate, option))
+        : null;
+      if (!authorized) return;
+      setActiveCompanyId(authorized.companyId);
+      setActiveUnitId(authorized.unitId);
+      setUser((current) => current ? projectAccessContext(current, authorized) : current);
+    };
+    window.addEventListener("prontomedic:access-context-changed", onAccessContextChanged);
+    return () => {
+      window.removeEventListener("prontomedic:access-context-changed", onAccessContextChanged);
+    };
+  }, []);
+
+  const initializeSession = useCallback((sess: Session | null): Promise<AuthResult> => {
+    const sessionKey = sess?.access_token ?? "signed-out";
+    const currentInitialization = initializationInFlight.current;
+    if (currentInitialization?.sessionKey === sessionKey) {
+      return currentInitialization.promise;
     }
 
-    setSession(sess);
-    setUser(null);
-    setIsLoading(true);
-    try {
-      const nextMfa = await getMfaNextStep(supabase.auth.mfa);
-      if (requestId !== profileRequestId.current) return { success: false };
-      if (nextMfa.kind !== "verified") {
-        setMfaStep(nextMfa.kind);
-        setMfaFactorId(nextMfa.kind === "challenge" ? nextMfa.factorId : null);
-        return { success: true, next: actionForMfaStep(nextMfa.kind) };
-      }
-
-      setMfaStep("verified");
-      setMfaFactorId(null);
-      const profile = await fetchUserProfileWithTimeout(sess.user);
-      if (requestId !== profileRequestId.current) return { success: false };
-      if (!profile) {
-        await supabase.auth.signOut({ scope: "local" });
-        if (requestId !== profileRequestId.current) return { success: false };
+    const promise = (async (): Promise<AuthResult> => {
+      const requestId = ++profileRequestId.current;
+      if (!sess?.user) {
+        authorizedContexts.current = [];
         setUser(null);
         setSession(null);
         setMfaStep("none");
-        return { success: false, error: "Não foi possível carregar o perfil e as permissões do usuário." };
+        setMfaFactorId(null);
+        setMustChangePassword(false);
+        setIsLoading(false);
+        return { success: false };
       }
-      setUser(profile);
-      const passwordChangeRequired = requiresPasswordChange(profile);
-      setMustChangePassword(passwordChangeRequired);
-      if (passwordChangeRequired) return { success: true, next: "password-change" };
-      return { success: true, next: "authenticated" };
-    } catch (error) {
-      if (requestId !== profileRequestId.current) return { success: false };
-      console.error("Failed to initialize authenticated user:", error);
+
+      setSession(sess);
       setUser(null);
-      return { success: false, error: error instanceof Error ? error.message : "Erro ao validar autenticação" };
-    } finally {
-      if (requestId === profileRequestId.current) setIsLoading(false);
-    }
+      setIsLoading(true);
+      try {
+        const nextMfa = await getMfaNextStep(supabase.auth.mfa);
+        if (requestId !== profileRequestId.current) return { success: false };
+        if (nextMfa.kind !== "verified") {
+          setMfaStep(nextMfa.kind);
+          setMfaFactorId(nextMfa.kind === "challenge" ? nextMfa.factorId : null);
+          return { success: true, next: actionForMfaStep(nextMfa.kind) };
+        }
+
+        setMfaStep("verified");
+        setMfaFactorId(null);
+        const profile = await fetchUserProfileWithTimeout(sess.user);
+        if (requestId !== profileRequestId.current) return { success: false };
+        if (!profile) {
+          await supabase.auth.signOut({ scope: "local" });
+          if (requestId !== profileRequestId.current) return { success: false };
+          setUser(null);
+          setSession(null);
+          setMfaStep("none");
+          return { success: false, error: "Não foi possível carregar o perfil e as permissões do usuário." };
+        }
+        const availableContexts = await accessContextService.listAuthorized();
+        if (requestId !== profileRequestId.current) return { success: false };
+        authorizedContexts.current = availableContexts;
+        const storedContext = readStoredAccessContext<AccessContextOption>();
+        const selectedContext = storedContext
+          ? availableContexts.find((option) => sameAccessContext(option, storedContext)) ?? null
+          : null;
+        const functionalProfile = selectedContext ? projectAccessContext(profile, selectedContext) : profile;
+        setActiveCompanyId(selectedContext?.companyId ?? null);
+        setActiveUnitId(selectedContext?.unitId ?? null);
+        setUser(functionalProfile);
+        const passwordChangeRequired = requiresPasswordChange(profile);
+        setMustChangePassword(passwordChangeRequired);
+        if (passwordChangeRequired) return { success: true, next: "password-change" };
+        return { success: true, next: "authenticated" };
+      } catch (error) {
+        if (requestId !== profileRequestId.current) return { success: false };
+        console.error("Failed to initialize authenticated user:", error);
+        setUser(null);
+        return { success: false, error: error instanceof Error ? error.message : "Erro ao validar autenticação" };
+      } finally {
+        if (requestId === profileRequestId.current) setIsLoading(false);
+      }
+    })();
+
+    initializationInFlight.current = { sessionKey, promise };
+    void promise.finally(() => {
+      if (initializationInFlight.current?.promise === promise) {
+        initializationInFlight.current = null;
+      }
+    });
+    return promise;
   }, []);
 
   useEffect(() => {
@@ -216,9 +288,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const verifyMfa = async (code: string, factorId?: string): Promise<AuthResult> => {
-    const selectedFactor = factorId ?? mfaFactorId;
-    if (!selectedFactor) return { success: false, error: "Fator MFA não encontrado." };
     try {
+      let selectedFactor = factorId ?? mfaFactorId;
+      if (!selectedFactor) {
+        const nextMfa = await getMfaNextStep(supabase.auth.mfa);
+        selectedFactor = nextMfa.kind === "challenge" ? nextMfa.factorId : null;
+      }
+      if (!selectedFactor) return { success: false, error: "Fator MFA não encontrado." };
       await verifyTotpFactor(supabase.auth.mfa, selectedFactor, code);
       const { data } = await supabase.auth.getSession();
       return await initializeSession(data.session);
@@ -235,6 +311,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await supabase.auth.signOut({ scope: "local" });
     }
     clearApplicationSession();
+    authorizedContexts.current = [];
     profileRequestId.current += 1;
     setUser(null);
     setSession(null);
@@ -242,6 +319,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setMfaFactorId(null);
     setMustChangePassword(false);
     setPasswordRecoveryAuthorized(false);
+    setActiveCompanyId(null);
+    setActiveUnitId(null);
   };
 
   return (
@@ -251,6 +330,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: Boolean(user && mfaStep === "verified" && !mustChangePassword),
       isLoading,
       companyId: user?.company_id ?? null,
+      activeCompanyId,
+      activeUnitId,
       mfaStep,
       mfaFactorId,
       mustChangePassword,

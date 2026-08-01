@@ -41,17 +41,19 @@ docker run -d \
   -e ORTHANC__DICOM_AET=ORTHANC \
   -e ORTHANC__HTTP_PORT=8042 \
   -e ORTHANC__DICOM_PORT=4242 \
-  -e ORTHANC__REGISTERED_USERS='{"orthanc":"orthanc"}' \
+  -e ORTHANC__REGISTERED_USERS='{"prontomedic":"CHANGE_ME_STRONG_PASSWORD"}' \
   orthancteam/orthanc:latest
 ```
 
-**Variáveis de ambiente no ProntoClinic Hub:**
+**Secrets server-side da Edge Function `dicom-bridge`:**
 
 ```env
-VITE_ORTHANC_URL=http://localhost:8042
-VITE_ORTHANC_USER=orthanc
-VITE_ORTHANC_PASS=orthanc
+ORTHANC_URL=http://orthanc.internal:8042
+ORTHANC_USER=prontomedic
+ORTHANC_PASSWORD=CHANGE_ME_STRONG_PASSWORD
 ```
+
+Esses valores nunca devem usar prefixo `VITE_` nem ser enviados ao navegador.
 
 **Configurar modalities no Orthanc (apontar para CT, MR, US…):**
 
@@ -108,9 +110,8 @@ curl -u orthanc:orthanc \
 
 [Conquest DICOM](https://ingenium.home.xs4all.nl/dicom.html) é uma alternativa Windows-based.
 
-```env
-VITE_ORTHANC_URL=http://localhost:8080
-```
+Configure o endpoint do Conquest somente no gateway server-side. Não exponha
+URL ou credenciais DICOM em variáveis `VITE_*`.
 
 O ProntoClinic Hub usa o endpoint REST-like do Conquest. Para WADO, configure:
 
@@ -125,9 +126,8 @@ wadosupport = 1
 
 [AWS HealthImaging](https://aws.amazon.com/health/healthimaging/) é o PACS serverless da AWS.
 
-```env
-VITE_ORTHANC_URL=https://runtime-medical-imaging.us-east-1.amazonaws.com
-```
+Configure o endpoint AWS HealthImaging somente no gateway server-side. O
+navegador deve chamar exclusivamente o contrato autenticado da aplicação.
 
 Configuração adicional via AWS CLI:
 
@@ -251,11 +251,11 @@ Para **produção**, a ANS exige **Certificado Digital A1 (e-CNPJ)** ICP-Brasil.
 openssl pkcs12 -export -out cert_a1.pfx -inkey chave_privada.key -in certificado.crt
 ```
 
-**Caminho no ProntoClinic Hub:**
+**Secrets no gateway TISS server-side:**
 
 ```env
-VITE_TISS_CERT_PATH=/etc/pc_hub/cert_a1.pfx
-VITE_TISS_CERT_PASSWORD=sua_senha
+TISS_CERT_PATH=/etc/pc_hub/cert_a1.pfx
+TISS_CERT_PASSWORD_FILE=/run/secrets/tiss_pass
 ```
 
 **Atenção:** O certificado NUNCA deve ser commitado. Use Docker secrets ou volumes.
@@ -267,7 +267,7 @@ services:
     volumes:
       - ./secrets/cert_a1.pfx:/etc/pc_hub/cert_a1.pfx:ro
     environment:
-      VITE_TISS_CERT_PASSWORD_FILE: /run/secrets/tiss_pass
+      TISS_CERT_PASSWORD_FILE: /run/secrets/tiss_pass
 ```
 
 ### 2.3 Endpoints por Operadora
@@ -352,7 +352,8 @@ Lista completa: 30+ códigos no objeto `TISS_GLOSA_CODES` em `tissService.ts`.
 
 ### Erro "Orthanc store falhou (401)"
 
-Verifique usuário/senha em `VITE_ORTHANC_USER` / `VITE_ORTHANC_PASS`.
+Verifique os secrets server-side `ORTHANC_USER` e `ORTHANC_PASSWORD` da Edge
+Function `dicom-bridge`. Nunca configure essas credenciais com prefixo `VITE_`.
 
 ### "Protocolo TISS não configurado"
 

@@ -28,13 +28,22 @@ export function AppLayout({ children }: { children: ReactNode }) {
     }
 
     let active = true;
-    const onContextChanged = () => active && setContextStatus("ready");
+    let contextChanged = false;
+    const onContextChanged = () => {
+      if (!active) return;
+      contextChanged = true;
+      setContextStatus("ready");
+    };
     window.addEventListener("prontomedic:access-context-changed", onContextChanged);
     void initializeAccessContext()
       .then((selected) => {
-        if (active) setContextStatus(selected ? "ready" : "selection-required");
+        if (active && !contextChanged) {
+          setContextStatus(selected ? "ready" : "selection-required");
+        }
       })
-      .catch(() => active && setContextStatus("error"));
+      .catch(() => {
+        if (active && !contextChanged) setContextStatus("error");
+      });
 
     return () => {
       active = false;
@@ -105,6 +114,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             role="main"
             tabIndex={-1}
             aria-label={`Conteúdo principal: ${currentPage}`}
+            data-access-context-status={contextStatus}
             className="flex-1 p-6 overflow-auto focus:outline-none"
             onFocus={() => announce(`Navegou para ${currentPage}`)}
           >

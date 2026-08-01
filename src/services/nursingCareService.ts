@@ -7,6 +7,46 @@
  */
 import { supabase } from "@/lib/supabase";
 
+interface NursingActorContext {
+  professionalId: number | null;
+  unitId: number;
+}
+
+async function currentNursingActor(): Promise<NursingActorContext> {
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError) throw new Error(authError.message);
+  const userId = authData.user?.id;
+  if (!userId) throw new Error("Sessao autenticada obrigatoria");
+
+  const [professionalResult, profileResult] = await Promise.all([
+    supabase
+      .from("professionals")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("lg_ativo", true)
+      .maybeSingle(),
+    supabase
+      .from("user_profiles")
+      .select("primary_unit_id")
+      .eq("id", userId)
+      .maybeSingle(),
+  ]);
+  if (professionalResult.error) throw new Error(professionalResult.error.message);
+  if (profileResult.error) throw new Error(profileResult.error.message);
+
+  const unitId = Number(profileResult.data?.primary_unit_id);
+  if (!Number.isInteger(unitId) || unitId <= 0) {
+    throw new Error("Unidade principal obrigatoria para operacoes de enfermagem");
+  }
+
+  return {
+    professionalId: professionalResult.data?.id == null
+      ? null
+      : Number(professionalResult.data.id),
+    unitId,
+  };
+}
+
 export type MedAdminStatus = "pendente" | "em_preparo" | "administrado" | "recusado" | "suspenso" | "atrasado" | "cancelado";
 
 export interface MedAdmin {
@@ -38,8 +78,14 @@ export const nursingCareService = {
     if (error) throw new Error(error.message);
     return withNames((data || []) as unknown as MedAdmin[]);
   },
-  async createMedication(m: { patient_id: number; medication: string; dose?: string; via?: string; scheduled_at?: string; prepared_by?: number }): Promise<MedAdmin> {
-    const { data, error } = await supabase.from("nursing_medication_administrations").insert({ status: "em_preparo", prepared_by: 1, ...m }).select().single();
+  async createMedication(m: { patient_id: number; medication: string; dose?: string; via?: string; scheduled_at?: string }): Promise<MedAdmin> {
+    const actor = await currentNursingActor();
+    const { data, error } = await supabase.from("nursing_medication_administrations").insert({
+      ...m,
+      status: "em_preparo",
+      prepared_by: actor.professionalId,
+      unit_id: actor.unitId,
+    }).select().single();
     if (error) throw new Error(error.message);
     return data as unknown as MedAdmin;
   },
@@ -55,8 +101,9 @@ export const nursingCareService = {
     });
   },
   async administer(adminId: number): Promise<void> {
+    const actor = await currentNursingActor();
     const { error } = await supabase.from("nursing_medication_administrations").update({
-      status: "administrado", bedside_check_ok: true, administered_at: new Date().toISOString(), administered_by: 1,
+      status: "administrado", bedside_check_ok: true, administered_at: new Date().toISOString(), administered_by: actor.professionalId,
     }).eq("id", adminId);
     if (error) throw new Error(error.message);
   },
@@ -71,7 +118,12 @@ export const nursingCareService = {
     return withNames((data || []) as unknown as NursingIncident[]);
   },
   async createIncident(i: { patient_id: number; incident_type: string; severity: string; description: string }): Promise<NursingIncident> {
-    const { data, error } = await supabase.from("nursing_incidents").insert({ reported_by: 1, ...i }).select().single();
+    const actor = await currentNursingActor();
+    const { data, error } = await supabase.from("nursing_incidents").insert({
+      reported_by: actor.professionalId,
+      unit_id: actor.unitId,
+      ...i,
+    }).select().single();
     if (error) throw new Error(error.message);
     return data as unknown as NursingIncident;
   },
@@ -82,12 +134,21 @@ export const nursingCareService = {
     return (data || []) as unknown as NursingProcedure[];
   },
   async createProcedure(p: { patient_id: number; procedure_type: string; description?: string; faturavel?: boolean }): Promise<void> {
-    const { error } = await supabase.from("nursing_procedures").insert({ performed_by: 1, ...p });
+    const actor = await currentNursingActor();
+    const { error } = await supabase.from("nursing_procedures").insert({
+      performed_by: actor.professionalId,
+      unit_id: actor.unitId,
+      ...p,
+    });
     if (error) throw new Error(error.message);
   },
 
   async createHandoff(h: Record<string, unknown>): Promise<void> {
-    const { error } = await supabase.from("nursing_shift_handoffs").insert(h);
+    const actor = await currentNursingActor();
+    const { error } = await supabase.from("nursing_shift_handoffs").insert({
+      ...h,
+      unit_id: actor.unitId,
+    });
     if (error) throw new Error(error.message);
   },
 

@@ -10,7 +10,7 @@
  *   - 7.733 laudos           → tabela medical_records (legado)
  *
  * Integra com:
- *   - Orthanc PACS (VITE_ORTHANC_URL, default http://localhost:8042)
+ *   - Orthanc PACS por bridge server-side autenticada
  *   - Conquest DICOM
  *   - AWS HealthImaging
  *
@@ -18,6 +18,19 @@
  */
 
 import { supabase } from "@/lib/supabase";
+
+const DICOM_BUCKET = "dicom";
+const DICOM_SIGNED_URL_TTL_SECONDS = 15 * 60;
+
+async function resolvePrivateDicomUrl(value?: string): Promise<string | undefined> {
+  if (!value || /^https?:\/\//i.test(value)) return value;
+
+  const { data, error } = await supabase.storage
+    .from(DICOM_BUCKET)
+    .createSignedUrl(value, DICOM_SIGNED_URL_TTL_SECONDS);
+  if (error) throw new Error(`Falha ao autorizar acesso à imagem DICOM: ${error.message}`);
+  return data.signedUrl;
+}
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -149,13 +162,26 @@ export interface ReportTemplate {
 
 // ── Helpers ────────────────────────────────────────────────────────
 
-const ORTHANC_URL = (import.meta.env.VITE_ORTHANC_URL as string) || "http://localhost:8042";
-const ORTHANC_USER = (import.meta.env.VITE_ORTHANC_USER as string) || "orthanc";
-const ORTHANC_PASS = (import.meta.env.VITE_ORTHANC_PASS as string) || "orthanc";
+type DicomBridgeAction = "echo" | "store-study" | "query-studies";
 
-/** Build Basic Auth header for Orthanc REST API */
-function orthancAuth(): string {
-  return "Basic " + btoa(`${ORTHANC_USER}:${ORTHANC_PASS}`);
+async function invokeDicomBridge<T>(
+  action: DicomBridgeAction,
+  payload: Record<string, unknown>,
+): Promise<T> {
+  const { data, error } = await supabase.functions.invoke("dicom-bridge", {
+    body: { action, ...payload },
+  });
+  if (error) {
+    throw new Error(`Bridge DICOM indisponível: ${error.message}`);
+  }
+  if (!data || data.ok !== true || data.result == null) {
+    throw new Error(
+      typeof data?.error === "string"
+        ? data.error
+        : "Bridge DICOM retornou uma resposta inválida",
+    );
+  }
+  return data.result as T;
 }
 
 function formatDicomDate(iso?: string): string {
@@ -254,38 +280,19 @@ export const equipmentService = {
     if (error) throw error;
   },
 
-  /** Testa conexão (echo) com o modality via Orthanc REST /modalities/{aet}/echo */
+  /** Testa C-ECHO pelo backend; o navegador nunca acessa o Orthanc. */
   async testConnection(id: number): Promise<{ ok: boolean; latencyMs: number; message: string }> {
-    const eq = await this.getById(id);
-    if (!eq.ds_aetitle || !eq.ds_ip) {
-      return { ok: false, latencyMs: 0, message: "AE Title ou IP nao configurados" };
-    }
-    const t0 = performance.now();
     try {
-      const res = await fetch(`${ORTHANC_URL}/modalities/${eq.ds_aetitle}/echo`, {
-        method: "POST",
-        headers: { Authorization: orthancAuth() },
-        signal: AbortSignal.timeout(5000),
-      });
-      const t1 = performance.now();
-      if (!res.ok) {
-        return {
-          ok: false,
-          latencyMs: Math.round(t1 - t0),
-          message: `Orthanc respondeu ${res.status}: ${res.statusText}`,
-        };
-      }
-      return {
-        ok: true,
-        latencyMs: Math.round(t1 - t0),
-        message: `Echo OK em ${Math.round(t1 - t0)}ms`,
-      };
-    } catch (e) {
-      const t1 = performance.now();
+      return await invokeDicomBridge<{
+        ok: boolean;
+        latencyMs: number;
+        message: string;
+      }>("echo", { equipmentId: id });
+    } catch (error) {
       return {
         ok: false,
-        latencyMs: Math.round(t1 - t0),
-        message: e instanceof Error ? e.message : "Falha na conexao",
+        latencyMs: 0,
+        message: error instanceof Error ? error.message : "Falha na conexão DICOM",
       };
     }
   },
@@ -321,7 +328,7 @@ export const worklistService = {
     created_at?: string;
   }>> {
     const { data, error } = await supabase
-      .from("dicom_worklist")
+      .from("dicom_worklist_queue")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(200);
@@ -348,7 +355,7 @@ export const worklistService = {
    */
   async update(id: number, updates: { status?: string; [key: string]: unknown }): Promise<void> {
     const { error } = await supabase
-      .from("dicom_worklist")
+      .from("dicom_worklist_queue")
       .update(updates)
       .eq("id", id);
     if (error) throw error;
@@ -444,7 +451,13 @@ export const examService = {
       .order("nr_series", { ascending: true })
       .order("nr_instance", { ascending: true });
     if (error) throw error;
-    return (data || []) as DicomExamImage[];
+    return Promise.all(
+      ((data || []) as DicomExamImage[]).map(async (image) => ({
+        ...image,
+        bl_dicom_url: await resolvePrivateDicomUrl(image.bl_dicom_url),
+        bl_thumb_url: await resolvePrivateDicomUrl(image.bl_thumb_url),
+      })),
+    );
   },
 
   async listByCompany(
@@ -465,38 +478,15 @@ export const examService = {
     return (data || []) as DicomExam[];
   },
 
-  /** Solicita envio do estudo para o PACS (Orthanc store) */
+  /** Solicita C-STORE pela bridge autenticada e com escopo RLS. */
   async requestStudy(examId: number): Promise<{ orthancId: string; studyUid: string }> {
-    const exam = await this.getExamById(examId);
-    if (!exam.cd_dicom_exame) {
-      throw new Error("Exame sem StudyInstanceUID — nao foi possivel enviar ao PACS");
+    if (!Number.isSafeInteger(examId) || examId <= 0) {
+      throw new Error("Exame DICOM inválido");
     }
-    // Dispara C-STORE via Orthanc REST /peers/{aet}/store
-    const eq = exam.cd_equipment
-      ? await equipmentService.getById(exam.cd_equipment)
-      : null;
-    if (!eq) {
-      throw new Error("Equipamento de destino nao configurado para este exame");
-    }
-    const res = await fetch(
-      `${ORTHANC_URL}/peers/${eq.ds_aetitle}/store`,
-      {
-        method: "POST",
-        headers: { Authorization: orthancAuth(), "Content-Type": "application/json" },
-        body: JSON.stringify({ StudyInstanceUID: exam.cd_dicom_exame }),
-        signal: AbortSignal.timeout(30000),
-      }
+    return invokeDicomBridge<{ orthancId: string; studyUid: string }>(
+      "store-study",
+      { examId },
     );
-    if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(`Orthanc store falhou (${res.status}): ${txt}`);
-    }
-    const { ID } = await res.json();
-    await supabase
-      .from("dicom_exams")
-      .update({ ds_status: "IN_PROGRESS", updated_at: new Date().toISOString() })
-      .eq("id", examId);
-    return { orthancId: ID, studyUid: exam.cd_dicom_exame };
   },
 
   /** Upload de imagem DICOM (.dcm) via signed URL S3 (ou Supabase Storage) */
@@ -521,16 +511,14 @@ export const examService = {
       throw new Error(`Upload falhou: ${upErr.message}. Configure bucket "dicom" no Supabase Storage.`);
     }
 
-    const { data: pub } = supabase.storage.from("dicom").getPublicUrl(path);
-
     // Registrar no banco
     const { data: row, error: insErr } = await supabase
       .from("dicom_exam_images")
       .insert({
         cd_dicom_exam: examId,
         ds_filename: file.name,
-        bl_dicom_url: pub.publicUrl,
-        bl_thumb_url: pub.publicUrl,
+        bl_dicom_url: path,
+        bl_thumb_url: path,
         ds_sop_instance_uid: sopInstanceUid,
         dt_acquisition: new Date().toISOString(),
         nr_instance: Math.floor(Math.random() * 1000),
@@ -552,7 +540,9 @@ export const examService = {
         .eq("id", examId);
     }
 
-    return { imageId: row.id, url: pub.publicUrl, sopInstanceUid };
+    const signedUrl = await resolvePrivateDicomUrl(path);
+    if (!signedUrl) throw new Error("Falha ao autorizar acesso à imagem DICOM.");
+    return { imageId: row.id, url: signedUrl, sopInstanceUid };
   },
 
   async updateStatus(examId: number, status: DicomExamStatus): Promise<void> {
@@ -793,17 +783,8 @@ export const dicomWeb = {
     modality?: string;
     accessionNumber?: string;
   }>> {
-    const url = `${ORTHANC_URL}/dicom-web/studies?PatientID=${encodeURIComponent(patientId)}`;
-    const res = await fetch(url, { headers: { Authorization: orthancAuth() } });
-    if (!res.ok) throw new Error(`QIDO-RS falhou: ${res.status}`);
-    const arr = await res.json();
-    return (arr || []).map((s: Record<string, { Value?: string[] } | undefined>) => ({
-      studyInstanceUID: s["0020000D"]?.Value?.[0] || "",
-      studyDate: s["00080020"]?.Value?.[0] || "",
-      studyTime: s["00080030"]?.Value?.[0] || "",
-      modality: s["00080060"]?.Value?.[0] || "",
-      accessionNumber: s["00080050"]?.Value?.[0] || "",
-    }));
+    if (!patientId.trim()) throw new Error("Paciente inválido para consulta DICOM");
+    return invokeDicomBridge("query-studies", { patientId: patientId.trim() });
   },
 
   /**
@@ -811,12 +792,15 @@ export const dicomWeb = {
    * Endpoint: GET /studies/{study}/instances/{sop}
    */
   getInstanceUrl(studyInstanceUID: string, sopInstanceUID: string): string {
-    return `${ORTHANC_URL}/dicom-web/studies/${studyInstanceUID}/instances/${sopInstanceUID}`;
+    void studyInstanceUID;
+    void sopInstanceUID;
+    throw new Error("Acesso DICOM direto bloqueado; use uma URL privada assinada");
   },
 
   /** WADO-URI (legado): retorna URL para visualizacao em viewer */
   getWadoUri(studyInstanceUID: string): string {
-    return `${ORTHANC_URL}/wado?requestType=WADO&studyUID=${studyInstanceUID}&contentType=image/jpeg`;
+    void studyInstanceUID;
+    throw new Error("Acesso WADO direto bloqueado; use uma URL privada assinada");
   },
 };
 
@@ -1018,6 +1002,31 @@ export const modalitiesService = {
 import type { WorklistQueueStatus, DicomWorklistItem as DicomWorklistItemAlias } from "@/types/dicom";
 
 export const worklistQueueServiceRaw = {
+  async releaseAppointment(
+    appointmentId: string | number,
+    idempotencyKey: string,
+  ): Promise<DicomWorklistItemAlias[]> {
+    const parsedAppointmentId = Number(appointmentId);
+    if (!Number.isSafeInteger(parsedAppointmentId) || parsedAppointmentId <= 0) {
+      throw new Error("Agendamento inválido para liberação da worklist");
+    }
+    if (!/^[A-Za-z0-9._:-]{8,120}$/.test(idempotencyKey)) {
+      throw new Error("Chave de idempotência inválida para a worklist");
+    }
+    const { data, error } = await supabase.rpc(
+      "release_appointment_to_worklist_secure",
+      {
+        p_appointment_id: parsedAppointmentId,
+        p_idempotency_key: idempotencyKey,
+      },
+    );
+    if (error) throw new Error(`Erro ao liberar worklist: ${error.message}`);
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new Error("A liberação não retornou itens da worklist");
+    }
+    return data as unknown as DicomWorklistItemAlias[];
+  },
+
   async list(filters?: { status?: string }): Promise<DicomWorklistItemAlias[]> {
     let q = supabase
       .from("dicom_worklist_queue")
@@ -1059,36 +1068,6 @@ export const worklistQueueServiceRaw = {
     if (error) throw error;
   },
 
-  async createFromOrderItem(
-    item: import("@/types/dicom").ImagingOrderItem,
-    order: import("@/types/dicom").ImagingOrder,
-    patient: { id: string; full_name: string; birth_date?: string; sex?: string; cpf?: string }
-  ): Promise<DicomWorklistItemAlias> {
-    const { data, error } = await supabase
-      .from("dicom_worklist_queue")
-      .insert({
-        imaging_order_item_id: item.id,
-        patient_id: order.patient_id,
-        patient_name: patient.full_name,
-        patient_birth_date: patient.birth_date,
-        patient_sex: patient.sex,
-        patient_identifier: patient.cpf,
-        accession_number: order.accession_number,
-        requested_procedure_description: item.exam_name,
-        requested_procedure_id: item.requested_procedure_id,
-        scheduled_procedure_step_id: item.scheduled_procedure_step_id,
-        modality_type: item.modality_type,
-        scheduled_station_aetitle: item.station_aetitle,
-        scheduled_datetime: item.scheduled_datetime,
-        referring_physician_name: order.referring_physician_name,
-        status: "pending" as WorklistQueueStatus,
-        exported_to_worklist: false,
-      })
-      .select()
-      .single();
-    if (error) throw error;
-    return data as unknown as DicomWorklistItemAlias;
-  },
 };
 
 // ── Imaging Order Items Service ────────────────────────────────────
@@ -1110,9 +1089,14 @@ export const imagingOrderItemsServiceReal = {
   },
 
   async create(payload: Partial<ImagingOrderItem>): Promise<ImagingOrderItem> {
+    const {
+      scheduled_date: _scheduledDate,
+      scheduled_time: _scheduledTime,
+      ...canonicalPayload
+    } = payload;
     const { data, error } = await supabase
       .from("imaging_order_items")
-      .insert(payload)
+      .insert(canonicalPayload)
       .select()
       .single();
     if (error) throw error;
@@ -1148,18 +1132,41 @@ export const imagingOrdersServiceReal = {
       return {
         ...(r as unknown as ImagingOrder),
         patient_name: patient?.full_name,
+        scheduling_id: r.appointment_id
+          ? String(r.appointment_id)
+          : undefined,
       } as ImagingOrder;
     });
   },
 
   async create(payload: Partial<ImagingOrder>): Promise<ImagingOrder> {
+    const {
+      scheduling_id: schedulingId,
+      encounter_id: _encounterId,
+      ...canonicalPayload
+    } = payload;
+    const appointmentId = schedulingId ? Number(schedulingId) : undefined;
+    if (
+      appointmentId !== undefined
+      && (!Number.isSafeInteger(appointmentId) || appointmentId <= 0)
+    ) {
+      throw new Error("Agendamento inválido para o pedido de imagem");
+    }
     const { data, error } = await supabase
       .from("imaging_orders")
-      .insert(payload)
+      .insert({
+        ...canonicalPayload,
+        appointment_id: appointmentId,
+      })
       .select()
       .single();
     if (error) throw error;
-    return data as unknown as ImagingOrder;
+    return {
+      ...(data as unknown as ImagingOrder),
+      scheduling_id: data.appointment_id
+        ? String(data.appointment_id)
+        : undefined,
+    };
   },
 };
 

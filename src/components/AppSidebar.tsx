@@ -16,6 +16,7 @@ import {
 import { FlatSection, CollapsibleSection, MenuGroup } from "./sidebar/SidebarSection";
 import { MenuItem } from "./sidebar/SidebarItem";
 import { SidebarFooter } from "./sidebar/SidebarFooter";
+import { isWaveModuleEnabled } from "@/config/moduleRollout";
 
 const mainItems: MenuGroup = {
   items: [
@@ -24,13 +25,27 @@ const mainItems: MenuGroup = {
     { title: "Recepção", url: "/reception", icon: UserCheck },
     { title: "Triagem", url: "/nursing/triage", icon: HeartPulse },
     { title: "Cuidados Enfermagem", url: "/nursing/care", icon: Syringe },
+    ...(isWaveModuleEnabled(19)
+      ? [{ title: "Plano de Enfermagem", url: "/nursing/clinical", icon: HeartPulse }]
+      : []),
     { title: "Pacientes", url: "/patients", icon: Users },
     { title: "Profissionais", url: "/professionals", icon: Stethoscope },
     { title: "Prontuário", url: "/records", icon: FileText },
     { title: "Atendimento (PEP)", url: "/encounters", icon: Stethoscope },
     { title: "Timeline Clínica", url: "/clinical-timeline", icon: Clock },
     { title: "Farmácia", url: "/pharmacy", icon: Pill },
-    { title: "Laboratório", url: "/lab", icon: FlaskConical },
+    ...(isWaveModuleEnabled(20)
+      ? [{ title: "Prescrição Eletrônica", url: "/prescriptions", icon: Pill }]
+      : []),
+    ...(isWaveModuleEnabled(21)
+      ? [{ title: "Protocolos Assistenciais", url: "/care-protocols", icon: ListChecks }]
+      : []),
+    ...(isWaveModuleEnabled(22)
+      ? [{ title: "Solicitações de Exames", url: "/exam-requests", icon: ClipboardList }]
+      : []),
+    ...(isWaveModuleEnabled(23)
+      ? [{ title: "Laboratório", url: "/lab", icon: FlaskConical }]
+      : []),
     { title: "Call Center", url: "/callcenter", icon: Phone },
     { title: "Telemedicina", url: "/telemedicina", icon: Video },
   ],
@@ -47,13 +62,17 @@ const dicomItems: MenuGroup = {
         { title: "Modalidades", url: "/dicom/modalities", icon: Activity },
         { title: "Nós DICOM", url: "/dicom/nodes", icon: Server },
         { title: "Integração", url: "/dicom/dashboard", icon: Monitor },
-        { title: "Pedidos", url: "/dicom/orders", icon: FileImage },
+        ...(isWaveModuleEnabled(24)
+          ? [{ title: "Pedidos", url: "/dicom/orders", icon: FileImage }]
+          : []),
       ],
     },
     {
       groupTitle: "Laudos",
       items: [
-        { title: "Worklist", url: "/dicom/worklist", icon: ListChecks },
+        ...(isWaveModuleEnabled(24)
+          ? [{ title: "Worklist", url: "/dicom/worklist", icon: ListChecks }]
+          : []),
         { title: "Templates", url: "/admin/report-templates", icon: FileSpreadsheet },
         { title: "Visualizador", url: "/pacs", icon: Monitor },
         { title: "Laudos", url: "/dicom/reports", icon: ScrollText },
@@ -158,13 +177,17 @@ const adminItems: MenuGroup = {
         { title: "Usuários", url: "/admin/users", icon: UserCog },
         { title: "Perfis", url: "/admin/profiles", icon: ShieldCheck },
         { title: "Permissões", url: "/admin/permissions", icon: KeyRound },
+        { title: "Delegações", url: "/admin/access", icon: KeyRound },
         { title: "Empresas", url: "/companies", icon: Building2 },
+        { title: "Estrutura Organizacional", url: "/admin/organization", icon: Building2 },
       ],
     },
     {
       groupTitle: "Convênios",
       items: [
         { title: "Convênios", url: "/admin/insurances", icon: Shield },
+        { title: "Elegibilidade", url: "/admin/eligibility", icon: ListChecks },
+        { title: "Autorizações", url: "/admin/authorizations", icon: FileSignature },
         { title: "Credenciamento", url: "/admin/credentialing", icon: ListPlus },
         { title: "Tabela de Preços", url: "/admin/price-tables", icon: Calculator },
       ],

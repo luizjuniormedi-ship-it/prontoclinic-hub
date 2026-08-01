@@ -1,6 +1,13 @@
 -- Fecha lacunas de tenant/unidade em agenda e convênios.
 -- Linhas legadas ambíguas bloqueiam a migration; nunca recebem unidade arbitrária.
 
+-- Instalações anteriores à foundation de agenda já possuem a tabela, mas não
+-- necessariamente a unidade principal. O campo permanece nulo no legado:
+-- as unidades das faixas continuam sendo a evidência autoritativa disponível.
+ALTER TABLE public.professional_schedules
+  ADD COLUMN IF NOT EXISTS unit_id INTEGER
+  REFERENCES public.units(id) ON DELETE SET NULL;
+
 CREATE OR REPLACE FUNCTION public.enforce_professional_schedule_scope()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -82,7 +89,8 @@ BEGIN
         'professional_schedules_select_context',
         'professional_schedules_insert_context',
         'professional_schedules_update_context',
-        'professional_schedules_delete_context'
+        'professional_schedules_delete_context',
+        'patient_portal_owner_schedule_read'
       )
   LOOP
     RAISE EXCEPTION 'OPERATIONAL_RLS_UNKNOWN_POLICY: public.professional_schedules.%',
@@ -356,6 +364,18 @@ FOR EACH ROW EXECUTE FUNCTION public.enforce_insurance_record_scope();
 ALTER TABLE public.insurance_authorizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.insurance_eligibility_checks ENABLE ROW LEVEL SECURITY;
 
+-- Policies nativas anteriores bloqueavam escrita e filtravam leitura apenas
+-- por empresa. Remova somente os nomes conhecidos antes de instalar o escopo
+-- de unidade; qualquer policy adicional continua bloqueando a migration.
+DROP POLICY IF EXISTS m15_authorizations_insert
+  ON public.insurance_authorizations;
+DROP POLICY IF EXISTS m15_authorizations_select
+  ON public.insurance_authorizations;
+DROP POLICY IF EXISTS m15_authorizations_update
+  ON public.insurance_authorizations;
+DROP POLICY IF EXISTS insurance_eligibility_select_tenant
+  ON public.insurance_eligibility_checks;
+
 DO $$
 DECLARE
   v_policy RECORD;
@@ -369,9 +389,15 @@ BEGIN
         'insurance_authorizations_select_unit',
         'insurance_authorizations_insert_unit',
         'insurance_authorizations_update_unit',
+        'm15_authorizations_reception_owner_select',
+        'm15_authorizations_reception_owner_insert',
+        'm15_authorizations_reception_owner_update',
         'insurance_eligibility_select_unit',
         'insurance_eligibility_insert_unit',
-        'insurance_eligibility_update_unit'
+        'insurance_eligibility_update_unit',
+        'insurance_eligibility_reception_owner',
+        'insurance_eligibility_reception_owner_select',
+        'insurance_eligibility_reception_owner_update'
       )
   LOOP
     RAISE EXCEPTION 'OPERATIONAL_RLS_UNKNOWN_POLICY: public.%.%',
@@ -684,7 +710,8 @@ BEGIN
       ADD CONSTRAINT patients_insurance_plan_id_fkey
       FOREIGN KEY (insurance_plan_id)
       REFERENCES public.insurance_plans(id)
-      ON DELETE SET NULL;
+      ON DELETE SET NULL
+      NOT VALID;
   END IF;
 END;
 $$;
@@ -858,7 +885,6 @@ BEGIN
   FROM public.patients p
   WHERE p.id = p_patient_id
     AND p.company_id = v_company_id
-    AND p.unit_id = v_unit_id
     AND p.lg_ativo = TRUE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Paciente não encontrado no contexto ativo'

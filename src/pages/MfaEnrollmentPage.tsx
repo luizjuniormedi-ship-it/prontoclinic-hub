@@ -19,7 +19,6 @@ export default function MfaEnrollmentPage() {
   const navigate = useNavigate();
   const started = useRef(false);
   const activeFactor = useRef<string | null>(null);
-  const completed = useRef(false);
 
   useEffect(() => {
     if (!session || mfaStep !== "enroll" || started.current) return;
@@ -32,12 +31,6 @@ export default function MfaEnrollmentPage() {
       .catch((reason) => setError(reason instanceof Error ? reason.message : "Não foi possível cadastrar o MFA."))
       .finally(() => setLoading(false));
   }, [mfaStep, session]);
-
-  useEffect(() => () => {
-    if (activeFactor.current && !completed.current) {
-      void unenrollTotpFactor(supabase.auth.mfa, activeFactor.current).catch(() => undefined);
-    }
-  }, []);
 
   if (!session) return <Navigate to="/login" replace />;
   if (mfaStep === "challenge") return <Navigate to="/login" replace />;
@@ -54,7 +47,6 @@ export default function MfaEnrollmentPage() {
       setError(result.error ?? "Código inválido. Tente novamente.");
       return;
     }
-    completed.current = true;
     if (result.next === "password-change") navigate("/reset-password", { replace: true, state: { forced: true } });
     else navigate("/", { replace: true });
   };

@@ -3,6 +3,7 @@ import {
   pesquisasService,
   respostasService,
   npsReportsService,
+  convitesService,
   pesquisaSchema,
   respostaSchema,
   perguntaSchema,
@@ -82,8 +83,7 @@ describe("npsService — pesquisaSchema (Zod)", () => {
 describe("npsService — respostaSchema (Zod)", () => {
   it("rejeita nota fora de 0-10", () => {
     const r = respostaSchema.safeParse({
-      cd_pesquisa: 1,
-      cd_paciente: 1,
+      token: "a".repeat(64),
       nr_nota_nps: 11,
     });
     expect(r.success).toBe(false);
@@ -91,8 +91,7 @@ describe("npsService — respostaSchema (Zod)", () => {
 
   it("rejeita nota negativa", () => {
     const r = respostaSchema.safeParse({
-      cd_pesquisa: 1,
-      cd_paciente: 1,
+      token: "a".repeat(64),
       nr_nota_nps: -1,
     });
     expect(r.success).toBe(false);
@@ -101,12 +100,19 @@ describe("npsService — respostaSchema (Zod)", () => {
   it("aceita nota válida 0-10", () => {
     for (const nota of [0, 5, 9, 10]) {
       const r = respostaSchema.safeParse({
-        cd_pesquisa: 1,
-        cd_paciente: 1,
+        token: "a".repeat(64),
         nr_nota_nps: nota,
       });
       expect(r.success).toBe(true);
     }
+  });
+
+  it("rejeita identificador numérico legado como token", () => {
+    const r = respostaSchema.safeParse({
+      token: "123",
+      nr_nota_nps: 10,
+    });
+    expect(r.success).toBe(false);
   });
 });
 
@@ -132,22 +138,79 @@ describe("pesquisasService — getAll", () => {
 describe("respostasService — create", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("cria resposta com campos opcionais nulos", async () => {
-    const chain: Record<string, unknown> = {
-      insert: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({
-        data: { id: 1, cd_pesquisa: 1, cd_paciente: 1, nr_nota_nps: 9, tp_promotor: "PROMOTOR" },
-        error: null,
-      }),
-    };
-    (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue(chain);
+  it("envia a resposta apenas pelo RPC público fail-closed", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: 91,
+      error: null,
+    });
     const r = await respostasService.create({
-      cd_pesquisa: 1,
-      cd_paciente: 1,
+      token: "b".repeat(64),
       nr_nota_nps: 9,
     });
-    expect(r.tp_promotor).toBe("PROMOTOR");
+    expect(r.id).toBe(91);
+    expect(supabase.rpc).toHaveBeenCalledWith("submit_nps_response_public", {
+      p_token: "b".repeat(64),
+      p_nota: 9,
+      p_comentario: null,
+      p_respostas: null,
+    });
+    expect(supabase.from).not.toHaveBeenCalledWith("nps_respostas");
+  });
+
+  it("não expõe detalhes internos quando o token falha", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: null,
+      error: { message: "duplicate key value violates unique constraint" },
+    });
+    await expect(
+      respostasService.create({
+        token: "c".repeat(64),
+        nr_nota_nps: 8,
+      }),
+    ).rejects.toThrow("Este link é inválido, expirou ou já foi utilizado.");
+  });
+});
+
+describe("pesquisasService — acesso público", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("resolve pesquisa somente pelo token opaco", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: [{ ds_titulo: "Atendimento", ds_descricao: null, cd_template_perguntas: [] }],
+      error: null,
+    });
+    const pesquisa = await pesquisasService.getPublicByToken("d".repeat(64));
+    expect(pesquisa?.ds_titulo).toBe("Atendimento");
+    expect(supabase.rpc).toHaveBeenCalledWith("get_nps_survey_public", {
+      p_token: "d".repeat(64),
+    });
+    expect(supabase.from).not.toHaveBeenCalledWith("nps_pesquisas");
+  });
+});
+
+describe("convitesService — create", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("gera convite autenticado com validade limitada", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: "e".repeat(64),
+      error: null,
+    });
+    const token = await convitesService.create({
+      cd_pesquisa: 7,
+      cd_paciente: 11,
+      cd_appointment: 13,
+      ds_origem: "WHATSAPP",
+      ttl_days: 5,
+    });
+    expect(token).toBe("e".repeat(64));
+    expect(supabase.rpc).toHaveBeenCalledWith("create_nps_invitation_secure", {
+      p_pesquisa_id: 7,
+      p_paciente_id: 11,
+      p_appointment_id: 13,
+      p_origem: "WHATSAPP",
+      p_ttl: "5 days",
+    });
   });
 });
 

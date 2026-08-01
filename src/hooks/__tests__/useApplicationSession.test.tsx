@@ -35,6 +35,30 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("useApplicationSession", () => {
+  it("ignora heartbeat revogado de um contexto substituído durante a validação", async () => {
+    let resolveHeartbeat: ((allowed: boolean) => void) | undefined;
+    vi.mocked(authSessionService.heartbeat).mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        resolveHeartbeat = resolve;
+      }),
+    );
+    const onRevoked = vi.fn();
+
+    renderHook(() => useApplicationSession(onRevoked));
+    await waitFor(() => expect(authSessionService.heartbeat).toHaveBeenCalledTimes(1));
+    vi.mocked(readApplicationSession).mockReturnValue({
+      session_id: "10000000-0000-0000-0000-000000000099",
+      device_id: "20000000-0000-0000-0000-000000000002",
+      idle_expires_at: "2026-07-17T00:00:00Z",
+    });
+    resolveHeartbeat?.(false);
+
+    await waitFor(() => expect(readApplicationSession).toHaveBeenCalledTimes(2));
+    expect(clearApplicationSession).not.toHaveBeenCalled();
+    expect(supabase.auth.signOut).not.toHaveBeenCalled();
+    expect(onRevoked).not.toHaveBeenCalled();
+  });
+
   it("faz heartbeat imediato e encerra localmente uma sessão revogada", async () => {
     vi.mocked(authSessionService.heartbeat).mockResolvedValue(false);
     const onRevoked = vi.fn();
@@ -44,6 +68,22 @@ describe("useApplicationSession", () => {
     await waitFor(() => expect(onRevoked).toHaveBeenCalledTimes(1));
     expect(clearApplicationSession).toHaveBeenCalledTimes(1);
     expect(supabase.auth.signOut).toHaveBeenCalledWith({ scope: "local" });
+  });
+
+  it("preserva a sessão quando o heartbeat falha por transporte", async () => {
+    vi.mocked(authSessionService.heartbeat).mockRejectedValue(
+      new Error("request aborted"),
+    );
+    const onRevoked = vi.fn();
+
+    renderHook(() => useApplicationSession(onRevoked));
+
+    await waitFor(() =>
+      expect(authSessionService.heartbeat).toHaveBeenCalledTimes(1),
+    );
+    expect(clearApplicationSession).not.toHaveBeenCalled();
+    expect(supabase.auth.signOut).not.toHaveBeenCalled();
+    expect(onRevoked).not.toHaveBeenCalled();
   });
 
   it("repete heartbeat e cancela o intervalo ao desmontar", async () => {

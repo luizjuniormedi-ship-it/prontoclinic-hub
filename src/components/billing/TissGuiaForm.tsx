@@ -27,12 +27,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { RefreshCw } from "lucide-react";
 import {
   tissService,
+  TISS_COMMUNICATION_RELEASE,
+  TISS_COMMUNICATION_VERSION,
   TISS_GLOSA_CODES,
   type TissXml,
 } from "@/services/tissService";
 import { insuranceCompanyService } from "@/services/insuranceService";
+import { formatTissDateTime } from "./tissDisplay";
 
 export interface TissGuiaFormProps {
   // Glosa form
@@ -77,13 +81,25 @@ export function TissGuiaForm({
   };
 
   // ── Protocol form ───────────────────────────────────────────
-  const { data: protocols } = useQuery({
+  const {
+    data: protocols,
+    error: protocolsError,
+    isError: isProtocolsError,
+    isLoading: isProtocolsLoading,
+    refetch: refetchProtocols,
+  } = useQuery({
     queryKey: ["tiss-protocols", companyId],
     queryFn: () => tissService.listProtocols(companyId),
     enabled: !!companyId && protocolDialogOpen,
   });
 
-  const { data: convenios } = useQuery({
+  const {
+    data: convenios,
+    error: conveniosError,
+    isError: isConveniosError,
+    isLoading: isConveniosLoading,
+    refetch: refetchConvenios,
+  } = useQuery({
     queryKey: ["insurance-companies"],
     queryFn: () => insuranceCompanyService.getAll(),
   });
@@ -94,13 +110,12 @@ export function TissGuiaForm({
       ds_endpoint: string;
       tp_ambiente: "HOMOLOGACAO" | "PRODUCAO";
       ds_versao_tiss: string;
-      cd_certificado_a1_path?: string;
-      ds_certificado_senha?: string;
     }) => tissService.saveProtocol(companyId, payload),
     onSuccess: () => {
       toast.success("Protocolo salvo");
       queryClient.invalidateQueries({ queryKey: ["tiss-protocols"] });
     },
+    onError: (error: Error) => toast.error(`Erro: ${error.message}`),
   });
 
   const handleProtocolSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -110,9 +125,7 @@ export function TissGuiaForm({
       cd_convenio: Number(fd.get("cd_convenio")),
       ds_endpoint: fd.get("ds_endpoint") as string,
       tp_ambiente: ((fd.get("tp_ambiente") as string) || "HOMOLOGACAO") as "HOMOLOGACAO" | "PRODUCAO",
-      ds_versao_tiss: (fd.get("ds_versao_tiss") as string) || "3.05.00",
-      cd_certificado_a1_path: (fd.get("cd_certificado_a1_path") as string) || undefined,
-      ds_certificado_senha: (fd.get("ds_certificado_senha") as string) || undefined,
+      ds_versao_tiss: TISS_COMMUNICATION_VERSION,
     });
   };
 
@@ -171,19 +184,31 @@ export function TissGuiaForm({
               <div>
                 <Label>Convenio *</Label>
                 <Select name="cd_convenio" required>
-                  <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                  <SelectTrigger disabled={isConveniosLoading || isConveniosError}>
+                    <SelectValue placeholder={isConveniosLoading ? "Carregando..." : "Selecione..."} />
+                  </SelectTrigger>
                   <SelectContent>
                     {(convenios || []).map((c) => (
                       <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {isConveniosError && (
+                  <div role="alert" className="mt-2 flex flex-wrap items-center gap-2 text-xs text-red-700">
+                    <span>
+                      Não foi possível carregar os convênios: {conveniosError instanceof Error ? conveniosError.message : "erro desconhecido"}.
+                    </span>
+                    <Button type="button" size="sm" variant="outline" onClick={() => refetchConvenios()}>
+                      Tentar novamente
+                    </Button>
+                  </div>
+                )}
               </div>
               <div>
                 <Label>Endpoint (URL do webservice) *</Label>
                 <Input name="ds_endpoint" required placeholder="https://webservice.operadora.com.br/tiss" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <Label>Ambiente</Label>
                   <Select name="tp_ambiente" defaultValue="HOMOLOGACAO">
@@ -195,18 +220,17 @@ export function TissGuiaForm({
                   </Select>
                 </div>
                 <div>
-                  <Label>Versao TISS</Label>
-                  <Input name="ds_versao_tiss" defaultValue="3.05.00" maxLength={10} />
+                  <Label>Versão TISS</Label>
+                  <Input
+                    name="ds_versao_tiss"
+                    value={`${TISS_COMMUNICATION_RELEASE} (XML ${TISS_COMMUNICATION_VERSION})`}
+                    readOnly
+                  />
                 </div>
               </div>
-              <div>
-                <Label>Caminho do Certificado A1 (.pfx) - VITE_TISS_CERT_PATH</Label>
-                <Input name="cd_certificado_a1_path" placeholder="/etc/pc_hub/cert_a1.pfx" />
-              </div>
-              <div>
-                <Label>Senha do Certificado</Label>
-                <Input name="ds_certificado_senha" type="password" />
-              </div>
+              <p className="text-xs text-muted-foreground">
+                Certificado A1, senha e credenciais são configurados exclusivamente no gateway servidor e nunca no navegador.
+              </p>
             </div>
             <DialogFooter className="mt-4">
               <Button type="button" variant="ghost" onClick={() => setProtocolDialogOpen(false)}>
@@ -220,14 +244,38 @@ export function TissGuiaForm({
 
           <div className="mt-4">
             <Label className="text-xs">Protocolos cadastrados</Label>
-            <ul className="text-sm space-y-1 mt-2 max-h-40 overflow-y-auto">
-              {(protocols || []).map((p) => (
-                <li key={p.id} className="p-2 border rounded">
-                  <b>{p.tp_ambiente}</b> — {p.ds_endpoint}
-                  {p.dt_ultimo_teste && <span className="text-xs ml-2 text-muted-foreground">ultimo teste: {new Date(p.dt_ultimo_teste).toLocaleString()}</span>}
-                </li>
-              ))}
-            </ul>
+            {isProtocolsLoading ? (
+              <div role="status" className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                Carregando protocolos...
+              </div>
+            ) : isProtocolsError ? (
+              <div role="alert" className="mt-2 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+                <p>
+                  Não foi possível carregar os protocolos: {protocolsError instanceof Error ? protocolsError.message : "erro desconhecido"}.
+                </p>
+                <Button type="button" className="mt-2" size="sm" variant="outline" onClick={() => refetchProtocols()}>
+                  Tentar novamente
+                </Button>
+              </div>
+            ) : (protocols || []).length === 0 ? (
+              <p role="status" className="mt-2 rounded border p-4 text-center text-sm text-muted-foreground">
+                Nenhum protocolo cadastrado para esta empresa.
+              </p>
+            ) : (
+              <ul className="text-sm space-y-1 mt-2 max-h-40 overflow-y-auto">
+                {(protocols || []).map((p) => (
+                  <li key={p.id} className="min-w-0 break-words p-2 border rounded">
+                    <b>{p.tp_ambiente}</b> — {p.ds_endpoint}
+                    {p.dt_ultimo_teste && (
+                      <span className="block text-xs text-muted-foreground sm:ml-2 sm:inline">
+                        último teste: {formatTissDateTime(p.dt_ultimo_teste)}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </DialogContent>
       </Dialog>

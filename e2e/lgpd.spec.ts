@@ -1,89 +1,128 @@
 import { test as authed, expect } from './fixtures/auth';
+import type { Page } from '@playwright/test';
 
-authed.describe('LGPD', () => {
+const LGPD_PATH = '/admin/lgpd';
+
+async function openLgpd(page: Page) {
+  await page.goto(LGPD_PATH);
+  await expect(page).toHaveURL(new RegExp(`${LGPD_PATH}$`));
+  await expect(page.getByRole('heading', { name: 'Modulo LGPD' })).toBeVisible();
+}
+
+authed.describe('LGPD - contratos canonicos de /admin/lgpd', () => {
   authed.beforeEach(async ({ loginAs }) => {
     await loginAs('admin');
   });
 
-  authed('solicitar acesso (LGPD art. 18 I)', async ({ page }) => {
-    await page.goto('/admin/lgpd');
-    await page.getByRole('tab', { name: /solicitações/i }).click();
-    await page.getByRole('button', { name: /nova solicitação/i }).click();
-    await page.getByLabel(/paciente/i).click();
-    await page.getByRole('option').first().click();
-    await page.getByLabel(/tipo/i).selectOption({ label: 'Acesso' });
-    await page.getByRole('button', { name: /criar/i }).click();
-    await expect(page.getByText(/solicitação criada/i)).toBeVisible();
+  authed('renderiza o modulo e as cinco areas de governanca', async ({ page }) => {
+    await openLgpd(page);
+
+    await expect(page.getByRole('tab', { name: 'Consentimentos' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Solicitacoes' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Politica Retencao' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Anonimizacao' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Auditoria' })).toBeVisible();
   });
 
-  authed('solicitar portabilidade (art. 18 V) — exporta JSON', async ({ page }) => {
-    await page.goto('/admin/lgpd');
-    await page.getByRole('button', { name: /nova solicitação/i }).click();
-    await page.getByLabel(/paciente/i).click();
-    await page.getByRole('option').first().click();
-    await page.getByLabel(/tipo/i).selectOption({ label: 'Portabilidade' });
+  authed('consulta consentimentos sem alterar opt-in ou opt-out', async ({ page }) => {
+    await openLgpd(page);
 
-    const downloadPromise = page.waitForEvent('download');
-    await page.getByRole('button', { name: /exportar/i }).click();
-    const download = await downloadPromise;
-    expect(download.suggestedFilename()).toMatch(/\.json$/);
+    await expect(
+      page.getByRole('heading', { name: 'Consentimentos Granulares' }),
+    ).toBeVisible();
+    await expect(
+      page.getByPlaceholder('Buscar paciente por nome, CPF ou telefone...'),
+    ).toBeVisible();
+    await expect(
+      page.getByText('Selecione um paciente para gerenciar consentimentos'),
+    ).toBeVisible();
   });
 
-  authed('solicitar esquecimento (art. 18 VI)', async ({ page }) => {
-    await page.goto('/admin/lgpd');
-    await page.getByRole('button', { name: /nova solicitação/i }).click();
-    await page.getByLabel(/paciente/i).click();
-    await page.getByRole('option').first().click();
-    await page.getByLabel(/tipo/i).selectOption({ label: 'Esquecimento' });
-    await page.getByLabel(/confirmação/i).check();
-    await page.getByRole('button', { name: /criar/i }).click();
-    await expect(page.getByText(/solicitação de esquecimento registrada/i)).toBeVisible();
-  });
+  authed('consulta solicitacoes do titular e os filtros canonicos', async ({ page }) => {
+    await openLgpd(page);
+    await page.getByRole('tab', { name: 'Solicitacoes' }).click();
 
-  authed('anonimizar paciente (admin)', async ({ page }) => {
-    await page.goto('/admin/lgpd');
-    await page.getByRole('tab', { name: /anonimização/i }).click();
-    await page.getByRole('button', { name: /anonimizar/i }).first().click();
-    await page.getByLabel(/motivo/i).fill('LGPD art. 18 VI — solicitação aprovada');
-    await page.getByRole('button', { name: /confirmar/i }).click();
-    await expect(page.getByText(/paciente anonimizado/i)).toBeVisible();
-  });
+    await expect(
+      page.getByRole('heading', { name: 'Solicitacoes do Titular' }),
+    ).toBeVisible();
 
-  authed('visualizar log de anonimização', async ({ page }) => {
-    await page.goto('/admin/lgpd');
-    await page.getByRole('tab', { name: /log/i }).click();
-    await expect(page.getByRole('row').first()).toBeVisible();
-    const row = await page.getByRole('row').first().textContent();
-    expect(row).toMatch(/anonimiz|hash|paciente/i);
-  });
+    const statusFilter = page.getByRole('combobox');
+    await expect(statusFilter).toBeVisible();
+    await statusFilter.click();
 
-  authed('configurar política de retenção', async ({ page }) => {
-    await page.goto('/admin/lgpd');
-    await page.getByRole('tab', { name: /retenção/i }).click();
-    await page.getByLabel(/prontuários/i).fill('20');
-    await page.getByLabel(/faturas/i).fill('5');
-    await page.getByLabel(/logs de auditoria/i).fill('5');
-    await page.getByRole('button', { name: /salvar/i }).click();
-    await expect(page.getByText(/política atualizada/i)).toBeVisible();
-  });
-
-  authed('paciente anonimizado não tem mais PII', async ({ page, request }) => {
-    // Após anonimização, REST não deve retornar nome/CPF/email
-    const res = await request.get(
-      `${process.env.VITE_SUPABASE_URL}/rest/v1/pacientes?select=nome,cpf,email&anonymized=eq.true&limit=1`,
-      {
-        headers: {
-          apikey: process.env.VITE_SUPABASE_ANON_KEY!,
-          Authorization: `Bearer ${process.env.VITE_SUPABASE_ANON_KEY}`
-        }
-      }
-    );
-    expect(res.ok()).toBeTruthy();
-    const data = await res.json();
-    if (data.length > 0) {
-      expect(data[0].nome).toMatch(/anonimizado|^[\s]*$|^null$/i);
-      expect(data[0].cpf).toMatch(/^\*+|null$/);
-      expect(data[0].email).toMatch(/^null$|\*+/);
+    for (const status of [
+      'Todos',
+      'Pendente',
+      'Em Andamento',
+      'Concluida',
+      'Rejeitada',
+    ]) {
+      await expect(page.getByRole('option', { name: status })).toBeVisible();
     }
+
+    await page.getByRole('option', { name: 'Todos' }).click();
+    await expect(page.getByText('Carregando...')).toBeHidden();
+
+    const tableOrEmptyState = page
+      .getByRole('table')
+      .or(page.getByText(/Nenhuma solicitacao/i));
+    await expect(tableOrEmptyState).toBeVisible();
+  });
+
+  authed('exibe politica de retencao sem persistir alteracoes', async ({ page }) => {
+    await openLgpd(page);
+    await page.getByRole('tab', { name: 'Politica Retencao' }).click();
+
+    await expect(
+      page.getByRole('heading', { name: 'Politica de Retencao' }),
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Aplicar Padrao' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Nova Politica' })).toBeVisible();
+    await expect(page.getByText('Ver politica padrao recomendada')).toBeVisible();
+  });
+
+  authed('exibe salvaguardas da anonimizacao sem executar a operacao', async ({
+    page,
+  }) => {
+    await openLgpd(page);
+    await page.getByRole('tab', { name: 'Anonimizacao' }).click();
+
+    await expect(
+      page.getByRole('heading', { name: 'Anonimizacao em Massa' }),
+    ).toBeVisible();
+    await expect(page.getByText('Atencao — operacao irreversivel')).toBeVisible();
+    await expect(page.getByLabel('Limite de execucao')).toHaveValue('50');
+    await expect(
+      page.getByRole('button', { name: /Executar Anonimizacao/ }),
+    ).toBeVisible();
+  });
+
+  authed('consulta a trilha de auditoria sem modificar registros', async ({ page }) => {
+    await openLgpd(page);
+    await page.getByRole('tab', { name: 'Auditoria' }).click();
+
+    await expect(
+      page.getByRole('heading', { name: 'Auditoria de Acesso' }),
+    ).toBeVisible();
+    await expect(page.getByText('Carregando...')).toBeHidden();
+
+    const tableOrEmptyState = page
+      .getByRole('table')
+      .or(page.getByText('Nenhum log de auditoria registrado'));
+    await expect(tableOrEmptyState).toBeVisible();
+  });
+
+  authed.skip(
+    'executa anonimizacao somente sobre fixture local descartavel autorizada',
+    async () => {
+      // Bloqueado de forma intencional: a UI canonica atual oferece apenas
+      // anonimizacao em massa e nao permite selecionar uma fixture E2E isolada.
+      // Uma flag de autorizacao, sozinha, nao torna esse controle seguro.
+    },
+  );
+
+  authed.skip('valida a remocao de PII da fixture anonimizada', async () => {
+    // Depende da execucao segura do cenario anterior. Nao consultar pacientes
+    // com anon key nem inferir anonimização a partir de dados compartilhados.
   });
 });

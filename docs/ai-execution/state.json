@@ -1,17 +1,31 @@
 {
-  "updated_at": "2026-07-10",
-  "phase": "security-hardening",
+  "updated_at": "2026-08-01",
+  "phase": "module-01-runtime-homologation",
   "status": "in_progress",
   "current_module": "authentication-rbac",
-  "current_task": "post-deploy health and tenant-isolation integration proof",
-  "latest_local_commit": "5435d60",
+  "current_task": "integrate PR 24, publish auth-admin and homologate administrative auth journeys",
+  "latest_local_commit": "9674ccd",
   "latest_known_vps_release": "37199ee",
   "production_ready": false,
   "open_p0": [
-    "tenant_isolation_integration",
-    "ci_migration_replay",
-    "vps_healthcheck_and_login",
-    "datasigh_read_only_reconciliation",
-    "rollback_evidence"
-  ]
+    "pr24_review_and_main_integration",
+    "vps_auth_admin_runtime_publication",
+    "vps_auth_admin_rpc_grants_readonly_proof",
+    "vps_nginx_edge_route_proof",
+    "qa_admin_mfa_aal2_journey"
+  ],
+  "module_01_runtime_gate_20260801": {
+    "branch_head": "9674ccd7eb5ed3c893e26e4550c3d297c8592200",
+    "pr": 24,
+    "pr_state": "open_draft_mergeable",
+    "ci_run": 30709477648,
+    "ci_conclusion": "success",
+    "integration_guard_run": 30709477651,
+    "integration_guard_conclusion": "success",
+    "public_auth_admin": "SPA_404_NOT_PUBLISHED",
+    "ssh_readonly": "BLOCKED_AUTHENTICATION",
+    "datasigh_accessed": false,
+    "production_ready": false,
+    "evidence": "docs/ai-execution/outputs/auth-module-runtime-gate-20260801.md"
+  }
 }

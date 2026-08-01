@@ -46,6 +46,7 @@ export type ImagingPriority = 'normal' | 'urgent' | 'emergency';
 export interface ImagingOrder {
   id: string;
   patient_id: string;
+  appointment_id?: number;
   encounter_id?: string;
   scheduling_id?: string;
   requesting_physician_id?: string;
@@ -89,7 +90,11 @@ export type WorklistQueueStatus = 'pending' | 'exported' | 'acquired' | 'cancell
 
 export interface DicomWorklistItem {
   id: string;
+  company_id: string;
+  unit_id: number;
+  appointment_id: number;
   imaging_order_item_id: string;
+  idempotency_key: string;
   patient_id: string;
   patient_name: string;
   patient_birth_date?: string;

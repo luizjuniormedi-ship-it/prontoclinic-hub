@@ -12,9 +12,6 @@ import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, ErrorState } from "@/components/StateViews";
 import { supabase } from "@/lib/supabase";
 import { medicalRecordsService } from "@/services/medicalRecordsService";
-import { billingsService } from "@/services/financialService";
-import { priceTableService } from "@/services/priceTableService";
-import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { calculateAge } from "@/utils/formatters";
 
@@ -24,7 +21,6 @@ interface AppointmentInfo { id: string; patient_id: string; professional_id: str
 export default function AttendancePage() {
   const { appointmentId } = useParams<{ appointmentId: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -105,39 +101,6 @@ export default function AttendancePage() {
         evolution: evolution || undefined,
         vital_signs: Object.keys(vs).length > 0 ? vs : undefined,
       });
-
-      // Auto-create billing with price lookup
-      try {
-        const priceLookup = await priceTableService.findPrice(
-          Number(appointment.appointment_type_id) || 0,
-          patient.insurance_plan_id ? Number(patient.insurance_plan_id) : null
-        );
-        const price = priceLookup.vl_particular + priceLookup.vl_convenio;
-        const billingType = patient.insurance_plan_id ? "convenio" : "particular";
-
-        await billingsService.create({
-          patient_id: patient.id,
-          professional_id: appointment.professional_id ? String(appointment.professional_id) : undefined,
-          appointment_id: String(appointment.id),
-          company_id: appointment.company_id || user?.company_id || undefined,
-          unit_id: appointment.unit_id || user?.primary_unit_id
-            ? Number(appointment.unit_id || user?.primary_unit_id)
-            : undefined,
-          billing_type: billingType,
-          gross_amount: price,
-          net_amount: price,
-          status: "em_aberto",
-          notes: price > 0
-            ? `Valor automático: R$ ${price.toFixed(2)}`
-            : "Preço não configurado — ajuste manualmente",
-        });
-
-        if (price === 0) {
-          toast({ title: "Atenção", description: "Billing gerado com valor R$ 0,00. Configure a tabela de preços em Cadastros.", variant: "destructive" });
-        }
-      } catch (billingErr) {
-        console.warn("Auto-billing failed (non-critical):", billingErr.message);
-      }
 
       toast({ title: "Atendimento salvo e finalizado!" });
       navigate("/reception");

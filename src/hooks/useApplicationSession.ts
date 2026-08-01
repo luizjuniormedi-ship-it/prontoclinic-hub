@@ -27,9 +27,14 @@ export function useApplicationSession(
         getClientDeviceId(),
       );
       if (allowed) return;
+      const currentRegistration = readApplicationSession();
+      if (currentRegistration?.session_id !== registration.session_id) return;
       clearApplicationSession();
       await supabase.auth.signOut({ scope: "local" });
       onRevoked();
+    } catch {
+      // Falhas de transporte e navegacoes interrompidas nao comprovam revogacao.
+      // O proximo heartbeat valida novamente a mesma sessao.
     } finally {
       running.current = false;
     }

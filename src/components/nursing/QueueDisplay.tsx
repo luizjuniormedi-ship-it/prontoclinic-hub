@@ -25,6 +25,7 @@ import {
 
 interface QueueDisplayProps {
   companyId: string;
+  unitId: number;
   /** Quando true (modo TV), esconde controles administrativos */
   modoTV?: boolean;
 }
@@ -65,7 +66,7 @@ function tocarBeepCurto(): void {
   }
 }
 
-export function QueueDisplay({ companyId, modoTV = false }: QueueDisplayProps): JSX.Element {
+export function QueueDisplay({ companyId, unitId, modoTV = false }: QueueDisplayProps): JSX.Element {
   const { toast } = useToast();
   const [fila, setFila] = useState<FilaItem[]>([]);
   const [classificacoes, setClassificacoes] = useState<ClassificacaoRisco[]>([]);
@@ -82,7 +83,7 @@ export function QueueDisplay({ companyId, modoTV = false }: QueueDisplayProps): 
   const carregar = useCallback(async (): Promise<void> => {
     try {
       const [itens, cls] = await Promise.all([
-        nursingService.fila.getFilaAtiva(companyId),
+        nursingService.fila.getFilaAtiva(companyId, unitId),
         nursingService.classificacao.getAll(),
       ]);
       setFila(itens);
@@ -92,7 +93,7 @@ export function QueueDisplay({ companyId, modoTV = false }: QueueDisplayProps): 
     } finally {
       setCarregando(false);
     }
-  }, [companyId]);
+  }, [companyId, unitId]);
 
   useEffect(() => {
     void carregar();

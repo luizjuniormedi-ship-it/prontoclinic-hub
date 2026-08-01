@@ -4,9 +4,8 @@
  * Migration relacionada: 20260101000022_nps.sql
  *
  * Decisões:
- *   - Resposta anônima (anon role) é permitida no banco (RLS) para suportar
- *     surveys via link público enviado por e-mail/WhatsApp. Aqui no service
- *     só usamos o cliente autenticado; a UI pública usa o mesmo cliente.
+ *   - A UI pública nunca lê pesquisas nem insere respostas diretamente.
+ *     Tokens opacos, expirados e de uso único são validados por RPC.
  *   - Categorização (Promotor/Neutro/Detrator) é feita no banco via
  *     GENERATED ALWAYS AS (CASO) STORED — aqui apenas lemos.
  *   - View v_nps_analise agrega por pesquisa. Usamos uma query similar
@@ -50,14 +49,23 @@ export const pesquisaSchema = z.object({
   lg_ativo: z.boolean().default(true),
 });
 
+export const tokenNpsSchema = z
+  .string()
+  .regex(/^[0-9a-f]{64}$/, "Link de pesquisa inválido");
+
 export const respostaSchema = z.object({
+  token: tokenNpsSchema,
+  nr_nota_nps: z.number().int().min(0).max(10, "Nota deve ser entre 0 e 10"),
+  ds_comentario: z.string().max(2000).optional().nullable(),
+  ds_respostas: z.record(z.string(), z.unknown()).optional().nullable(),
+});
+
+export const conviteSchema = z.object({
   cd_pesquisa: z.number().int().positive(),
   cd_paciente: z.number().int().positive(),
   cd_appointment: z.number().int().positive().optional().nullable(),
-  nr_nota_nps: z.number().int().min(0).max(10, "Nota deve ser entre 0 e 10"),
-  ds_comentario: z.string().max(2000).optional().nullable(),
-  ds_origem: tpOrigemEnum.optional().nullable(),
-  ds_respostas: z.record(z.string(), z.unknown()).optional().nullable(),
+  ds_origem: tpOrigemEnum.default("EMAIL"),
+  ttl_days: z.number().int().min(1).max(30).default(7),
 });
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -77,6 +85,11 @@ export type Pesquisa = {
   cd_usuario?: string | null;
   created_at: string;
 };
+
+export type PesquisaPublica = Pick<
+  Pesquisa,
+  "ds_titulo" | "ds_descricao" | "cd_template_perguntas"
+>;
 
 export type Resposta = {
   id: number;
@@ -131,6 +144,18 @@ export const pesquisasService = {
     return (data as Pesquisa) ?? null;
   },
 
+  async getPublicByToken(token: string): Promise<PesquisaPublica | null> {
+    const parsedToken = tokenNpsSchema.parse(token);
+    const { data, error } = await supabase.rpc("get_nps_survey_public", {
+      p_token: parsedToken,
+    });
+    if (error) {
+      throw new Error("Não foi possível validar o link da pesquisa.");
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    return (row as PesquisaPublica | undefined) ?? null;
+  },
+
   async create(input: z.infer<typeof pesquisaSchema>): Promise<Pesquisa> {
     const parsed = pesquisaSchema.parse(input);
     const { data, error } = await supabase
@@ -162,28 +187,40 @@ export const pesquisasService = {
   },
 };
 
+export const convitesService = {
+  async create(input: z.infer<typeof conviteSchema>): Promise<string> {
+    const parsed = conviteSchema.parse(input);
+    const { data, error } = await supabase.rpc("create_nps_invitation_secure", {
+      p_pesquisa_id: parsed.cd_pesquisa,
+      p_paciente_id: parsed.cd_paciente,
+      p_appointment_id: parsed.cd_appointment ?? null,
+      p_origem: parsed.ds_origem,
+      p_ttl: `${parsed.ttl_days} days`,
+    });
+    if (error || typeof data !== "string") {
+      throw new Error("Não foi possível gerar o convite NPS.");
+    }
+    return data;
+  },
+};
+
 export const respostasService = {
   /**
-   * Registra uma resposta NPS. Pode ser chamado por usuário autenticado
-   * (dashboard) ou anônimo (link público). A RLS permite ambos.
+   * Registra uma resposta pública apenas pelo contrato atômico de convite.
+   * O token identifica pesquisa, paciente e atendimento no servidor.
    */
   async create(input: z.infer<typeof respostaSchema>): Promise<Resposta> {
     const parsed = respostaSchema.parse(input);
-    const { data, error } = await supabase
-      .from("nps_respostas")
-      .insert({
-        cd_pesquisa: parsed.cd_pesquisa,
-        cd_paciente: parsed.cd_paciente,
-        cd_appointment: parsed.cd_appointment ?? null,
-        nr_nota_nps: parsed.nr_nota_nps,
-        ds_comentario: parsed.ds_comentario ?? null,
-        ds_origem: parsed.ds_origem ?? null,
-        ds_respostas: parsed.ds_respostas ?? null,
-      })
-      .select()
-      .single();
-    if (error) throw new Error(`Erro ao enviar resposta: ${error.message}`);
-    return data as Resposta;
+    const { data, error } = await supabase.rpc("submit_nps_response_public", {
+      p_token: parsed.token,
+      p_nota: parsed.nr_nota_nps,
+      p_comentario: parsed.ds_comentario ?? null,
+      p_respostas: parsed.ds_respostas ?? null,
+    });
+    if (error || (typeof data !== "number" && typeof data !== "string")) {
+      throw new Error("Este link é inválido, expirou ou já foi utilizado.");
+    }
+    return { id: Number(data) } as Resposta;
   },
 
   async getByPesquisa(pesquisaId: number, limit = 100): Promise<Resposta[]> {
@@ -288,6 +325,7 @@ export const npsReportsService = {
 
 export const npsService = {
   pesquisas: pesquisasService,
+  convites: convitesService,
   respostas: respostasService,
   reports: npsReportsService,
 };

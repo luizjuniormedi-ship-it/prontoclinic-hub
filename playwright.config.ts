@@ -1,11 +1,15 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const isLocalMutatingRun =
+  process.env.E2E_ENV === 'local' && process.env.E2E_MODE === 'mutating';
+const serviceWorkersEnabled = process.env.E2E_ENABLE_SERVICE_WORKERS === 'true';
+
 export default defineConfig({
   testDir: './e2e',
-  fullyParallel: true,
+  fullyParallel: !isLocalMutatingRun,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: process.env.CI || isLocalMutatingRun ? 1 : undefined,
   reporter: [
     ['html', { open: 'never' }],
     ['json', { outputFile: 'test-results/results.json' }],
@@ -14,8 +18,9 @@ export default defineConfig({
   globalSetup: './e2e/global-setup.ts',
   use: {
     baseURL: process.env.E2E_BASE_URL || 'http://localhost:5173',
-    serviceWorkers: 'block',
-    trace: 'on-first-retry',
+    timezoneId: 'America/Sao_Paulo',
+    serviceWorkers: serviceWorkersEnabled ? 'allow' : 'block',
+    trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
     actionTimeout: 10000,

@@ -1,0 +1,69 @@
+-- Keep reception exception capability on the reception-owned unit boundary.
+-- Additive only. DataSIGH and external integrations are not accessed.
+
+BEGIN;
+
+DROP POLICY IF EXISTS appointments_reception_rpc_select
+  ON public.appointments;
+CREATE POLICY appointments_reception_rpc_select
+  ON public.appointments
+  FOR SELECT TO prontomedic_reception_rpc_owner
+  USING (
+    private.reception_actor_can_access_unit(company_id, unit_id)
+  );
+
+CREATE OR REPLACE FUNCTION public.get_reception_exception_capability(
+  p_appointment_id BIGINT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public, private
+AS $function$
+DECLARE
+  v_actor RECORD;
+  v_precheck JSONB;
+  v_unit_id INTEGER;
+  v_allowed BOOLEAN;
+BEGIN
+  SELECT * INTO v_actor FROM public.get_scheduling_actor();
+  IF v_actor.user_id IS NULL OR v_actor.company_id IS NULL THEN
+    RAISE EXCEPTION 'Usuario autenticado sem perfil operacional';
+  END IF;
+
+  IF v_actor.company_id IS DISTINCT FROM public.current_company_id() THEN
+    RAISE EXCEPTION 'Empresa ativa fora do escopo da recepcao';
+  END IF;
+
+  v_precheck := public.get_reception_precheckin_context(p_appointment_id);
+  v_unit_id := NULLIF(v_precheck->>'unit_id', '')::INTEGER;
+  IF v_unit_id IS NULL
+     OR v_unit_id IS DISTINCT FROM public.active_unit_id() THEN
+    RAISE EXCEPTION 'Agendamento fora do escopo da recepcao';
+  END IF;
+
+  v_allowed := private.reception_can_release_exception(
+    v_actor.user_id,
+    v_actor.company_id,
+    v_unit_id,
+    v_actor.role_name
+  );
+
+  RETURN jsonb_build_object(
+    'appointment_id', p_appointment_id,
+    'unit_id', v_unit_id,
+    'allowed', COALESCE(v_allowed, FALSE)
+  );
+END;
+$function$;
+
+ALTER FUNCTION public.get_reception_exception_capability(BIGINT)
+  OWNER TO prontomedic_reception_rpc_owner;
+
+REVOKE ALL ON FUNCTION public.get_reception_exception_capability(BIGINT)
+  FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_reception_exception_capability(BIGINT)
+  TO authenticated, app_prontomedic;
+
+COMMIT;

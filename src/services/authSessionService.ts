@@ -70,7 +70,8 @@ export const authSessionService = {
       p_session_id: sessionId,
       p_client_device_id: clientDeviceId,
     });
-    return !error && data === true;
+    throwIfError(error);
+    return data === true;
   },
 
   async isAllowed(sessionId: string, clientDeviceId: string): Promise<boolean> {

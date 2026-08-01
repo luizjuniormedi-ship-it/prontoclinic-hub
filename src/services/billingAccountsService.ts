@@ -1,9 +1,8 @@
 /**
  * billingAccountsService — Módulo de Faturamento (Fase 1)
  *
- * Conta por atendimento (billing_accounts) agregando os lançamentos reais.
- * Glosa preventiva via função billing_check_pending(); competência com
- * fechamento/bloqueio garantido por trigger no Postgres.
+ * Conta por atendimento (billing_accounts) criada pelos comandos transacionais
+ * da Recepção e do Financeiro.
  */
 import { supabase } from "@/lib/supabase";
 
@@ -16,6 +15,7 @@ export type BillingStatus =
 
 export interface BillingAccount {
   id: string;
+  appointment_id: number | null;
   patient_id: number | null;
   insurance_id: number | null;
   billing_type: string;
@@ -31,29 +31,74 @@ export interface BillingAccount {
   has_pending_issues: boolean;
   has_denial: boolean;
   is_reopened: boolean;
+  created_at?: string;
   opened_at: string;
   paid_at: string | null;
+  version: number;
+  readiness: BillingReadiness;
   patient_name?: string;
 }
 
-export interface PendingIssue {
-  id: number;
-  billing_account_id: string;
-  issue_code: string;
-  issue_label: string;
-  severity: string;
-  resolved: boolean;
+export interface BillingReadinessIssue {
+  code: string;
+  severity: "blocking";
 }
 
-export interface Competency {
-  id: number;
+export interface BillingReadiness {
+  account_id: string;
+  version: number;
+  status: BillingStatus;
+  issues: BillingReadinessIssue[];
+  blocking_count: number;
+  can_close: boolean;
+}
+
+export interface BillingCompetence {
+  id: string | null;
   competence_month: string;
-  status: string;
-  receita_prevista: number;
-  receita_realizada: number;
-  total_glosado: number;
-  total_pendente: number;
+  status: "open" | "closed";
+  version: number;
   closed_at: string | null;
+  close_reason: string | null;
+  reopened_at: string | null;
+  reopen_reason: string | null;
+  account_count: number;
+  account_ids: string[];
+  updated_at: string;
+}
+
+export type BillingAuditStatus = "unassigned" | "assigned" | "approved" | "returned" | "escalated";
+
+export interface BillingAuditQueueItem {
+  account_id: string;
+  patient_name: string | null;
+  guide_number: string | null;
+  account_status: BillingStatus;
+  account_version: number;
+  total_net_amount: number;
+  readiness: BillingReadiness;
+  review_id: string | null;
+  review_status: Exclude<BillingAuditStatus, "unassigned"> | null;
+  review_version: number | null;
+  reviewer_id: string | null;
+  reviewer_name: string | null;
+  deadline_at: string | null;
+  decided_at: string | null;
+  opinion: string | null;
+  evidence: Record<string, unknown> | unknown[] | null;
+  sla_overdue: boolean;
+}
+
+export interface BillingAuditCommandResult {
+  account_id: string;
+  account_status: BillingStatus;
+  account_version: number;
+  review_id: string;
+  review_status: Exclude<BillingAuditStatus, "unassigned">;
+  review_version: number;
+  reviewer_id?: string;
+  deadline_at?: string;
+  decided_at?: string;
 }
 
 export const BILLING_STATUS_LABELS: Partial<Record<BillingStatus, string>> = {
@@ -65,99 +110,156 @@ export const BILLING_STATUS_LABELS: Partial<Record<BillingStatus, string>> = {
 };
 
 export const billingAccountsService = {
+  async getFocused(accountId?: string | null, appointmentId?: number | null): Promise<BillingAccount> {
+    if (!accountId && !appointmentId) throw new Error("Conta ou agendamento é obrigatório");
+    const { data, error } = await supabase.rpc("m39_get_billing_account_secure", {
+      p_account_id: accountId ?? null,
+      p_appointment_id: appointmentId ?? null,
+    });
+    if (error) throw new Error(error.message);
+    const account = data as unknown as BillingAccount;
+    return {
+      ...account,
+      opened_at: account.opened_at || account.created_at || "",
+      authorization_number: account.authorization_number ?? null,
+      has_denial: account.has_denial ?? false,
+      is_reopened: account.is_reopened ?? account.status === "reaberta",
+      paid_at: account.paid_at ?? null,
+    };
+  },
+
   async list(filters?: { status?: string; billing_type?: string; competence?: string; onlyPending?: boolean }): Promise<BillingAccount[]> {
-    let q = supabase.from("billing_accounts").select("*").is("deleted_at", null)
-      .order("opened_at", { ascending: false }).limit(300);
-    if (filters?.status) q = q.eq("status", filters.status);
-    if (filters?.billing_type) q = q.eq("billing_type", filters.billing_type);
-    if (filters?.competence) q = q.eq("competence_month", filters.competence);
-    if (filters?.onlyPending) q = q.eq("has_pending_issues", true);
-    const { data, error } = await q;
+    const { data, error } = await supabase.rpc("m39_list_billing_accounts_secure", {
+      p_status: filters?.status ?? null,
+      p_billing_type: filters?.billing_type ?? null,
+      p_competence: filters?.competence ?? null,
+      p_only_pending: filters?.onlyPending ?? false,
+      p_limit: 300,
+    });
     if (error) throw new Error(error.message);
-    const rows = (data || []) as unknown as BillingAccount[];
-    const pids = [...new Set(rows.map((r) => r.patient_id).filter(Boolean))];
-    const nameById: Record<string, string> = {};
-    if (pids.length > 0) {
-      const { data: pats } = await supabase.from("patients").select("id, full_name").in("id", pids as number[]);
-      for (const p of (pats || []) as Array<{ id: number; full_name: string }>) nameById[String(p.id)] = p.full_name;
+    return ((data || []) as unknown as BillingAccount[]).map((r) => ({
+      ...r,
+      opened_at: r.opened_at || r.created_at || "",
+      authorization_number: r.authorization_number ?? null,
+      has_denial: r.has_denial ?? false,
+      is_reopened: r.is_reopened ?? r.status === "reaberta",
+      paid_at: r.paid_at ?? null,
+    }));
+  },
+
+  async review(account: BillingAccount): Promise<BillingReadiness> {
+    const { data, error } = await supabase.rpc("m39_review_billing_account_secure", {
+      p_account_id: account.id,
+      p_expected_version: account.version,
+      p_operation_id: crypto.randomUUID(),
+    });
+    if (error) throw new Error(error.message);
+    return data as unknown as BillingReadiness;
+  },
+
+  async reopen(account: BillingAccount, reason: string): Promise<{ status: BillingStatus; version: number }> {
+    const normalizedReason = reason.trim();
+    if (!normalizedReason) throw new Error("Motivo da reabertura é obrigatório");
+    const { data, error } = await supabase.rpc("m39_reopen_billing_account_secure", {
+      p_account_id: account.id,
+      p_reason: normalizedReason,
+      p_expected_version: account.version,
+      p_operation_id: crypto.randomUUID(),
+    });
+    if (error) throw new Error(error.message);
+    return data as unknown as { status: BillingStatus; version: number };
+  },
+
+  async listCompetences(): Promise<BillingCompetence[]> {
+    const { data, error } = await supabase.rpc("m39_list_billing_competences_secure", {
+      p_limit: 120,
+    });
+    if (error) throw new Error(error.message);
+    return (data || []) as unknown as BillingCompetence[];
+  },
+
+  async closeCompetence(competence: BillingCompetence, reason: string): Promise<BillingCompetence> {
+    const normalizedReason = reason.trim();
+    if (!normalizedReason) throw new Error("Motivo do fechamento é obrigatório");
+    const { data, error } = await supabase.rpc("m39_close_billing_competence_secure", {
+      p_competence: competence.competence_month,
+      p_reason: normalizedReason,
+      p_expected_version: competence.version,
+      p_operation_id: crypto.randomUUID(),
+    });
+    if (error) throw new Error(error.message);
+    return data as unknown as BillingCompetence;
+  },
+
+  async reopenCompetence(competence: BillingCompetence, reason: string): Promise<BillingCompetence> {
+    const normalizedReason = reason.trim();
+    if (!normalizedReason) throw new Error("Motivo da reabertura é obrigatório");
+    const { data, error } = await supabase.rpc("m39_reopen_billing_competence_secure", {
+      p_competence: competence.competence_month,
+      p_reason: normalizedReason,
+      p_expected_version: competence.version,
+      p_operation_id: crypto.randomUUID(),
+    });
+    if (error) throw new Error(error.message);
+    return data as unknown as BillingCompetence;
+  },
+
+  async listAuditQueue(status?: BillingAuditStatus): Promise<BillingAuditQueueItem[]> {
+    const { data, error } = await supabase.rpc("m37_list_billing_audit_queue_secure", {
+      p_status: status ?? null,
+      p_limit: 200,
+    });
+    if (error) throw new Error(error.message);
+    return (data || []) as unknown as BillingAuditQueueItem[];
+  },
+
+  async claimAudit(item: BillingAuditQueueItem): Promise<BillingAuditCommandResult> {
+    const { data, error } = await supabase.rpc("m37_claim_billing_audit_secure", {
+      p_account_id: item.account_id,
+      p_expected_account_version: item.account_version,
+      p_operation_id: crypto.randomUUID(),
+    });
+    if (error) throw new Error(error.message);
+    return data as unknown as BillingAuditCommandResult;
+  },
+
+  async decideAudit(
+    item: BillingAuditQueueItem,
+    decision: "approved" | "returned" | "escalated",
+    opinion: string,
+    evidence: string,
+  ): Promise<BillingAuditCommandResult> {
+    const normalizedOpinion = opinion.trim();
+    const normalizedEvidence = evidence.trim();
+    if (!item.review_id || item.review_version == null) {
+      throw new Error("Auditoria ativa não encontrada");
     }
-    return rows.map((r) => ({ ...r, patient_name: r.patient_id ? nameById[String(r.patient_id)] : undefined }));
-  },
-
-  async pendingIssues(accountId: string): Promise<PendingIssue[]> {
-    const { data, error } = await supabase.from("billing_pending_issues").select("*")
-      .eq("billing_account_id", accountId).eq("resolved", false);
-    if (error) throw new Error(error.message);
-    return (data || []) as unknown as PendingIssue[];
-  },
-
-  /** Roda a glosa preventiva na conta (recalcula pendências via função SQL). */
-  async checkPending(accountId: string): Promise<number> {
-    const { data, error } = await supabase.rpc("billing_check_pending", { p_account_id: accountId });
-    if (error) throw new Error(error.message);
-    return (data as number) ?? 0;
-  },
-
-  async resolveIssue(issueId: number): Promise<void> {
-    const { error } = await supabase.from("billing_pending_issues")
-      .update({ resolved: true, resolved_at: new Date().toISOString() }).eq("id", issueId);
-    if (error) throw new Error(error.message);
-  },
-
-  async update(id: string, updates: Partial<BillingAccount>): Promise<void> {
-    const { error } = await supabase.from("billing_accounts").update(updates).eq("id", id);
-    if (error) throw new Error(error.message);
-  },
-
-  async reopen(id: string, reason: string): Promise<void> {
-    const { error } = await supabase.from("billing_accounts")
-      .update({ status: "reaberta", is_reopened: true, reopened_reason: reason }).eq("id", id);
-    if (error) throw new Error(error.message);
-  },
-
-  async listCompetencies(): Promise<Competency[]> {
-    const { data, error } = await supabase.from("billing_competencies").select("*").order("competence_month", { ascending: false });
-    if (error) throw new Error(error.message);
-    return (data || []) as unknown as Competency[];
-  },
-
-  async closeCompetency(month: string): Promise<void> {
-    const { data } = await supabase.from("billing_competencies").select("id").eq("competence_month", month).maybeSingle();
-    if (data?.id) {
-      const { error } = await supabase.from("billing_competencies")
-        .update({ status: "fechada", closed_at: new Date().toISOString() }).eq("id", data.id);
-      if (error) throw new Error(error.message);
+    if (!normalizedOpinion || !normalizedEvidence) {
+      throw new Error("Parecer e evidência são obrigatórios");
     }
+    const { data, error } = await supabase.rpc("m37_decide_billing_audit_secure", {
+      p_account_id: item.account_id,
+      p_review_id: item.review_id,
+      p_decision: decision,
+      p_opinion: normalizedOpinion,
+      p_evidence: { note: normalizedEvidence },
+      p_expected_account_version: item.account_version,
+      p_expected_review_version: item.review_version,
+      p_operation_id: crypto.randomUUID(),
+    });
+    if (error) throw new Error(error.message);
+    return data as unknown as BillingAuditCommandResult;
   },
 
-  async stats(): Promise<{ total: number; abertas: number; prontas: number; comPendencia: number; enviadas: number; pagas: number }> {
-    const all = await billingAccountsService.list();
+  stats(all: BillingAccount[]): { total: number; abertas: number; prontas: number; comPendencia: number; enviadas: number; pagas: number } {
     return {
       total: all.length,
       abertas: all.filter((a) => a.status === "aberta").length,
-      prontas: all.filter((a) => a.status === "aberta" && !a.has_pending_issues).length,
+      prontas: all.filter((a) => a.status === "pronta_envio").length,
       comPendencia: all.filter((a) => a.has_pending_issues).length,
       enviadas: all.filter((a) => a.status === "enviada").length,
       pagas: all.filter((a) => ["paga", "parcialmente_paga", "particular_paga"].includes(a.status)).length,
     };
   },
-
-  /** Dashboard gerencial: receita por convênio (view). */
-  async receitaPorConvenio(): Promise<Array<{ convenio: string; contas: number; valor_faturado: number; valor_recebido: number; valor_aberto: number }>> {
-    const { data, error } = await supabase.from("v_billing_receita_convenio").select("*").limit(30);
-    if (error) throw new Error(error.message);
-    return (data || []) as unknown as Array<{ convenio: string; contas: number; valor_faturado: number; valor_recebido: number; valor_aberto: number }>;
-  },
-
-  async receitaMensal(): Promise<Array<{ competence_month: string; contas: number; faturado: number; recebido: number; glosado: number; pct_recebido: number | null }>> {
-    const { data, error } = await supabase.from("v_billing_receita_mensal").select("*").limit(24);
-    if (error) throw new Error(error.message);
-    return (data || []) as unknown as Array<{ competence_month: string; contas: number; faturado: number; recebido: number; glosado: number; pct_recebido: number | null }>;
-  },
-
-  async indicadores(): Promise<Record<string, number>> {
-    const { data, error } = await supabase.from("v_billing_indicadores").select("*").maybeSingle();
-    if (error) throw new Error(error.message);
-    return (data || {}) as Record<string, number>;
-  },
 };
+
