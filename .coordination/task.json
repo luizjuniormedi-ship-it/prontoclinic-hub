@@ -1,7 +1,7 @@
 {
-  "taskId": "edge-known-hosts-variable-20260801",
+  "taskId": "audit-nginx-edge-routes-20260801",
   "module": "infrastructure",
-  "baseCommit": "92384a52b57db9054df38f8c8dda64c42ccdb46a",
+  "baseCommit": "c294530a064f415ec261fce0c5daf28c7d6937c1",
   "paths": [
     ".coordination/task.json",
     ".github/workflows/deploy-edge-functions.yml"
