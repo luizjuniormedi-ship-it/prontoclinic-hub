@@ -35,6 +35,17 @@ test -f "$archive"
 test -f "$checksum"
 test "$(stat -c '%U:%G' "${root}/secrets/.env.functions")" = "root:root"
 test "$(stat -c '%a' "${root}/secrets/.env.functions")" = "600"
+for variable in \
+  SUPABASE_URL \
+  SUPABASE_ANON_KEY \
+  SUPABASE_SERVICE_ROLE_KEY \
+  JWT_SECRET \
+  ALLOWED_ORIGINS; do
+  grep -Eq "^${variable}=.+$" "${root}/secrets/.env.functions" || {
+    echo "Configuração obrigatória ausente em .env.functions: ${variable}" >&2
+    exit 27
+  }
+done
 (
   cd "$(dirname "$archive")"
   sha256sum -c "$(basename "$checksum")"
@@ -62,6 +73,7 @@ tar --no-same-owner --no-same-permissions -xzf "$archive" -C "$release"
 
 for path in \
   "$release/supabase/functions/_shared/cors.ts" \
+  "$release/supabase/functions/auth-admin/index.ts" \
   "$release/supabase/functions/dicom-bridge/index.ts" \
   "$release/supabase/functions/telemedicina-daily/index.ts"; do
   test -f "$path"
@@ -96,9 +108,13 @@ mv -Tf "${current}.next" "$current"
 docker compose -f "$compose" up -d --no-deps --force-recreate functions
 
 for attempt in $(seq 1 20); do
-  status="$(curl -sS -o /dev/null -w '%{http_code}' \
-    -X POST http://127.0.0.1:9000/dicom-bridge 2>/dev/null || true)"
-  if test "$status" = "401"; then
+  all_healthy=1
+  for function_name in auth-admin dicom-bridge telemedicina-daily; do
+    status="$(curl -sS -o /dev/null -w '%{http_code}' \
+      -X POST "http://127.0.0.1:9000/${function_name}" 2>/dev/null || true)"
+    test "$status" = "401" || all_healthy=0
+  done
+  if test "$all_healthy" = "1"; then
     break
   fi
   test "$attempt" -lt 20

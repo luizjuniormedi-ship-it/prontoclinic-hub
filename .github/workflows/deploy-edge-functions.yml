@@ -54,6 +54,7 @@ jobs:
             -v "$PWD:/app" -w /app \
             --entrypoint deno denoland/deno:2.5.6 \
             check \
+            supabase/functions/auth-admin/index.ts \
             supabase/functions/dicom-bridge/index.ts \
             supabase/functions/telemedicina-daily/index.ts
       - name: Test Edge Function security helpers
@@ -64,6 +65,7 @@ jobs:
             test --allow-env supabase/functions/_shared/cors_test.ts
       - run: |
           grep -R '"Access-Control-Allow-Origin": "\*"' \
+            supabase/functions/auth-admin \
             supabase/functions/dicom-bridge \
             supabase/functions/telemedicina-daily && {
             echo "::error::CORS wildcard encontrado nas Edge Functions"
@@ -75,6 +77,7 @@ jobs:
           if-no-files-found: error
           path: |
             supabase/functions/_shared
+            supabase/functions/auth-admin
             supabase/functions/dicom-bridge
             supabase/functions/telemedicina-daily
             deploy/edge-runtime
@@ -137,7 +140,7 @@ jobs:
             "sudo /usr/local/sbin/prontomedic-edge-deploy '$COMMIT_SHA' '/tmp/edge-functions.tgz' '/tmp/edge-functions.tgz.sha256'"
 
           smoke_failed=0
-          for function_name in dicom-bridge telemedicina-daily; do
+          for function_name in auth-admin dicom-bridge telemedicina-daily; do
             status="$(curl -sS -o /tmp/response -w '%{http_code}' \
               -X POST \
               -H 'Origin: https://prontomedic.191-252-196-6.sslip.io' \

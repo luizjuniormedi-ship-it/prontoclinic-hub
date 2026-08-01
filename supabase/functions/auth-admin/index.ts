@@ -1,14 +1,9 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.99.3";
+import { corsDenied, corsHeaders } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
 
 interface AccessTransition {
   found: boolean;
@@ -21,10 +16,10 @@ interface AccessTransition {
   active_memberships: number;
 }
 
-function json(data: unknown, status = 200) {
+function json(data: unknown, status = 200, headers: HeadersInit = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "Content-Type": "application/json", ...corsHeaders },
+    headers: { "Content-Type": "application/json", ...headers },
   });
 }
 
@@ -40,15 +35,19 @@ function readAal(jwt: string): string | null {
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (req.method !== "POST") return json({ error: "Método não permitido." }, 405);
+  const cors = corsHeaders(req);
+  if (!cors) return corsDenied();
+  const respond = (data: unknown, status = 200) => json(data, status, cors);
+
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (req.method !== "POST") return respond({ error: "Método não permitido." }, 405);
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
-    return json({ error: "Serviço de autenticação não configurado." }, 503);
+    return respond({ error: "Serviço de autenticação não configurado." }, 503);
   }
 
   const authorization = req.headers.get("Authorization") ?? "";
   const accessToken = authorization.replace(/^Bearer\s+/i, "");
-  if (!accessToken) return json({ error: "Não autorizado." }, 401);
+  if (!accessToken) return respond({ error: "Não autorizado." }, 401);
 
   const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     global: { headers: { Authorization: `Bearer ${accessToken}` } },
@@ -59,14 +58,14 @@ Deno.serve(async (req: Request) => {
   });
 
   const { data: userData, error: userError } = await userClient.auth.getUser(accessToken);
-  if (userError || !userData.user) return json({ error: "Não autorizado." }, 401);
-  if (readAal(accessToken) !== "aal2") return json({ error: "MFA AAL2 obrigatório." }, 403);
+  if (userError || !userData.user) return respond({ error: "Não autorizado." }, 401);
+  if (readAal(accessToken) !== "aal2") return respond({ error: "MFA AAL2 obrigatório." }, 403);
 
   let body: Record<string, unknown>;
   try {
     body = await req.json();
   } catch {
-    return json({ error: "JSON inválido." }, 400);
+    return respond({ error: "JSON inválido." }, 400);
   }
 
   try {
@@ -86,10 +85,10 @@ Deno.serve(async (req: Request) => {
       const roleId = Number(body.roleId);
       const primaryUnitId = body.primaryUnitId == null ? null : Number(body.primaryUnitId);
       if (!email || !fullName || !Number.isInteger(roleId)) {
-        return json({ error: "Dados de convite inválidos." }, 400);
+        return respond({ error: "Dados de convite inválidos." }, 400);
       }
       if (!await isCompanyAdmin(companyId)) {
-        return json({ error: "Acesso administrativo negado." }, 403);
+        return respond({ error: "Acesso administrativo negado." }, 403);
       }
 
       const { data: existingProfile, error: existingProfileError } = await adminClient
@@ -137,7 +136,7 @@ Deno.serve(async (req: Request) => {
         }
         throw provisionError;
       }
-      return json({ ok: true, userId }, 201);
+      return respond({ ok: true, userId }, 201);
     }
 
     if (action === "send-recovery") {
@@ -148,7 +147,7 @@ Deno.serve(async (req: Request) => {
         .select("id, email")
         .eq("id", userId)
         .maybeSingle();
-      if (!target?.email) return json({ ok: true });
+      if (!target?.email) return respond({ ok: true });
       const { data: targetMembership } = await adminClient
         .from("memberships")
         .select("id")
@@ -156,13 +155,13 @@ Deno.serve(async (req: Request) => {
         .eq("company_id", companyId)
         .maybeSingle();
       if (!targetMembership || !await isCompanyAdmin(companyId)) {
-        return json({ error: "Acesso administrativo negado." }, 403);
+        return respond({ error: "Acesso administrativo negado." }, 403);
       }
       const { error } = await userClient.auth.resetPasswordForEmail(target.email, {
         redirectTo: typeof body.redirectTo === "string" ? body.redirectTo : undefined,
       });
       if (error) throw error;
-      return json({ ok: true });
+      return respond({ ok: true });
     }
 
     if (action === "set-active") {
@@ -170,7 +169,7 @@ Deno.serve(async (req: Request) => {
       const companyId = String(body.companyId ?? "");
       const active = body.active === true;
       if (!await isCompanyAdmin(companyId)) {
-        return json({ error: "Acesso administrativo negado." }, 403);
+        return respond({ error: "Acesso administrativo negado." }, 403);
       }
       const { data, error: accessError } = await adminClient.rpc("prepare_user_access_active", {
         p_user_id: userId,
@@ -179,7 +178,7 @@ Deno.serve(async (req: Request) => {
       });
       if (accessError) throw accessError;
       const transition = data as AccessTransition | null;
-      if (!transition?.found) return json({ error: "Usuário não encontrado nesta empresa." }, 404);
+      if (!transition?.found) return respond({ error: "Usuário não encontrado nesta empresa." }, 404);
 
       const { error: authError } = await adminClient.auth.admin.updateUserById(userId, {
         ban_duration: transition.active_memberships === 0 ? "876000h" : "none",
@@ -202,7 +201,7 @@ Deno.serve(async (req: Request) => {
               membershipId: transition.membership_id,
               requestedStatus: transition.requested_status,
             });
-            return json({ error: "Falha de autenticação; reconciliação administrativa necessária." }, 500);
+            return respond({ error: "Falha de autenticação; reconciliação administrativa necessária." }, 500);
           }
         }
         throw authError;
@@ -224,21 +223,21 @@ Deno.serve(async (req: Request) => {
             membershipId: transition.membership_id,
             requestedStatus: transition.requested_status,
           });
-          return json({ error: "Acesso alterado; finalização administrativa necessária." }, 500);
+          return respond({ error: "Acesso alterado; finalização administrativa necessária." }, 500);
         }
       }
-      return json({ ok: true });
+      return respond({ ok: true });
     }
 
     if (action === "logout-global") {
       const { error } = await userClient.auth.signOut({ scope: "global" });
       if (error) throw error;
-      return json({ ok: true });
+      return respond({ ok: true });
     }
 
-    return json({ error: "Ação não suportada." }, 400);
+    return respond({ error: "Ação não suportada." }, 400);
   } catch (error) {
     console.error("[auth-admin] operation failed", error);
-    return json({ error: "Não foi possível concluir a operação de autenticação." }, 500);
+    return respond({ error: "Não foi possível concluir a operação de autenticação." }, 500);
   }
 });

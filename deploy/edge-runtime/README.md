@@ -8,7 +8,7 @@ possui:
 - `docker-compose.yml` com serviço `functions` e porta `127.0.0.1:9000`;
 - volume `/opt/prontomedic/edge-runtime/current:/home/deno/functions`;
 - secrets em `/opt/prontomedic/edge-runtime/secrets/.env.functions`;
-- rotas Nginx exatas para `dicom-bridge` e `telemedicina-daily`;
+- rotas Nginx exatas para `auth-admin`, `dicom-bridge` e `telemedicina-daily`;
 - migrations da release aplicadas e validadas antes da ativação do frontend.
 
 O provisionamento inicial usa `docker-compose.yml` e
@@ -17,7 +17,7 @@ repositório oficial Supabase e validado por SHA-256 antes da inicialização.
 
 Secrets clínicos ficam somente na VPS:
 
-`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `JWT_SECRET`,
+`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `JWT_SECRET`,
 `ORTHANC_URL`, `ORTHANC_USER`, `ORTHANC_PASSWORD`, `DAILY_API_KEY`,
 `DAILY_API_BASE_URL` e `ALLOWED_ORIGINS`.
 

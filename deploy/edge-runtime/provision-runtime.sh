@@ -14,6 +14,17 @@ test -f "${root}/docker-compose.yml"
 test -f "${root}/secrets/.env.functions"
 test "$(stat -c '%U:%G' "${root}/secrets/.env.functions")" = "root:root"
 test "$(stat -c '%a' "${root}/secrets/.env.functions")" = "600"
+for variable in \
+  SUPABASE_URL \
+  SUPABASE_ANON_KEY \
+  SUPABASE_SERVICE_ROLE_KEY \
+  JWT_SECRET \
+  ALLOWED_ORIGINS; do
+  grep -Eq "^${variable}=.+$" "${root}/secrets/.env.functions" || {
+    echo "Configuração obrigatória ausente em .env.functions: ${variable}" >&2
+    exit 32
+  }
+done
 test ! -e "${root}/current" || {
   echo "Runtime já provisionado; use o workflow de deploy" >&2
   exit 31
