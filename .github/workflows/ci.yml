@@ -44,6 +44,27 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate published Edge Functions
+        run: |
+          docker run --rm \
+            -v "$PWD:/app" -w /app \
+            --entrypoint deno denoland/deno:2.5.6 \
+            check \
+            supabase/functions/auth-admin/index.ts \
+            supabase/functions/dicom-bridge/index.ts \
+            supabase/functions/telemedicina-daily/index.ts
+          docker run --rm \
+            -v "$PWD:/app" -w /app \
+            --entrypoint deno denoland/deno:2.5.6 \
+            test --allow-env supabase/functions/_shared/cors_test.ts
+          if grep -R '"Access-Control-Allow-Origin": "\*"' \
+            supabase/functions/auth-admin \
+            supabase/functions/dicom-bridge \
+            supabase/functions/telemedicina-daily; then
+            echo "::error::CORS wildcard encontrado nas Edge Functions"
+            exit 1
+          fi
+
       - name: Validate migration versions
         run: |
           versions=''
