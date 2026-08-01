@@ -55,7 +55,7 @@ authed.describe('Agendamento', () => {
     await expect(page.getByLabel('Fim')).toHaveValue(/.+/);
     await page.getByRole('button', { name: /^agendar$/i }).click();
     await expect(page.getByRole('dialog', { name: /novo agendamento/i })).toHaveCount(0);
-    await expect(page.getByText(/agendamento criado com sucesso/i)).toBeVisible();
+    await expect(page.getByText('✓ Agendamento criado com sucesso!', { exact: true })).toBeVisible();
 
     await page.getByRole('textbox', { name: /buscar agendamento/i }).fill('PACIENTE');
     const createdRow = page.getByRole('gridcell', { name: /22:45, PACIENTE/i }).first();
@@ -64,7 +64,7 @@ authed.describe('Agendamento', () => {
     await page.getByRole('menuitem', { name: /cancelar/i }).click();
     await page.getByRole('dialog', { name: /cancelar agendamento/i }).getByLabel(/motivo/i).fill('Limpeza da fixture E2E');
     await page.getByRole('dialog', { name: /cancelar agendamento/i }).getByRole('button', { name: /confirmar/i }).click();
-    await expect(page.getByText(/agendamento cancelado/i)).toBeVisible();
+    await expect(page.getByText('Agendamento cancelado', { exact: true })).toBeVisible();
   });
 
   authed('abre menu de acao rapida de um agendamento existente', async ({ page }) => {
