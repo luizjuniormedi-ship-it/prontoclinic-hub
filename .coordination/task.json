@@ -1,12 +1,11 @@
 {
-  "taskId": "bootstrap-edge-helper-20260801",
+  "taskId": "normalize-edge-helper-lf-20260801",
   "module": "infrastructure",
-  "baseCommit": "89719174251a42d5260213542207baed01019c5e",
+  "baseCommit": "539cd9e1e6508c7902cc84b4265003f788b96f7a",
   "paths": [
     ".coordination/task.json",
-    ".github/workflows/deploy-edge-functions.yml",
-    "deploy/edge-runtime/deploy-functions.sh",
-    "deploy/edge-runtime/deploy-functions.test.sh"
+    ".gitattributes",
+    "deploy/edge-runtime/deploy-functions.sh"
   ],
   "sharedPaths": [],
   "status": "active"
