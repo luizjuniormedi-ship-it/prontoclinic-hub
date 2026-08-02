@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 script="${BASH_SOURCE[0]%/*}/deploy-functions.sh"
+workflow="${BASH_SOURCE[0]%/*}/../../.github/workflows/deploy-edge-functions.yml"
 
 line_number=0
 trap_line=""
@@ -32,5 +33,10 @@ test "$activation_found" = "1"
 test "$audit_mode_found" = "1"
 test "$nginx_contract_found" = "1"
 test "$rpc_contract_found" = "1"
+grep -Fq 'bootstrap_helper:' "$workflow"
+grep -Fq 'sha256sum -c "$(basename "$checksum")"' "$workflow"
+grep -Fq 'cp -a "$target" "$backup_dir/prontomedic-edge-deploy-${stamp}"' "$workflow"
+grep -Fq 'mv -Tf "${target}.next" "$target"' "$workflow"
 
 echo "EDGE_DEPLOY_FAILURE_CLEANUP_CONTRACT_PASS"
+
