@@ -1,7 +1,7 @@
 {
-  "taskId": "bootstrap-edge-helper-via-sudo-20260801",
+  "taskId": "root-bootstrap-secret-20260801",
   "module": "infrastructure",
-  "baseCommit": "b95dbb63d761898e7f60aad216c8bdc12e797c41",
+  "baseCommit": "b6dea3a624be903f39413478795d23bde328d3cf",
   "paths": [
     ".coordination/task.json",
     ".github/workflows/deploy-edge-functions.yml"
