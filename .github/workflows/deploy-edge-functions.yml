@@ -206,4 +206,3 @@ jobs:
               "sudo /usr/local/sbin/prontomedic-edge-deploy --rollback"
             exit 1
           fi
-
