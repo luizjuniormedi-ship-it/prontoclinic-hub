@@ -129,14 +129,15 @@ jobs:
         if: ${{ inputs.bootstrap_helper }}
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           helper="release/deploy/edge-runtime/deploy-functions.sh"
           test -s "$helper"
           bash -n "$helper"
           sha256sum "$helper" > /tmp/prontomedic-edge-deploy.sha256
           scp "$helper" /tmp/prontomedic-edge-deploy.sha256 \
-            "root@${VPS_HOST}:/tmp/"
-          ssh "root@${VPS_HOST}" 'bash -s' <<'EOF'
+            "${VPS_USER}@${VPS_HOST}:/tmp/"
+          ssh "${VPS_USER}@${VPS_HOST}" 'sudo -n bash -s' <<'EOF'
           set -Eeuo pipefail
           helper="/tmp/deploy-functions.sh"
           checksum="/tmp/prontomedic-edge-deploy.sha256"

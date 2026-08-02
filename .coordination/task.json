@@ -1,11 +1,10 @@
 {
-  "taskId": "normalize-edge-helper-lf-20260801",
+  "taskId": "bootstrap-edge-helper-via-sudo-20260801",
   "module": "infrastructure",
-  "baseCommit": "539cd9e1e6508c7902cc84b4265003f788b96f7a",
+  "baseCommit": "b95dbb63d761898e7f60aad216c8bdc12e797c41",
   "paths": [
     ".coordination/task.json",
-    ".gitattributes",
-    "deploy/edge-runtime/deploy-functions.sh"
+    ".github/workflows/deploy-edge-functions.yml"
   ],
   "sharedPaths": [],
   "status": "active"
