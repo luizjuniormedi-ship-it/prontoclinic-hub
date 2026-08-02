@@ -31,9 +31,29 @@ fi
 install -m 700 "${source_root}/deploy/auth-service/deploy-atomic.sh" "$helper"
 install -m 644 "${source_root}/deploy/auth-service/ecosystem.config.cjs" "${auth_root}/ecosystem.config.cjs"
 
-PRONTOMEDIC_AUTH_ROOT="$auth_root" pm2 startOrReload "${auth_root}/ecosystem.config.cjs" \
-  --only "${PRONTOMEDIC_AUTH_PM2_PROCESS:-prontomedic-auth}" --update-env >/dev/null
+process_name="${PRONTOMEDIC_AUTH_PM2_PROCESS:-prontomedic-auth}"
+pm2 delete "$process_name" >/dev/null 2>&1 || true
+PRONTOMEDIC_AUTH_ROOT="$auth_root" pm2 start "${auth_root}/ecosystem.config.cjs" \
+  --only "$process_name" --update-env >/dev/null
 
-status="$(curl -sS --connect-timeout 2 --max-time 5 -o /tmp/prontomedic-auth-bootstrap-health -w '%{http_code}' "$health_url" || true)"
+actual_path="$(pm2 jlist | node -e '
+let input = "";
+process.stdin.on("data", chunk => { input += chunk; });
+process.stdin.on("end", () => {
+  const name = process.argv[1];
+  const item = JSON.parse(input).find(entry => entry.name === name);
+  if (!item?.pm2_env?.pm_exec_path) process.exit(2);
+  process.stdout.write(item.pm2_env.pm_exec_path);
+});
+' "$process_name")" || die "pm_exec_path indisponivel"
+test "$actual_path" = "${auth_root}/current/local-auth-server.mjs" \
+  || die "PM2 nao aponta para o link canonico: ${actual_path}"
+
+status="000"
+for _attempt in $(seq 1 30); do
+  status="$(curl -sS --connect-timeout 2 --max-time 5 -o /tmp/prontomedic-auth-bootstrap-health -w '%{http_code}' "$health_url" 2>/dev/null || true)"
+  test "$status" = 200 && break
+  sleep 2
+done
 test "$status" = 200 || die "health do backend atual reprovado: HTTP ${status}"
 printf 'AUTH_COORDINATOR_INSTALL_OK current=%s helper=%s\n' "$(readlink -f "${auth_root}/current")" "$helper"
