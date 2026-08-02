@@ -39,4 +39,3 @@ grep -Fq 'cp -a "$target" "$backup_dir/prontomedic-edge-deploy-${stamp}"' "$work
 grep -Fq 'mv -Tf "${target}.next" "$target"' "$workflow"
 
 echo "EDGE_DEPLOY_FAILURE_CLEANUP_CONTRACT_PASS"
-
