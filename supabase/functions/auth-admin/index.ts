@@ -147,21 +147,23 @@ Deno.serve(async (req: Request) => {
       const companyId = String(body.companyId ?? "");
       const redirectTo = allowedRedirectUrl(body.redirectTo, ADMIN_REDIRECT_PATHS);
       if (!redirectTo) return respond({ error: "Destino de recuperação inválido." }, 400);
-      const { data: target } = await adminClient
+      if (!await isCompanyAdmin(companyId)) {
+        return respond({ error: "Acesso administrativo negado." }, 403);
+      }
+      const { data: target, error: targetError } = await adminClient
         .from("user_profiles")
         .select("id, email")
         .eq("id", userId)
         .maybeSingle();
-      if (!target?.email) return respond({ ok: true });
-      const { data: targetMembership } = await adminClient
+      if (targetError) throw new Error("Falha ao consultar o usuário-alvo.");
+      const { data: targetMembership, error: targetMembershipError } = await adminClient
         .from("memberships")
         .select("id")
         .eq("user_id", userId)
         .eq("company_id", companyId)
         .maybeSingle();
-      if (!targetMembership || !await isCompanyAdmin(companyId)) {
-        return respond({ error: "Acesso administrativo negado." }, 403);
-      }
+      if (targetMembershipError) throw new Error("Falha ao consultar o vínculo do usuário-alvo.");
+      if (!target?.email || !targetMembership) return respond({ ok: true });
       const { error } = await userClient.auth.resetPasswordForEmail(target.email, {
         redirectTo,
       });
@@ -235,8 +237,28 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "logout-global") {
-      const { error } = await userClient.auth.signOut({ scope: "global" });
-      if (error) throw error;
+      const userId = String(body.userId ?? "");
+      const companyId = String(body.companyId ?? "");
+      if (!await isCompanyAdmin(companyId)) {
+        return respond({ error: "Acesso administrativo negado." }, 403);
+      }
+      const { data: membership, error: membershipError } = await adminClient
+        .from("memberships")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("company_id", companyId)
+        .maybeSingle();
+      if (membershipError) throw new Error("Falha ao consultar o vínculo do usuário-alvo.");
+      if (!membership) return respond({ ok: true });
+      const logoutResponse = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}/logout`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          "Content-Type": "application/json",
+        },
+      });
+      if (!logoutResponse.ok) throw new Error("Falha ao revogar sessões do usuário.");
       return respond({ ok: true });
     }
 

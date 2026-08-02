@@ -1,4 +1,4 @@
-name: Deploy Edge Functions to VPS
+name: Deploy Auth Admin Contract to VPS
 
 on:
   workflow_dispatch:
@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: prontomedic-edge-functions-production
+  group: prontomedic-auth-admin-production
   cancel-in-progress: false
 
 jobs:
@@ -53,6 +53,11 @@ jobs:
       - run: npm run type-check
       - run: npm run test:unit
       - run: npm run build
+      - name: Validate Auth backend contract
+        run: |
+          node --check local-auth-server.mjs
+          node --check local-auth-admin.mjs
+          node deploy/auth-service/verify-contract.mjs
       - name: Type check Edge Functions
         run: |
           docker run --rm \
@@ -70,6 +75,11 @@ jobs:
             test --allow-env supabase/functions/_shared/cors_test.ts
       - name: Test Edge runtime deployment contract
         run: bash deploy/edge-runtime/deploy-functions.test.sh
+      - name: Test coordinated Auth deployment contract
+        run: |
+          bash -n deploy/auth-service/deploy-atomic.sh
+          bash -n deploy/auth-service/build-auth-artifact.sh
+          node deploy/auth-service/verify-atomic-deploy.mjs
       - run: |
           if grep -R '"Access-Control-Allow-Origin": "\*"' \
             supabase/functions/auth-admin \
@@ -78,16 +88,33 @@ jobs:
             echo "::error::CORS wildcard encontrado nas Edge Functions"
             exit 1
           fi
+      - name: Build immutable release artifacts
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          install -d release
+          bash deploy/auth-service/build-auth-artifact.sh "$COMMIT_SHA" "$PWD" "$PWD/release"
+          tar -czf "release/edge-${COMMIT_SHA}.tgz" \
+            supabase/functions/_shared \
+            supabase/functions/auth-admin \
+            supabase/functions/dicom-bridge \
+            supabase/functions/telemedicina-daily \
+            deploy/edge-runtime
+          (cd release && sha256sum "edge-${COMMIT_SHA}.tgz" > "edge-${COMMIT_SHA}.tgz.sha256")
+          cp supabase/migrations/20260802183000_local_auth_admin_contract.sql \
+            "release/migration-${COMMIT_SHA}.sql"
+          install -d release/bootstrap-root/deploy/auth-service release/bootstrap-root/deploy/edge-runtime
+          cp deploy/auth-service/deploy-atomic.sh \
+            deploy/auth-service/install-coordinator.sh \
+            deploy/auth-service/ecosystem.config.cjs \
+            release/bootstrap-root/deploy/auth-service/
+          cp deploy/edge-runtime/deploy-functions.sh \
+            release/bootstrap-root/deploy/edge-runtime/
       - uses: actions/upload-artifact@v4
         with:
-          name: edge-functions-${{ inputs.commit_sha }}
+          name: auth-admin-release-${{ inputs.commit_sha }}
           if-no-files-found: error
-          path: |
-            supabase/functions/_shared
-            supabase/functions/auth-admin
-            supabase/functions/dicom-bridge
-            supabase/functions/telemedicina-daily
-            deploy/edge-runtime
+          path: release/*
 
   deploy:
     needs: validate
@@ -97,7 +124,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: edge-functions-${{ inputs.commit_sha }}
+          name: auth-admin-release-${{ inputs.commit_sha }}
           path: release
 
       - name: Validate transport secrets
@@ -143,7 +170,7 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
         run: |
           trap 'rm -f ~/.ssh/id_ed25519_root' EXIT
-          helper="release/deploy/edge-runtime/deploy-functions.sh"
+          helper="release/bootstrap-root/deploy/edge-runtime/deploy-functions.sh"
           test -s "$helper"
           bash -n "$helper"
           sha256sum "$helper" > /tmp/prontomedic-edge-deploy.sha256
@@ -173,22 +200,31 @@ jobs:
           echo "EDGE_HELPER_BOOTSTRAP_PASS"
           EOF
 
-      - name: Audit privileged Edge runtime contract
+          scp -r -i ~/.ssh/id_ed25519_root -o IdentitiesOnly=yes \
+            release/bootstrap-root "root@${VPS_HOST}:/tmp/prontomedic-auth-bootstrap"
+          ssh -i ~/.ssh/id_ed25519_root -o IdentitiesOnly=yes \
+            "root@${VPS_HOST}" \
+            "bash /tmp/prontomedic-auth-bootstrap/deploy/auth-service/install-coordinator.sh /tmp/prontomedic-auth-bootstrap /opt/prontomedic/backend"
+
+      - name: Audit privileged deployment contracts
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           ssh "${VPS_USER}@${VPS_HOST}" \
-            "sudo /usr/local/sbin/prontomedic-edge-deploy --audit-contract"
+            "sudo /usr/local/sbin/prontomedic-edge-deploy --audit-contract && sudo /usr/local/sbin/prontomedic-auth-deploy audit"
       - name: Upload immutable release
         env:
           COMMIT_SHA: ${{ inputs.commit_sha }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
-          tar -C release -czf edge-functions.tgz .
-          sha256sum edge-functions.tgz > edge-functions.tgz.sha256
-          scp edge-functions.tgz edge-functions.tgz.sha256 \
+          scp \
+            "release/auth-${COMMIT_SHA}.tgz" \
+            "release/auth-${COMMIT_SHA}.tgz.sha256" \
+            "release/edge-${COMMIT_SHA}.tgz" \
+            "release/edge-${COMMIT_SHA}.tgz.sha256" \
+            "release/migration-${COMMIT_SHA}.sql" \
             "${VPS_USER}@${VPS_HOST}:/tmp/"
 
       - name: Deploy atomically and smoke test
@@ -199,7 +235,9 @@ jobs:
           PUBLIC_URL: https://prontomedic.191-252-196-6.sslip.io
         run: |
           ssh "${VPS_USER}@${VPS_HOST}" \
-            "sudo /usr/local/sbin/prontomedic-edge-deploy '$COMMIT_SHA' '/tmp/edge-functions.tgz' '/tmp/edge-functions.tgz.sha256'"
+            "sudo /usr/local/sbin/prontomedic-auth-deploy preflight '$COMMIT_SHA' '/tmp/auth-${COMMIT_SHA}.tgz' '/tmp/auth-${COMMIT_SHA}.tgz.sha256' '/tmp/edge-${COMMIT_SHA}.tgz' '/tmp/edge-${COMMIT_SHA}.tgz.sha256' '/tmp/migration-${COMMIT_SHA}.sql'"
+          ssh "${VPS_USER}@${VPS_HOST}" \
+            "sudo /usr/local/sbin/prontomedic-auth-deploy deploy '$COMMIT_SHA' '/tmp/auth-${COMMIT_SHA}.tgz' '/tmp/auth-${COMMIT_SHA}.tgz.sha256' '/tmp/edge-${COMMIT_SHA}.tgz' '/tmp/edge-${COMMIT_SHA}.tgz.sha256' '/tmp/migration-${COMMIT_SHA}.sql'"
 
           smoke_failed=0
           for function_name in auth-admin dicom-bridge telemedicina-daily; do
@@ -218,6 +256,6 @@ jobs:
 
           if test "$smoke_failed" -ne 0; then
             ssh "${VPS_USER}@${VPS_HOST}" \
-              "sudo /usr/local/sbin/prontomedic-edge-deploy --rollback"
+              "sudo /usr/local/sbin/prontomedic-auth-deploy rollback"
             exit 1
           fi

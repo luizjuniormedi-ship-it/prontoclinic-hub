@@ -1,0 +1,33 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import assert from 'node:assert/strict';
+
+const root = resolve(import.meta.dirname, '../..');
+const server = readFileSync(resolve(root, 'local-auth-server.mjs'), 'utf8');
+const sql = readFileSync(resolve(import.meta.dirname, 'provision-service-role.sql'), 'utf8');
+const provisioner = readFileSync(resolve(import.meta.dirname, 'provision-service-role.ps1'), 'utf8');
+
+assert.match(server, /SERVICE_PGUSER === PGUSER/);
+assert.match(server, /SERVICE_PGUSER === 'app_prontomedic'/);
+assert.match(server, /validateServicePoolContract\(\)/);
+assert.match(server, /app_is_service_member/);
+assert.match(server, /SET LOCAL ROLE service_role/g);
+assert.match(server, /SERVICE_ROUTE_ALLOWLIST/);
+assert.match(server, /LOCAL_AUTH_SERVICE_KEY/);
+assert.match(server, /constantTimeEqual\(bearer, SERVICE_API_KEY\)/);
+assert.match(server, /constantTimeEqual\(apiKey, SERVICE_API_KEY\)/);
+assert.match(server, /SERVICE_RPC_ALLOWLIST/);
+assert.match(server, /SERVICE_READ_TABLE_ALLOWLIST/);
+assert.doesNotMatch(server, /function verifyRequestJwt/);
+assert.doesNotMatch(server, /payload\.role === 'service_role' \? \{ ok: true \}/);
+assert.match(server, /UPDATE auth\.refresh_tokens SET revoked = true[\s\S]+WHERE user_id = \$1 AND revoked = false/);
+assert.match(server, /banned_until IS NULL OR banned_until <= now\(\)/);
+assert.match(server, /pool PostgreSQL service_role exclusivo e obrigatorio em producao/);
+assert.match(server, /LOCAL_AUTH_PUBLIC_URL e LOCAL_AUTH_REDIRECT_ORIGINS sao obrigatorios/);
+assert.match(server, /private\.local_auth_challenges/);
+assert.doesNotMatch(server, /payload\.role === 'service_role'[^\n]+authorize/);
+assert.match(sql, /REVOKE service_role FROM app_prontomedic/);
+assert.match(sql, /NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS/);
+assert.doesNotMatch(sql, /GRANT service_role TO app_prontomedic/);
+assert.doesNotMatch(provisioner, /LOCAL_AUTH_SERVICE_PGPASSWORD[^\r\n]*ArgumentList/);
+console.log('AUTH_SERVICE_STATIC_CONTRACT_OK');

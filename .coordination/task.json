@@ -1,10 +1,22 @@
 {
-  "taskId": "root-bootstrap-secret-20260801",
-  "module": "infrastructure",
-  "baseCommit": "b6dea3a624be903f39413478795d23bde328d3cf",
+  "taskId": "auth-admin-contract-20260802",
+  "module": "authentication",
+  "baseCommit": "5b9d0d5a5a44c95e43950685997699e9deb49d2c",
   "paths": [
     ".coordination/task.json",
-    ".github/workflows/deploy-edge-functions.yml"
+    ".github/workflows/ci.yml",
+    ".github/workflows/deploy-edge-functions.yml",
+    "deploy/auth-service/",
+    "local-auth-admin.d.ts",
+    "local-auth-admin.mjs",
+    "local-auth-server.mjs",
+    "src/pages/ResetPasswordPage.tsx",
+    "src/services/authAdminService.ts",
+    "src/services/__tests__/localAuthAdmin.test.ts",
+    "src/services/__tests__/localAuthServiceRoleContract.test.ts",
+    "supabase/functions/auth-admin/",
+    "supabase/migrations/20260802183000_local_auth_admin_contract.sql",
+    "tests/database/local_auth_admin_contract.sql"
   ],
   "sharedPaths": [],
   "status": "active"
