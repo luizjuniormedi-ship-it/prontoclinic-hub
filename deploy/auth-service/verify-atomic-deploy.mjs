@@ -33,6 +33,9 @@ assert.doesNotMatch(script, /DataSIGH/i);
 assert.match(installer, /set -Eeuo pipefail/);
 assert.match(installer, /local-auth-server\.mjs/);
 assert.match(installer, /prontomedic-auth-deploy/);
+assert.match(installer, /pm2 delete/);
+assert.match(installer, /pm_exec_path/);
+assert.match(installer, /for _attempt in \$\(seq 1 30\)/);
 assert.match(installer, /health do backend atual reprovado/);
 assert.doesNotMatch(installer, /DataSIGH/i);
 
