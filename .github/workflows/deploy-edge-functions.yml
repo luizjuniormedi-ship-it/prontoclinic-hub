@@ -6,6 +6,11 @@ on:
       commit_sha:
         description: "Commit SHA aprovado para publicação"
         required: true
+      bootstrap_helper:
+        description: "Atualizar helper privilegiado antes da auditoria"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -98,6 +103,13 @@ jobs:
           (cd release && sha256sum "edge-${COMMIT_SHA}.tgz" > "edge-${COMMIT_SHA}.tgz.sha256")
           cp supabase/migrations/20260802183000_local_auth_admin_contract.sql \
             "release/migration-${COMMIT_SHA}.sql"
+          install -d release/bootstrap-root/deploy/auth-service release/bootstrap-root/deploy/edge-runtime
+          cp deploy/auth-service/deploy-atomic.sh \
+            deploy/auth-service/install-coordinator.sh \
+            deploy/auth-service/ecosystem.config.cjs \
+            release/bootstrap-root/deploy/auth-service/
+          cp deploy/edge-runtime/deploy-functions.sh \
+            release/bootstrap-root/deploy/edge-runtime/
       - uses: actions/upload-artifact@v4
         with:
           name: auth-admin-release-${{ inputs.commit_sha }}
@@ -139,6 +151,60 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
+
+      - name: Configure root bootstrap identity
+        if: ${{ inputs.bootstrap_helper }}
+        env:
+          VPS_ROOT_SSH_PRIVATE_KEY: ${{ secrets.VPS_ROOT_SSH_PRIVATE_KEY }}
+        run: |
+          test -n "$VPS_ROOT_SSH_PRIVATE_KEY" || {
+            echo "::error::Secret obrigatório ausente: VPS_ROOT_SSH_PRIVATE_KEY"
+            exit 1
+          }
+          printf '%s\n' "$VPS_ROOT_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519_root
+          chmod 600 ~/.ssh/id_ed25519_root
+
+      - name: Bootstrap privileged deploy helper
+        if: ${{ inputs.bootstrap_helper }}
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          trap 'rm -f ~/.ssh/id_ed25519_root' EXIT
+          helper="release/bootstrap-root/deploy/edge-runtime/deploy-functions.sh"
+          test -s "$helper"
+          bash -n "$helper"
+          sha256sum "$helper" > /tmp/prontomedic-edge-deploy.sha256
+          scp -i ~/.ssh/id_ed25519_root -o IdentitiesOnly=yes \
+            "$helper" /tmp/prontomedic-edge-deploy.sha256 \
+            "root@${VPS_HOST}:/tmp/"
+          ssh -i ~/.ssh/id_ed25519_root -o IdentitiesOnly=yes \
+            "root@${VPS_HOST}" 'bash -s' <<'EOF'
+          set -Eeuo pipefail
+          helper="/tmp/deploy-functions.sh"
+          checksum="/tmp/prontomedic-edge-deploy.sha256"
+          target="/usr/local/sbin/prontomedic-edge-deploy"
+          backup_dir="/var/backups/prontomedic/edge-helper"
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+
+          cd /tmp
+          sha256sum -c "$(basename "$checksum")"
+          bash -n "$helper"
+          install -d -o root -g root -m 0700 "$backup_dir"
+          if test -f "$target"; then
+            cp -a "$target" "$backup_dir/prontomedic-edge-deploy-${stamp}"
+          fi
+          install -o root -g root -m 0750 "$helper" "${target}.next"
+          bash -n "${target}.next"
+          mv -Tf "${target}.next" "$target"
+          rm -f "$helper" "$checksum"
+          echo "EDGE_HELPER_BOOTSTRAP_PASS"
+          EOF
+
+          scp -r -i ~/.ssh/id_ed25519_root -o IdentitiesOnly=yes \
+            release/bootstrap-root "root@${VPS_HOST}:/tmp/prontomedic-auth-bootstrap"
+          ssh -i ~/.ssh/id_ed25519_root -o IdentitiesOnly=yes \
+            "root@${VPS_HOST}" \
+            "bash /tmp/prontomedic-auth-bootstrap/deploy/auth-service/install-coordinator.sh /tmp/prontomedic-auth-bootstrap /opt/prontomedic/backend"
 
       - name: Audit privileged deployment contracts
         env:

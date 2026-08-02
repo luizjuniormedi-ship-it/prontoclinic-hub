@@ -1,12 +1,10 @@
 {
-  "taskId": "edge-runtime-contract-audit-20260801",
+  "taskId": "root-bootstrap-secret-20260801",
   "module": "infrastructure",
-  "baseCommit": "188329c900a49446e33755925242b5e8d0666161",
+  "baseCommit": "b6dea3a624be903f39413478795d23bde328d3cf",
   "paths": [
     ".coordination/task.json",
-    ".github/workflows/deploy-edge-functions.yml",
-    "deploy/edge-runtime/deploy-functions.sh",
-    "deploy/edge-runtime/deploy-functions.test.sh"
+    ".github/workflows/deploy-edge-functions.yml"
   ],
   "sharedPaths": [],
   "status": "active"
