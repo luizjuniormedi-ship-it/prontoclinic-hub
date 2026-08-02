@@ -172,6 +172,7 @@ jobs:
           rm -f "$helper" "$checksum"
           echo "EDGE_HELPER_BOOTSTRAP_PASS"
           EOF
+
       - name: Audit privileged Edge runtime contract
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
