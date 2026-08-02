@@ -6,6 +6,11 @@ on:
       commit_sha:
         description: "Commit SHA aprovado para publicação"
         required: true
+      bootstrap_helper:
+        description: "Atualizar helper privilegiado antes da auditoria"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -119,6 +124,39 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
+
+      - name: Bootstrap privileged deploy helper
+        if: ${{ inputs.bootstrap_helper }}
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          helper="release/deploy/edge-runtime/deploy-functions.sh"
+          test -s "$helper"
+          bash -n "$helper"
+          sha256sum "$helper" > /tmp/prontomedic-edge-deploy.sha256
+          scp "$helper" /tmp/prontomedic-edge-deploy.sha256 \
+            "root@${VPS_HOST}:/tmp/"
+          ssh "root@${VPS_HOST}" 'bash -s' <<'EOF'
+          set -Eeuo pipefail
+          helper="/tmp/deploy-functions.sh"
+          checksum="/tmp/prontomedic-edge-deploy.sha256"
+          target="/usr/local/sbin/prontomedic-edge-deploy"
+          backup_dir="/var/backups/prontomedic/edge-helper"
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+
+          cd /tmp
+          sha256sum -c "$(basename "$checksum")"
+          bash -n "$helper"
+          install -d -o root -g root -m 0700 "$backup_dir"
+          if test -f "$target"; then
+            cp -a "$target" "$backup_dir/prontomedic-edge-deploy-${stamp}"
+          fi
+          install -o root -g root -m 0750 "$helper" "${target}.next"
+          bash -n "${target}.next"
+          mv -Tf "${target}.next" "$target"
+          rm -f "$helper" "$checksum"
+          echo "EDGE_HELPER_BOOTSTRAP_PASS"
+          EOF
 
       - name: Audit privileged Edge runtime contract
         env:

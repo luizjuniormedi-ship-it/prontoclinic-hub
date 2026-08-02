@@ -1,7 +1,7 @@
 {
-  "taskId": "edge-runtime-contract-audit-20260801",
+  "taskId": "bootstrap-edge-helper-20260801",
   "module": "infrastructure",
-  "baseCommit": "188329c900a49446e33755925242b5e8d0666161",
+  "baseCommit": "89719174251a42d5260213542207baed01019c5e",
   "paths": [
     ".coordination/task.json",
     ".github/workflows/deploy-edge-functions.yml",
