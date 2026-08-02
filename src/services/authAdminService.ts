@@ -31,7 +31,7 @@ export const authAdminService = {
     await invoke<{ ok: true }>({ action: "set-active", userId, companyId, active });
   },
 
-  async logoutGlobal(): Promise<void> {
-    await invoke<{ ok: true }>({ action: "logout-global" });
+  async logoutGlobal(userId: string, companyId: string): Promise<void> {
+    await invoke<{ ok: true }>({ action: "logout-global", userId, companyId });
   },
 };

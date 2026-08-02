@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prontomedic.local/schemas/auth-release-manifest-v1.json",
+  "title": "ProntoMedic Auth release manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "commitSha", "migrationStrategy", "builtAt", "files"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "commitSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "migrationStrategy": { "const": "forward-compatible-additive" },
+    "builtAt": { "const": "1970-01-01T00:00:00.000Z" },
+    "files": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

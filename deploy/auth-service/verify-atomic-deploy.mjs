@@ -1,0 +1,39 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const script = readFileSync(resolve(import.meta.dirname, 'deploy-atomic.sh'), 'utf8');
+const installer = readFileSync(resolve(import.meta.dirname, 'install-coordinator.sh'), 'utf8');
+
+assert.match(script, /set -Eeuo pipefail/);
+assert.match(script, /flock -n 9/);
+assert.match(script, /pg_dump -Fc/);
+assert.match(script, /pg_restore --list/);
+assert.match(script, /sha256sum -c/);
+assert.match(script, /tar -tzf[\s\S]+caminho inseguro/);
+assert.match(script, /verify_auth_archive/);
+assert.match(script, /release-manifest\.json/);
+assert.match(script, /node --check/);
+assert.match(script, /pm2 startOrReload "\$auth_ecosystem"/);
+assert.match(script, /PM2_EXEC_PATH_OK/);
+assert.match(script, /LOCAL_AUTH_SERVICE_KEY/);
+assert.match(script, /SUPABASE_SERVICE_ROLE_KEY/);
+assert.match(script, /SERVICE_KEY_FINGERPRINT_MATCH/);
+assert.match(script, /"\$edge_helper" "\$sha" "\$edge_archive" "\$edge_checksum"/);
+assert.match(script, /"\$edge_helper" --rollback/);
+assert.match(script, /trap rollback_on_error ERR/);
+assert.match(script, /rolled-back-\$\(date -u/);
+assert.match(script, /health_check \|\| die/);
+assert.match(script, /edge_smoke/);
+assert.match(script, /schema_aditivo_preservado=true/);
+assert.doesNotMatch(script, /migration-down|ROLLBACK_SQL|DROP TABLE/i);
+assert.match(script, /PREFLIGHT_OK/);
+assert.match(script, /DEPLOY_OK/);
+assert.doesNotMatch(script, /DataSIGH/i);
+assert.match(installer, /set -Eeuo pipefail/);
+assert.match(installer, /local-auth-server\.mjs/);
+assert.match(installer, /prontomedic-auth-deploy/);
+assert.match(installer, /health do backend atual reprovado/);
+assert.doesNotMatch(installer, /DataSIGH/i);
+
+console.log('AUTH_ATOMIC_DEPLOY_STATIC_CONTRACT_OK');

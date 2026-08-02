@@ -13,6 +13,11 @@ import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from
 import pg from 'pg';
 import QRCode from 'qrcode';
 import { parseSelectProjection } from './local-auth-projection.mjs';
+import {
+  createLocalAuthAdmin,
+  ensureLocalAuthAdminSchema,
+  mailProviderFromEnv,
+} from './local-auth-admin.mjs';
 const { Pool } = pg;
 
 const LOCAL_AUTH_MODE = process.env.LOCAL_AUTH_MODE;
@@ -40,6 +45,17 @@ const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET || JWT_SECRET.length < 32) {
   throw new Error('JWT_SECRET obrigatorio e deve ter pelo menos 32 caracteres');
 }
+const SERVICE_API_KEY = process.env.LOCAL_AUTH_SERVICE_KEY;
+const AUTH_PUBLIC_URL = process.env.LOCAL_AUTH_PUBLIC_URL;
+const AUTH_REDIRECT_ORIGINS = new Set(
+  (process.env.LOCAL_AUTH_REDIRECT_ORIGINS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
+if (LOCAL_AUTH_MODE === 'production' && (!AUTH_PUBLIC_URL || AUTH_REDIRECT_ORIGINS.size === 0)) {
+  throw new Error('LOCAL_AUTH_PUBLIC_URL e LOCAL_AUTH_REDIRECT_ORIGINS sao obrigatorios em producao');
+}
 
 // Fix: pg retorna Date objects pra colunas 'date' â€” forÃ§ar string YYYY-MM-DD
 const types = pg.types;
@@ -51,32 +67,151 @@ const PGHOST = process.env.PGHOST || '127.0.0.1';
 const PGPORT = Number(process.env.PGPORT || 5432);
 const PGUSER = process.env.PGUSER || 'app_prontomedic';
 const PGDATABASE = process.env.PGDATABASE || 'prontoclinic';
+function positiveIntegerEnv(name, fallback, maximum) {
+  const raw = process.env[name];
+  const value = raw == null || raw === '' ? fallback : Number(raw);
+  if (!Number.isSafeInteger(value) || value < 1 || value > maximum) {
+    throw new Error(`${name} deve ser inteiro entre 1 e ${maximum}`);
+  }
+  return value;
+}
+
+const POOL_TIMEOUT_MS = positiveIntegerEnv('LOCAL_AUTH_POOL_TIMEOUT_MS', 5000, 60000);
 const pool = new Pool({
   host: PGHOST,
   port: PGPORT,
   user: PGUSER,
   password: process.env.PGPASSWORD,
   database: PGDATABASE,
-  max: Number(process.env.LOCAL_AUTH_POOL_MAX || 10),
-  connectionTimeoutMillis: Number(process.env.LOCAL_AUTH_POOL_TIMEOUT_MS || 5000),
+  max: positiveIntegerEnv('LOCAL_AUTH_POOL_MAX', 10, 100),
+  connectionTimeoutMillis: POOL_TIMEOUT_MS,
 });
 
-async function queryAsAuthenticatedInTransaction(client, payload, text, values = []) {
+const SERVICE_PGUSER = process.env.LOCAL_AUTH_SERVICE_PGUSER;
+const SERVICE_PGPASSWORD = process.env.LOCAL_AUTH_SERVICE_PGPASSWORD;
+if (Boolean(SERVICE_PGUSER) !== Boolean(SERVICE_PGPASSWORD)) {
+  throw new Error('LOCAL_AUTH_SERVICE_PGUSER e LOCAL_AUTH_SERVICE_PGPASSWORD devem ser definidos juntos');
+}
+if (SERVICE_PGUSER && (!SERVICE_API_KEY || SERVICE_API_KEY.length < 32)) {
+  throw new Error('pool service_role exige LOCAL_AUTH_SERVICE_KEY com 32+ caracteres');
+}
+if (SERVICE_API_KEY === JWT_SECRET) {
+  throw new Error('LOCAL_AUTH_SERVICE_KEY deve ser diferente de JWT_SECRET');
+}
+if (SERVICE_PGUSER && SERVICE_PGUSER === PGUSER) {
+  throw new Error('LOCAL_AUTH_SERVICE_PGUSER deve ser exclusivo e diferente de PGUSER');
+}
+if (SERVICE_PGUSER === 'app_prontomedic') {
+  throw new Error('app_prontomedic nao pode ser o login do pool service_role');
+}
+if (LOCAL_AUTH_MODE === 'production' && !SERVICE_PGUSER) {
+  throw new Error('pool PostgreSQL service_role exclusivo e obrigatorio em producao');
+}
+const servicePool = SERVICE_PGUSER && SERVICE_PGPASSWORD
+  ? new Pool({
+      host: PGHOST,
+      port: PGPORT,
+      user: SERVICE_PGUSER,
+      password: SERVICE_PGPASSWORD,
+      database: PGDATABASE,
+      max: positiveIntegerEnv('LOCAL_AUTH_SERVICE_POOL_MAX', 3, 20),
+      connectionTimeoutMillis: POOL_TIMEOUT_MS,
+    })
+  : null;
+let localAuthAdmin = null;
+
+function allowedAuthRedirect(value) {
+  try {
+    const target = new URL(value);
+    return target.protocol === 'https:' && AUTH_REDIRECT_ORIGINS.has(target.origin)
+      ? target.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function poolForPayload(payload) {
+  if (payload.role !== 'service_role') return pool;
+  if (!servicePool) {
+    const error = new Error('service role database pool is not configured');
+    error.statusCode = 503;
+    throw error;
+  }
+  return servicePool;
+}
+
+async function validateServicePoolContract() {
+  if (!servicePool) return;
+  const client = await servicePool.connect();
+  try {
+    const result = await client.query(
+      `SELECT session_user,
+              current_user,
+              login.rolsuper,
+              login.rolinherit,
+              login.rolcreaterole,
+              login.rolcreatedb,
+              login.rolreplication,
+              login.rolbypassrls,
+              pg_has_role(session_user, 'service_role', 'MEMBER') AS service_member,
+              CASE WHEN EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_prontomedic')
+                   THEN pg_has_role('app_prontomedic', 'service_role', 'MEMBER')
+                   ELSE false
+               END AS app_is_service_member
+         FROM pg_roles login
+        WHERE login.rolname = session_user`,
+    );
+    const contract = result.rows[0];
+    const invalid = !contract
+      || contract.session_user !== SERVICE_PGUSER
+      || contract.current_user !== SERVICE_PGUSER
+      || contract.rolsuper
+      || contract.rolinherit
+      || contract.rolcreaterole
+      || contract.rolcreatedb
+      || contract.rolreplication
+      || contract.rolbypassrls
+      || !contract.service_member
+      || contract.app_is_service_member;
+    if (invalid) {
+      throw new Error('login service_role viola o contrato de menor privilegio');
+    }
+    await client.query('BEGIN');
+    await client.query('SET LOCAL ROLE service_role');
+    const roleResult = await client.query('SELECT current_user');
+    await client.query('ROLLBACK');
+    if (roleResult.rows[0]?.current_user !== 'service_role') {
+      throw new Error('login exclusivo nao consegue assumir service_role');
+    }
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch { /* connection may already be aborted */ }
+    throw new Error(`pool service_role recusado: ${error.message}`);
+  } finally {
+    client.release();
+  }
+}
+
+async function queryWithJwtInTransaction(client, payload, text, values = []) {
+  const databaseRole = payload.role === 'service_role' ? 'service_role' : 'authenticated';
   await client.query(
-    `SELECT set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claims', $2, true)`,
-    [payload.sub, JSON.stringify(payload)],
+    `SELECT set_config('request.jwt.claim.sub', $1, true),
+            set_config('request.jwt.claim.role', $2, true),
+            set_config('request.jwt.claims', $3, true)`,
+    [payload.sub || '', databaseRole, JSON.stringify(payload)],
   );
-  await client.query('SET LOCAL ROLE authenticated');
+  if (databaseRole === 'service_role') await client.query('SET LOCAL ROLE service_role');
+  else await client.query('SET LOCAL ROLE authenticated');
   const result = await client.query(text, values);
   await client.query('RESET ROLE');
   return result;
 }
 
 async function queryAsAuthenticated(payload, text, values = []) {
-  const client = await pool.connect();
+  const client = await poolForPayload(payload).connect();
   try {
     await client.query('BEGIN');
-    const result = await queryAsAuthenticatedInTransaction(client, payload, text, values);
+    const result = await queryWithJwtInTransaction(client, payload, text, values);
     await client.query('COMMIT');
     return result;
   } catch (error) {
@@ -99,31 +234,136 @@ function signJwt(payload) {
   return `${header}.${body}.${sig}`;
 }
 
-function verifyJwt(token) {
+function verifySignedJwt(token, secret = JWT_SECRET) {
   try {
     if (typeof token !== 'string') return null;
-    const [header, body, sig] = token.split('.');
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const [header, body, sig] = parts;
     if (!header || !body || !sig) return null;
     const parsedHeader = JSON.parse(Buffer.from(header, 'base64url').toString());
     if (parsedHeader.alg !== 'HS256' || parsedHeader.typ !== 'JWT') return null;
-    const expected = createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
+    const expected = createHmac('sha256', secret).update(`${header}.${body}`).digest('base64url');
     const actualBuffer = Buffer.from(sig || '', 'utf8');
     const expectedBuffer = Buffer.from(expected, 'utf8');
     if (actualBuffer.length !== expectedBuffer.length || !timingSafeEqual(actualBuffer, expectedBuffer)) return null;
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString());
-    if (typeof payload.sub !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.sub)) return null;
-    if (payload.aud !== 'authenticated') return null;
-    if (!Number.isFinite(payload.exp) || Date.now() / 1000 >= payload.exp) return null;
-    if (!Number.isFinite(payload.iat) || payload.iat > Date.now() / 1000 + 60) return null;
+    if (payload.exp != null && (!Number.isFinite(payload.exp) || Date.now() / 1000 >= payload.exp)) return null;
+    if (payload.iat != null && (!Number.isFinite(payload.iat) || payload.iat > Date.now() / 1000 + 60)) return null;
     return payload;
   } catch { return null; }
+}
+
+async function queryAsAuthenticatedInTransaction(client, payload, text, values = []) {
+  return queryWithJwtInTransaction(client, payload, text, values);
+}
+
+function verifyUserJwt(token) {
+  const payload = verifySignedJwt(token);
+  if (!payload || payload.role !== 'authenticated' || payload.aud !== 'authenticated') return null;
+  if (payload.auth_flow != null) return null;
+  if (typeof payload.sub !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.sub)) return null;
+  if (!Number.isFinite(payload.exp) || !Number.isFinite(payload.iat)) return null;
+  return payload;
+}
+
+function verifyPasswordFlowJwt(token) {
+  const payload = verifySignedJwt(token);
+  if (!payload || payload.role !== 'authenticated' || payload.aud !== 'authenticated') return null;
+  if (!['invite', 'recovery'].includes(payload.auth_flow)) return null;
+  if (typeof payload.sub !== 'string' || typeof payload.session_id !== 'string') return null;
+  if (!Number.isFinite(payload.exp) || !Number.isFinite(payload.iat)) return null;
+  return payload;
+}
+
+function constantTimeEqual(left, right) {
+  if (typeof left !== 'string' || typeof right !== 'string') return false;
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function verifyServiceRoleKey(req) {
+  if (!SERVICE_API_KEY) return null;
+  const bearer = bearerToken(req);
+  const apiKey = req.headers.apikey;
+  if (!constantTimeEqual(bearer, SERVICE_API_KEY) || !constantTimeEqual(apiKey, SERVICE_API_KEY)) return null;
+  return { sub: 'auth-admin', role: 'service_role', aud: 'local-auth-admin' };
+}
+
+function bearerToken(req) {
+  const header = req.headers.authorization;
+  const match = typeof header === 'string' ? header.match(/^Bearer\s+(.+)$/i) : null;
+  return match?.[1] || null;
+}
+
+function authUserResponse(user) {
+  return {
+    id: user.id,
+    aud: 'authenticated',
+    role: 'authenticated',
+    email: user.email,
+    email_confirmed_at: user.email_confirmed_at || null,
+    invited_at: user.invited_at || null,
+    banned_until: user.banned_until || null,
+    app_metadata: user.raw_app_meta_data || {},
+    user_metadata: user.raw_user_meta_data || {},
+    created_at: user.created_at,
+    updated_at: user.updated_at,
+  };
+}
+
+const SERVICE_ROUTE_ALLOWLIST = Object.freeze([
+  ['POST', /^\/auth\/v1\/invite$/],
+  ['PUT', /^\/auth\/v1\/admin\/users\/[0-9a-f-]{36}$/i],
+  ['DELETE', /^\/auth\/v1\/admin\/users\/[0-9a-f-]{36}$/i],
+  ['POST', /^\/auth\/v1\/admin\/users\/[0-9a-f-]{36}\/logout$/i],
+]);
+
+function requireServiceRole(req) {
+  const path = new URL(req.url, `http://localhost:${PORT}`).pathname;
+  if (!SERVICE_ROUTE_ALLOWLIST.some(([method, pattern]) => req.method === method && pattern.test(path))) return null;
+  return verifyServiceRoleKey(req);
+}
+
+const SERVICE_RPC_ALLOWLIST = new Set([
+  'finalize_user_access_active',
+  'prepare_user_access_active',
+  'provision_user_access',
+  'restore_user_access_active',
+  'set_user_access_active',
+]);
+const SERVICE_READ_TABLE_ALLOWLIST = new Set(['memberships', 'user_profiles']);
+
+function validateServiceReadContract(table, url) {
+  const keys = [...url.searchParams.keys()];
+  if (keys.some((key) => !['select', 'id', 'email', 'user_id', 'company_id', 'limit'].includes(key))) return false;
+  const select = url.searchParams.get('select');
+  if (table === 'user_profiles') {
+    const byId = /^eq\.[0-9a-f-]{36}$/i.test(url.searchParams.get('id') || '');
+    const byEmail = /^eq\.[^@\s]+@[^@\s]+$/i.test(url.searchParams.get('email') || '');
+    return (select === 'id' || select === 'id,email')
+      && (byId !== byEmail)
+      && !url.searchParams.has('user_id')
+      && !url.searchParams.has('company_id');
+  }
+  if (table === 'memberships') {
+    return select === 'id'
+      && /^eq\.[0-9a-f-]{36}$/i.test(url.searchParams.get('user_id') || '')
+      && /^eq\.[0-9a-f-]{36}$/i.test(url.searchParams.get('company_id') || '')
+      && !url.searchParams.has('id')
+      && !url.searchParams.has('email');
+  }
+  return false;
 }
 
 // Bcrypt verify via Postgres (uses pgcrypto)
 async function verifyPassword(email, password) {
   const res = await pool.query(
     `SELECT id, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data
-     FROM auth.users WHERE email = $1`,
+     FROM auth.users
+    WHERE email = $1
+      AND (banned_until IS NULL OR banned_until <= now())`,
     [email.toLowerCase().trim()]
   );
   if (res.rows.length === 0) return null;
@@ -134,6 +374,27 @@ async function verifyPassword(email, password) {
   );
   if (!check.rows[0]?.valid) return null;
   return user;
+}
+
+async function isUserSessionActive(payload, client = pool) {
+  if (typeof payload.session_id !== 'string') return false;
+  const result = await client.query(
+    `SELECT EXISTS (
+       SELECT 1
+         FROM auth.users u
+        WHERE u.id = $1
+          AND (u.banned_until IS NULL OR u.banned_until <= now())
+          AND EXISTS (
+            SELECT 1
+              FROM auth.refresh_tokens rt
+             WHERE rt.user_id = u.id
+               AND rt.session_jti = $2
+               AND rt.revoked = false
+          )
+     ) AS active`,
+    [payload.sub, payload.session_id],
+  );
+  return Boolean(result.rows[0]?.active);
 }
 
 async function getUserProfile(payload) {
@@ -461,10 +722,13 @@ function parseBody(req, maxBytes = 1024 * 1024) {
 }
 
 const loginAttempts = new Map();
+const recoveryAttempts = new Map();
 const LOGIN_MAX_ATTEMPTS = Number(process.env.LOGIN_MAX_ATTEMPTS || 5);
 const LOGIN_WINDOW_MS = Number(process.env.LOGIN_WINDOW_MS || 15 * 60 * 1000);
 const LOGIN_BLOCK_MS = Number(process.env.LOGIN_BLOCK_MS || 15 * 60 * 1000);
 const LOGIN_RATE_LIMIT_ENABLED = process.env.LOCAL_AUTH_MODE !== 'test';
+const RECOVERY_MAX_ATTEMPTS = Number(process.env.RECOVERY_MAX_ATTEMPTS || 3);
+const RECOVERY_WINDOW_MS = Number(process.env.RECOVERY_WINDOW_MS || 15 * 60 * 1000);
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
@@ -632,8 +896,9 @@ const server = createServer(async (req, res) => {
     const table = path.replace('/rest/v1/', '').split('?')[0];
     // SEGURANÃ‡A: HEAD count exige JWT vÃ¡lido + autorizaÃ§Ã£o (antes vazava contagem sem auth)
     const hAuth = req.headers.authorization?.replace('Bearer ', '');
-    const hPayload = verifyJwt(hAuth);
-    if (!hPayload || !hPayload.sub) { res.writeHead(401); res.end(); return; }
+    const hPayload = verifyUserJwt(hAuth);
+    if (!hPayload) { res.writeHead(401); res.end(); return; }
+    if (!await isUserSessionActive(hPayload)) { res.writeHead(401); res.end(); return; }
     // valida nome de tabela (anti-injection) e permissÃ£o
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(table)) { res.writeHead(400); res.end(); return; }
     const hProfile = await getUserProfile(hPayload);
@@ -675,10 +940,27 @@ const server = createServer(async (req, res) => {
           await client.query('ROLLBACK');
           return json(res, { error: 'invalid refresh token', error_description: 'Token expired or revoked' }, 401);
         }
+        const pendingPasswordFlow = await client.query(
+          `SELECT EXISTS (
+             SELECT 1
+               FROM private.local_auth_challenges
+              WHERE user_id = $1
+                AND session_id = $2
+                AND consumed_at IS NOT NULL
+                AND password_updated_at IS NULL
+                AND expires_at > NOW()
+           ) AS pending`,
+          [rt.rows[0].user_id, rt.rows[0].session_jti],
+        );
+        if (pendingPasswordFlow.rows[0]?.pending) {
+          await client.query('ROLLBACK');
+          return json(res, { error: 'password_update_required' }, 401);
+        }
         const userRes = await client.query(
           `SELECT *
              FROM auth.users
-            WHERE id = $1`,
+            WHERE id = $1
+              AND (banned_until IS NULL OR banned_until <= now())`,
           [rt.rows[0].user_id],
         );
         if (userRes.rows.length === 0) {
@@ -784,10 +1066,237 @@ const server = createServer(async (req, res) => {
     }
 
     // â”€â”€â”€ AUTH: Get user â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // AUTH ADMIN: minimal GoTrue-compatible contract used by auth-admin Edge Function.
+    if (path === '/auth/v1/invite' && req.method === 'POST') {
+      if (!requireServiceRole(req)) return json(res, { message: 'Invalid service role JWT' }, 401);
+      if (!localAuthAdmin) return json(res, { message: 'Auth admin unavailable' }, 503);
+      const body = await parseBody(req);
+      const redirectTo = allowedAuthRedirect(body.redirect_to);
+      if (!redirectTo) return json(res, { message: 'Invalid redirect target' }, 400);
+      const result = await localAuthAdmin.invite({
+        email: body.email,
+        data: body.data,
+        redirectTo,
+      });
+      return json(res, result.body, result.status);
+    }
+
+    if (path === '/auth/v1/recover' && req.method === 'POST') {
+      if (!localAuthAdmin) return json(res, {}, 200);
+      const body = await parseBody(req);
+      if (!allowRecoveryAttempt(loginAttemptKey(req, body.email))) return json(res, {}, 200);
+      const redirectTo = allowedAuthRedirect(body.redirect_to);
+      if (!redirectTo) return json(res, {}, 200);
+      const result = await localAuthAdmin.recover({ email: body.email, redirectTo });
+      return json(res, result.body, result.status);
+    }
+
+    if (path === '/auth/v1/verify' && req.method === 'GET') {
+      if (!localAuthAdmin) return json(res, { message: 'Auth admin unavailable' }, 503);
+      const redirectTo = allowedAuthRedirect(url.searchParams.get('redirect_to'));
+      if (!redirectTo) return json(res, { message: 'Invalid redirect target' }, 400);
+      const result = await localAuthAdmin.consume({
+        token: url.searchParams.get('token'),
+        type: url.searchParams.get('type'),
+        redirectTo,
+      });
+      if (result.status === 302) {
+        res.writeHead(302, {
+          location: result.location,
+          'cache-control': 'no-store',
+          'referrer-policy': 'no-referrer',
+        });
+        res.end();
+        return;
+      }
+      return json(res, result.body, result.status);
+    }
+
+    const adminUserMatch = path.match(/^\/auth\/v1\/admin\/users\/([0-9a-f-]{36})$/i);
+    const adminLogoutMatch = path.match(/^\/auth\/v1\/admin\/users\/([0-9a-f-]{36})\/logout$/i);
+    if (adminLogoutMatch && req.method === 'POST') {
+      const servicePayload = requireServiceRole(req);
+      if (!servicePayload) return json(res, { message: 'Invalid service role key' }, 401);
+      const client = await servicePool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SET LOCAL ROLE service_role');
+        await client.query(
+          'UPDATE auth.refresh_tokens SET revoked = true, updated_at = NOW() WHERE user_id = $1 AND revoked = false',
+          [adminLogoutMatch[1]],
+        );
+        await client.query(
+          'UPDATE public.auth_sessions SET revoked_at = COALESCE(revoked_at, NOW()) WHERE user_id = $1 AND revoked_at IS NULL',
+          [adminLogoutMatch[1]],
+        );
+        await client.query(
+          `UPDATE public.application_sessions
+              SET revoked_at = COALESCE(revoked_at, NOW()),
+                  revocation_reason = COALESCE(revocation_reason, 'admin_logout_global')
+            WHERE user_id = $1 AND revoked_at IS NULL`,
+          [adminLogoutMatch[1]],
+        );
+        await client.query('COMMIT');
+        return json(res, {});
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+    if (adminUserMatch && req.method === 'PUT') {
+      const servicePayload = requireServiceRole(req);
+      if (!servicePayload) return json(res, { message: 'Invalid service role JWT' }, 401);
+      const body = await parseBody(req);
+      if (typeof body.ban_duration !== 'string' || !/^(none|\d+[smhd])$/.test(body.ban_duration)) {
+        return json(res, { message: 'Unsupported admin user update' }, 422);
+      }
+      const capability = await queryAsAuthenticated(servicePayload,
+        `SELECT EXISTS (
+           SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'auth' AND table_name = 'users' AND column_name = 'banned_until'
+         ) AS supported`,
+      );
+      if (!capability.rows[0]?.supported) {
+        return json(res, { message: 'Admin user update is not supported by the current auth schema' }, 501);
+      }
+      const unitMs = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
+      const bannedUntil = body.ban_duration === 'none' ? null : new Date(Date.now() + Number.parseInt(body.ban_duration, 10) * unitMs[body.ban_duration.slice(-1)]).toISOString();
+      const client = await servicePool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(
+          `SELECT set_config('request.jwt.claim.sub', $1, true),
+                  set_config('request.jwt.claim.role', 'service_role', true),
+                  set_config('request.jwt.claims', $2, true)`,
+          [servicePayload.sub, JSON.stringify(servicePayload)],
+        );
+        await client.query('SET LOCAL ROLE service_role');
+        const result = await client.query(
+          'UPDATE auth.users SET banned_until = $1, updated_at = now() WHERE id = $2 RETURNING *',
+          [bannedUntil, adminUserMatch[1]],
+        );
+        if (!result.rowCount) {
+          await client.query('ROLLBACK');
+          return json(res, { message: 'User not found' }, 404);
+        }
+        if (bannedUntil) {
+          await client.query(
+            'UPDATE auth.refresh_tokens SET revoked = true, updated_at = now() WHERE user_id = $1 AND revoked = false',
+            [adminUserMatch[1]],
+          );
+        }
+        await client.query('COMMIT');
+        return json(res, authUserResponse(result.rows[0]));
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+
+    if (adminUserMatch && req.method === 'DELETE') {
+      const servicePayload = requireServiceRole(req);
+      if (!servicePayload) return json(res, { message: 'Invalid service role JWT' }, 401);
+      const client = await poolForPayload(servicePayload).connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(
+          `SELECT set_config('request.jwt.claim.sub', $1, true),
+                  set_config('request.jwt.claim.role', 'service_role', true),
+                  set_config('request.jwt.claims', $2, true)`,
+          [servicePayload.sub || '', JSON.stringify(servicePayload)],
+        );
+        await client.query('SET LOCAL ROLE service_role');
+        const result = await client.query(
+          `DELETE FROM auth.users u
+            WHERE u.id = $1
+              AND u.email_confirmed_at IS NULL
+              AND EXISTS (
+                SELECT 1 FROM private.local_auth_challenges c
+                 WHERE c.user_id = u.id AND c.type = 'invite'
+                   AND c.consumed_at IS NULL
+                   AND c.created_at > NOW() - INTERVAL '5 minutes'
+              )
+          RETURNING u.*`,
+          [adminUserMatch[1]],
+        );
+        if (!result.rowCount) {
+          await client.query('ROLLBACK');
+          return json(res, { message: 'Compensating delete not allowed' }, 409);
+        }
+        await client.query('DELETE FROM auth.refresh_tokens WHERE user_id = $1', [adminUserMatch[1]]);
+        await client.query('COMMIT');
+        return json(res, authUserResponse(result.rows[0]));
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+
+    if (path === '/auth/v1/user' && req.method === 'PUT') {
+      const payload = verifyPasswordFlowJwt(bearerToken(req));
+      if (!payload) {
+        return json(res, { message: 'Password update is not authorized' }, 401);
+      }
+      const body = await parseBody(req);
+      if (typeof body.password !== 'string' || body.password.length < 8 || body.password.length > 128) {
+        return json(res, { message: 'Password must contain 8 to 128 characters' }, 422);
+      }
+      if (!servicePool) return json(res, { message: 'Auth admin unavailable' }, 503);
+      const client = await servicePool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SET LOCAL ROLE service_role');
+        const authorization = await client.query(
+          `UPDATE private.local_auth_challenges
+              SET password_updated_at = NOW()
+            WHERE user_id = $1 AND session_id = $2 AND type = $3
+              AND consumed_at IS NOT NULL AND password_updated_at IS NULL
+              AND expires_at > NOW()
+        RETURNING id`,
+          [payload.sub, payload.session_id, payload.auth_flow],
+        );
+        if (!authorization.rowCount) {
+          await client.query('ROLLBACK');
+          return json(res, { message: 'Password authorization expired or already used' }, 409);
+        }
+        const updated = await client.query(
+          `UPDATE auth.users
+              SET encrypted_password = crypt($1, gen_salt('bf', 12)),
+                  email_confirmed_at = COALESCE(email_confirmed_at, NOW()),
+                  updated_at = NOW()
+            WHERE id = $2 AND (banned_until IS NULL OR banned_until <= NOW())
+        RETURNING *`,
+          [body.password, payload.sub],
+        );
+        if (!updated.rowCount) {
+          await client.query('ROLLBACK');
+          return json(res, { message: 'User not found or inactive' }, 404);
+        }
+        await client.query(
+          'UPDATE auth.refresh_tokens SET revoked = true, updated_at = NOW() WHERE user_id = $1 AND revoked = false',
+          [payload.sub],
+        );
+        await client.query('COMMIT');
+        return json(res, authUserResponse(updated.rows[0]));
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+
     if (path === '/auth/v1/user' && req.method === 'GET') {
       const auth = req.headers.authorization?.replace('Bearer ', '');
-      const payload = verifyJwt(auth);
+      const payload = verifyUserJwt(auth);
       if (!payload) return json(res, { error: 'unauthorized' }, 401);
+      if (!await isUserSessionActive(payload)) return json(res, { error: 'unauthorized' }, 401);
       const profile = await getUserProfile(payload);
       if (!profile?.lg_ativo) return json(res, { error: 'user not found' }, 404);
       const userRes = await pool.query(
@@ -812,7 +1321,7 @@ const server = createServer(async (req, res) => {
     // â”€â”€â”€ AUTH: Logout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (path === '/auth/v1/logout' && req.method === 'POST') {
       const token = req.headers.authorization?.replace('Bearer ', '');
-      const payload = verifyJwt(token);
+      const payload = verifyUserJwt(token);
       if (payload?.sub) {
         await pool.query(
           'UPDATE auth.refresh_tokens SET revoked = true, updated_at = now() WHERE user_id = $1 AND revoked = false',
@@ -825,15 +1334,17 @@ const server = createServer(async (req, res) => {
     // (refresh token handler moved to top of chain)
 
     if (path === '/auth/v1/factors' && req.method === 'GET') {
-      const payload = verifyJwt(req.headers.authorization?.replace('Bearer ', ''));
+      const payload = verifyUserJwt(req.headers.authorization?.replace('Bearer ', ''));
       if (!payload) return json(res, { error: 'unauthorized' }, 401);
+      if (!await isUserSessionActive(payload)) return json(res, { error: 'unauthorized' }, 401);
       const factors = await loadMfaFactors(payload);
       return json(res, { all: factors, totp: factors, phone: [] });
     }
 
     if (path === '/auth/v1/factors' && req.method === 'POST') {
-      const payload = verifyJwt(req.headers.authorization?.replace('Bearer ', ''));
+      const payload = verifyUserJwt(req.headers.authorization?.replace('Bearer ', ''));
       if (!payload) return json(res, { error: 'unauthorized' }, 401);
+      if (!await isUserSessionActive(payload)) return json(res, { error: 'unauthorized' }, 401);
       const encryptionKey = requireMfaEncryptionKey();
       const body = await parseBody(req);
       if (body.factor_type && body.factor_type !== 'totp') {
@@ -876,8 +1387,9 @@ const server = createServer(async (req, res) => {
 
     const factorChallenge = path.match(/^\/auth\/v1\/factors\/([0-9a-f-]{36})\/challenge$/i);
     if (factorChallenge && req.method === 'POST') {
-      const payload = verifyJwt(req.headers.authorization?.replace('Bearer ', ''));
+      const payload = verifyUserJwt(req.headers.authorization?.replace('Bearer ', ''));
       if (!payload) return json(res, { error: 'unauthorized' }, 401);
+      if (!await isUserSessionActive(payload)) return json(res, { error: 'unauthorized' }, 401);
       const factor = await queryAsAuthenticated(
         payload,
         'SELECT id FROM public.auth_mfa_factors WHERE id = $1 AND user_id = $2',
@@ -893,8 +1405,9 @@ const server = createServer(async (req, res) => {
 
     const factorVerify = path.match(/^\/auth\/v1\/factors\/([0-9a-f-]{36})\/verify$/i);
     if (factorVerify && req.method === 'POST') {
-      const payload = verifyJwt(req.headers.authorization?.replace('Bearer ', ''));
+      const payload = verifyUserJwt(req.headers.authorization?.replace('Bearer ', ''));
       if (!payload) return json(res, { error: 'unauthorized' }, 401);
+      if (!await isUserSessionActive(payload)) return json(res, { error: 'unauthorized' }, 401);
       const body = await parseBody(req);
       if (!/^\d{6}$/.test(String(body.code || ''))) {
         return json(res, { error: 'invalid_code' }, 403);
@@ -930,8 +1443,9 @@ const server = createServer(async (req, res) => {
 
     const factorDelete = path.match(/^\/auth\/v1\/factors\/([0-9a-f-]{36})$/i);
     if (factorDelete && req.method === 'DELETE') {
-      const payload = verifyJwt(req.headers.authorization?.replace('Bearer ', ''));
+      const payload = verifyUserJwt(req.headers.authorization?.replace('Bearer ', ''));
       if (!payload) return json(res, { error: 'unauthorized' }, 401);
+      if (!await isUserSessionActive(payload)) return json(res, { error: 'unauthorized' }, 401);
       const result = await queryAsAuthenticated(
         payload,
         'DELETE FROM public.auth_mfa_factors WHERE id = $1 AND user_id = $2 RETURNING id',
@@ -947,17 +1461,18 @@ const server = createServer(async (req, res) => {
 
     // â”€â”€â”€ RPC: chamada de funcao Postgres (supabase.rpc) â”€â”€â”€â”€â”€â”€â”€
     if (path.startsWith('/rest/v1/rpc/') && req.method === 'POST') {
-      const auth = req.headers.authorization?.replace('Bearer ', '');
-      const payload = verifyJwt(auth);
-      if (!payload || !payload.sub) return json(res, { error: 'unauthorized', message: 'JWT vÃ¡lido obrigatÃ³rio' }, 401);
-      const profile = await getUserProfile(payload);
-      if (!profile || !profile.lg_ativo) return json(res, { error: 'forbidden', message: 'usuÃ¡rio invÃ¡lido/inativo' }, 403);
       const fnName = decodeURIComponent(path.replace('/rest/v1/rpc/', '').split('?')[0]);
+      const servicePayload = SERVICE_RPC_ALLOWLIST.has(fnName) ? verifyServiceRoleKey(req) : null;
+      const payload = servicePayload || verifyUserJwt(bearerToken(req));
+      if (!payload) return json(res, { error: 'unauthorized', message: 'JWT vÃ¡lido obrigatÃ³rio' }, 401);
+      if (!servicePayload && !await isUserSessionActive(payload)) return json(res, { error: 'unauthorized', message: 'sessao inativa' }, 401);
+      const profile = servicePayload ? null : await getUserProfile(payload);
+      if (!servicePayload && (!profile || !profile.lg_ativo)) return json(res, { error: 'forbidden', message: 'usuÃ¡rio invÃ¡lido/inativo' }, 403);
       const IDENT = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
       if (!IDENT.test(fnName)) {
         return json(res, { error: 'bad_request', message: `funÃ§Ã£o RPC invÃ¡lida: ${fnName}` }, 400);
       }
-      const rpcDecision = await authorizeRpc(profile, fnName, payload);
+      const rpcDecision = servicePayload ? { ok: true } : await authorizeRpc(profile, fnName, payload);
       if (!rpcDecision.ok) {
         return json(res, { error: 'forbidden', message: rpcDecision.reason }, 403);
       }
@@ -985,14 +1500,16 @@ const server = createServer(async (req, res) => {
       // monta SELECT fn(p1 => $1, p2 => $2) com params nomeados
       const namedArgs = keys.map((k, i) => `"${k}" => $${i + 1}`).join(', ');
       const vals = keys.map((k) => body[k]);
-      const client = await pool.connect();
+      const client = await poolForPayload(payload).connect();
       try {
         await client.query('BEGIN');
         await client.query(
-          `SELECT set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claims', $2, true)`,
-          [payload.sub, JSON.stringify(payload)],
+          `SELECT set_config('request.jwt.claim.sub', $1, true),
+                  set_config('request.jwt.claim.role', $2, true),
+                  set_config('request.jwt.claims', $3, true)`,
+          [payload.sub, servicePayload ? 'service_role' : 'authenticated', JSON.stringify(payload)],
         );
-        await client.query('SET LOCAL ROLE authenticated');
+        await client.query(servicePayload ? 'SET LOCAL ROLE service_role' : 'SET LOCAL ROLE authenticated');
         const functionMetadata = await client.query(
           `SELECT routine.proretset
              FROM pg_catalog.pg_proc routine
@@ -1038,19 +1555,25 @@ const server = createServer(async (req, res) => {
       if (!isIdentifier(table)) {
         return json(res, { error: 'bad_request', message: `tabela invÃ¡lida: ${table}` }, 400);
       }
-      const auth = req.headers.authorization?.replace('Bearer ', '');
-      const payload = verifyJwt(auth);
+      const servicePayload = req.method === 'GET' && SERVICE_READ_TABLE_ALLOWLIST.has(table)
+        ? verifyServiceRoleKey(req)
+        : null;
+      const payload = servicePayload || verifyUserJwt(bearerToken(req));
 
       // Exige JWT vÃ¡lido (apikey sozinho NÃƒO autentica mais)
-      if (!payload || !payload.sub) return json(res, { error: 'unauthorized', message: 'JWT vÃ¡lido obrigatÃ³rio' }, 401);
+      if (!payload) return json(res, { error: 'unauthorized', message: 'JWT vÃ¡lido obrigatÃ³rio' }, 401);
+      if (servicePayload && !validateServiceReadContract(table, url)) {
+        return json(res, { error: 'forbidden', message: 'Service read contract denied' }, 403);
+      }
+      if (!servicePayload && !await isUserSessionActive(payload)) return json(res, { error: 'unauthorized', message: 'sessao inativa' }, 401);
 
       // Enforcement RBAC: role Ã— mÃ³dulo Ã— aÃ§Ã£o
-      const profile = await getUserProfile(payload);
+      const profile = servicePayload ? null : await getUserProfile(payload);
       const isSelfProfileRead =
         req.method === 'GET' &&
         table === 'user_profiles' &&
         url.searchParams.get('id') === `eq.${payload.sub}`;
-      const decision = isSelfProfileRead ? { ok: true } : await authorize(profile, table, req.method, payload);
+      const decision = servicePayload || isSelfProfileRead ? { ok: true } : await authorize(profile, table, req.method, payload);
       if (!decision.ok) return json(res, { error: 'forbidden', message: decision.reason }, 403);
       if (req.method === 'GET') {
         // Parse select columns (strip embedded relations like "payment_source:payment_sources(name,type)")
@@ -1292,7 +1815,19 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, '0.0.0.0', () => {
+async function startServer() {
+  await pool.query('SELECT 1');
+  await validateServicePoolContract();
+  if (servicePool) {
+    await ensureLocalAuthAdminSchema(servicePool);
+    localAuthAdmin = createLocalAuthAdmin({
+      pool: servicePool,
+      signJwt,
+      mailProvider: mailProviderFromEnv(),
+      publicAuthUrl: AUTH_PUBLIC_URL,
+    });
+  }
+  server.listen(PORT, '0.0.0.0', () => {
   console.log(``);
   console.log(`  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”`);
   console.log(`  â”‚  ProntoClinic Local Auth Server               â”‚`);
@@ -1301,4 +1836,47 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  â”‚  Admin: use usuario seedado no banco local     â”‚`);
   console.log(`  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜`);
   console.log(``);
+  });
+}
+
+function allowRecoveryAttempt(key, now = Date.now()) {
+  if (!LOGIN_RATE_LIMIT_ENABLED) return true;
+  const previous = recoveryAttempts.get(key);
+  const attempt = !previous || now - previous.firstAttempt > RECOVERY_WINDOW_MS
+    ? { count: 0, firstAttempt: now }
+    : previous;
+  attempt.count += 1;
+  recoveryAttempts.set(key, attempt);
+  if (recoveryAttempts.size > 10000) {
+    for (const [entryKey, entry] of recoveryAttempts) {
+      if (now - entry.firstAttempt > RECOVERY_WINDOW_MS) recoveryAttempts.delete(entryKey);
+    }
+  }
+  return attempt.count <= RECOVERY_MAX_ATTEMPTS;
+}
+
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[SHUTDOWN] ${signal}`);
+  server.close(async () => {
+    const results = await Promise.allSettled([pool.end(), servicePool?.end()]);
+    process.exitCode = results.some((result) => result.status === 'rejected') ? 1 : 0;
+  });
+  setTimeout(() => {
+    console.error('[SHUTDOWN] timeout ao encerrar conexoes');
+    process.exit(1);
+  }, 10000).unref();
+}
+
+pool.on('error', (error) => console.error('[PG_POOL_ERROR] authenticated', error.message));
+servicePool?.on('error', (error) => console.error('[PG_POOL_ERROR] service_role', error.message));
+process.once('SIGTERM', () => void shutdown('SIGTERM'));
+process.once('SIGINT', () => void shutdown('SIGINT'));
+
+startServer().catch(async (error) => {
+  console.error('[STARTUP_REFUSED]', error.message);
+  await Promise.allSettled([pool.end(), servicePool?.end()]);
+  process.exitCode = 1;
 });
