@@ -1,10 +1,12 @@
 {
-  "taskId": "audit-nginx-edge-routes-20260801",
+  "taskId": "edge-runtime-contract-audit-20260801",
   "module": "infrastructure",
-  "baseCommit": "c294530a064f415ec261fce0c5daf28c7d6937c1",
+  "baseCommit": "188329c900a49446e33755925242b5e8d0666161",
   "paths": [
     ".coordination/task.json",
-    ".github/workflows/deploy-edge-functions.yml"
+    ".github/workflows/deploy-edge-functions.yml",
+    "deploy/edge-runtime/deploy-functions.sh",
+    "deploy/edge-runtime/deploy-functions.test.sh"
   ],
   "sharedPaths": [],
   "status": "active"

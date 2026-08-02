@@ -13,6 +13,69 @@ flock -n 9 || {
   exit 25
 }
 
+host_postgres() {
+  docker run --rm --privileged -i -v /:/host alpine:3.20 \
+    chroot /host runuser -u postgres -- "$@"
+}
+
+audit_runtime_contract() {
+  local nginx_config
+  nginx_config="$(nginx -T 2>&1)"
+  for route in auth-admin dicom-bridge telemedicina-daily; do
+    grep -Fq "location = /functions/v1/${route}" <<<"$nginx_config" || {
+      echo "Rota Nginx ausente: /functions/v1/${route}" >&2
+      exit 28
+    }
+    grep -Fq "proxy_pass http://127.0.0.1:9000/${route};" <<<"$nginx_config" || {
+      echo "Proxy Nginx inválido para: ${route}" >&2
+      exit 29
+    }
+  done
+
+  host_postgres psql -X -d prontoclinic -v ON_ERROR_STOP=1 <<'SQL'
+DO $audit$
+DECLARE
+  v_failure TEXT;
+BEGIN
+  WITH expected(signature, browser_role, service_role_access) AS (
+    VALUES
+      ('public.current_context_is_company_admin(uuid)', TRUE, FALSE),
+      ('public.provision_user_access(uuid,text,text,uuid,integer,integer)', FALSE, TRUE),
+      ('public.prepare_user_access_active(uuid,uuid,boolean)', FALSE, TRUE),
+      ('public.restore_user_access_active(uuid,uuid,text,text,timestamp with time zone)', FALSE, TRUE),
+      ('public.finalize_user_access_active(uuid,uuid,text,timestamp with time zone)', FALSE, TRUE)
+  ), audited AS (
+    SELECT expected.signature,
+      procedure_record.oid IS NOT NULL AS present,
+      COALESCE(procedure_record.prosecdef, FALSE) AS security_definer,
+      COALESCE(procedure_record.proconfig @> ARRAY['search_path=public, auth, pg_temp'], FALSE) AS fixed_search_path,
+      COALESCE(procedure_record.proconfig @> ARRAY['row_security=off'], FALSE) AS row_security_off,
+      has_function_privilege('authenticated', expected.signature, 'EXECUTE') = expected.browser_role AS browser_acl,
+      NOT has_function_privilege('anon', expected.signature, 'EXECUTE') AS anon_denied,
+      has_function_privilege('service_role', expected.signature, 'EXECUTE') = expected.service_role_access AS service_acl
+    FROM expected
+    LEFT JOIN pg_proc AS procedure_record
+      ON procedure_record.oid = to_regprocedure(expected.signature)
+  )
+  SELECT string_agg(signature, ', ' ORDER BY signature) INTO v_failure
+  FROM audited
+  WHERE NOT (present AND security_definer AND fixed_search_path AND row_security_off
+    AND browser_acl AND anon_denied AND service_acl);
+
+  IF v_failure IS NOT NULL THEN
+    RAISE EXCEPTION 'Contrato administrativo inválido: %', v_failure;
+  END IF;
+END
+$audit$;
+SQL
+  echo "EDGE_RUNTIME_CONTRACT_AUDIT_PASS"
+}
+
+if test "${1:-}" = "--audit-contract"; then
+  audit_runtime_contract
+  exit 0
+fi
+
 if test "${1:-}" = "--rollback"; then
   previous="$(readlink -f "$previous_link" 2>/dev/null || true)"
   test -n "$previous" && test -f "${previous}/main/index.ts" || {
