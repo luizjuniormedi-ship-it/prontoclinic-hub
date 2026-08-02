@@ -45,8 +45,7 @@ BEGIN
       ('public.restore_user_access_active(uuid,uuid,text,text,timestamp with time zone)', FALSE, TRUE),
       ('public.finalize_user_access_active(uuid,uuid,text,timestamp with time zone)', FALSE, TRUE)
   ), audited AS (
-    SELECT
-      expected.signature,
+    SELECT expected.signature,
       procedure_record.oid IS NOT NULL AS present,
       COALESCE(procedure_record.prosecdef, FALSE) AS security_definer,
       COALESCE(procedure_record.proconfig @> ARRAY['search_path=public, auth, pg_temp'], FALSE) AS fixed_search_path,
@@ -58,13 +57,10 @@ BEGIN
     LEFT JOIN pg_proc AS procedure_record
       ON procedure_record.oid = to_regprocedure(expected.signature)
   )
-  SELECT string_agg(signature, ', ' ORDER BY signature)
-    INTO v_failure
+  SELECT string_agg(signature, ', ' ORDER BY signature) INTO v_failure
   FROM audited
-  WHERE NOT (
-    present AND security_definer AND fixed_search_path AND row_security_off
-    AND browser_acl AND anon_denied AND service_acl
-  );
+  WHERE NOT (present AND security_definer AND fixed_search_path AND row_security_off
+    AND browser_acl AND anon_denied AND service_acl);
 
   IF v_failure IS NOT NULL THEN
     RAISE EXCEPTION 'Contrato administrativo inválido: %', v_failure;
