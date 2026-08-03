@@ -1,9 +1,11 @@
 {
-  "taskId": "auth-admin-bootstrap-pm2-20260802",
+  "taskId": "auth-admin-runtime-contract-20260803",
   "module": "infrastructure",
-  "baseCommit": "d1c2128bdc607bb77b45908e39cd3231cf8296df",
+  "baseCommit": "dc7c98d729984f2be6fe9a0af1f8cfa0e70c66ee",
   "paths": [
     ".coordination/task.json",
+    "deploy/auth-service/deploy-atomic.sh",
+    "deploy/auth-service/ecosystem.config.cjs",
     "deploy/auth-service/install-coordinator.sh",
     "deploy/auth-service/verify-atomic-deploy.mjs"
   ],
