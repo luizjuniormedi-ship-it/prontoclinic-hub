@@ -148,23 +148,25 @@ verify_additive_migration() {
   fi
 }
 
-pm2_exec_path() {
+pm2_exec_contract() {
   pm2 jlist | node -e '
     let input = "";
     process.stdin.on("data", chunk => { input += chunk; });
     process.stdin.on("end", () => {
       const processInfo = JSON.parse(input).find(item => item.name === process.argv[1]);
       if (!processInfo?.pm2_env?.pm_exec_path) process.exit(2);
-      process.stdout.write(processInfo.pm2_env.pm_exec_path);
+      process.stdout.write(`${processInfo.pm2_env.pm_exec_path}\n${(processInfo.pm2_env.args || []).join(" ")}`);
     });
   ' "$pm2_process"
 }
 
 assert_pm2_exec_path() {
-  local expected="${auth_current}/local-auth-server.mjs" actual
-  actual="$(pm2_exec_path)" || die "pm_exec_path indisponivel para ${pm2_process}"
-  test "$actual" = "$expected" \
-    || die "PM2 aponta para ${actual}; esperado ${expected}"
+  local expected="${auth_current}/local-auth-server.mjs" contract actual args
+  contract="$(pm2_exec_contract)" || die "contrato PM2 indisponivel para ${pm2_process}"
+  actual="$(printf '%s\n' "$contract" | sed -n '1p')"
+  args="$(printf '%s\n' "$contract" | sed -n '2p')"
+  test "$actual" = "/usr/bin/node" || die "PM2 aponta para ${actual}; esperado /usr/bin/node"
+  test "$args" = "$expected" || die "PM2 args aponta para ${args}; esperado ${expected}"
   log "PM2_EXEC_PATH_OK"
 }
 

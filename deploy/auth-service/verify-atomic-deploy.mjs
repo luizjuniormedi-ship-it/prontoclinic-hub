@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 
 const script = readFileSync(resolve(import.meta.dirname, 'deploy-atomic.sh'), 'utf8');
 const installer = readFileSync(resolve(import.meta.dirname, 'install-coordinator.sh'), 'utf8');
+const ecosystem = readFileSync(resolve(import.meta.dirname, 'ecosystem.config.cjs'), 'utf8');
 
 assert.match(script, /set -Eeuo pipefail/);
 assert.match(script, /flock -n 9/);
@@ -35,8 +36,22 @@ assert.match(installer, /local-auth-server\.mjs/);
 assert.match(installer, /prontomedic-auth-deploy/);
 assert.match(installer, /pm2 delete/);
 assert.match(installer, /pm_exec_path/);
+assert.match(installer, /PRONTOMEDIC_AUTH_LEGACY_ENV0/);
+assert.match(installer, /stat -c '%u:%a'/);
+assert.match(installer, /\.env\.auth\.json|auth_env_json/);
+assert.match(installer, /trap rollback_bootstrap ERR/);
+assert.match(installer, /variaveis obrigatorias ausentes/);
+assert.match(installer, /LOCAL_AUTH_PORT deve ser/);
+assert.match(installer, /CORS_ALLOWED_ORIGINS contem origem local ou curinga/);
+assert.match(installer, /rollback_bootstrap 1/);
 assert.match(installer, /for _attempt in \$\(seq 1 30\)/);
 assert.match(installer, /health do backend atual reprovado/);
 assert.doesNotMatch(installer, /DataSIGH/i);
+assert.match(ecosystem, /\.env\.auth\.json/);
+assert.match(ecosystem, /JSON\.parse/);
+assert.match(ecosystem, /PRONTOMEDIC_AUTH_SCRIPT/);
+assert.match(ecosystem, /\.\.\.runtimeEnv/);
+assert.match(ecosystem, /interpreter: 'none'/);
+assert.match(ecosystem, /args: \[appScript\]/);
 
 console.log('AUTH_ATOMIC_DEPLOY_STATIC_CONTRACT_OK');
