@@ -173,7 +173,10 @@ jobs:
           helper="release/bootstrap-root/deploy/edge-runtime/deploy-functions.sh"
           test -s "$helper"
           bash -n "$helper"
-          sha256sum "$helper" > /tmp/prontomedic-edge-deploy.sha256
+          (
+            cd "$(dirname "$helper")"
+            sha256sum "$(basename "$helper")"
+          ) > /tmp/prontomedic-edge-deploy.sha256
           scp -i ~/.ssh/id_ed25519_root -o IdentitiesOnly=yes \
             "$helper" /tmp/prontomedic-edge-deploy.sha256 \
             "root@${VPS_HOST}:/tmp/"
