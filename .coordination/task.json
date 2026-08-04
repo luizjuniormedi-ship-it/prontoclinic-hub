@@ -18,6 +18,9 @@
     "deploy/auth-service/verify-atomic-deploy.mjs",
     "deploy/database",
     "e2e/companies.spec.ts",
+    "e2e/gate-phase01.spec.ts",
+    "e2e/recepcao.spec.ts",
+    "index.html",
     "supabase/rollbacks/20260804033225_secure_companies_units_admin_contract.sql",
     "supabase/migrations/20260804033225_secure_companies_units_admin_contract.sql"
   ],
