@@ -1,11 +1,10 @@
 {
-  "taskId": "edge-auth-smoke-20260803",
+  "taskId": "edge-nginx-path-20260803",
   "module": "infrastructure",
-  "baseCommit": "892e2eb6c0c32dc2ba5608adf2de8d607dad832e",
+  "baseCommit": "c7260b72055830355c3baa012dceee3e0049012c",
   "paths": [
     ".coordination/task.json",
-    "deploy/auth-service/deploy-atomic.sh",
-    "deploy/auth-service/verify-atomic-deploy.mjs",
+    ".github/workflows/deploy-edge-functions.yml",
     "deploy/edge-runtime/deploy-functions.sh",
     "deploy/edge-runtime/deploy-functions.test.sh"
   ],
