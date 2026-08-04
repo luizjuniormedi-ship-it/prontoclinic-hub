@@ -5,8 +5,8 @@ readonly database="${PRONTOMEDIC_DATABASE:-prontoclinic}"
 readonly backup_root="${PRONTOMEDIC_DB_BACKUP_ROOT:-/var/backups/prontomedic/database}"
 readonly state_root="${PRONTOMEDIC_DB_STATE_ROOT:-/var/lib/prontomedic/database-deploy}"
 readonly global_lock="${PRONTOMEDIC_GLOBAL_DEPLOY_LOCK:-/var/lock/prontomedic-deploy.lock}"
-readonly expected_version="20260804033225"
-readonly expected_name="secure_companies_units_admin_contract"
+migration_version=""
+migration_name=""
 
 die() { printf 'PRONTOMEDIC_DB_DEPLOY_ERROR: %s\n' "$*" >&2; exit 1; }
 log() { printf 'PRONTOMEDIC_DB_DEPLOY: %s\n' "$*"; }
@@ -62,22 +62,36 @@ history_contract() {
   local result
   result="$(psql_db "$database" -Atqc "
     SELECT CASE
-      WHEN to_regclass('supabase_migrations.schema_migrations') IS NOT NULL
-       AND (SELECT count(*) FROM information_schema.columns
+      WHEN to_regclass('supabase_migrations.schema_migrations') IS NULL THEN 'missing'
+      WHEN (SELECT count(*) FROM information_schema.columns
             WHERE table_schema = 'supabase_migrations'
               AND table_name = 'schema_migrations'
               AND column_name IN ('version', 'name', 'statements')) = 3
-      THEN 'ready' ELSE 'missing' END")"
-  [[ "$result" = ready ]] || die 'historico supabase_migrations ausente ou incompativel'
+      THEN 'ready' ELSE 'incompatible' END")"
+  [[ "$result" = ready || "$result" = missing ]] || die 'historico supabase_migrations incompativel'
+  printf '%s' "$result"
 }
 
 history_absent() {
-  [[ "$(psql_db "$database" -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '$expected_version'")" = 0 ]] \
-    || die "migration $expected_version ja registrada"
+  [[ "$(history_contract)" = missing ]] && return 0
+  [[ "$(psql_db "$database" -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '$migration_version'")" = 0 ]] \
+    || die "migration $migration_version ja registrada"
 }
 
 history_present() {
-  [[ "$(psql_db "$database" -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '$expected_version'")" = 1 ]]
+  [[ "$(history_contract)" = ready ]] && \
+    [[ "$(psql_db "$database" -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '$migration_version'")" = 1 ]]
+}
+
+ensure_history() {
+  local target="$1"
+  psql_db "$target" -c "
+    CREATE SCHEMA IF NOT EXISTS supabase_migrations;
+    CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (
+      version text PRIMARY KEY,
+      name text NOT NULL,
+      statements text[] NOT NULL DEFAULT ARRAY[]::text[]
+    )" >/dev/null
 }
 
 verify_checksum() {
@@ -99,14 +113,15 @@ extract_bundle() {
 
 verify_manifest() {
   local stage="$1" sha="$2"
-  node - "$stage" "$sha" "$expected_version" "$expected_name" <<'NODE'
+  node - "$stage" "$sha" <<'NODE'
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const [stage, sha, version, name] = process.argv.slice(2);
+const [stage, sha] = process.argv.slice(2);
 const manifest = JSON.parse(fs.readFileSync(path.join(stage, 'manifest.json'), 'utf8'));
 if (manifest.schemaVersion !== 1 || manifest.commitSha !== sha ||
-    manifest.migrationVersion !== version || manifest.migrationName !== name) process.exit(2);
+    !/^\d{14}$/.test(manifest.migrationVersion) ||
+    !/^[a-z0-9_]+$/.test(manifest.migrationName)) process.exit(2);
 const expected = [
   'migration.sql', 'rollback.sql', 'smoke-before.sql',
   'smoke-applied.sql', 'smoke-rollback.sql'
@@ -118,6 +133,18 @@ for (const file of expected) {
   if (manifest.files[file] !== digest) process.exit(4);
 }
 NODE
+}
+
+load_manifest_contract() {
+  local stage="$1"
+  IFS=$'\t' read -r migration_version migration_name < <(
+    node -e "const m=require(process.argv[1]); process.stdout.write(m.migrationVersion+'\\t'+m.migrationName+'\\n')" \
+      "$stage/manifest.json"
+  )
+  case "${migration_version}:${migration_name}" in
+    20260804033225:secure_companies_units_admin_contract|20260804143000:rbac_active_context_aal2) ;;
+    *) die 'migration fora da allowlist do coordenador' ;;
+  esac
 }
 
 verify_transactional_sql() {
@@ -137,6 +164,7 @@ validate_bundle() {
     [[ -f "$stage/$file" && ! -L "$stage/$file" ]] || die "arquivo ausente no bundle: $file"
   done
   verify_manifest "$stage" "$sha" || die 'manifest do bundle invalido'
+  load_manifest_contract "$stage"
   verify_transactional_sql "$stage/migration.sql" migration
   verify_transactional_sql "$stage/rollback.sql" rollback
 }
@@ -162,14 +190,14 @@ write_deploy_state() {
     printf 'COMMIT_SHA=%q\n' "$sha"
     printf 'BUNDLE_COPY=%q\n' "$bundle_copy"
     printf 'DATABASE_BACKUP=%q\n' "$backup"
-    printf 'MIGRATION_VERSION=%q\n' "$expected_version"
+    printf 'MIGRATION_VERSION=%q\n' "$migration_version"
   } >"${file}.next"
   mv -f "${file}.next" "$file"
 }
 
 backup_and_rehearse() {
   local stage="$1" sha="$2" backup="$3"
-  local restore_db="prontoclinic_restore_${expected_version}_$$"
+  local restore_db="prontoclinic_restore_${migration_version}_$$"
 
   host_postgres pg_dump -Fc -d "$database" >"${backup}.next"
   [[ -s "${backup}.next" ]] || die 'backup PostgreSQL vazio'
@@ -190,6 +218,7 @@ backup_and_rehearse() {
     restore_created=1
     host_postgres pg_restore --exit-on-error -d "$restore_db" "$backup" >/dev/null
     run_smoke "$restore_db" "$stage/smoke-before.sql"
+    ensure_history "$restore_db"
     psql_db "$restore_db" -f "$stage/migration.sql" >/dev/null
     run_smoke "$restore_db" "$stage/smoke-applied.sql"
     psql_db "$restore_db" -f "$stage/rollback.sql" >/dev/null
@@ -206,8 +235,7 @@ audit() {
     for command in psql pg_dump pg_restore createdb dropdb; do require_command "$command"; done
   fi
   [[ "$(psql_db "$database" -Atqc 'SELECT 1')" = 1 ]] || die 'PostgreSQL indisponivel'
-  history_contract
-  log "AUDIT_OK database=$database"
+  log "AUDIT_OK database=$database history=$(history_contract)"
 }
 
 preflight() {
@@ -226,9 +254,9 @@ preflight() {
 
   install -d -m 0700 "$backup_root" "$state_root"
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-  backup="$backup_root/prontoclinic-before-${expected_version}-${sha}-${timestamp}.dump"
+  backup="$backup_root/prontoclinic-before-${migration_version}-${sha}-${timestamp}.dump"
   bundle_hash="$(sha256sum "$bundle" | cut -d' ' -f1)"
-  attestation="$state_root/preflight-${expected_version}-${sha}.env"
+  attestation="$state_root/preflight-${migration_version}-${sha}.env"
   backup_and_rehearse "$stage/release" "$sha" "$backup"
   write_attestation "$attestation" "$sha" "$bundle_hash" "$backup"
   chmod 600 "$attestation"
@@ -241,7 +269,7 @@ insert_history() {
   local checksum="$1"
   psql_db "$database" -c "
     INSERT INTO supabase_migrations.schema_migrations(version, name, statements)
-    VALUES ('$expected_version', '$expected_name', ARRAY['sha256:$checksum'])
+    VALUES ('$migration_version', '$migration_name', ARRAY['sha256:$checksum'])
     ON CONFLICT (version) DO NOTHING" >/dev/null
   history_present || die 'nao foi possivel registrar historico da migration'
 }
@@ -257,8 +285,12 @@ deploy() {
   local stage attestation bundle_hash backup created bundle_copy state
   audit
   verify_checksum "$bundle" "$checksum"
+  stage="$(mktemp -d)"
+  trap "rm -rf -- $(printf '%q' "$stage")" EXIT
+  extract_bundle "$bundle" "$stage/release"
+  validate_bundle "$stage/release" "$sha"
   bundle_hash="$(sha256sum "$bundle" | cut -d' ' -f1)"
-  attestation="$state_root/preflight-${expected_version}-${sha}.env"
+  attestation="$state_root/preflight-${migration_version}-${sha}.env"
   [[ -f "$attestation" && ! -L "$attestation" ]] || die 'atestacao de preflight ausente'
   # shellcheck disable=SC1090
   . "$attestation"
@@ -273,13 +305,9 @@ deploy() {
   flock -n 9 || die 'outro deploy ProntoMedic esta em andamento'
   history_absent
 
-  stage="$(mktemp -d)"
-  trap "rm -rf -- $(printf '%q' "$stage")" EXIT
-  extract_bundle "$bundle" "$stage/release"
-  validate_bundle "$stage/release" "$sha"
   run_smoke "$database" "$stage/release/smoke-before.sql"
 
-  bundle_copy="$backup_root/bundle-${expected_version}-${sha}.tgz"
+  bundle_copy="$backup_root/bundle-${migration_version}-${sha}.tgz"
   cp -- "$bundle" "${bundle_copy}.next"
   mv -f "${bundle_copy}.next" "$bundle_copy"
   chmod 600 "$bundle_copy"
@@ -306,6 +334,7 @@ deploy() {
   }
   trap rollback_on_error ERR
 
+  ensure_history "$database"
   psql_db "$database" -f "$stage/release/migration.sql" >/dev/null
   created=1
   insert_history "$(sha256sum "$stage/release/migration.sql" | cut -d' ' -f1)"
@@ -313,7 +342,7 @@ deploy() {
 
   trap - ERR
   rm -f "$attestation"
-  log "DEPLOY_OK sha=$sha migration=$expected_version backup=$DATABASE_BACKUP"
+  log "DEPLOY_OK sha=$sha migration=$migration_version backup=$DATABASE_BACKUP"
   rm -rf -- "$stage"
   trap - EXIT
 }
@@ -324,7 +353,7 @@ rollback() {
   [[ -f "$state" && ! -L "$state" ]] || die 'estado de rollback ausente'
   # shellcheck disable=SC1090
   . "$state"
-  [[ "$MIGRATION_VERSION" = "$expected_version" ]] || die 'estado de rollback incompativel'
+  migration_version="$MIGRATION_VERSION"
   [[ -s "$BUNDLE_COPY" && -s "$DATABASE_BACKUP" ]] || die 'artefato ou backup de rollback ausente'
   exec 9>"$global_lock"
   flock -n 9 || die 'outro deploy ProntoMedic esta em andamento'
@@ -333,9 +362,10 @@ rollback() {
   trap "rm -rf -- $(printf '%q' "$stage")" EXIT
   extract_bundle "$BUNDLE_COPY" "$stage/release"
   validate_bundle "$stage/release" "$COMMIT_SHA"
+  [[ "$MIGRATION_VERSION" = "$migration_version" ]] || die 'estado de rollback incompativel'
   apply_rollback "$stage/release"
   mv -f "$state" "$state_root/last-deploy.rolled-back-$(date -u +%Y%m%dT%H%M%SZ).env"
-  log "ROLLBACK_OK migration=$expected_version backup=$DATABASE_BACKUP"
+  log "ROLLBACK_OK migration=$migration_version backup=$DATABASE_BACKUP"
   rm -rf -- "$stage"
   trap - EXIT
 }

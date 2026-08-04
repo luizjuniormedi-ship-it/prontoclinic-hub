@@ -1,15 +1,17 @@
 {
-  "taskId": "rbac-active-context-aal2-20260804",
-  "module": "users-rbac-auth-admin-mfa",
-  "baseCommit": "2c996a7a82d0e111667bd9f74aee84adc5bcd557",
+  "taskId": "database-deploy-coordinator-20260804",
+  "module": "database-deployment",
+  "baseCommit": "b595174f1065eaaf3d10868d357aa33efa822608",
   "paths": [
     ".coordination/task.json",
-    ".github/workflows/ci.yml",
-    "src/config/routePermissions.ts",
-    "src/config/__tests__/adminRoutePermissions.test.ts",
+    ".github/workflows/deploy-database-migration.yml",
+    "deploy/database/deploy-migration.sh",
+    "deploy/database/deploy-migration.test.sh",
+    "deploy/database/rbac-before.sql",
+    "deploy/database/rbac-applied.sql",
+    "deploy/database/rbac-rollback.sql",
     "supabase/migrations/20260804143000_rbac_active_context_aal2.sql",
-    "supabase/rollbacks/20260804143000_rbac_active_context_aal2.sql",
-    "tests/database/rbac_active_context_aal2.sql"
+    "supabase/rollbacks/20260804143000_rbac_active_context_aal2.sql"
   ],
   "sharedPaths": [],
   "status": "active"

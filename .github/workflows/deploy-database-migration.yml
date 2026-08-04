@@ -12,6 +12,13 @@ on:
         required: true
         default: false
         type: boolean
+      migration_version:
+        description: Migration aprovada para publicacao
+        required: true
+        type: choice
+        options:
+          - "20260804033225"
+          - "20260804143000"
 
 concurrency:
   group: prontomedic-production-deploy
@@ -53,15 +60,20 @@ jobs:
           COMMIT_SHA: ${{ inputs.commit_sha }}
         run: |
           set -Eeuo pipefail
-          version=20260804033225
-          name=secure_companies_units_admin_contract
+          version='${{ inputs.migration_version }}'
+          case "$version" in
+            20260804033225) name=secure_companies_units_admin_contract ;;
+            20260804143000) name=rbac_active_context_aal2 ;;
+            *) echo '::error::migration nao autorizada'; exit 1 ;;
+          esac
           stage="release/stage"
           install -d "$stage" release/bootstrap-root/deploy/database
           cp "supabase/migrations/${version}_${name}.sql" "$stage/migration.sql"
           cp "supabase/rollbacks/${version}_${name}.sql" "$stage/rollback.sql"
-          cp deploy/database/smoke-before.sql "$stage/smoke-before.sql"
-          cp deploy/database/smoke-applied.sql "$stage/smoke-applied.sql"
-          cp deploy/database/smoke-rollback.sql "$stage/smoke-rollback.sql"
+          if test "$version" = 20260804143000; then smoke_prefix=deploy/database/rbac; else smoke_prefix=deploy/database/smoke; fi
+          cp "${smoke_prefix}-before.sql" "$stage/smoke-before.sql"
+          cp "${smoke_prefix}-applied.sql" "$stage/smoke-applied.sql"
+          cp "${smoke_prefix}-rollback.sql" "$stage/smoke-rollback.sql"
           cp deploy/database/deploy-migration.sh release/bootstrap-root/deploy/database/
           bash -n release/bootstrap-root/deploy/database/deploy-migration.sh
           node - "$stage" "$COMMIT_SHA" "$version" "$name" <<'NODE'
