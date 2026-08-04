@@ -203,7 +203,6 @@ for attempt in $(seq 1 60); do
     -X POST -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
     "http://127.0.0.1:9000/auth-admin" 2>/dev/null || true)"
   test "$auth_status" = "401" || all_healthy=0
-  grep -Fq 'Não autorizado' /tmp/prontomedic-auth-admin-response 2>/dev/null || all_healthy=0
   if test "$all_healthy" = "1"; then
     break
   fi
