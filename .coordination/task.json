@@ -1,11 +1,11 @@
 {
-  "taskId": "auth-migration-stdin-20260803",
+  "taskId": "edge-cold-start-diagnostics-20260803",
   "module": "infrastructure",
-  "baseCommit": "dd7ece77d7e5956d212cbeacfb87ff3dd8e215ac",
+  "baseCommit": "e99304965c3ed947e6c3aac2f39936b90667bb1c",
   "paths": [
     ".coordination/task.json",
-    "deploy/auth-service/deploy-atomic.sh",
-    "deploy/auth-service/verify-atomic-deploy.mjs"
+    "deploy/edge-runtime/deploy-functions.sh",
+    "deploy/edge-runtime/deploy-functions.test.sh"
   ],
   "sharedPaths": [],
   "status": "active"
