@@ -1,5 +1,5 @@
 {
-  "taskId": "database-deploy-coordinator-20260804",
+  "taskId": "database-deploy-staging-permissions-20260804",
   "module": "database-deployment",
   "baseCommit": "b595174f1065eaaf3d10868d357aa33efa822608",
   "paths": [

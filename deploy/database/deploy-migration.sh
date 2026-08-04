@@ -109,6 +109,9 @@ extract_bundle() {
   fi
   mkdir "$destination"
   tar --no-same-owner --no-same-permissions -xzf "$bundle" -C "$destination"
+  chmod 0755 "$(dirname "$destination")" "$destination"
+  find "$destination" -type d -exec chmod 0755 {} +
+  find "$destination" -type f -exec chmod 0644 {} +
 }
 
 verify_manifest() {
