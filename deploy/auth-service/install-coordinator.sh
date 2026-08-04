@@ -142,7 +142,7 @@ sudoers_candidate="$(mktemp)"
 trap 'rm -f "$sudoers_candidate"' EXIT
 printf '%s ALL=(root) NOPASSWD: %s *\n' "$deploy_user" "$helper" > "$sudoers_candidate"
 chmod 440 "$sudoers_candidate"
-visudo -cf "$sudoers_candidate" >/dev/null || die "regra sudoers invalida"
+/usr/sbin/visudo -cf "$sudoers_candidate" >/dev/null || die "regra sudoers invalida"
 install -o root -g root -m 440 "$sudoers_candidate" "$sudoers_file"
 rm -f "$sudoers_candidate"
 trap - EXIT
