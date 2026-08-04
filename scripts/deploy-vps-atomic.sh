@@ -8,6 +8,10 @@ fi
 
 dist_dir="$(cd "$1" && pwd)"
 release_id="$2"
+[[ "$release_id" =~ ^[a-zA-Z0-9._-]+$ ]] || {
+  echo "invalid release id" >&2
+  exit 64
+}
 root_prefix="${PRONTOMEDIC_ROOT_PREFIX:-}"
 release_root="${root_prefix}${PRONTOMEDIC_RELEASE_ROOT:-/var/www/prontomedic/releases}"
 current_link="${root_prefix}${PRONTOMEDIC_CURRENT_LINK:-/var/www/prontomedic/current}"
@@ -17,6 +21,20 @@ release_target="${PRONTOMEDIC_RELEASE_ROOT:-/var/www/prontomedic/releases}/${rel
 test -f "${dist_dir}/index.html"
 test -d "${dist_dir}/assets"
 test ! -e "${release_dir}"
+
+previous_target="$(readlink "${current_link}" 2>/dev/null || true)"
+activated=0
+rollback_on_error() {
+  status=$?
+  trap - ERR
+  if [[ "$activated" = 1 && -n "$previous_target" ]]; then
+    ln -sfn "$previous_target" "${temporary_link}"
+    mv -Tf "${temporary_link}" "${current_link}"
+    echo "rollback=${previous_target}" >&2
+  fi
+  exit "$status"
+}
+trap rollback_on_error ERR
 
 mkdir -p "${release_root}" "${release_dir}"
 cp -a "${dist_dir}/." "${release_dir}/"
@@ -43,6 +61,7 @@ find "${release_dir}" -type f -exec chmod 0644 {} +
 temporary_link="${current_link}.next"
 ln -sfn "${release_target}" "${temporary_link}"
 mv -Tf "${temporary_link}" "${current_link}"
+activated=1
 
 test "$(readlink "${current_link}")" = "${release_target}"
 if command -v curl >/dev/null 2>&1; then
@@ -50,5 +69,8 @@ if command -v curl >/dev/null 2>&1; then
     "https://prontomedic.191-252-196-6.sslip.io/" >/dev/null
 fi
 
+trap - ERR
+
 echo "release=${release_id}"
 echo "current=$(readlink "${current_link}")"
+echo "previous=${previous_target}"

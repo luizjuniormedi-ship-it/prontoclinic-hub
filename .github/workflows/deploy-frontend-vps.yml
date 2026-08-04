@@ -1,0 +1,149 @@
+name: Deploy frontend to VPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Immutable commit integrated in main
+        required: true
+        type: string
+      bootstrap_helper:
+        description: Install the canonical atomic deploy helper
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prontomedic-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 0
+
+      - name: Require immutable commit integrated in main
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$COMMIT_SHA"
+          test "$(git rev-parse --verify "$COMMIT_SHA^{commit}")" = "$COMMIT_SHA"
+          git fetch origin main --depth=1
+          git merge-base --is-ancestor "$COMMIT_SHA" origin/main
+
+      - name: Validate SSH transport secrets
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_KNOWN_HOSTS: ${{ vars.VPS_KNOWN_HOSTS_PUBLIC }}
+        run: |
+          for variable in VPS_HOST VPS_USER VPS_SSH_PRIVATE_KEY VPS_KNOWN_HOSTS; do
+            test -n "${!variable}" || { echo "::error::Missing ${variable}"; exit 1; }
+          done
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_KNOWN_HOSTS: ${{ vars.VPS_KNOWN_HOSTS_PUBLIC }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Fetch canonical production frontend environment
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          scp "${VPS_USER}@${VPS_HOST}:/opt/prontomedic/app/.env.production.local" .env.production.local
+          test -s .env.production.local
+          chmod 600 .env.production.local
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Build immutable frontend
+        run: |
+          npm ci
+          npm run build
+          test -f dist/index.html
+          test -d dist/assets
+          printf '%s\n' "${{ inputs.commit_sha }}" > dist/COMMIT_SHA
+          tar -czf "frontend-${{ inputs.commit_sha }}.tgz" -C dist .
+          sha256sum "frontend-${{ inputs.commit_sha }}.tgz" > "frontend-${{ inputs.commit_sha }}.tgz.sha256"
+          rm -f .env.production.local
+
+      - name: Bootstrap canonical frontend helper
+        if: ${{ inputs.bootstrap_helper }}
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_ROOT_SSH_PRIVATE_KEY: ${{ secrets.VPS_ROOT_SSH_PRIVATE_KEY }}
+        run: |
+          test -n "$VPS_ROOT_SSH_PRIVATE_KEY" || { echo '::error::Missing VPS_ROOT_SSH_PRIVATE_KEY'; exit 1; }
+          printf '%s\n' "$VPS_ROOT_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519_root
+          chmod 600 ~/.ssh/id_ed25519_root
+          trap 'rm -f ~/.ssh/id_ed25519_root' EXIT
+          helper=scripts/deploy-vps-atomic.sh
+          checksum="$(sha256sum "$helper" | cut -d' ' -f1)"
+          scp -i ~/.ssh/id_ed25519_root -o IdentitiesOnly=yes "$helper" "root@${VPS_HOST}:/tmp/prontomedic-frontend-deploy"
+          ssh -i ~/.ssh/id_ed25519_root -o IdentitiesOnly=yes "root@${VPS_HOST}" \
+            "EXPECTED_SHA='$checksum' DEPLOY_USER='$VPS_USER' bash -s" <<'EOF'
+          set -Eeuo pipefail
+          source=/tmp/prontomedic-frontend-deploy
+          target=/usr/local/sbin/prontomedic-frontend-deploy
+          sudoers=/etc/sudoers.d/prontomedic-frontend-deploy
+          test "$(sha256sum "$source" | cut -d' ' -f1)" = "$EXPECTED_SHA"
+          bash -n "$source"
+          install -o root -g root -m 0750 "$source" "${target}.next"
+          mv -Tf "${target}.next" "$target"
+          printf '%s ALL=(root) NOPASSWD: %s *\n' "$DEPLOY_USER" "$target" > "${sudoers}.next"
+          chmod 0440 "${sudoers}.next"
+          /usr/sbin/visudo -cf "${sudoers}.next"
+          mv -f "${sudoers}.next" "$sudoers"
+          rm -f "$source"
+          EOF
+
+      - name: Upload and deploy atomically
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          bundle="frontend-${COMMIT_SHA}.tgz"
+          checksum="${bundle}.sha256"
+          release_id="${COMMIT_SHA}-${RUN_ID}"
+          scp "$bundle" "$checksum" "${VPS_USER}@${VPS_HOST}:/tmp/"
+          ssh "${VPS_USER}@${VPS_HOST}" "COMMIT_SHA='$COMMIT_SHA' RELEASE_ID='$release_id' bash -s" <<'EOF'
+          set -Eeuo pipefail
+          bundle="/tmp/frontend-${COMMIT_SHA}.tgz"
+          checksum="${bundle}.sha256"
+          stage="/tmp/frontend-${COMMIT_SHA}-${RELEASE_ID}"
+          trap 'rm -rf "$stage" "$bundle" "$checksum"' EXIT
+          cd /tmp
+          sha256sum -c "$(basename "$checksum")"
+          mkdir "$stage"
+          tar --no-same-owner --no-same-permissions -xzf "$bundle" -C "$stage"
+          test "$(cat "$stage/COMMIT_SHA")" = "$COMMIT_SHA"
+          sudo /usr/local/sbin/prontomedic-frontend-deploy "$stage" "$RELEASE_ID"
+          EOF
+
+      - name: Public smoke
+        run: |
+          curl --fail --silent --show-error --max-time 15 https://prontomedic.191-252-196-6.sslip.io/ >/dev/null
+          curl --fail --silent --show-error --max-time 15 https://prontomedic.191-252-196-6.sslip.io/login >/dev/null
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 https://prontomedic.191-252-196-6.sslip.io/auth/v1/health)" = 200

@@ -1,11 +1,11 @@
 {
-  "taskId": "rbac-production-baseline-preflight-20260804",
-  "module": "database-deployment",
-  "baseCommit": "cd9d40d8c90c21cb8cd48a76ef16f2817abdd55b",
+  "taskId": "frontend-vps-atomic-deploy-20260804",
+  "module": "frontend-deployment",
+  "baseCommit": "708bb753b10403eb4fa541751ee5423a7ee220db",
   "paths": [
     ".coordination/task.json",
-    "deploy/database/deploy-migration.test.sh",
-    "deploy/database/rbac-before.sql"
+    ".github/workflows/deploy-frontend-vps.yml",
+    "scripts/deploy-vps-atomic.sh"
   ],
   "sharedPaths": [],
   "status": "active"
