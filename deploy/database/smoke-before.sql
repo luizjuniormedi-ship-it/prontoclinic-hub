@@ -25,13 +25,14 @@ BEGIN
   ), false) THEN
     RAISE EXCEPTION 'Baseline inesperada: RLS/FORCE RLS deve estar ativo';
   END IF;
-  IF NOT EXISTS (
+  IF EXISTS (
     SELECT 1 FROM pg_policies
     WHERE schemaname = 'public'
       AND tablename = 'units'
-      AND policyname = 'units_admin'
+      AND cmd IN ('ALL', 'INSERT', 'UPDATE', 'DELETE')
+      AND policyname NOT IN ('units_admin', 'units_insert', 'units_update', 'units_delete')
   ) THEN
-    RAISE EXCEPTION 'Baseline inesperada: policy units_admin ausente';
+    RAISE EXCEPTION 'Baseline inesperada: policy de escrita desconhecida em units';
   END IF;
 END;
 $smoke$;
