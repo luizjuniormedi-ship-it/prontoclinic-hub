@@ -1,9 +1,11 @@
 {
-  "taskId": "edge-cold-start-diagnostics-20260803",
+  "taskId": "edge-auth-smoke-20260803",
   "module": "infrastructure",
-  "baseCommit": "e99304965c3ed947e6c3aac2f39936b90667bb1c",
+  "baseCommit": "892e2eb6c0c32dc2ba5608adf2de8d607dad832e",
   "paths": [
     ".coordination/task.json",
+    "deploy/auth-service/deploy-atomic.sh",
+    "deploy/auth-service/verify-atomic-deploy.mjs",
     "deploy/edge-runtime/deploy-functions.sh",
     "deploy/edge-runtime/deploy-functions.test.sh"
   ],

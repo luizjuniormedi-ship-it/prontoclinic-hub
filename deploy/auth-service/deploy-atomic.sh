@@ -194,11 +194,28 @@ edge_smoke() {
   "$edge_helper" --audit-contract >/dev/null
 }
 
+edge_rollback_smoke() {
+  local function_name status
+  for function_name in dicom-bridge telemedicina-daily; do
+    status="$(curl -sS --connect-timeout 2 --max-time 5 -o /dev/null -w '%{http_code}' \
+      -X OPTIONS "${edge_smoke_base}/${function_name}" 2>/dev/null || true)"
+    test "$status" = 200 || die "smoke Edge de rollback falhou em ${function_name}: HTTP ${status}"
+  done
+  "$edge_helper" --audit-contract >/dev/null
+}
+
 smoke_all() {
   health_check || die "health check Auth reprovado"
   assert_pm2_exec_path
   edge_smoke
   log "SMOKE_OK"
+}
+
+smoke_rollback() {
+  health_check || die "health check Auth de rollback reprovado"
+  assert_pm2_exec_path
+  edge_rollback_smoke
+  log "ROLLBACK_SMOKE_OK"
 }
 
 restart_auth_canonical() {
@@ -286,7 +303,7 @@ rollback_application() {
     mv -f "${auth_ecosystem}.next" "$auth_ecosystem"
   fi
   restart_auth_canonical
-  smoke_all
+  smoke_rollback
 }
 
 rollback_from_state() {
@@ -349,7 +366,7 @@ deploy() {
         mv -Tf "${auth_current}.next" "$auth_current"
         cp -- "$previous_ecosystem" "$auth_ecosystem"
         restart_auth_canonical
-        smoke_all
+        smoke_rollback
       ) || rollback_status=1
     fi
     current_target="$(readlink -f "$auth_current" 2>/dev/null || true)"
