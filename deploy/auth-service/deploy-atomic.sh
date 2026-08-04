@@ -103,8 +103,10 @@ verify_manifest() {
   local release="$1" sha="$2"
   node - "$release/release-manifest.json" "$sha" "$manifest_version" <<'NODE'
 const fs = require('node:fs');
+const path = require('node:path');
 const [manifestPath, sha, version] = process.argv.slice(2);
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+const releaseDir = path.dirname(manifestPath);
 const expectedFiles = [
   'local-auth-server.mjs', 'local-auth-admin.mjs', 'local-auth-admin.d.ts',
   'local-auth-projection.mjs', 'local-auth-projection.d.ts', 'package.json',
@@ -114,7 +116,7 @@ if (manifest.schemaVersion !== Number(version)) throw new Error('manifest versio
 if (manifest.commitSha !== sha) throw new Error('manifest SHA');
 if (manifest.migrationStrategy !== 'forward-compatible-additive') throw new Error('migration strategy');
 for (const file of expectedFiles) {
-  if (!manifest.files.includes(file) || !fs.existsSync(`${manifestPath}/../${file}`)) {
+  if (!manifest.files.includes(file) || !fs.existsSync(path.join(releaseDir, file))) {
     throw new Error(`missing ${file}`);
   }
 }

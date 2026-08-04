@@ -1,7 +1,7 @@
 {
-  "taskId": "auth-helper-arity-20260803",
+  "taskId": "auth-manifest-path-20260803",
   "module": "infrastructure",
-  "baseCommit": "1bd7bf44403111c09e0f69178ba2a02b25849b57",
+  "baseCommit": "2ed1bfea6aa513fc9a017a2d744458e84d35caf0",
   "paths": [
     ".coordination/task.json",
     "deploy/auth-service/deploy-atomic.sh",
