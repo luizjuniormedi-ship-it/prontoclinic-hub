@@ -32,7 +32,9 @@ function requireLocalMutation(projectName: string) {
   );
   const host = (process.env.PGHOST || "").toLowerCase();
   const database = process.env.PGDATABASE || "";
-  if (!["127.0.0.1", "localhost", "::1"].includes(host) || !/(e2e|test|replay)/i.test(database)) {
+  const disposableDatabase = /(?:e2e|test|replay)/i.test(database)
+    || /^migrations_(?:first|second)$/i.test(database);
+  if (!["127.0.0.1", "localhost", "::1"].includes(host) || !disposableDatabase) {
     throw new Error("Empresas E2E exige PostgreSQL local descartável.");
   }
 }
