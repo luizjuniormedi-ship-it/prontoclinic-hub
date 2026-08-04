@@ -1,10 +1,11 @@
 {
-  "taskId": "edge-bootstrap-checksum-20260803",
+  "taskId": "auth-helper-sudoers-20260803",
   "module": "infrastructure",
-  "baseCommit": "47494033d7ee1e6b34ceea98b7929a142efbfae9",
+  "baseCommit": "f816f683b58ed0b606417e685a1ca2b41e68825d",
   "paths": [
     ".coordination/task.json",
-    ".github/workflows/deploy-edge-functions.yml"
+    "deploy/auth-service/install-coordinator.sh",
+    "deploy/auth-service/verify-atomic-deploy.mjs"
   ],
   "sharedPaths": [],
   "status": "active"

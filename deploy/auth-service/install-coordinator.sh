@@ -9,6 +9,8 @@ health_url="${PRONTOMEDIC_AUTH_HEALTH_URL:-http://127.0.0.1:8000/health}"
 auth_env="${PRONTOMEDIC_AUTH_ENV_FILE:-${auth_root}/secrets/.env.auth}"
 auth_env_json="${auth_env}.json"
 legacy_env0="${PRONTOMEDIC_AUTH_LEGACY_ENV0:-/tmp/m2-backend.env0}"
+deploy_user="${PRONTOMEDIC_DEPLOY_USER:-prontomedic-edge-deploy}"
+sudoers_file="/etc/sudoers.d/prontomedic-auth-deploy"
 
 die() { printf 'AUTH_COORDINATOR_INSTALL_ERROR: %s\n' "$*" >&2; exit 1; }
 test "$(id -u)" = 0 || die "execucao requer root"
@@ -17,6 +19,8 @@ case "$legacy_auth" in /*) ;; *) die "backend legado deve ser absoluto" ;; esac
 test -f "${source_root}/deploy/auth-service/deploy-atomic.sh" || die "helper canonico ausente"
 test -f "${source_root}/deploy/auth-service/ecosystem.config.cjs" || die "ecosystem canonico ausente"
 test -f "${legacy_auth}/local-auth-server.mjs" || die "backend atual invalido"
+printf '%s' "$deploy_user" | grep -Eq '^[a-z_][a-z0-9_-]*$' || die "usuario de deploy invalido"
+id "$deploy_user" >/dev/null 2>&1 || die "usuario de deploy inexistente: ${deploy_user}"
 
 install -d -m 750 "${auth_root}/releases" "${auth_root}/secrets"
 if test ! -f "$auth_env" || test ! -f "$auth_env_json"; then
@@ -134,5 +138,14 @@ if test "$status" != 200; then
   rollback_bootstrap 1
 fi
 trap - ERR
+sudoers_candidate="$(mktemp)"
+trap 'rm -f "$sudoers_candidate"' EXIT
+printf '%s ALL=(root) NOPASSWD: %s *\n' "$deploy_user" "$helper" > "$sudoers_candidate"
+chmod 440 "$sudoers_candidate"
+visudo -cf "$sudoers_candidate" >/dev/null || die "regra sudoers invalida"
+install -o root -g root -m 440 "$sudoers_candidate" "$sudoers_file"
+rm -f "$sudoers_candidate"
+trap - EXIT
 pm2 save >/dev/null
-printf 'AUTH_COORDINATOR_INSTALL_OK current=%s helper=%s\n' "$(readlink -f "${auth_root}/current")" "$helper"
+printf 'AUTH_COORDINATOR_INSTALL_OK current=%s helper=%s sudoers=%s\n' \
+  "$(readlink -f "${auth_root}/current")" "$helper" "$sudoers_file"
