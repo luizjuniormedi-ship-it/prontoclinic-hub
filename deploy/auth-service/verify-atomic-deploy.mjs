@@ -10,6 +10,8 @@ assert.match(script, /set -Eeuo pipefail/);
 assert.match(script, /flock -n 9/);
 assert.match(script, /pg_dump -Fc/);
 assert.match(script, /pg_restore --list/);
+assert.match(script, /psql -X -d "\$database" -v ON_ERROR_STOP=1 <"\$migration_copy"/);
+assert.doesNotMatch(script, /psql[^\n]+-f "\$migration_copy"/);
 assert.match(script, /sha256sum -c/);
 assert.match(script, /tar -tzf[\s\S]+caminho inseguro/);
 assert.match(script, /verify_auth_archive/);
