@@ -37,6 +37,7 @@ export default function CompaniesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
+  const [activeTab, setActiveTab] = useState<"companies" | "units">("companies");
   const [companyDialogOpen, setCompanyDialogOpen] = useState(false);
   const [unitDialogOpen, setUnitDialogOpen] = useState(false);
   const [canManage, setCanManage] = useState(false);
@@ -147,7 +148,10 @@ export default function CompaniesPage() {
         <Input aria-label="Buscar empresas e unidades" placeholder="Buscar empresa, unidade ou CNPJ" className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} />
       </div>
 
-      <Tabs defaultValue="companies">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as "companies" | "units")}
+      >
         <TabsList><TabsTrigger value="companies">Empresas ({companies.length})</TabsTrigger><TabsTrigger value="units">Unidades ({units.length})</TabsTrigger></TabsList>
         <TabsContent value="companies">
           {filteredCompanies.length === 0 ? <EmptyState icon={Building2} title="Nenhuma empresa no contexto ativo" /> : (
