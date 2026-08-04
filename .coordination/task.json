@@ -1,10 +1,11 @@
 {
-  "taskId": "auth-helper-visudo-path-20260803",
+  "taskId": "auth-predeploy-audit-20260803",
   "module": "infrastructure",
-  "baseCommit": "b9778261008da953f893791d331859cff8e1a5e3",
+  "baseCommit": "445fb341477259e857dc2664ef73a42912dbf670",
   "paths": [
     ".coordination/task.json",
-    "deploy/auth-service/install-coordinator.sh",
+    "deploy/auth-service/README.md",
+    "deploy/auth-service/deploy-atomic.sh",
     "deploy/auth-service/verify-atomic-deploy.mjs"
   ],
   "sharedPaths": [],
