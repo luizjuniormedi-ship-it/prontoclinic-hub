@@ -1,7 +1,7 @@
 {
-  "taskId": "auth-helper-sudoers-20260803",
+  "taskId": "auth-helper-visudo-path-20260803",
   "module": "infrastructure",
-  "baseCommit": "f816f683b58ed0b606417e685a1ca2b41e68825d",
+  "baseCommit": "b9778261008da953f893791d331859cff8e1a5e3",
   "paths": [
     ".coordination/task.json",
     "deploy/auth-service/install-coordinator.sh",

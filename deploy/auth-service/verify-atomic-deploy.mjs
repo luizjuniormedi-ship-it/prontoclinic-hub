@@ -48,7 +48,7 @@ assert.match(installer, /for _attempt in \$\(seq 1 30\)/);
 assert.match(installer, /health do backend atual reprovado/);
 assert.match(installer, /PRONTOMEDIC_DEPLOY_USER/);
 assert.match(installer, /\/etc\/sudoers\.d\/prontomedic-auth-deploy/);
-assert.match(installer, /visudo -cf/);
+assert.match(installer, /\/usr\/sbin\/visudo -cf/);
 assert.match(installer, /NOPASSWD: %s \*/);
 assert.match(installer, /install -o root -g root -m 440/);
 assert.doesNotMatch(installer, /DataSIGH/i);
