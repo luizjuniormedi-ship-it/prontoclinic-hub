@@ -44,16 +44,41 @@ const roomRowSchema = z.object({
 
 const unitRowSchema = z.object({
   id: z.union([z.number(), z.string()]),
+  company_id: z.string().uuid(),
   cd_codigo: z.string(),
   ds_nome: z.string(),
+  nr_cnpj: z.string().nullable().optional(),
+  tp_unidade: z.string().nullable().optional(),
   lg_principal: z.boolean().nullable().optional(),
   lg_ativo: z.boolean().nullable().optional(),
+  companies: z.object({ name: z.string() }).nullable().optional(),
 });
 
 const companyRowSchema = z.object({
   id: z.string(),
   name: z.string(),
+  cnpj: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  email: z.string().nullable().optional(),
+  lg_ativo: z.boolean().nullable().optional(),
+  created_at: z.string().nullable().optional(),
 });
+
+export interface CompanyAdminInput {
+  name: string;
+  cnpj: string;
+  phone?: string;
+  email?: string;
+}
+
+export interface UnitAdminInput {
+  id?: number;
+  code: string;
+  name: string;
+  type: Unit["type"];
+  cnpj?: string;
+  active: boolean;
+}
 
 const insurancePlanRowSchema = z.object({
   id: z.union([z.number(), z.string()]),
@@ -250,7 +275,7 @@ export const unitsService = {
   async getAll(onlyActive = true): Promise<Unit[]> {
     let q = supabase
       .from("units")
-      .select("id, cd_codigo, ds_nome, lg_principal, lg_ativo")
+      .select("id, company_id, cd_codigo, ds_nome, nr_cnpj, tp_unidade, lg_principal, lg_ativo, companies(name)")
       .order("lg_principal", { ascending: false })
       .order("ds_nome");
     if (onlyActive) q = q.eq("lg_ativo", true);
@@ -262,15 +287,15 @@ export const unitsService = {
         id: String(parsed.id),
         code: parsed.cd_codigo,
         name: parsed.ds_nome,
-        companyId: "",
-        companyName: "",
-        cnpj: undefined,
+        companyId: parsed.company_id,
+        companyName: parsed.companies?.name ?? "—",
+        cnpj: parsed.nr_cnpj ?? undefined,
         address: "",
         city: "",
         state: "",
         phone: "",
         email: "",
-        type: parsed.lg_principal ? "matriz" : "filial",
+        type: normalizeUnitType(parsed.tp_unidade, parsed.lg_principal),
         status: parsed.lg_ativo === false ? "inactive" : "active",
       };
     });
@@ -279,7 +304,7 @@ export const unitsService = {
   async getByCompany(companyId: string, onlyActive = true): Promise<Unit[]> {
     let q = supabase
       .from("units")
-      .select("id, cd_codigo, ds_nome, lg_principal, lg_ativo, company_id")
+      .select("id, company_id, cd_codigo, ds_nome, nr_cnpj, tp_unidade, lg_principal, lg_ativo, companies(name)")
       .eq("company_id", companyId)
       .order("lg_principal", { ascending: false });
     if (onlyActive) q = q.eq("lg_ativo", true);
@@ -292,41 +317,80 @@ export const unitsService = {
         code: parsed.cd_codigo,
         name: parsed.ds_nome,
         companyId,
-        companyName: "",
-        cnpj: undefined,
+        companyName: parsed.companies?.name ?? "—",
+        cnpj: parsed.nr_cnpj ?? undefined,
         address: "",
         city: "",
         state: "",
         phone: "",
         email: "",
-        type: parsed.lg_principal ? "matriz" : "filial",
+        type: normalizeUnitType(parsed.tp_unidade, parsed.lg_principal),
         status: parsed.lg_ativo === false ? "inactive" : "active",
       };
     });
+  },
+
+  async save(input: UnitAdminInput): Promise<void> {
+    const { error } = await supabase.rpc("upsert_active_company_unit_admin", {
+      p_unit_id: input.id ?? null,
+      p_code: input.code,
+      p_name: input.name,
+      p_type: input.type,
+      p_cnpj: input.cnpj || null,
+      p_active: input.active,
+    });
+    if (error) throw new Error(`Erro ao salvar unidade: ${error.message}`);
   },
 };
 
 // ── Companies ────────────────────────────────────────────────────────────────
 
 export const companiesService = {
+  async canManage(companyId: string): Promise<boolean> {
+    const { data, error } = await supabase.rpc("current_context_is_company_admin", { p_company_id: companyId });
+    if (error) return false;
+    return data === true;
+  },
+
   async getAll(): Promise<Company[]> {
     const { data, error } = await supabase
       .from("companies")
       .select("id, name, cnpj, phone, email, lg_ativo, created_at")
       .order("name");
     if (error) throw new Error(`Erro ao listar empresas: ${error.message}`);
-    return (data ?? []).map((row: { id: string; name: string; cnpj?: string | null; phone?: string | null; email?: string | null; lg_ativo?: boolean | null; created_at?: string | null }): Company => ({
-      id: row.id,
-      legalName: row.name,
-      tradeName: row.name,
-      cnpj: row.cnpj ?? "",
-      phone: row.phone ?? "",
-      email: row.email ?? "",
-      status: row.lg_ativo === false ? "inactive" : "active",
-      createdAt: row.created_at ?? new Date().toISOString(),
-    }));
+    return (data ?? []).map((row): Company => mapCompany(companyRowSchema.parse(row)));
+  },
+
+  async updateActive(input: CompanyAdminInput): Promise<void> {
+    const { error } = await supabase.rpc("update_active_company_admin", {
+      p_name: input.name,
+      p_cnpj: input.cnpj,
+      p_phone: input.phone || null,
+      p_email: input.email || null,
+    });
+    if (error) throw new Error(`Erro ao salvar empresa: ${error.message}`);
   },
 };
+
+function normalizeUnitType(value?: string | null, principal?: boolean | null): Unit["type"] {
+  const normalized = value?.toLowerCase();
+  if (normalized === "matriz" || normalized === "filial" || normalized === "laboratorio" || normalized === "hospital" || normalized === "upa" || normalized === "ubs" || normalized === "consultorio") return normalized;
+  if (normalized === "clinica" || normalized === "ambulatorio") return "ambulatorio";
+  return principal ? "matriz" : "filial";
+}
+
+function mapCompany(row: z.infer<typeof companyRowSchema>): Company {
+  return {
+    id: row.id,
+    legalName: row.name,
+    tradeName: row.name,
+    cnpj: row.cnpj ?? "",
+    phone: row.phone ?? "",
+    email: row.email ?? "",
+    status: row.lg_ativo === false ? "inactive" : "active",
+    createdAt: row.created_at ?? new Date().toISOString(),
+  };
+}
 
 // ── Composite exports ────────────────────────────────────────────────────────
 

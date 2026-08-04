@@ -23,7 +23,7 @@ export interface Company {
   createdAt: string;
 }
 
-export type UnitType = "matriz" | "filial" | "ambulatorio" | "laboratorio";
+export type UnitType = "matriz" | "filial" | "ambulatorio" | "laboratorio" | "hospital" | "upa" | "ubs" | "consultorio";
 export type UnitStatus = "active" | "inactive";
 export interface Unit {
   id: string;

@@ -44,6 +44,15 @@ async function selectContext(page: Page, option: RegExp) {
   ).not.toBeNull();
 }
 
+async function waitForReceptionReady(page: Page) {
+  await expect(page.getByRole('heading', { name: /entrada do paciente/i })).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.getByText('Carregando...', { exact: true })).toHaveCount(0, {
+    timeout: 20_000,
+  });
+}
+
 async function authenticatedFetch(page: Page, path: string, init: RequestInit) {
   return page.evaluate(async ({ path, init }) => {
     const storageKey = Object.keys(localStorage).find((key) => key.startsWith('sb-') && key.endsWith('-auth-token'));
@@ -71,6 +80,7 @@ test.describe('Gate fase 0/1', () => {
   );
 
   test('recepção não contorna o workflow pela transição direta da Agenda', async ({ page }) => {
+    test.slow();
     await loginAsRole(page, 'reception');
     await expect(page.getByRole('button', {
       name: 'Selecionar empresa, unidade e perfil',
@@ -106,13 +116,18 @@ test.describe('Gate fase 0/1', () => {
       timeout: 15_000,
     });
     await page.getByRole('button', { name: 'Confirmar entrada e abrir conta' }).click();
-    await expect(page.getByText(/^Entrada concluída · Senha C\d{3}$/).first()).toBeVisible();
+    const receipt = page.getByRole('dialog', {
+      name: 'Entrada concluída e conta aberta',
+    });
+    await expect(receipt).toBeVisible({ timeout: 20_000 });
+    await expect(receipt.getByText(/^Senha C\d{3}$/)).toBeVisible();
     await expect(page.getByRole('dialog', { name: 'Entrada do paciente' })).toBeHidden();
-    await page.getByRole('button', { name: 'Fechar', exact: true }).click();
+    await receipt.getByRole('button', { name: 'Fechar', exact: true }).click();
     await assertAccessible(page, 'recepção após check-in pelo perfil recepcao');
   });
 
   test('contexto, RLS A/B, recepção, atendimento, prontuário e Axe', async ({ page }) => {
+    test.slow();
     await page.goto('/login');
     await assertAccessible(page, 'login');
     await loginAsRole(page, 'admin');
@@ -155,6 +170,7 @@ test.describe('Gate fase 0/1', () => {
     await assertAccessible(page, 'pacientes unidade A');
 
     await page.goto('/reception');
+    await waitForReceptionReady(page);
     const patientAButton = page.getByRole('button', {
       name: 'Ver agendamentos de Paciente E2E A',
       exact: true,
@@ -189,6 +205,7 @@ test.describe('Gate fase 0/1', () => {
     await assertAccessible(page, 'pacientes unidade B');
 
     await page.goto('/reception');
+    await waitForReceptionReady(page);
     await expect(page.getByText('Paciente E2E B')).toBeVisible();
     await expect(page.getByText('Paciente E2E A')).toBeHidden();
 

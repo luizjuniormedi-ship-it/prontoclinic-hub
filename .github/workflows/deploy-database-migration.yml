@@ -1,0 +1,211 @@
+name: Deploy Database Migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Full commit SHA already integrated in main
+        required: true
+        type: string
+      bootstrap_helper:
+        description: Replace the installed root helper with the canonical version
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: prontomedic-production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.commit_sha }}
+
+      - name: Require immutable commit integrated in main
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          [[ "$COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo '::error::commit_sha deve conter 40 caracteres hexadecimais'
+            exit 1
+          }
+          git fetch --no-tags origin main
+          test "$(git rev-parse HEAD)" = "$COMMIT_SHA"
+          git merge-base --is-ancestor "$COMMIT_SHA" origin/main || {
+            echo '::error::commit_sha nao esta integrado em main'
+            exit 1
+          }
+
+      - name: Validate database deployment contracts
+        run: bash deploy/database/deploy-migration.test.sh
+
+      - name: Build immutable migration bundle
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          set -Eeuo pipefail
+          version=20260804033225
+          name=secure_companies_units_admin_contract
+          stage="release/stage"
+          install -d "$stage" release/bootstrap-root/deploy/database
+          cp "supabase/migrations/${version}_${name}.sql" "$stage/migration.sql"
+          cp "supabase/rollbacks/${version}_${name}.sql" "$stage/rollback.sql"
+          cp deploy/database/smoke-before.sql "$stage/smoke-before.sql"
+          cp deploy/database/smoke-applied.sql "$stage/smoke-applied.sql"
+          cp deploy/database/smoke-rollback.sql "$stage/smoke-rollback.sql"
+          cp deploy/database/deploy-migration.sh release/bootstrap-root/deploy/database/
+          bash -n release/bootstrap-root/deploy/database/deploy-migration.sh
+          node - "$stage" "$COMMIT_SHA" "$version" "$name" <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const crypto = require('node:crypto');
+          const [stage, commitSha, migrationVersion, migrationName] = process.argv.slice(2);
+          const files = {};
+          for (const file of ['migration.sql', 'rollback.sql', 'smoke-before.sql', 'smoke-applied.sql', 'smoke-rollback.sql']) {
+            files[file] = crypto.createHash('sha256').update(fs.readFileSync(path.join(stage, file))).digest('hex');
+          }
+          fs.writeFileSync(path.join(stage, 'manifest.json'), JSON.stringify({
+            schemaVersion: 1, commitSha, migrationVersion, migrationName, files
+          }, null, 2) + '\n');
+          NODE
+          tar -C "$stage" -czf "release/database-${COMMIT_SHA}.tgz" .
+          (cd release && sha256sum "database-${COMMIT_SHA}.tgz" > "database-${COMMIT_SHA}.tgz.sha256")
+          rm -rf "$stage"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: database-migration-${{ inputs.commit_sha }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            release/database-${{ inputs.commit_sha }}.tgz
+            release/database-${{ inputs.commit_sha }}.tgz.sha256
+            release/bootstrap-root
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: Production
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: database-migration-${{ inputs.commit_sha }}
+          path: release
+
+      - name: Validate SSH transport secrets
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_KNOWN_HOSTS: ${{ vars.VPS_KNOWN_HOSTS_PUBLIC }}
+        run: |
+          for variable in VPS_HOST VPS_USER VPS_SSH_PRIVATE_KEY VPS_KNOWN_HOSTS; do
+            test -n "${!variable}" || {
+              echo "::error::Secret obrigatorio ausente: ${variable}"
+              exit 1
+            }
+          done
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_KNOWN_HOSTS: ${{ vars.VPS_KNOWN_HOSTS_PUBLIC }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Bootstrap canonical database helper
+        if: ${{ inputs.bootstrap_helper }}
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_ROOT_SSH_PRIVATE_KEY: ${{ secrets.VPS_ROOT_SSH_PRIVATE_KEY }}
+        run: |
+          test -n "$VPS_ROOT_SSH_PRIVATE_KEY" || {
+            echo '::error::Secret obrigatorio ausente: VPS_ROOT_SSH_PRIVATE_KEY'
+            exit 1
+          }
+          printf '%s\n' "$VPS_ROOT_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519_root
+          chmod 600 ~/.ssh/id_ed25519_root
+          trap 'rm -f ~/.ssh/id_ed25519_root' EXIT
+          helper=release/bootstrap-root/deploy/database/deploy-migration.sh
+          checksum="$(sha256sum "$helper" | cut -d' ' -f1)"
+          scp -i ~/.ssh/id_ed25519_root -o IdentitiesOnly=yes \
+            "$helper" "root@${VPS_HOST}:/tmp/prontomedic-db-deploy"
+          ssh -i ~/.ssh/id_ed25519_root -o IdentitiesOnly=yes "root@${VPS_HOST}" \
+            "EXPECTED_SHA='$checksum' DEPLOY_USER='$VPS_USER' bash -s" <<'EOF'
+          set -Eeuo pipefail
+          source=/tmp/prontomedic-db-deploy
+          target=/usr/local/sbin/prontomedic-db-deploy
+          backup_dir=/var/backups/prontomedic/database-helper
+          sudoers=/etc/sudoers.d/prontomedic-db-deploy
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          test "$(sha256sum "$source" | cut -d' ' -f1)" = "$EXPECTED_SHA"
+          bash -n "$source"
+          install -d -o root -g root -m 0700 "$backup_dir"
+          if test -f "$target"; then cp -a "$target" "$backup_dir/prontomedic-db-deploy-${stamp}"; fi
+          install -o root -g root -m 0750 "$source" "${target}.next"
+          bash -n "${target}.next"
+          mv -Tf "${target}.next" "$target"
+          printf '%s ALL=(root) NOPASSWD: %s *\n' "$DEPLOY_USER" "$target" > "${sudoers}.next"
+          chmod 0440 "${sudoers}.next"
+          /usr/sbin/visudo -cf "${sudoers}.next"
+          mv -f "${sudoers}.next" "$sudoers"
+          /usr/sbin/visudo -cf "$sudoers"
+          rm -f "$source"
+          test "$(sha256sum "$target" | cut -d' ' -f1)" = "$EXPECTED_SHA"
+          echo DATABASE_HELPER_BOOTSTRAP_PASS
+          EOF
+
+      - name: Audit database deployment contract
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: ssh "${VPS_USER}@${VPS_HOST}" 'sudo /usr/local/sbin/prontomedic-db-deploy audit'
+
+      - name: Upload immutable database bundle
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          scp "release/database-${COMMIT_SHA}.tgz" \
+            "release/database-${COMMIT_SHA}.tgz.sha256" \
+            "${VPS_USER}@${VPS_HOST}:/tmp/"
+
+      - name: Backup, restore rehearsal, deploy and SQL smoke
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          bundle="/tmp/database-${COMMIT_SHA}.tgz"
+          checksum="/tmp/database-${COMMIT_SHA}.tgz.sha256"
+          ssh "${VPS_USER}@${VPS_HOST}" \
+            "sudo /usr/local/sbin/prontomedic-db-deploy preflight '$COMMIT_SHA' '$bundle' '$checksum'"
+          ssh "${VPS_USER}@${VPS_HOST}" \
+            "sudo /usr/local/sbin/prontomedic-db-deploy deploy '$COMMIT_SHA' '$bundle' '$checksum'"
+
+      - name: Remove transport artifacts
+        if: always()
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh "${VPS_USER}@${VPS_HOST}" \
+            "rm -f '/tmp/database-${COMMIT_SHA}.tgz' '/tmp/database-${COMMIT_SHA}.tgz.sha256'" || true

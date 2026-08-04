@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: prontomedic-auth-admin-production
+  group: prontomedic-production-deploy
   cancel-in-progress: false
 
 jobs:

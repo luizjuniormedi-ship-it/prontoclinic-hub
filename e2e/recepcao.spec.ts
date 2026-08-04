@@ -8,6 +8,15 @@ function appointmentCardFor(page: import('@playwright/test').Page, patientName: 
   }).first().locator('xpath=ancestor::div[contains(@class, "rounded-lg")][1]');
 }
 
+async function waitForReceptionReady(page: import('@playwright/test').Page) {
+  await expect(page.getByRole('heading', { name: /entrada do paciente/i })).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.getByText('Carregando...', { exact: true })).toHaveCount(0, {
+    timeout: 20_000,
+  });
+}
+
 authed.describe.serial('Recepção — operação básica', () => {
   authed.beforeEach(async ({ loginAs, page }) => {
     await loginAs('reception');
@@ -171,8 +180,10 @@ authed.describe.serial('Recepção — operação básica', () => {
 
 authed.describe.serial('Recepção — alçada do supervisor', () => {
   authed('impede a recepcionista de liberar pendência por exceção', async ({ loginAs, page }) => {
+    authed.slow();
     await loginAs('reception');
     await page.goto('/reception');
+    await waitForReceptionReady(page);
 
     const card = page.getByText('16:00', { exact: true }).locator(
       'xpath=ancestor::div[contains(@class, "rounded-lg")][1]',
@@ -193,6 +204,7 @@ authed.describe.serial('Recepção — alçada do supervisor', () => {
   });
 
   authed('exige justificativa, libera e preserva a trilha da exceção', async ({ loginAs, page }, testInfo) => {
+    authed.slow();
     authed.skip(
       testInfo.project.name !== 'chromium',
       'A liberação transacional usa uma única massa e roda uma vez no Chromium.',
@@ -200,6 +212,7 @@ authed.describe.serial('Recepção — alçada do supervisor', () => {
 
     await loginAs('receptionSupervisor');
     await page.goto('/reception');
+    await waitForReceptionReady(page);
 
     const card = page.getByText('16:00', { exact: true }).locator(
       'xpath=ancestor::div[contains(@class, "rounded-lg")][1]',
@@ -232,6 +245,7 @@ authed.describe.serial('Recepção — alçada do supervisor', () => {
 
     await receipt.getByRole('button', { name: 'Fechar' }).click();
     await page.reload();
+    await waitForReceptionReady(page);
     await expect(
       page.getByText(new RegExp(`^${ticketLabel} · Paciente #91001$`)),
     ).toHaveCount(1);
@@ -248,6 +262,7 @@ authed.describe.serial('Recepção — alçada do supervisor', () => {
     }).click();
     await expect(queueRow).toContainText('called');
     await page.reload();
+    await waitForReceptionReady(page);
     const persistedQueueRow = page
       .getByText(new RegExp(`^${ticketLabel} · Paciente #91001$`))
       .locator('..')
