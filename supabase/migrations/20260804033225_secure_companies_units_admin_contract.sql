@@ -181,4 +181,59 @@ COMMENT ON FUNCTION public.update_active_company_admin(TEXT, TEXT, TEXT, TEXT) I
 COMMENT ON FUNCTION public.upsert_active_company_unit_admin(INTEGER, TEXT, TEXT, TEXT, TEXT, BOOLEAN) IS
   'Creates or updates a unit only inside the company selected in an active administrative AAL2 context.';
 
+DO $audit$
+DECLARE
+  v_authenticated oid := to_regrole('authenticated');
+BEGIN
+  IF NOT COALESCE((
+    SELECT count(*) = 2
+       AND bool_and(relrowsecurity)
+       AND bool_and(relforcerowsecurity)
+    FROM pg_class
+    WHERE oid IN ('public.companies'::regclass, 'public.units'::regclass)
+  ), false) THEN
+    RAISE EXCEPTION 'Auditoria falhou: RLS/FORCE RLS de empresas e unidades';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'units'
+      AND policyname IN ('units_admin', 'units_insert', 'units_update', 'units_delete')
+  ) THEN
+    RAISE EXCEPTION 'Auditoria falhou: policies legadas de unidades permanecem ativas';
+  END IF;
+
+  IF v_authenticated IS NULL
+     OR has_table_privilege(v_authenticated, 'public.companies', 'INSERT')
+     OR has_table_privilege(v_authenticated, 'public.companies', 'UPDATE')
+     OR has_table_privilege(v_authenticated, 'public.companies', 'DELETE')
+     OR has_table_privilege(v_authenticated, 'public.units', 'INSERT')
+     OR has_table_privilege(v_authenticated, 'public.units', 'UPDATE')
+     OR has_table_privilege(v_authenticated, 'public.units', 'DELETE') THEN
+    RAISE EXCEPTION 'Auditoria falhou: DML direto permanece concedido a authenticated';
+  END IF;
+
+  IF NOT has_function_privilege(v_authenticated,
+       'public.update_active_company_admin(text,text,text,text)', 'EXECUTE')
+     OR NOT has_function_privilege(v_authenticated,
+       'public.upsert_active_company_unit_admin(integer,text,text,text,text,boolean)', 'EXECUTE')
+     OR EXISTS (
+       SELECT 1
+       FROM pg_proc AS procedure
+       CROSS JOIN LATERAL aclexplode(
+         coalesce(procedure.proacl, acldefault('f', procedure.proowner))
+       ) AS privilege
+       WHERE procedure.oid IN (
+         'public.update_active_company_admin(text,text,text,text)'::regprocedure,
+         'public.upsert_active_company_unit_admin(integer,text,text,text,text,boolean)'::regprocedure
+       )
+         AND privilege.grantee = 0
+         AND privilege.privilege_type = 'EXECUTE'
+     ) THEN
+    RAISE EXCEPTION 'Auditoria falhou: grants das RPCs administrativas';
+  END IF;
+END;
+$audit$;
+
 COMMIT;

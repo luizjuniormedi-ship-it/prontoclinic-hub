@@ -152,6 +152,68 @@ jobs:
               -f "supabase/migrations/$migration" >/dev/null
           done
 
+      - name: Validate transactional database deploy and rollback
+        env:
+          PGHOST: localhost
+          PGPORT: 54322
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PRONTOMEDIC_DATABASE: prontoclinic_dbdeploy
+          PRONTOMEDIC_DB_TEST_MODE: "1"
+          PRONTOMEDIC_DB_DIRECT_POSTGRES: "1"
+          PRONTOMEDIC_DB_BACKUP_ROOT: /tmp/prontomedic-dbdeploy/backups
+          PRONTOMEDIC_DB_STATE_ROOT: /tmp/prontomedic-dbdeploy/state
+          PRONTOMEDIC_GLOBAL_DEPLOY_LOCK: /tmp/prontomedic-dbdeploy/global.lock
+        run: |
+          set -Eeuo pipefail
+          version=20260804033225
+          name=secure_companies_units_admin_contract
+          sha="$(git rev-parse HEAD)"
+          root=/tmp/prontomedic-dbdeploy
+          stage="$root/stage"
+          bundle="$root/database-${sha}.tgz"
+          checksum="${bundle}.sha256"
+          rm -rf "$root"
+          install -d "$stage"
+          createdb "$PRONTOMEDIC_DATABASE"
+          REPLAY_STOP_BEFORE="${version}_${name}.sql" \
+            scripts/replay-migrations.sh "$PRONTOMEDIC_DATABASE"
+          psql -X -v ON_ERROR_STOP=1 -d "$PRONTOMEDIC_DATABASE" <<'SQL'
+          CREATE SCHEMA IF NOT EXISTS supabase_migrations;
+          CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (
+            version text PRIMARY KEY,
+            statements text[] NOT NULL DEFAULT '{}',
+            name text NOT NULL DEFAULT ''
+          );
+          SQL
+          cp "supabase/migrations/${version}_${name}.sql" "$stage/migration.sql"
+          cp "supabase/rollbacks/${version}_${name}.sql" "$stage/rollback.sql"
+          cp deploy/database/smoke-before.sql "$stage/smoke-before.sql"
+          cp deploy/database/smoke-applied.sql "$stage/smoke-applied.sql"
+          cp deploy/database/smoke-rollback.sql "$stage/smoke-rollback.sql"
+          node - "$stage" "$sha" "$version" "$name" <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const crypto = require('node:crypto');
+          const [stage, commitSha, migrationVersion, migrationName] = process.argv.slice(2);
+          const files = {};
+          for (const file of ['migration.sql', 'rollback.sql', 'smoke-before.sql', 'smoke-applied.sql', 'smoke-rollback.sql']) {
+            files[file] = crypto.createHash('sha256').update(fs.readFileSync(path.join(stage, file))).digest('hex');
+          }
+          fs.writeFileSync(path.join(stage, 'manifest.json'), JSON.stringify({
+            schemaVersion: 1, commitSha, migrationVersion, migrationName, files
+          }, null, 2) + '\n');
+          NODE
+          tar -C "$stage" -czf "$bundle" .
+          (cd "$root" && sha256sum "$(basename "$bundle")" > "$(basename "$checksum")")
+          bash deploy/database/deploy-migration.test.sh
+          bash deploy/database/deploy-migration.sh audit
+          bash deploy/database/deploy-migration.sh preflight "$sha" "$bundle" "$checksum"
+          bash deploy/database/deploy-migration.sh deploy "$sha" "$bundle" "$checksum"
+          bash deploy/database/deploy-migration.sh rollback
+          test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '$version'" -d "$PRONTOMEDIC_DATABASE")" = 0
+          dropdb "$PRONTOMEDIC_DATABASE"
+
       - name: Reject unknown legacy authorization policies during upgrade
         env:
           PGPASSWORD: postgres
@@ -315,6 +377,30 @@ jobs:
         run: npx playwright test e2e/gate-phase01.spec.ts --project=chromium --workers=1
         env:
           CI: true
+          E2E_BASE_URL: http://localhost:4173
+          VITE_SUPABASE_URL: http://127.0.0.1:18000
+          VITE_SUPABASE_ANON_KEY: local-e2e-public-key
+          PGHOST: localhost
+          PGPORT: 54322
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: migrations_second
+
+      - name: Restore deterministic E2E fixtures before companies
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -X -v ON_ERROR_STOP=1 \
+            -h localhost -p 54322 -U postgres -d migrations_second \
+            -f scripts/seed-e2e-users.sql >/dev/null
+
+      - name: Run dedicated companies and units E2E gate
+        run: npx playwright test e2e/companies.spec.ts --project=chromium --workers=1
+        env:
+          CI: true
+          E2E_ENV: local
+          E2E_MODE: mutating
+          E2E_ALLOW_LOCAL_MUTATIONS: true
           E2E_BASE_URL: http://localhost:4173
           VITE_SUPABASE_URL: http://127.0.0.1:18000
           VITE_SUPABASE_ANON_KEY: local-e2e-public-key

@@ -8,6 +8,8 @@ const ecosystem = readFileSync(resolve(import.meta.dirname, 'ecosystem.config.cj
 
 assert.match(script, /set -Eeuo pipefail/);
 assert.match(script, /flock -n 9/);
+assert.match(script, /PRONTOMEDIC_GLOBAL_DEPLOY_LOCK/);
+assert.match(script, /exec 9>"\$global_lock"/);
 assert.match(script, /pg_dump -Fc/);
 assert.match(script, /pg_restore --list/);
 assert.match(script, /psql -X -d "\$database" -v ON_ERROR_STOP=1 <"\$migration_copy"/);

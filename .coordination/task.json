@@ -4,6 +4,7 @@
   "baseCommit": "1f5e0e12a2b473327107f62f7d4365baa2674d7c",
   "paths": [
     ".coordination/task.json",
+    "local-auth-server.mjs",
     "src/pages/CompaniesPage.tsx",
     "src/services/catalogService.ts",
     "src/types/index.ts",
@@ -11,6 +12,13 @@
     "src/services/__tests__/companiesUnitsAdminContractMigration.test.ts",
     "tests/database/companies_units_admin_contract.sql",
     ".github/workflows/ci.yml",
+    ".github/workflows/deploy-database-migration.yml",
+    ".github/workflows/deploy-edge-functions.yml",
+    "deploy/auth-service/deploy-atomic.sh",
+    "deploy/auth-service/verify-atomic-deploy.mjs",
+    "deploy/database",
+    "e2e/companies.spec.ts",
+    "supabase/rollbacks/20260804033225_secure_companies_units_admin_contract.sql",
     "supabase/migrations/20260804033225_secure_companies_units_admin_contract.sql"
   ],
   "sharedPaths": [],

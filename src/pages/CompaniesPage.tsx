@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { Building2, MapPin, Plus, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -191,7 +191,7 @@ export default function CompaniesPage() {
           <Field label="Nome" value={unitForm.name} onChange={(name) => setUnitForm((form) => ({ ...form, name }))} />
           <Field label="Código" value={unitForm.code} onChange={(code) => setUnitForm((form) => ({ ...form, code }))} />
           <Field label="CNPJ" value={unitForm.cnpj ?? ""} onChange={(cnpj) => setUnitForm((form) => ({ ...form, cnpj }))} />
-          <div className="space-y-2"><Label>Tipo</Label><Select value={unitForm.type} onValueChange={(type: UnitType) => setUnitForm((form) => ({ ...form, type }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(unitTypeLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
+          <UnitTypeSelect value={unitForm.type} onChange={(type) => setUnitForm((form) => ({ ...form, type }))} />
           <StatusSelect value={unitForm.status} onChange={(status) => setUnitForm((form) => ({ ...form, status }))} />
         </div>
         <DialogFooter><Button variant="outline" onClick={() => setUnitDialogOpen(false)} disabled={saving}>Cancelar</Button><Button onClick={() => void saveUnit()} disabled={saving}>{saving ? "Salvando..." : "Salvar"}</Button></DialogFooter>
@@ -201,11 +201,18 @@ export default function CompaniesPage() {
 }
 
 function Field({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
-  return <div className="space-y-2"><Label>{label}</Label><Input type={type} value={value} onChange={(event) => onChange(event.target.value)} /></div>;
+  const id = useId();
+  return <div className="space-y-2"><Label htmlFor={id}>{label}</Label><Input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} /></div>;
+}
+
+function UnitTypeSelect({ value, onChange }: { value: UnitType; onChange: (value: UnitType) => void }) {
+  const id = useId();
+  return <div className="space-y-2"><Label htmlFor={id}>Tipo</Label><Select value={value} onValueChange={(type: UnitType) => onChange(type)}><SelectTrigger id={id}><SelectValue /></SelectTrigger><SelectContent>{Object.entries(unitTypeLabels).map(([option, label]) => <SelectItem key={option} value={option}>{label}</SelectItem>)}</SelectContent></Select></div>;
 }
 
 function StatusSelect({ value, onChange }: { value: UnitStatus; onChange: (value: UnitStatus) => void }) {
-  return <div className="space-y-2"><Label>Status</Label><Select value={value} onValueChange={(status: UnitStatus) => onChange(status)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">Ativo</SelectItem><SelectItem value="inactive">Inativo</SelectItem></SelectContent></Select></div>;
+  const id = useId();
+  return <div className="space-y-2"><Label htmlFor={id}>Status</Label><Select value={value} onValueChange={(status: UnitStatus) => onChange(status)}><SelectTrigger id={id}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">Ativo</SelectItem><SelectItem value="inactive">Inativo</SelectItem></SelectContent></Select></div>;
 }
 
 function StatusBadge({ status }: { status: UnitStatus }) {

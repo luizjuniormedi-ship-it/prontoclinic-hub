@@ -17,6 +17,7 @@ readonly edge_helper="${PRONTOMEDIC_EDGE_HELPER:-/usr/local/sbin/prontomedic-edg
 readonly edge_smoke_base="${PRONTOMEDIC_EDGE_SMOKE_BASE_URL:-http://127.0.0.1:9000}"
 readonly pm2_process="${PRONTOMEDIC_AUTH_PM2_PROCESS:-prontomedic-auth}"
 readonly database="${PRONTOMEDIC_DATABASE:-prontoclinic}"
+readonly global_lock="${PRONTOMEDIC_GLOBAL_DEPLOY_LOCK:-/var/lock/prontomedic-deploy.lock}"
 readonly health_url="${PRONTOMEDIC_AUTH_HEALTH_URL:-http://127.0.0.1:8000/health}"
 readonly manifest_version="1"
 
@@ -327,7 +328,7 @@ deploy() {
 
   preflight "$@"
   mkdir -p "$auth_releases" "$backup_root"
-  exec 9>"${auth_root}/.deploy.lock"
+  exec 9>"$global_lock"
   flock -n 9 || die "outra publicacao Auth esta em andamento"
   test ! -e "$release" || die "release Auth imutavel ja existe"
 
