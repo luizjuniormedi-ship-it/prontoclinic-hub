@@ -1,10 +1,11 @@
 {
-  "taskId": "auth-bootstrap-stale-copy-20260803",
+  "taskId": "auth-helper-arity-20260803",
   "module": "infrastructure",
-  "baseCommit": "ad25d6aa27f9f323a4b4295158ca9a77d9aa6e98",
+  "baseCommit": "1bd7bf44403111c09e0f69178ba2a02b25849b57",
   "paths": [
     ".coordination/task.json",
-    ".github/workflows/deploy-edge-functions.yml"
+    "deploy/auth-service/deploy-atomic.sh",
+    "deploy/auth-service/verify-atomic-deploy.mjs"
   ],
   "sharedPaths": [],
   "status": "active"

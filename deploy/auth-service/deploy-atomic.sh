@@ -395,7 +395,7 @@ case "$command" in
     if test "$command" = audit; then audit; else rollback_from_state; fi
     ;;
   preflight|deploy)
-    test "$#" = 8 || usage
+    test "$#" = 7 || usage
     shift
     "$command" "$@"
     ;;
