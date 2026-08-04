@@ -1,12 +1,10 @@
 {
-  "taskId": "auth-predeploy-audit-20260803",
+  "taskId": "auth-bootstrap-stale-copy-20260803",
   "module": "infrastructure",
-  "baseCommit": "445fb341477259e857dc2664ef73a42912dbf670",
+  "baseCommit": "ad25d6aa27f9f323a4b4295158ca9a77d9aa6e98",
   "paths": [
     ".coordination/task.json",
-    "deploy/auth-service/README.md",
-    "deploy/auth-service/deploy-atomic.sh",
-    "deploy/auth-service/verify-atomic-deploy.mjs"
+    ".github/workflows/deploy-edge-functions.yml"
   ],
   "sharedPaths": [],
   "status": "active"
