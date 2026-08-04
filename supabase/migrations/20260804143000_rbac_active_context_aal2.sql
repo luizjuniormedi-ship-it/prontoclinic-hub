@@ -1,6 +1,8 @@
 -- Close the legacy permissive RBAC path. Administrative writes remain behind
 -- upsert_role_permission(), which already requires active context and AAL2.
 
+BEGIN;
+
 ALTER TABLE public.role_permissions ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS role_permissions_select_company ON public.role_permissions;
@@ -37,3 +39,5 @@ GRANT EXECUTE ON FUNCTION private.is_module_admin() TO authenticated;
 
 COMMENT ON FUNCTION private.is_module_admin() IS
   'True only for an active AAL2 application context with an administrative role in the active company.';
+
+COMMIT;
