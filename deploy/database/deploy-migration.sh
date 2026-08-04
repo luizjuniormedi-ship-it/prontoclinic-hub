@@ -138,7 +138,7 @@ NODE
 load_manifest_contract() {
   local stage="$1"
   IFS=$'\t' read -r migration_version migration_name < <(
-    node -e "const m=require(process.argv[1]); process.stdout.write(m.migrationVersion+'\\t'+m.migrationName)" \
+    node -e "const m=require(process.argv[1]); process.stdout.write(m.migrationVersion+'\\t'+m.migrationName+'\\n')" \
       "$stage/manifest.json"
   )
   case "${migration_version}:${migration_name}" in
