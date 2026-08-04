@@ -255,7 +255,7 @@ jobs:
               -D /tmp/headers -o /tmp/response -w '%{http_code}' \
               -X OPTIONS \
               -H 'Origin: https://prontomedic.191-252-196-6.sslip.io' \
-              "${PUBLIC_URL}/functions/v1/${function_name}")"
+              "${PUBLIC_URL}/functions/v1/${function_name}" || true)"
             grep -Fqi 'Access-Control-Allow-Origin: https://prontomedic.191-252-196-6.sslip.io' /tmp/headers || status="cors-${status}"
             test "$status" = "200" || {
               echo "::error::${function_name} falhou no preflight CORS: ${status}"

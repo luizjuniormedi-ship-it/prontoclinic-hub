@@ -20,7 +20,7 @@ host_postgres() {
 
 audit_runtime_contract() {
   local nginx_config
-  nginx_config="$(nginx -T 2>&1)"
+  nginx_config="$(/usr/sbin/nginx -T 2>&1)"
   for route in auth-admin dicom-bridge telemedicina-daily; do
     grep -Fq "location = /functions/v1/${route}" <<<"$nginx_config" || {
       echo "Rota Nginx ausente: /functions/v1/${route}" >&2

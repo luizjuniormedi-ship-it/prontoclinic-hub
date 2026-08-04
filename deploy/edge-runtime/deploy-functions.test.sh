@@ -41,6 +41,8 @@ grep -Fq 'for attempt in $(seq 1 60)' "$script"
 grep -Fq 'docker compose -f "$compose" logs --tail=200 functions' "$script"
 grep -Fq 'Edge Runtime nao ficou saudavel apos 120 segundos' "$script"
 grep -Fq 'test "$auth_status" = "401"' "$script"
+grep -Fq 'nginx_config="$(/usr/sbin/nginx -T 2>&1)"' "$script"
+grep -Fq '"${PUBLIC_URL}/functions/v1/${function_name}" || true)' "$workflow"
 ! grep -Fq "grep -Fq 'Não autorizado'" "$script"
 
 echo "EDGE_DEPLOY_FAILURE_CLEANUP_CONTRACT_PASS"
