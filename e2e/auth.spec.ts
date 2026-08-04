@@ -50,10 +50,9 @@ test.describe('Autenticação', () => {
 
   test('logout redireciona para login', async ({ page, loginAs }) => {
     await loginAs('admin');
-    await page
-      .getByRole('banner', { name: 'Cabeçalho da aplicação' })
-      .getByRole('button', { name: /sair|logout|desconectar/i })
-      .click();
+    const header = page.getByRole('banner', { name: 'Cabeçalho da aplicação' });
+    await header.getByRole('button', { name: 'Abrir menu da conta' }).click();
+    await page.getByRole('menuitem', { name: 'Sair da conta' }).click();
 
     await page.waitForURL(/\/login/);
     await expect(page).toHaveURL(/\/login/);
