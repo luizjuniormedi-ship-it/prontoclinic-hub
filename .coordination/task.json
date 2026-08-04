@@ -1,11 +1,11 @@
 {
-  "taskId": "security-dependencies-high-findings-20260804",
-  "module": "dependency-security",
-  "baseCommit": "245d8ec905c9e99d4964791692e787d97239e33d",
+  "taskId": "auth-mfa-aal2-e2e-gate-20260804",
+  "module": "authentication-rbac",
+  "baseCommit": "40824cf9168d4a4fd9568731347b11dbe16cf21c",
   "paths": [
     ".coordination/task.json",
-    "package.json",
-    "package-lock.json"
+    ".github/workflows/ci.yml",
+    "e2e/auth.spec.ts"
   ],
   "sharedPaths": [],
   "status": "active"
