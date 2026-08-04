@@ -187,7 +187,7 @@ mv -Tf "${current}.next" "$current"
 activated=1
 docker compose -f "$compose" up -d --no-deps --force-recreate functions
 
-for attempt in $(seq 1 20); do
+for attempt in $(seq 1 60); do
   all_healthy=1
   for function_name in auth-admin dicom-bridge telemedicina-daily; do
     status="$(curl -sS --connect-timeout 2 --max-time 5 \
@@ -207,7 +207,11 @@ for attempt in $(seq 1 20); do
   if test "$all_healthy" = "1"; then
     break
   fi
-  test "$attempt" -lt 20
+  if test "$attempt" = 60; then
+    docker compose -f "$compose" logs --tail=200 functions >&2 || true
+    echo "Edge Runtime nao ficou saudavel apos 120 segundos" >&2
+    false
+  fi
   sleep 2
 done
 
