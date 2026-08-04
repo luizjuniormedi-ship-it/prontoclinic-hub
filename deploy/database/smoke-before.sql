@@ -16,12 +16,14 @@ BEGIN
      OR to_regprocedure('public.upsert_active_company_unit_admin(integer,text,text,text,text,boolean)') IS NOT NULL THEN
     RAISE EXCEPTION 'Contrato 20260804033225 ja existe sem historico canonico';
   END IF;
-  IF EXISTS (
-    SELECT 1 FROM pg_class
+  IF NOT COALESCE((
+    SELECT count(*) = 2
+       AND bool_and(relrowsecurity)
+       AND bool_and(relforcerowsecurity)
+    FROM pg_class
     WHERE oid IN ('public.companies'::regclass, 'public.units'::regclass)
-      AND relforcerowsecurity
-  ) THEN
-    RAISE EXCEPTION 'Baseline inesperada: FORCE RLS ja esta ativo';
+  ), false) THEN
+    RAISE EXCEPTION 'Baseline inesperada: RLS/FORCE RLS deve estar ativo';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies

@@ -3,8 +3,10 @@ BEGIN;
 DROP FUNCTION IF EXISTS public.update_active_company_admin(TEXT, TEXT, TEXT, TEXT);
 DROP FUNCTION IF EXISTS public.upsert_active_company_unit_admin(INTEGER, TEXT, TEXT, TEXT, TEXT, BOOLEAN);
 
-ALTER TABLE public.companies NO FORCE ROW LEVEL SECURITY;
-ALTER TABLE public.units NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.companies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.companies FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.units ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.units FORCE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS units_admin ON public.units;
 DROP POLICY IF EXISTS units_insert ON public.units;

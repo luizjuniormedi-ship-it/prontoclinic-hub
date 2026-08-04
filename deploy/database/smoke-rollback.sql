@@ -2,12 +2,14 @@
 
 DO $smoke$
 BEGIN
-  IF EXISTS (
-    SELECT 1 FROM pg_class
+  IF NOT COALESCE((
+    SELECT count(*) = 2
+       AND bool_and(relrowsecurity)
+       AND bool_and(relforcerowsecurity)
+    FROM pg_class
     WHERE oid IN ('public.companies'::regclass, 'public.units'::regclass)
-      AND relforcerowsecurity
-  ) THEN
-    RAISE EXCEPTION 'Rollback manteve FORCE RLS fora do baseline anterior';
+  ), false) THEN
+    RAISE EXCEPTION 'Rollback degradou RLS/FORCE RLS do baseline anterior';
   END IF;
   IF to_regprocedure('public.update_active_company_admin(text,text,text,text)') IS NOT NULL
      OR to_regprocedure('public.upsert_active_company_unit_admin(integer,text,text,text,text,boolean)') IS NOT NULL THEN

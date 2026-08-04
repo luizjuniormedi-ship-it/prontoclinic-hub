@@ -218,7 +218,7 @@ preflight() {
   flock -n 9 || die 'outro deploy ProntoMedic esta em andamento'
   verify_checksum "$bundle" "$checksum"
   stage="$(mktemp -d)"
-  trap 'rm -rf -- "$stage"' EXIT
+  trap "rm -rf -- $(printf '%q' "$stage")" EXIT
   extract_bundle "$bundle" "$stage/release"
   validate_bundle "$stage/release" "$sha"
   history_absent
@@ -274,7 +274,7 @@ deploy() {
   history_absent
 
   stage="$(mktemp -d)"
-  trap 'rm -rf -- "$stage"' EXIT
+  trap "rm -rf -- $(printf '%q' "$stage")" EXIT
   extract_bundle "$bundle" "$stage/release"
   validate_bundle "$stage/release" "$sha"
   run_smoke "$database" "$stage/release/smoke-before.sql"
@@ -330,7 +330,7 @@ rollback() {
   flock -n 9 || die 'outro deploy ProntoMedic esta em andamento'
   history_present || die 'migration nao esta registrada; rollback recusado'
   stage="$(mktemp -d)"
-  trap 'rm -rf -- "$stage"' EXIT
+  trap "rm -rf -- $(printf '%q' "$stage")" EXIT
   extract_bundle "$BUNDLE_COPY" "$stage/release"
   validate_bundle "$stage/release" "$COMMIT_SHA"
   apply_rollback "$stage/release"
