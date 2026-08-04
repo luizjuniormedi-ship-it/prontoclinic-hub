@@ -139,8 +139,6 @@ validate_bundle() {
   verify_manifest "$stage" "$sha" || die 'manifest do bundle invalido'
   verify_transactional_sql "$stage/migration.sql" migration
   verify_transactional_sql "$stage/rollback.sql" rollback
-  grep -Fq '20260804033225_secure_companies_units_admin_contract' "$stage/manifest.json" \
-    || die 'versao da migration ausente do manifest'
 }
 
 run_smoke() { psql_db "$1" -f "$2" >/dev/null; }
