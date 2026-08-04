@@ -166,6 +166,10 @@ ALTER FUNCTION public.upsert_active_company_unit_admin(INTEGER, TEXT, TEXT, TEXT
 GRANT SELECT, UPDATE ON public.companies TO prontomedic_rpc_owner;
 GRANT SELECT, INSERT, UPDATE ON public.units TO prontomedic_rpc_owner;
 GRANT USAGE, SELECT ON SEQUENCE public.units_id_seq TO prontomedic_rpc_owner;
+GRANT EXECUTE ON FUNCTION public.active_company_id()
+  TO prontomedic_rpc_owner;
+GRANT EXECUTE ON FUNCTION public.current_context_is_company_admin(UUID)
+  TO prontomedic_rpc_owner;
 
 REVOKE ALL ON FUNCTION public.update_active_company_admin(TEXT, TEXT, TEXT, TEXT)
   FROM PUBLIC, anon, service_role;
@@ -184,6 +188,7 @@ COMMENT ON FUNCTION public.upsert_active_company_unit_admin(INTEGER, TEXT, TEXT,
 DO $audit$
 DECLARE
   v_authenticated oid := to_regrole('authenticated');
+  v_rpc_owner oid := to_regrole('prontomedic_rpc_owner');
 BEGIN
   IF NOT COALESCE((
     SELECT count(*) = 2
@@ -232,6 +237,14 @@ BEGIN
          AND privilege.privilege_type = 'EXECUTE'
      ) THEN
     RAISE EXCEPTION 'Auditoria falhou: grants das RPCs administrativas';
+  END IF;
+
+  IF v_rpc_owner IS NULL
+     OR NOT has_function_privilege(v_rpc_owner,
+       'public.active_company_id()', 'EXECUTE')
+     OR NOT has_function_privilege(v_rpc_owner,
+       'public.current_context_is_company_admin(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'Auditoria falhou: helpers das RPCs administrativas';
   END IF;
 END;
 $audit$;

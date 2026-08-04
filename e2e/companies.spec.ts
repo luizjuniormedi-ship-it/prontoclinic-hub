@@ -94,7 +94,8 @@ test("admin AAL2 persiste empresa e unidade apenas no contexto ativo", async ({ 
   await page.getByLabel("E-mail").fill("qa.empresas@prontomedic.test");
   const companyRpc = page.waitForResponse((response) => response.url().includes("/rpc/update_active_company_admin"));
   await page.getByRole("button", { name: "Salvar" }).click();
-  expect((await companyRpc).ok()).toBeTruthy();
+  const companyResponse = await companyRpc;
+  expect(companyResponse.ok(), await companyResponse.text()).toBeTruthy();
   await expect(page.getByText("Empresa E2E Validada", { exact: true })).toBeVisible();
 
   await page.getByRole("tab", { name: /Unidades/ }).click();
@@ -106,7 +107,8 @@ test("admin AAL2 persiste empresa e unidade apenas no contexto ativo", async ({ 
   await page.getByRole("option", { name: "Laboratório" }).click();
   const createRpc = page.waitForResponse((response) => response.url().includes("/rpc/upsert_active_company_unit_admin"));
   await page.getByRole("button", { name: "Salvar" }).click();
-  expect((await createRpc).ok()).toBeTruthy();
+  const createResponse = await createRpc;
+  expect(createResponse.ok(), await createResponse.text()).toBeTruthy();
   await expect(page.getByText("Unidade Playwright", { exact: true })).toBeVisible();
 
   await page.reload();

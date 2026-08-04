@@ -56,5 +56,12 @@ BEGIN
       'public.upsert_active_company_unit_admin(integer,text,text,text,text,boolean)', 'EXECUTE') THEN
     RAISE EXCEPTION 'authenticated RPC execute grant is missing';
   END IF;
+
+  IF NOT has_function_privilege('prontomedic_rpc_owner',
+      'public.active_company_id()', 'EXECUTE')
+     OR NOT has_function_privilege('prontomedic_rpc_owner',
+      'public.current_context_is_company_admin(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'company RPC owner helper execute grant is missing';
+  END IF;
 END;
 $test$;
