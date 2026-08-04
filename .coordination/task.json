@@ -1,18 +1,11 @@
 {
-  "taskId": "database-deploy-baseline-policy-20260804",
+  "taskId": "database-restore-rehearsal-stdin-20260804",
   "module": "database-deployment",
-  "baseCommit": "b595174f1065eaaf3d10868d357aa33efa822608",
+  "baseCommit": "a516ca5311ea80906b5e7dc419a70d246cf7f81f",
   "paths": [
     ".coordination/task.json",
-    ".github/workflows/deploy-database-migration.yml",
     "deploy/database/deploy-migration.sh",
-    "deploy/database/deploy-migration.test.sh",
-    "deploy/database/smoke-before.sql",
-    "deploy/database/rbac-before.sql",
-    "deploy/database/rbac-applied.sql",
-    "deploy/database/rbac-rollback.sql",
-    "supabase/migrations/20260804143000_rbac_active_context_aal2.sql",
-    "supabase/rollbacks/20260804143000_rbac_active_context_aal2.sql"
+    "deploy/database/deploy-migration.test.sh"
   ],
   "sharedPaths": [],
   "status": "active"
