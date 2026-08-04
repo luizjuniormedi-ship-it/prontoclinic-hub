@@ -219,7 +219,7 @@ backup_and_rehearse() {
     trap cleanup_restore EXIT
     host_postgres createdb -T template0 "$restore_db"
     restore_created=1
-    host_postgres pg_restore --exit-on-error -d "$restore_db" "$backup" >/dev/null
+    host_postgres pg_restore --exit-on-error -d "$restore_db" <"$backup" >/dev/null
     run_smoke "$restore_db" "$stage/smoke-before.sql"
     ensure_history "$restore_db"
     psql_db "$restore_db" -f "$stage/migration.sql" >/dev/null

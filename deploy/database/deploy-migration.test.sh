@@ -19,6 +19,7 @@ test "$(grep -Fc 'group: prontomedic-production-deploy' "$auth_workflow")" = 1
 grep -Fq 'image: postgres:16' "$ci_workflow"
 grep -Fq 'pg_dump -Fc' "$helper"
 grep -Fq 'pg_restore --exit-on-error' "$helper"
+grep -Fq 'pg_restore --exit-on-error -d "$restore_db" <"$backup"' "$helper"
 grep -Fq 'supabase_migrations.schema_migrations' "$helper"
 grep -Fq 'rollback_on_error' "$helper"
 grep -Fq 'history_absent' "$helper"
