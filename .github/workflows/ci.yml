@@ -20,7 +20,9 @@ jobs:
 
     services:
       postgres:
-        image: postgres:18
+        # Keep the disposable server aligned with the PostgreSQL client
+        # shipped by ubuntu-latest so pg_dump/pg_restore rehearsals are valid.
+        image: postgres:16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres

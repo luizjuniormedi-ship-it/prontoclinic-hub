@@ -3,17 +3,20 @@ set -Eeuo pipefail
 
 helper="${BASH_SOURCE[0]%/*}/deploy-migration.sh"
 workflow="${BASH_SOURCE[0]%/*}/../../.github/workflows/deploy-database-migration.yml"
+ci_workflow="${BASH_SOURCE[0]%/*}/../../.github/workflows/ci.yml"
 auth_workflow="${BASH_SOURCE[0]%/*}/../../.github/workflows/deploy-edge-functions.yml"
 rollback="${BASH_SOURCE[0]%/*}/../../supabase/rollbacks/20260804033225_secure_companies_units_admin_contract.sql"
 
 bash -n "$helper"
 test -f "$workflow"
+test -f "$ci_workflow"
 test -f "$auth_workflow"
 test -f "$rollback"
 grep -Fq 'PRONTOMEDIC_GLOBAL_DEPLOY_LOCK' "$helper"
 grep -Fq 'exec 9>"$global_lock"' "$helper"
 test "$(grep -Fc 'group: prontomedic-production-deploy' "$workflow")" = 1
 test "$(grep -Fc 'group: prontomedic-production-deploy' "$auth_workflow")" = 1
+grep -Fq 'image: postgres:16' "$ci_workflow"
 grep -Fq 'pg_dump -Fc' "$helper"
 grep -Fq 'pg_restore --exit-on-error' "$helper"
 grep -Fq 'supabase_migrations.schema_migrations' "$helper"
