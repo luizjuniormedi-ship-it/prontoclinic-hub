@@ -227,7 +227,9 @@ audit() {
   verify_service_key_fingerprint
   host_postgres psql -X -d "$database" -v ON_ERROR_STOP=1 -Atqc 'SELECT 1' | grep -qx 1 \
     || die "PostgreSQL indisponivel"
-  smoke_all
+  health_check || die "health check Auth reprovado"
+  assert_pm2_exec_path
+  "$edge_helper" --audit-contract >/dev/null
   log "AUDIT_OK"
 }
 

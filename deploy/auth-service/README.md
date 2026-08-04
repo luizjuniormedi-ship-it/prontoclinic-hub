@@ -63,7 +63,10 @@ sudo bash deploy/auth-service/install-coordinator.sh "$PWD" /opt/prontomedic/bac
 sudo /usr/local/sbin/prontomedic-auth-deploy audit
 ```
 
-Se o audit falhar, o workflow deve permanecer bloqueado.
+O `audit` de bootstrap valida Auth, PM2, PostgreSQL, identidade do service role e
+o contrato estrutural do helper Edge. Ele deliberadamente nao exige que as tres
+funcoes Edge da nova release ja respondam antes da primeira publicacao. Se
+qualquer gate estrutural falhar, o workflow deve permanecer bloqueado.
 
 ### Artefatos obrigatorios
 
@@ -88,7 +91,8 @@ Se o audit falhar, o workflow deve permanecer bloqueado.
 6. Backup custom-format nao vazio e validado por `pg_restore --list`.
 7. Ecosystem canonico instalado com script apontando para
    `/opt/prontomedic/auth-runtime/current/local-auth-server.mjs`.
-8. `pm_exec_path` comprovado após `pm2 startOrReload`, health Auth e smoke Edge.
+8. `pm_exec_path` comprovado após `pm2 startOrReload`, health Auth e smoke das
+   tres funcoes Edge somente depois da ativacao atomica.
 
 Qualquer falha depois da migration executa rollback em ordem inversa da
 aplicacao: Edge e backend Auth. O schema aditivo permanece, o backup e
