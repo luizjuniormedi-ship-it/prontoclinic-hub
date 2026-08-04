@@ -1,10 +1,11 @@
 {
-  "taskId": "frontend-vps-public-smoke-contract-20260804",
-  "module": "frontend-deployment",
-  "baseCommit": "43671a8b7cc64e635ac080f338ebe5b43c6ffdae",
+  "taskId": "security-dependencies-high-findings-20260804",
+  "module": "dependency-security",
+  "baseCommit": "245d8ec905c9e99d4964791692e787d97239e33d",
   "paths": [
     ".coordination/task.json",
-    ".github/workflows/deploy-frontend-vps.yml"
+    "package.json",
+    "package-lock.json"
   ],
   "sharedPaths": [],
   "status": "active"
