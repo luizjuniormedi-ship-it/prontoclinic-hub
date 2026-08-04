@@ -1,7 +1,7 @@
 {
-  "taskId": "auth-manifest-path-20260803",
+  "taskId": "auth-migration-stdin-20260803",
   "module": "infrastructure",
-  "baseCommit": "2ed1bfea6aa513fc9a017a2d744458e84d35caf0",
+  "baseCommit": "dd7ece77d7e5956d212cbeacfb87ff3dd8e215ac",
   "paths": [
     ".coordination/task.json",
     "deploy/auth-service/deploy-atomic.sh",

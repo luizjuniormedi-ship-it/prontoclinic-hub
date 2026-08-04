@@ -372,7 +372,7 @@ deploy() {
 
   write_state "$state" "$sha" "$previous" "$backup" "$previous_ecosystem"
   state_written=1
-  host_postgres psql -X -d "$database" -v ON_ERROR_STOP=1 -f "$migration_copy" >/dev/null
+  host_postgres psql -X -d "$database" -v ON_ERROR_STOP=1 <"$migration_copy" >/dev/null
 
   ln -sfn "$previous" "${auth_previous}.next"
   mv -Tf "${auth_previous}.next" "$auth_previous"
