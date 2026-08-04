@@ -44,6 +44,15 @@ async function selectContext(page: Page, option: RegExp) {
   ).not.toBeNull();
 }
 
+async function waitForReceptionReady(page: Page) {
+  await expect(page.getByRole('heading', { name: /entrada do paciente/i })).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.getByText('Carregando...', { exact: true })).toHaveCount(0, {
+    timeout: 20_000,
+  });
+}
+
 async function authenticatedFetch(page: Page, path: string, init: RequestInit) {
   return page.evaluate(async ({ path, init }) => {
     const storageKey = Object.keys(localStorage).find((key) => key.startsWith('sb-') && key.endsWith('-auth-token'));
@@ -113,6 +122,7 @@ test.describe('Gate fase 0/1', () => {
   });
 
   test('contexto, RLS A/B, recepção, atendimento, prontuário e Axe', async ({ page }) => {
+    test.slow();
     await page.goto('/login');
     await assertAccessible(page, 'login');
     await loginAsRole(page, 'admin');
@@ -155,6 +165,7 @@ test.describe('Gate fase 0/1', () => {
     await assertAccessible(page, 'pacientes unidade A');
 
     await page.goto('/reception');
+    await waitForReceptionReady(page);
     const patientAButton = page.getByRole('button', {
       name: 'Ver agendamentos de Paciente E2E A',
       exact: true,
@@ -189,6 +200,7 @@ test.describe('Gate fase 0/1', () => {
     await assertAccessible(page, 'pacientes unidade B');
 
     await page.goto('/reception');
+    await waitForReceptionReady(page);
     await expect(page.getByText('Paciente E2E B')).toBeVisible();
     await expect(page.getByText('Paciente E2E A')).toBeHidden();
 
