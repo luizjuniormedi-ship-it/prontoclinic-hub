@@ -1,11 +1,10 @@
 {
-  "taskId": "frontend-vps-atomic-deploy-20260804",
+  "taskId": "frontend-vps-public-smoke-contract-20260804",
   "module": "frontend-deployment",
-  "baseCommit": "708bb753b10403eb4fa541751ee5423a7ee220db",
+  "baseCommit": "43671a8b7cc64e635ac080f338ebe5b43c6ffdae",
   "paths": [
     ".coordination/task.json",
-    ".github/workflows/deploy-frontend-vps.yml",
-    "scripts/deploy-vps-atomic.sh"
+    ".github/workflows/deploy-frontend-vps.yml"
   ],
   "sharedPaths": [],
   "status": "active"

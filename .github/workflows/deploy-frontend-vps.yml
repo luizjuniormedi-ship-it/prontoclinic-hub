@@ -146,4 +146,5 @@ jobs:
         run: |
           curl --fail --silent --show-error --max-time 15 https://prontomedic.191-252-196-6.sslip.io/ >/dev/null
           curl --fail --silent --show-error --max-time 15 https://prontomedic.191-252-196-6.sslip.io/login >/dev/null
-          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 https://prontomedic.191-252-196-6.sslip.io/auth/v1/health)" = 200
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 https://prontomedic.191-252-196-6.sslip.io/rest/v1/)" = 400
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 https://prontomedic.191-252-196-6.sslip.io/functions/v1/auth-admin)" = 401
