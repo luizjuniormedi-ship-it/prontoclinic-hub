@@ -170,9 +170,14 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
         run: |
           trap 'rm -f ~/.ssh/id_ed25519_root' EXIT
+          bootstrap_path="/tmp/prontomedic-auth-bootstrap-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          auth_helper="release/bootstrap-root/deploy/auth-service/deploy-atomic.sh"
+          auth_helper_sha="$(sha256sum "$auth_helper" | cut -d ' ' -f1)"
           helper="release/bootstrap-root/deploy/edge-runtime/deploy-functions.sh"
           test -s "$helper"
+          test -s "$auth_helper"
           bash -n "$helper"
+          bash -n "$auth_helper"
           (
             cd "$(dirname "$helper")"
             sha256sum "$(basename "$helper")"
@@ -203,11 +208,13 @@ jobs:
           echo "EDGE_HELPER_BOOTSTRAP_PASS"
           EOF
 
+          ssh -i ~/.ssh/id_ed25519_root -o IdentitiesOnly=yes \
+            "root@${VPS_HOST}" "test ! -e '$bootstrap_path'"
           scp -r -i ~/.ssh/id_ed25519_root -o IdentitiesOnly=yes \
-            release/bootstrap-root "root@${VPS_HOST}:/tmp/prontomedic-auth-bootstrap"
+            release/bootstrap-root "root@${VPS_HOST}:$bootstrap_path"
           ssh -i ~/.ssh/id_ed25519_root -o IdentitiesOnly=yes \
             "root@${VPS_HOST}" \
-            "bash /tmp/prontomedic-auth-bootstrap/deploy/auth-service/install-coordinator.sh /tmp/prontomedic-auth-bootstrap /opt/prontomedic/backend"
+            "bash '$bootstrap_path/deploy/auth-service/install-coordinator.sh' '$bootstrap_path' /opt/prontomedic/backend && test \"\$(sha256sum /usr/local/sbin/prontomedic-auth-deploy | cut -d ' ' -f1)\" = '$auth_helper_sha'"
 
       - name: Audit privileged deployment contracts
         env:
