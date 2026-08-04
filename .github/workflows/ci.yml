@@ -111,6 +111,9 @@ jobs:
               -f tests/database/companies_units_admin_contract.sql >/dev/null
             psql -v ON_ERROR_STOP=1 \
               -h localhost -p 54322 -U postgres -d "$database" \
+              -f tests/database/rbac_active_context_aal2.sql >/dev/null
+            psql -v ON_ERROR_STOP=1 \
+              -h localhost -p 54322 -U postgres -d "$database" \
               -f tests/database/operational_rls.sql >/dev/null
             psql -v ON_ERROR_STOP=1 \
               -h localhost -p 54322 -U postgres -d "$database" \
@@ -148,7 +151,8 @@ jobs:
             20260716240000_operational_rls_closure.sql \
             20260717000000_legacy_schema_normalization.sql \
             20260717001000_auth_admin_access_transition.sql \
-            20260717002000_access_context_options.sql; do
+            20260717002000_access_context_options.sql \
+            20260804143000_rbac_active_context_aal2.sql; do
             psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
               -d migrations_first --single-transaction \
               -f "supabase/migrations/$migration" >/dev/null
