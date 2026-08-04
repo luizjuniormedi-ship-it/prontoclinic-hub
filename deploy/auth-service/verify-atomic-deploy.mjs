@@ -35,6 +35,7 @@ assert.match(script, /schema_aditivo_preservado=true/);
 assert.doesNotMatch(script, /migration-down|ROLLBACK_SQL|DROP TABLE/i);
 assert.match(script, /PREFLIGHT_OK/);
 assert.match(script, /DEPLOY_OK/);
+assert.match(script, /preflight\|deploy\)\s+test "\$#" = 7 \|\| usage/);
 assert.doesNotMatch(script, /DataSIGH/i);
 assert.match(installer, /set -Eeuo pipefail/);
 assert.match(installer, /local-auth-server\.mjs/);
