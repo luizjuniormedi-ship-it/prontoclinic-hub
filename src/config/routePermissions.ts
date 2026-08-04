@@ -101,7 +101,7 @@ const routePermissionMap: Record<string, PermissionEntry> = {
   "/settings": [ROLES.ADMIN, ROLES.GESTOR, ROLES.ADMINISTRATIVO],
   "/master-data": [ROLES.ADMIN, ROLES.ADMINISTRATIVO],
   "/companies": [ROLES.ADMIN, ROLES.GESTOR, ROLES.ADMINISTRATIVO],
-  "/admin": [ROLES.ADMIN, ROLES.ADMINISTRATIVO],
+  "/admin": [ROLES.ADMIN],
   "/meus-agendamentos": "*", // portal do paciente (qualquer usuario logado)
   "/nursing/clinical": [ROLES.ADMIN, ROLES.MEDICO, ROLES.ENFERMAGEM],
   "/prescriptions": [ROLES.ADMIN, ROLES.MEDICO, ROLES.FARMACIA],
