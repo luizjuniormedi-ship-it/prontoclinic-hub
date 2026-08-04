@@ -1,11 +1,11 @@
 {
-  "taskId": "database-restore-rehearsal-stdin-20260804",
+  "taskId": "rbac-production-baseline-preflight-20260804",
   "module": "database-deployment",
-  "baseCommit": "a516ca5311ea80906b5e7dc419a70d246cf7f81f",
+  "baseCommit": "cd9d40d8c90c21cb8cd48a76ef16f2817abdd55b",
   "paths": [
     ".coordination/task.json",
-    "deploy/database/deploy-migration.sh",
-    "deploy/database/deploy-migration.test.sh"
+    "deploy/database/deploy-migration.test.sh",
+    "deploy/database/rbac-before.sql"
   ],
   "sharedPaths": [],
   "status": "active"

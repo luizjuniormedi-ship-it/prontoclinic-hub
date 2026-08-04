@@ -22,9 +22,28 @@ BEGIN
     SELECT 1 FROM pg_policies
     WHERE schemaname = 'public'
       AND tablename = 'role_permissions'
-      AND qual = 'true'
   ) THEN
-    RAISE EXCEPTION 'Baseline inesperada: policy permissiva ausente';
+    RAISE EXCEPTION 'Baseline inesperada: role_permissions sem policy';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'role_permissions'
+      AND policyname NOT IN (
+        'role_permissions_select_company',
+        'role_permissions_insert_company_admin',
+        'role_permissions_update_company_admin',
+        'module2_role_permissions_select',
+        'module2_role_permissions_admin',
+        'role_permissions_active_company_select',
+        'module_role_permissions_select',
+        'module_role_permissions_admin'
+      )
+  ) THEN
+    RAISE EXCEPTION 'Baseline inesperada: policy desconhecida em role_permissions';
+  END IF;
+  IF has_table_privilege('authenticated', 'public.role_permissions', 'INSERT,UPDATE,DELETE') THEN
+    RAISE EXCEPTION 'Baseline insegura: authenticated possui escrita direta em role_permissions';
   END IF;
 END;
 $smoke$;
