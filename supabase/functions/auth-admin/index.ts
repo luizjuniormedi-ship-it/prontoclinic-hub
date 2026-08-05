@@ -174,7 +174,10 @@ Deno.serve(async (req: Request) => {
     if (action === "set-active") {
       const userId = String(body.userId ?? "");
       const companyId = String(body.companyId ?? "");
-      const active = body.active === true;
+      if (typeof body.active !== "boolean") {
+        return respond({ error: "Estado ativo inválido." }, 400);
+      }
+      const active = body.active;
       if (!await isCompanyAdmin(companyId)) {
         return respond({ error: "Acesso administrativo negado." }, 403);
       }
