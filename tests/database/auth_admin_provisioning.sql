@@ -415,14 +415,9 @@ BEGIN
     v_other_user, v_other_user, 'outro@example.test', 'Perfil Sem Vínculo',
     v_company, v_role_id, 'provision_test_role', v_unit_id, TRUE
   );
-  v_failed := FALSE;
-  BEGIN
-    PERFORM public.prepare_user_access_active(v_actor, v_other_user, v_company, FALSE);
-  EXCEPTION WHEN OTHERS THEN
-    v_failed := TRUE;
-  END;
-  IF NOT v_failed THEN
-    RAISE EXCEPTION 'ASSERTION_FAILED: perfil sem membership deveria falhar fechado';
+  v_transition := public.prepare_user_access_active(v_actor, v_other_user, v_company, FALSE);
+  IF COALESCE((v_transition ->> 'found')::BOOLEAN, TRUE) THEN
+    RAISE EXCEPTION 'ASSERTION_FAILED: perfil sem membership foi tratado como vínculo válido';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM public.user_profiles WHERE id = v_other_user AND lg_ativo = TRUE) THEN
     RAISE EXCEPTION 'ASSERTION_FAILED: falha de vínculo alterou parcialmente o perfil';
