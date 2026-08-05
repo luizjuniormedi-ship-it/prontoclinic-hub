@@ -41,7 +41,8 @@ BEGIN
     VALUES
       ('public.current_context_is_company_admin(uuid)', TRUE, FALSE),
       ('public.provision_user_access(uuid,text,text,uuid,integer,integer)', FALSE, TRUE),
-      ('public.prepare_user_access_active(uuid,uuid,boolean)', FALSE, TRUE),
+      ('public.admin_record_auth_operation(uuid,uuid,uuid,text,text,text)', FALSE, TRUE),
+      ('public.prepare_user_access_active(uuid,uuid,uuid,boolean)', FALSE, TRUE),
       ('public.restore_user_access_active(uuid,uuid,text,text,timestamp with time zone)', FALSE, TRUE),
       ('public.finalize_user_access_active(uuid,uuid,text,timestamp with time zone)', FALSE, TRUE)
   ), audited AS (

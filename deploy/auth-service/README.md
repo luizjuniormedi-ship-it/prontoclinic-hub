@@ -7,7 +7,7 @@
 - `app_prontomedic` nao pode ser o login privilegiado nem membro de `service_role`.
 - O processo recusa startup em producao sem o pool exclusivo ou quando atributos, identidade e memberships divergem do contrato.
 - Segredos nao pertencem ao repositorio, argumentos de processo, logs ou unit files.
-- A chave opaca privilegiada e aceita somente nas rotas Auth administrativas, nas cinco RPCs administrativas e em leitura de `memberships`/`user_profiles`. Ela nunca autoriza tabelas ou RPCs fora dessas allowlists.
+- A chave opaca privilegiada é aceita somente nas rotas Auth administrativas, nas RPCs administrativas explicitamente enumeradas e em leitura de `memberships`/`user_profiles`. Ela nunca autoriza tabelas ou RPCs fora dessas allowlists.
 
 ## Provisionamento controlado
 

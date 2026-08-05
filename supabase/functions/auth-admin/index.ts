@@ -71,12 +71,29 @@ Deno.serve(async (req: Request) => {
 
   try {
     const action = String(body.action ?? "");
+    const requestId = crypto.randomUUID();
     const isCompanyAdmin = async (companyId: string): Promise<boolean> => {
       if (!companyId) return false;
       const { data, error } = await userClient.rpc("current_context_is_company_admin", {
         p_company_id: companyId,
       });
       return !error && data === true;
+    };
+    const recordAdminOperation = async (
+      targetUserId: string,
+      companyId: string,
+      operation: "invite_user" | "send_recovery" | "activate_user" | "suspend_user" | "logout_global",
+      sessionScope: "none" | "company" | "global" = "none",
+    ): Promise<void> => {
+      const { data, error } = await adminClient.rpc("admin_record_auth_operation", {
+        p_actor_user_id: userData.user.id,
+        p_target_user_id: targetUserId,
+        p_company_id: companyId,
+        p_action: operation,
+        p_session_scope: sessionScope,
+        p_request_id: requestId,
+      });
+      if (error || data !== true) throw error ?? new Error("Auditoria administrativa não confirmada.");
     };
 
     if (action === "invite-user") {
@@ -139,6 +156,7 @@ Deno.serve(async (req: Request) => {
         }
         throw provisionError;
       }
+      await recordAdminOperation(userId, companyId, "invite_user");
       return respond({ ok: true, userId }, 201);
     }
 
@@ -168,6 +186,7 @@ Deno.serve(async (req: Request) => {
         redirectTo,
       });
       if (error) throw error;
+      await recordAdminOperation(userId, companyId, "send_recovery");
       return respond({ ok: true });
     }
 
@@ -178,10 +197,14 @@ Deno.serve(async (req: Request) => {
         return respond({ error: "Estado ativo inválido." }, 400);
       }
       const active = body.active;
+      if (!active && userId === userData.user.id) {
+        return respond({ error: "Não é permitido suspender o próprio acesso." }, 409);
+      }
       if (!await isCompanyAdmin(companyId)) {
         return respond({ error: "Acesso administrativo negado." }, 403);
       }
       const { data, error: accessError } = await adminClient.rpc("prepare_user_access_active", {
+        p_actor_user_id: userData.user.id,
         p_user_id: userId,
         p_company_id: companyId,
         p_active: active,
@@ -236,6 +259,12 @@ Deno.serve(async (req: Request) => {
           return respond({ error: "Acesso alterado; finalização administrativa necessária." }, 500);
         }
       }
+      await recordAdminOperation(
+        userId,
+        companyId,
+        active ? "activate_user" : "suspend_user",
+        active ? "none" : "company",
+      );
       return respond({ ok: true });
     }
 
@@ -253,6 +282,7 @@ Deno.serve(async (req: Request) => {
         .maybeSingle();
       if (membershipError) throw new Error("Falha ao consultar o vínculo do usuário-alvo.");
       if (!membership) return respond({ ok: true });
+      await recordAdminOperation(userId, companyId, "logout_global", "global");
       const logoutResponse = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}/logout`, {
         method: "POST",
         headers: {

@@ -7,8 +7,11 @@ DECLARE
   v_other_company UUID := '83000000-0000-0000-0000-000000000002';
   v_user UUID := '83000000-0000-0000-0000-000000000010';
   v_other_user UUID := '83000000-0000-0000-0000-000000000011';
+  v_actor UUID := '83000000-0000-0000-0000-000000000012';
   v_membership UUID;
   v_other_membership UUID;
+  v_actor_membership UUID;
+  v_actor_other_membership UUID;
   v_role_id INTEGER;
   v_admin_role_id INTEGER;
   v_permission public.role_permissions%ROWTYPE;
@@ -40,7 +43,10 @@ BEGIN
   RETURNING id INTO v_other_unit_id;
 
   INSERT INTO auth.users (id, email)
-  VALUES (v_user, 'provisionado@example.test'), (v_other_user, 'outro@example.test')
+  VALUES
+    (v_user, 'provisionado@example.test'),
+    (v_other_user, 'outro@example.test'),
+    (v_actor, 'actor@example.test')
   ON CONFLICT (id) DO NOTHING;
 
   IF has_table_privilege('authenticated', 'public.user_profiles', 'INSERT')
@@ -153,6 +159,14 @@ BEGIN
   INSERT INTO public.membership_roles (membership_id, role_id)
   VALUES (v_membership, v_admin_role_id)
   ON CONFLICT DO NOTHING;
+  v_actor_membership := public.provision_user_access(
+    v_actor, 'actor@example.test', 'Administrador Executor',
+    v_company, v_admin_role_id, NULL
+  );
+  v_actor_other_membership := public.provision_user_access(
+    v_actor, 'actor@example.test', 'Administrador Executor',
+    v_other_company, v_admin_role_id, NULL
+  );
   PERFORM set_config('request.jwt.claim.role', 'authenticated', TRUE);
   PERFORM set_config('request.jwt.claim.sub', v_user::TEXT, TRUE);
   PERFORM set_config('request.jwt.claims', jsonb_build_object(
@@ -245,7 +259,19 @@ BEGIN
   END IF;
 
   PERFORM set_config('request.jwt.claim.role', 'service_role', TRUE);
-  v_transition := public.prepare_user_access_active(v_user, v_company, FALSE);
+  v_failed := FALSE;
+  BEGIN
+    PERFORM public.prepare_user_access_active(v_user, v_user, v_company, FALSE);
+  EXCEPTION WHEN insufficient_privilege THEN
+    v_failed := TRUE;
+  END;
+  IF NOT v_failed OR NOT EXISTS (
+    SELECT 1 FROM public.memberships WHERE id = v_membership AND status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'ASSERTION_FAILED: autossuspensão não falhou fechada';
+  END IF;
+
+  v_transition := public.prepare_user_access_active(v_actor, v_user, v_company, FALSE);
   IF NOT COALESCE((v_transition ->> 'found')::BOOLEAN, FALSE)
      OR NOT COALESCE((v_transition ->> 'changed')::BOOLEAN, FALSE)
      OR v_transition ->> 'previous_status' <> 'active'
@@ -269,7 +295,7 @@ BEGIN
     RAISE EXCEPTION 'ASSERTION_FAILED: compensação não restaurou o estado anterior';
   END IF;
 
-  v_transition := public.prepare_user_access_active(v_user, v_company, FALSE);
+  v_transition := public.prepare_user_access_active(v_actor, v_user, v_company, FALSE);
   UPDATE public.memberships
   SET updated_at = clock_timestamp() + INTERVAL '1 second'
   WHERE id = v_membership;
@@ -289,7 +315,7 @@ BEGIN
     'aal', 'aal2',
     'session_id', '83000000-0000-0000-0000-000000000099'
   )::TEXT, TRUE);
-  v_reactivated := public.prepare_user_access_active(v_user, v_company, TRUE);
+  v_reactivated := public.prepare_user_access_active(v_actor, v_user, v_company, TRUE);
   IF v_reactivated ->> 'requested_status' <> 'pending_activation'
      OR NOT EXISTS (
        SELECT 1 FROM public.memberships
@@ -319,13 +345,25 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'ASSERTION_FAILED: finalização não promoveu pending_activation para active';
   END IF;
-  v_transition := public.prepare_user_access_active(v_user, v_company, TRUE);
+  v_transition := public.prepare_user_access_active(v_actor, v_user, v_company, TRUE);
   IF COALESCE((v_transition ->> 'changed')::BOOLEAN, TRUE) THEN
     RAISE EXCEPTION 'ASSERTION_FAILED: transição idempotente foi marcada como alteração';
   END IF;
 
-  IF public.set_user_access_active(v_user, v_company, FALSE) IS DISTINCT FROM TRUE THEN
+  v_transition := public.prepare_user_access_active(v_actor, v_user, v_company, FALSE);
+  IF public.finalize_user_access_active(
+    v_user,
+    (v_transition ->> 'membership_id')::UUID,
+    v_transition ->> 'requested_status',
+    (v_transition ->> 'expected_updated_at')::TIMESTAMPTZ
+  ) IS DISTINCT FROM TRUE THEN
     RAISE EXCEPTION 'ASSERTION_FAILED: inativação administrativa não confirmou alteração';
+  END IF;
+  IF public.admin_record_auth_operation(
+    v_actor, v_user, v_company, 'suspend_user', 'company',
+    'auth-admin-provisioning-company-suspension'
+  ) IS DISTINCT FROM TRUE THEN
+    RAISE EXCEPTION 'ASSERTION_FAILED: auditoria da suspensão não foi confirmada';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM public.user_profiles WHERE id = v_user AND lg_ativo = TRUE)
      OR EXISTS (SELECT 1 FROM public.memberships WHERE id = v_membership AND status <> 'suspended')
@@ -333,16 +371,42 @@ BEGIN
      OR EXISTS (SELECT 1 FROM public.user_access_context WHERE user_id = v_user) THEN
     RAISE EXCEPTION 'ASSERTION_FAILED: inativação de uma empresa afetou outro vínculo legítimo';
   END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.application_sessions
+    WHERE user_id = v_user AND company_id = v_company AND revoked_at IS NULL
+  ) OR NOT EXISTS (
+    SELECT 1 FROM public.audit_logs
+    WHERE company_id = v_company
+      AND cd_usuario = v_actor
+      AND tabela = 'auth_admin'
+      AND registro_id = v_user::TEXT
+      AND request_id = 'auth-admin-provisioning-company-suspension'
+  ) THEN
+    RAISE EXCEPTION 'ASSERTION_FAILED: suspensão não revogou sessões ou não persistiu auditoria';
+  END IF;
 
-  IF public.set_user_access_active(v_user, v_other_company, FALSE) IS DISTINCT FROM TRUE THEN
+  v_transition := public.prepare_user_access_active(v_actor, v_user, v_other_company, FALSE);
+  IF public.finalize_user_access_active(
+    v_user,
+    (v_transition ->> 'membership_id')::UUID,
+    v_transition ->> 'requested_status',
+    (v_transition ->> 'expected_updated_at')::TIMESTAMPTZ
+  ) IS DISTINCT FROM TRUE THEN
     RAISE EXCEPTION 'ASSERTION_FAILED: segundo vínculo não foi inativado';
   END IF;
   IF EXISTS (SELECT 1 FROM public.user_profiles WHERE id = v_user AND lg_ativo = TRUE) THEN
     RAISE EXCEPTION 'ASSERTION_FAILED: perfil permaneceu ativo sem vínculos ativos';
   END IF;
 
-  IF public.set_user_access_active(v_user, '83000000-0000-0000-0000-000000000099', TRUE) IS DISTINCT FROM FALSE THEN
-    RAISE EXCEPTION 'ASSERTION_FAILED: empresa sem vínculo não pode alterar usuário';
+  IF has_function_privilege(
+    'service_role',
+    'public.set_user_access_active(uuid,uuid,boolean)',
+    'EXECUTE'
+  ) THEN
+    RAISE EXCEPTION 'ASSERTION_FAILED: RPC legada continua executável por service_role';
+  END IF;
+  IF to_regprocedure('public.prepare_user_access_active(uuid,uuid,boolean)') IS NOT NULL THEN
+    RAISE EXCEPTION 'ASSERTION_FAILED: assinatura antiga da transição permanece instalada';
   END IF;
 
   INSERT INTO public.user_profiles (
@@ -353,7 +417,7 @@ BEGIN
   );
   v_failed := FALSE;
   BEGIN
-    PERFORM public.set_user_access_active(v_other_user, v_company, FALSE);
+    PERFORM public.prepare_user_access_active(v_actor, v_other_user, v_company, FALSE);
   EXCEPTION WHEN OTHERS THEN
     v_failed := TRUE;
   END;

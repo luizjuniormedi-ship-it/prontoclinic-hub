@@ -1,13 +1,25 @@
 {
-  "taskId": "auth-admin-ui-completion-20260805",
+  "taskId": "auth-admin-invariants-20260805",
   "module": "authentication-rbac",
-  "baseCommit": "ae2c94481bf8f806c3ca724489ca851a364a8ca3",
+  "baseCommit": "1862b2b6748cfff71907964d393e482584f2a7c3",
   "paths": [
     ".coordination/task.json",
-    "src/pages/AdminUsersPage.tsx",
-    "src/pages/__tests__/AdminUsersPage.test.tsx",
     "supabase/functions/auth-admin/index.ts",
-    "src/services/__tests__/authAdminEdgeContract.test.ts"
+    "src/services/__tests__/authAdminEdgeContract.test.ts",
+    "supabase/migrations/20260805123000_auth_admin_suspension_invariants.sql",
+    "tests/database/auth_admin_provisioning.sql",
+    "deploy/edge-runtime/deploy-functions.sh",
+    ".github/workflows/ci.yml",
+    "local-auth-server.mjs",
+    "src/services/__tests__/localAuthServiceRoleContract.test.ts",
+    "deploy/auth-service/README.md",
+    "supabase/rollbacks/20260805123000_auth_admin_suspension_invariants.sql",
+    "deploy/database/auth-admin-before.sql",
+    "deploy/database/auth-admin-applied.sql",
+    "deploy/database/auth-admin-rollback.sql",
+    "deploy/database/deploy-migration.sh",
+    "deploy/database/deploy-migration.test.sh",
+    ".github/workflows/deploy-database-migration.yml"
   ],
   "sharedPaths": [],
   "status": "active"

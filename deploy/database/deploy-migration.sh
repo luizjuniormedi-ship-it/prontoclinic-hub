@@ -145,7 +145,7 @@ load_manifest_contract() {
       "$stage/manifest.json"
   )
   case "${migration_version}:${migration_name}" in
-    20260804033225:secure_companies_units_admin_contract|20260804143000:rbac_active_context_aal2) ;;
+    20260804033225:secure_companies_units_admin_contract|20260804143000:rbac_active_context_aal2|20260805123000:auth_admin_suspension_invariants) ;;
     *) die 'migration fora da allowlist do coordenador' ;;
   esac
 }

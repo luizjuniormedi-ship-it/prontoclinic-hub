@@ -19,6 +19,7 @@ on:
         options:
           - "20260804033225"
           - "20260804143000"
+          - "20260805123000"
 
 concurrency:
   group: prontomedic-production-deploy
@@ -64,13 +65,18 @@ jobs:
           case "$version" in
             20260804033225) name=secure_companies_units_admin_contract ;;
             20260804143000) name=rbac_active_context_aal2 ;;
+            20260805123000) name=auth_admin_suspension_invariants ;;
             *) echo '::error::migration nao autorizada'; exit 1 ;;
           esac
           stage="release/stage"
           install -d "$stage" release/bootstrap-root/deploy/database
           cp "supabase/migrations/${version}_${name}.sql" "$stage/migration.sql"
           cp "supabase/rollbacks/${version}_${name}.sql" "$stage/rollback.sql"
-          if test "$version" = 20260804143000; then smoke_prefix=deploy/database/rbac; else smoke_prefix=deploy/database/smoke; fi
+          case "$version" in
+            20260804143000) smoke_prefix=deploy/database/rbac ;;
+            20260805123000) smoke_prefix=deploy/database/auth-admin ;;
+            *) smoke_prefix=deploy/database/smoke ;;
+          esac
           cp "${smoke_prefix}-before.sql" "$stage/smoke-before.sql"
           cp "${smoke_prefix}-applied.sql" "$stage/smoke-applied.sql"
           cp "${smoke_prefix}-rollback.sql" "$stage/smoke-rollback.sql"
