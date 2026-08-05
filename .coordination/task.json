@@ -1,11 +1,13 @@
 {
-  "taskId": "auth-mfa-aal2-e2e-gate-20260804",
+  "taskId": "auth-admin-ui-completion-20260805",
   "module": "authentication-rbac",
-  "baseCommit": "40824cf9168d4a4fd9568731347b11dbe16cf21c",
+  "baseCommit": "ae2c94481bf8f806c3ca724489ca851a364a8ca3",
   "paths": [
     ".coordination/task.json",
-    ".github/workflows/ci.yml",
-    "e2e/auth.spec.ts"
+    "src/pages/AdminUsersPage.tsx",
+    "src/pages/__tests__/AdminUsersPage.test.tsx",
+    "supabase/functions/auth-admin/index.ts",
+    "src/services/__tests__/authAdminEdgeContract.test.ts"
   ],
   "sharedPaths": [],
   "status": "active"
