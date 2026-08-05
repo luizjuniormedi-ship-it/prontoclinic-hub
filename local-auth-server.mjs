@@ -327,11 +327,11 @@ function requireServiceRole(req) {
 }
 
 const SERVICE_RPC_ALLOWLIST = new Set([
+  'admin_record_auth_operation',
   'finalize_user_access_active',
   'prepare_user_access_active',
   'provision_user_access',
   'restore_user_access_active',
-  'set_user_access_active',
 ]);
 const SERVICE_READ_TABLE_ALLOWLIST = new Set(['memberships', 'user_profiles']);
 

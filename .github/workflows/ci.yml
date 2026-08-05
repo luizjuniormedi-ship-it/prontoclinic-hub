@@ -152,7 +152,8 @@ jobs:
             20260717000000_legacy_schema_normalization.sql \
             20260717001000_auth_admin_access_transition.sql \
             20260717002000_access_context_options.sql \
-            20260804143000_rbac_active_context_aal2.sql; do
+            20260804143000_rbac_active_context_aal2.sql \
+            20260805123000_auth_admin_suspension_invariants.sql; do
             psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
               -d migrations_first --single-transaction \
               -f "supabase/migrations/$migration" >/dev/null

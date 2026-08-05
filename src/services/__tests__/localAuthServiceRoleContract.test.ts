@@ -18,6 +18,8 @@ describe("local auth privileged contract", () => {
     expect(source).toContain("SERVICE_ROUTE_ALLOWLIST");
     expect(source).toContain("SERVICE_RPC_ALLOWLIST");
     expect(source).toContain("SERVICE_READ_TABLE_ALLOWLIST");
+    expect(source).not.toContain("'set_user_access_active',");
+    expect(source).toContain("'admin_record_auth_operation',");
   });
 
   it("uses a distinct least-privilege database pool", () => {

@@ -12,4 +12,17 @@ describe("contrato HTTP da Edge Function auth-admin", () => {
     expect(transition).toBeGreaterThan(validation);
     expect(source).toContain('return respond({ error: "Estado ativo inválido." }, 400)');
   });
+
+  it("vincula a transição ao administrador AAL2 e bloqueia autossuspensão", () => {
+    expect(source).toContain("!active && userId === userData.user.id");
+    expect(source).toContain("p_actor_user_id: userData.user.id");
+    expect(source).not.toContain("p_actor_user_id: body.");
+  });
+
+  it("persiste auditoria e revoga sessões internas no mesmo contrato", () => {
+    expect(source).toContain('rpc("admin_record_auth_operation"');
+    expect(source).toContain('active ? "none" : "company"');
+    expect(source).toContain('"logout_global", "global"');
+    expect(source).toContain("crypto.randomUUID()");
+  });
 });
