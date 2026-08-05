@@ -1,25 +1,12 @@
 {
-  "taskId": "auth-admin-invariants-20260805",
+  "taskId": "auth-admin-runtime-evidence-20260805",
   "module": "authentication-rbac",
-  "baseCommit": "1862b2b6748cfff71907964d393e482584f2a7c3",
+  "baseCommit": "3b53a444b21fe1de61d4d91b82c8624ac962c1d0",
   "paths": [
     ".coordination/task.json",
-    "supabase/functions/auth-admin/index.ts",
-    "src/services/__tests__/authAdminEdgeContract.test.ts",
-    "supabase/migrations/20260805123000_auth_admin_suspension_invariants.sql",
-    "tests/database/auth_admin_provisioning.sql",
-    "deploy/edge-runtime/deploy-functions.sh",
-    ".github/workflows/ci.yml",
-    "local-auth-server.mjs",
-    "src/services/__tests__/localAuthServiceRoleContract.test.ts",
-    "deploy/auth-service/README.md",
-    "supabase/rollbacks/20260805123000_auth_admin_suspension_invariants.sql",
-    "deploy/database/auth-admin-before.sql",
-    "deploy/database/auth-admin-applied.sql",
-    "deploy/database/auth-admin-rollback.sql",
-    "deploy/database/deploy-migration.sh",
-    "deploy/database/deploy-migration.test.sh",
-    ".github/workflows/deploy-database-migration.yml"
+    "docs/ai-execution/state.json",
+    "docs/ai-execution/MASTER_BACKLOG.md",
+    "docs/ai-execution/MODULE_STATUS.md"
   ],
   "sharedPaths": [],
   "status": "active"

@@ -2,8 +2,8 @@
 
 | Modulo | Estado | Bloqueio principal |
 |---|---|---|
-| Autenticacao | Em correcao | Healthcheck e login real apos deploy |
-| Autorizacao/RBAC | Em correcao | Integracao negativa entre empresas |
+| Autenticacao | Runtime publicado | Falta homologacao mutativa remota com tenant QA descartavel e MFA AAL2 |
+| Autorizacao/RBAC | CI e replay aprovados | Falta prova autenticada negativa entre empresas na VPS com identidades QA isoladas |
 | Convenios | Parcial | Regras e contratos precisam homologacao funcional |
 | TISS | Bloqueado | Dry-run DataSIGH e protocolos/glosas reais |
 | Agendamento | Parcial | Validacao de elegibilidade/autorizacao ponta a ponta |
