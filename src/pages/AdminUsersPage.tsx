@@ -130,6 +130,8 @@ export default function AdminUsersPage() {
         description: err instanceof Error ? err.message : String(err),
         variant: "destructive",
       });
+    } finally {
+      setPendingUserId(null);
     }
   };
 
@@ -195,6 +197,7 @@ export default function AdminUsersPage() {
       destructive: true,
     });
     if (!accepted) return;
+    setPendingUserId(u.id);
     try {
       const context = readStoredAccessContext<AccessContextOption>();
       if (!context?.companyId) throw new Error("Contexto empresarial ativo não encontrado.");

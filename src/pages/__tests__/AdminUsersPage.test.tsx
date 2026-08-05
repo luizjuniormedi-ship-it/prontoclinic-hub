@@ -70,8 +70,11 @@ describe("AdminUsersPage", () => {
   });
 
   it("encerra globalmente as sessões após confirmação", async () => {
+    vi.mocked(authAdminService.logoutGlobal).mockImplementation(() => new Promise<void>(() => undefined));
     render(<AdminUsersPage />);
-    fireEvent.click(await screen.findByTitle("Encerrar todas as sessões"));
+    const logoutButton = await screen.findByTitle("Encerrar todas as sessões");
+    fireEvent.click(logoutButton);
+    await waitFor(() => expect(logoutButton).toBeDisabled());
     await waitFor(() => expect(authAdminService.logoutGlobal).toHaveBeenCalledWith(user.id, "company-1"));
   });
 });
