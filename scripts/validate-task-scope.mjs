@@ -30,6 +30,23 @@ if (manifest.status !== "active") {
   process.exit(2);
 }
 
+const resolveCommit = (ref) =>
+  execFileSync("git", ["rev-parse", `${ref}^{commit}`], { encoding: "utf8" }).trim();
+const manifestBase = resolveCommit(manifest.baseCommit);
+const integrationBase = resolveCommit(baseRef);
+if (manifestBase !== integrationBase) {
+  console.error(
+    `Task ${manifest.taskId} uses stale baseline ${manifestBase}; current integration baseline is ${integrationBase}. Rebase before validation.`,
+  );
+  process.exit(1);
+}
+try {
+  execFileSync("git", ["merge-base", "--is-ancestor", manifestBase, headRef]);
+} catch {
+  console.error(`Task ${manifest.taskId} head is not based on ${manifestBase}.`);
+  process.exit(1);
+}
+
 const normalize = (input) =>
   input.replaceAll("\\", "/").replace(/^\.\/+/, "").replace(/\/+$/, "");
 const manifestRepoPath = normalize(relative(process.cwd(), resolve(manifestPath)));

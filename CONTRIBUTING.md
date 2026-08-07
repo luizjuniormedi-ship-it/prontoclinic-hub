@@ -37,12 +37,8 @@ claim de caminhos própria.
 | Branch | Propósito |
 |---|---|
 | `main` | Produção (protegida) |
-| `develop` | Próxima release |
-| `feature/*` | Nova feature |
-| `fix/*` | Bug fix |
-| `hotfix/*` | Fix urgente em produção |
-| `release/*` | Preparação de release |
-| `docs/*` | Apenas documentação |
+| `codex/task-*` | Slice vertical criado pelo coordenador |
+| `docs/*` | Apenas documentação, também baseada em `main` |
 
 Exemplos:
 - `feature/pre-cadastro-online`
@@ -102,9 +98,9 @@ feat(api)!: migrar autenticação para Supabase Auth
 - [ ] Self-review feita
 - [ ] Migrations SQL versionadas em `supabase/migrations/`
 - [ ] Sem credenciais/segredos commitados
-- [ ] Branch atualizada com `develop`
+- [ ] Branch criada pelo coordenador e atualizada com `main`
 - [ ] Commits seguem Conventional Commits
-- [ ] PR aberto contra `develop` (ou `main` para hotfix)
+- [ ] PR aberto contra `main`
 
 ## Code review
 
@@ -115,7 +111,7 @@ feat(api)!: migrar autenticação para Supabase Auth
 3. Mínimo 2 aprovadores
 4. Discussão de arquitetura **antes** de PR grande (abra issue primeiro)
 5. Reviewer aprova com `/approve` (ou comenta para pedir mudanças)
-6. Squash-merge para `develop`
+6. Squash-merge para `main`
 
 ### O que avaliamos
 

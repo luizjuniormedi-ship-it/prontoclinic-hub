@@ -3,7 +3,13 @@
 ## Regra principal
 
 Nenhum agente edita o checkout principal. Cada tarefa começa em um worktree
-criado pelo coordenador, a partir de uma baseline explícita e imutável.
+criado pelo coordenador, a partir do SHA atual de `origin/main`.
+
+Cada entrega é um slice vertical único: interface, serviço/RPC, migration e
+testes pertencentes à mesma regra de negócio podem compartilhar a tarefa, mas
+devem convergir no mesmo manifesto, PR e SHA. Agentes podem trabalhar em lanes
+frontend, backend e validação somente quando os caminhos forem disjuntos; o
+coordenador integra as lanes no worktree da tarefa antes de abrir o PR.
 
 ## Iniciar uma tarefa
 
@@ -32,11 +38,18 @@ worktree limpo; o worktree é retido para auditoria.
 ## Regras
 
 - Um agente por worktree e um módulo por PR.
+- Um contrato funcional, um manifesto, um PR e um SHA por slice vertical.
+- Frontend não inventa fallback para ausência de contrato backend; o fluxo
+  falha fechado até RPC, RLS e migration estarem comprovados.
+- Backend não é considerado entregue sem estado de loading/erro na UI e E2E da
+  jornada consumidora.
 - Migrations são sempre exclusivas.
 - `package.json`, lockfiles, `src/App.tsx`, workflows e infraestrutura são
   compartilhados e passam por integração serial.
 - Artefatos gerados não são misturados ao commit funcional.
 - A baseline só avança após CI verde.
+- Toda tarefa deve ser rebaseada quando `origin/main` avançar; baseline antiga
+  é rejeitada pelo Integration Guard.
 - Deploy usa release imutável, rollback preservado e fila única.
 
 ## Proibições
@@ -47,3 +60,4 @@ worktree limpo; o worktree é retido para auditoria.
 - Não aplicar migration ou deploy de worktree sujo.
 - Não declarar módulo concluído por tela ou teste mockado.
 - Não executar dois deploys simultâneos.
+- Não manter PR substituído, duplicado ou baseado em release antiga aberto.
