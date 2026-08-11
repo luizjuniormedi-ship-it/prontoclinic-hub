@@ -1,4 +1,4 @@
-import { MoreHorizontal, UserCheck, Play, Calendar, X, UserX } from "lucide-react";
+import { MoreHorizontal, UserCheck, Calendar, X, UserX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Appointment } from "@/types";
@@ -9,8 +9,14 @@ interface QuickActionsMenuProps {
 }
 
 export function QuickActionsMenu({ appointment, onAction }: QuickActionsMenuProps) {
-  const canCheckIn = appointment.status === "confirmed" || appointment.status === "scheduled";
-  const canStart = appointment.status === "waiting" || appointment.status === "confirmed";
+  const now = new Date();
+  const today = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("-");
+  const canCheckIn = appointment.date === today
+    && (appointment.status === "confirmed" || appointment.status === "scheduled");
   const canReschedule = appointment.status !== "completed" && appointment.status !== "cancelled";
   const canCancel = appointment.status !== "completed" && appointment.status !== "cancelled";
   const canNoShow = appointment.status !== "completed" && appointment.status !== "cancelled" && appointment.status !== "no_show";
@@ -31,12 +37,7 @@ export function QuickActionsMenu({ appointment, onAction }: QuickActionsMenuProp
       <DropdownMenuContent align="end" className="w-48">
         {canCheckIn && (
           <DropdownMenuItem onClick={() => onAction("checkin", appointment)}>
-            <UserCheck className="h-4 w-4 mr-2" />Check-in
-          </DropdownMenuItem>
-        )}
-        {canStart && (
-          <DropdownMenuItem onClick={() => onAction("start", appointment)}>
-            <Play className="h-4 w-4 mr-2" />Iniciar atendimento
+            <UserCheck className="h-4 w-4 mr-2" />Dar entrada na Recepção
           </DropdownMenuItem>
         )}
         {canReschedule && (
