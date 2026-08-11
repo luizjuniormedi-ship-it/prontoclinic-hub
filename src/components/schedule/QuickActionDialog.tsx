@@ -20,8 +20,6 @@ interface QuickActionDialogProps {
 }
 
 const actionConfig: Record<string, { title: string; description: string; status: AppointmentStatus; needsDate?: boolean; needsReason?: boolean }> = {
-  checkin: { title: "Check-in", description: "Confirmar chegada do paciente.", status: "waiting" },
-  start: { title: "Iniciar Atendimento", description: "Iniciar o atendimento do paciente.", status: "in_progress" },
   reschedule: { title: "Remarcar", description: "Selecione nova data e horário.", status: "scheduled", needsDate: true, needsReason: true },
   cancel: { title: "Cancelar Agendamento", description: "Esta ação não pode ser desfeita.", status: "cancelled", needsReason: true },
   no_show: { title: "Registrar Falta", description: "Registrar que o paciente não compareceu.", status: "no_show", needsReason: true },

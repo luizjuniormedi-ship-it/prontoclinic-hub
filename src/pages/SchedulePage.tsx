@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Plus, ChevronLeft, ChevronRight, Clock, Users, CheckCircle, AlertCircle, XCircle, UserX, CalendarPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -88,6 +89,7 @@ function toDisplayAppointment(
 }
 
 export default function SchedulePage() {
+  const navigate = useNavigate();
   const { activeUnitId } = useAuth();
   const [dbAppointments, setDbAppointments] = useState<DbAppointment[]>([]);
   const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
@@ -327,6 +329,10 @@ export default function SchedulePage() {
   };
 
   const handleQuickAction = (action: string, appointment: Appointment) => {
+    if (action === "checkin") {
+      navigate(`/reception?appointment=${encodeURIComponent(appointment.id)}`);
+      return;
+    }
     setQuickAction(action);
     setQuickActionAppointment(appointment);
     setQuickActionOpen(true);
@@ -349,8 +355,6 @@ export default function SchedulePage() {
       }
       await refreshAppointments(selectedDate);
       const labels: Record<string, string> = {
-        waiting: "Check-in realizado",
-        in_progress: "Atendimento iniciado",
         scheduled: "Remarcado com sucesso",
         cancelled: "Agendamento cancelado",
         no_show: "Falta registrada",

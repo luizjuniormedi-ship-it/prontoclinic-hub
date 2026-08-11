@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Check, Clock, UserCheck, Play, AlertTriangle, Search, Stethoscope, PhoneCall, RotateCcw, ArrowRightLeft, Volume2, Receipt, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -256,6 +256,8 @@ function toDisplayAppointment(db: DbAppointment, patients: PatientRow[], profess
 }
 
 export default function ReceptionPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedAppointmentId = searchParams.get("appointment");
   const [dbAppointments, setDbAppointments] = useState<DbAppointment[]>([]);
   const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
   const [specialties, setSpecialties] = useState<DbSpecialty[]>([]);
@@ -518,6 +520,28 @@ export default function ReceptionPage() {
   };
   const openCheckinRef = useRef(openCheckin);
   openCheckinRef.current = openCheckin;
+
+  useEffect(() => {
+    if (!requestedAppointmentId || loading) return;
+
+    const appointment = appointments.find(
+      (item) => item.id === requestedAppointmentId,
+    );
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("appointment");
+    setSearchParams(nextParams, { replace: true });
+
+    if (!appointment) {
+      toast({
+        title: "Agendamento não disponível na Recepção",
+        description: "Confirme a unidade ativa e tente novamente pela Agenda.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    void openCheckinRef.current(appointment);
+  }, [appointments, loading, requestedAppointmentId, searchParams, setSearchParams, toast]);
 
   const confirmCheckin = async () => {
     if (!checkinTarget || !readiness) return;
