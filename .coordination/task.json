@@ -1,17 +1,18 @@
 {
-    "taskId":  "schedule-reception-entry-gate",
-    "module":  11,
-    "baseCommit":  "e842a57a842e82b0736fda0f9594c4d7be484f40",
-    "paths":  [
-                  "src/components/schedule/QuickActionsMenu.tsx",
-                  "src/components/schedule/QuickActionDialog.tsx",
-                  "src/components/schedule/__tests__/QuickActionsMenu.test.tsx",
-                  "src/pages/SchedulePage.tsx",
-                  "src/pages/ReceptionPage.tsx",
-                  "src/pages/__tests__/ReceptionPage.test.tsx"
-              ],
-    "sharedPaths":  [
-
-                    ],
-    "status":  "active"
+  "taskId": "reception-worklist-handoff-20260811",
+  "module": 11,
+  "baseCommit": "d0f853a54a56db53438092cca791d3b2c9f17e18",
+  "paths": [
+    "e2e/recepcao.spec.ts",
+    "local-auth-server.mjs",
+    "scripts/seed-e2e-users.sql",
+    "src/services/__tests__/dicomService.test.ts",
+    "src/services/__tests__/localAuthSecurity.test.ts",
+    "src/services/__tests__/receptionWorkflowService.test.ts",
+    "src/services/receptionWorkflowService.ts",
+    "supabase/migrations/20260811120000_reception_worklist_handoff.sql",
+    "tests/database/operational_rls.sql"
+  ],
+  "sharedPaths": [],
+  "status": "active"
 }

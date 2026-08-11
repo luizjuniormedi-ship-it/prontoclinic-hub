@@ -61,6 +61,112 @@ SELECT pg_temp.assert_true(
   'owner restrito da recepção precisa ler e validar o contexto ativo'
 );
 SELECT pg_temp.assert_true(
+  (
+    SELECT p.prosecdef
+      AND pg_get_userbyid(p.proowner) = 'prontomedic_worklist_rpc_owner'
+    FROM pg_proc p
+    WHERE p.oid =
+      'public.ensure_reception_worklist_for_checkin_secure(uuid)'::regprocedure
+  )
+  AND has_function_privilege(
+    'authenticated',
+    'public.ensure_reception_worklist_for_checkin_secure(uuid)',
+    'EXECUTE'
+  )
+  AND has_function_privilege(
+    'app_prontomedic',
+    'public.ensure_reception_worklist_for_checkin_secure(uuid)',
+    'EXECUTE'
+  )
+  AND NOT has_function_privilege(
+    'anon',
+    'public.ensure_reception_worklist_for_checkin_secure(uuid)',
+    'EXECUTE'
+  )
+  AND has_table_privilege(
+    'prontomedic_worklist_rpc_owner',
+    'public.reception_checkin_workflows',
+    'SELECT'
+  )
+  AND has_table_privilege(
+    'prontomedic_worklist_rpc_owner',
+    'public.reception_checkins',
+    'SELECT'
+  )
+  AND has_table_privilege(
+    'prontomedic_worklist_rpc_owner',
+    'public.reception_queue_tickets',
+    'SELECT'
+  )
+  AND has_table_privilege(
+    'prontomedic_worklist_rpc_owner',
+    'public.appointments',
+    'SELECT, UPDATE'
+  )
+  AND has_table_privilege(
+    'prontomedic_worklist_rpc_owner',
+    'public.patients',
+    'SELECT'
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'reception_checkin_workflows'
+      AND policyname = 'm11_workflow_worklist_rpc_select'
+      AND cmd = 'SELECT'
+      AND roles = ARRAY['prontomedic_worklist_rpc_owner']::NAME[]
+      AND qual LIKE '%active_company_id()%'
+      AND qual LIKE '%active_unit_id()%'
+  ),
+  'handoff Recepção-Worklist precisa de owner restrito, AAL2 e escopo ativo'
+);
+SELECT pg_temp.assert_true(
+  EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'appointments'
+      AND policyname = 'm11_appointments_worklist_rpc_select'
+      AND cmd = 'SELECT'
+      AND roles = ARRAY['prontomedic_worklist_rpc_owner']::NAME[]
+      AND qual LIKE '%active_company_id()%'
+      AND qual LIKE '%active_unit_id()%'
+      AND qual LIKE '%org_can_access_unit%'
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'appointments'
+      AND policyname = 'm11_appointments_worklist_rpc_update'
+      AND cmd = 'UPDATE'
+      AND roles = ARRAY['prontomedic_worklist_rpc_owner']::NAME[]
+      AND qual LIKE '%active_company_id()%'
+      AND qual LIKE '%active_unit_id()%'
+      AND qual LIKE '%org_can_access_unit%'
+      AND with_check LIKE '%active_company_id()%'
+      AND with_check LIKE '%active_unit_id()%'
+      AND with_check LIKE '%org_can_access_unit%'
+  ),
+  'handoff Recepção-Worklist precisa de owner restrito, AAL2 e escopo ativo'
+);
+SELECT pg_temp.assert_true(
+  EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'patients'
+      AND policyname = 'm11_patients_worklist_rpc_select'
+      AND cmd = 'SELECT'
+      AND roles = ARRAY['prontomedic_worklist_rpc_owner']::NAME[]
+      AND qual LIKE '%active_company_id()%'
+      AND qual LIKE '%active_unit_id()%'
+      AND qual LIKE '%org_can_access_unit%'
+  ),
+  'handoff Recepção-Worklist precisa ler paciente apenas na empresa e unidade ativas'
+);
+SELECT pg_temp.assert_true(
   has_column_privilege('authenticated', 'public.insurance_companies', 'id', 'SELECT')
   AND has_column_privilege('authenticated', 'public.insurance_companies', 'name', 'SELECT')
   AND NOT has_column_privilege('authenticated', 'public.insurance_companies', 'login_prestador', 'SELECT')

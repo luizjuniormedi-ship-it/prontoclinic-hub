@@ -56,6 +56,7 @@ authed.describe.serial('Recepção — operação básica', () => {
   });
 
   authed('conclui o check-in 91001 uma única vez e persiste a senha', async ({ page }, testInfo) => {
+    authed.slow();
     authed.skip(
       testInfo.project.name !== 'chromium',
       'O cenário transacional usa uma única massa compartilhada e roda uma vez no Chromium.',
@@ -139,6 +140,9 @@ authed.describe.serial('Recepção — operação básica', () => {
         workflow_count: string;
         billing_count: string;
         tiss_count: string;
+        worklist_count: string;
+        worklist_key_matches: boolean;
+        worklist_state_matches: boolean;
         sent_xml_count: string;
       }>(
         `SELECT appointment.id::text AS appointment_id,
@@ -146,6 +150,14 @@ authed.describe.serial('Recepção — operação básica', () => {
                 count(DISTINCT workflow.id)::text AS workflow_count,
                 count(DISTINCT billing.id)::text AS billing_count,
                 count(DISTINCT guide.id)::text AS tiss_count,
+                count(DISTINCT worklist.id)::text AS worklist_count,
+                bool_and(worklist.idempotency_key = workflow.idempotency_key)
+                  AS worklist_key_matches,
+                bool_and(
+                  imaging_order.status = 'liberado_worklist'
+                  AND imaging_item.status = 'liberado_worklist'
+                  AND worklist.imaging_order_item_id = imaging_item.id
+                ) AS worklist_state_matches,
                 count(DISTINCT xml.id) FILTER (
                   WHERE lower(COALESCE(xml.status, '')) IN ('enviado', 'transmitido', 'sent')
                 )::text AS sent_xml_count
@@ -158,6 +170,16 @@ authed.describe.serial('Recepção — operação básica', () => {
              ON billing.appointment_id = appointment.id
            LEFT JOIN public.tiss_guides guide
              ON guide.appointment_id = appointment.id
+           LEFT JOIN public.dicom_worklist_queue worklist
+             ON worklist.appointment_id = appointment.id
+           LEFT JOIN public.imaging_orders imaging_order
+             ON imaging_order.appointment_id = appointment.id
+            AND imaging_order.company_id = appointment.company_id
+            AND imaging_order.unit_id = appointment.unit_id
+           LEFT JOIN public.imaging_order_items imaging_item
+             ON imaging_item.imaging_order_id = imaging_order.id
+            AND imaging_item.company_id = imaging_order.company_id
+            AND imaging_item.unit_id = imaging_order.unit_id
            LEFT JOIN public.tiss_xml xml
              ON xml.appointment_id = appointment.id
           WHERE appointment.id = 91001
@@ -170,6 +192,9 @@ authed.describe.serial('Recepção — operação básica', () => {
         workflow_count: '1',
         billing_count: '1',
         tiss_count: '1',
+        worklist_count: '1',
+        worklist_key_matches: true,
+        worklist_state_matches: true,
         sent_xml_count: '0',
       }]);
     } finally {
@@ -177,7 +202,6 @@ authed.describe.serial('Recepção — operação básica', () => {
     }
   });
 });
-
 authed.describe.serial('Recepção — alçada do supervisor', () => {
   authed('impede a recepcionista de liberar pendência por exceção', async ({ loginAs, page }) => {
     authed.slow();
@@ -339,6 +363,29 @@ authed.describe.serial('Recepção — alçada do supervisor', () => {
           to_status: 'called',
         }),
       ]);
+
+      const worklist = await client.query<{
+        worklist_count: string;
+        order_status: string;
+        item_status: string;
+      }>(
+        `SELECT count(DISTINCT queue.id)::text AS worklist_count,
+                imaging_order.status AS order_status,
+                imaging_item.status AS item_status
+           FROM public.dicom_worklist_queue queue
+           JOIN public.imaging_order_items imaging_item
+             ON imaging_item.id = queue.imaging_order_item_id
+           JOIN public.imaging_orders imaging_order
+             ON imaging_order.id = imaging_item.imaging_order_id
+          WHERE queue.appointment_id = 91003
+          GROUP BY imaging_order.status, imaging_item.status`,
+      );
+
+      expect(worklist.rows).toEqual([{
+        worklist_count: '1',
+        order_status: 'liberado_worklist',
+        item_status: 'liberado_worklist',
+      }]);
     } finally {
       await client.end();
     }

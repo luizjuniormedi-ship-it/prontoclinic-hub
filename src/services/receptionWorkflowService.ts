@@ -80,6 +80,12 @@ interface WorkflowArtifact {
   id: string | number;
 }
 
+interface ReceptionWorklistResult {
+  required: boolean;
+  released: boolean;
+  item_count: number;
+}
+
 export interface ReceptionWorkflowDependencies {
   start(
     appointmentId: number,
@@ -117,6 +123,7 @@ export interface ReceptionWorkflowDependencies {
     workflowId: string,
     input: ReceptionWorkflowInput,
   ): Promise<CheckinResult>;
+  ensureWorklist(workflowId: string): Promise<ReceptionWorklistResult>;
   getCompletedCheckin(
     workflow: ReceptionCheckinWorkflow,
   ): Promise<CheckinResult>;
@@ -397,6 +404,12 @@ const defaultDependencies: ReceptionWorkflowDependencies = {
       input.priority ?? "normal",
       input.exceptionReason,
     ),
+  ensureWorklist: (workflowId) =>
+    rpcSingle<ReceptionWorklistResult>(
+      "ensure_reception_worklist_for_checkin_secure",
+      { p_workflow_id: workflowId },
+      "Erro ao liberar Worklist do atendimento",
+    ),
   getCompletedCheckin: async (workflow) => {
     const checkinId = parsePositiveSafeInteger(
       workflow.checkin_id,
@@ -597,6 +610,7 @@ export function createReceptionWorkflowService(
           }
           case "checkin": {
             checkinResult = await dependencies.performCheckin(workflow.id, input);
+            const worklist = await dependencies.ensureWorklist(workflow.id);
             workflow = await dependencies.advance({
               workflowId: workflow.id,
               expectedVersion: workflow.version,
@@ -607,6 +621,9 @@ export function createReceptionWorkflowService(
                 checkin_completed: true,
                 ticket_id: checkinResult.ticket_id,
                 payment_confirmed: false,
+                worklist_required: worklist.required,
+                worklist_released: worklist.released,
+                worklist_item_count: worklist.item_count,
               },
             });
             break;
