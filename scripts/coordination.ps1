@@ -16,8 +16,19 @@ $ErrorActionPreference = "Stop"
 
 function Invoke-Git {
   param([Parameter(ValueFromRemainingArguments)][string[]]$Arguments)
-  $result = & git @Arguments 2>&1
-  if ($LASTEXITCODE -ne 0) { throw ($result -join [Environment]::NewLine) }
+  $previousErrorActionPreference = $ErrorActionPreference
+  try {
+    # Windows PowerShell converts native stderr into ErrorRecord objects. Git
+    # writes normal progress (for example worktree creation) to stderr, so a
+    # global Stop preference must not turn a successful command into a failure.
+    $ErrorActionPreference = "Continue"
+    $result = @(& git @Arguments 2>&1 | ForEach-Object { $_.ToString() })
+    $exitCode = $LASTEXITCODE
+  }
+  finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+  if ($exitCode -ne 0) { throw ($result -join [Environment]::NewLine) }
   return $result
 }
 
@@ -33,6 +44,14 @@ function Test-PathOverlap([string]$Left, [string]$Right) {
   return $Left -eq $Right -or
     $Left.StartsWith("$Right/", [StringComparison]::OrdinalIgnoreCase) -or
     $Right.StartsWith("$Left/", [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Write-Utf8NoBom {
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][string]$Content
+  )
+  [IO.File]::WriteAllText($Path, $Content, [Text.UTF8Encoding]::new($false))
 }
 
 $repoRoot = (Invoke-Git rev-parse --show-toplevel | Select-Object -Last 1).Trim()
@@ -113,7 +132,7 @@ try {
       paths = $exclusive; sharedPaths = $shared; status = "active"
     }
     $manifestPath = Join-Path $manifestDir "task.json"
-    $manifest | ConvertTo-Json -Depth 5 | Set-Content $manifestPath -Encoding utf8NoBOM
+    Write-Utf8NoBom $manifestPath ($manifest | ConvertTo-Json -Depth 5)
 
     $claim = [ordered]@{
       taskId = $TaskId; module = $Module; branch = $branch; worktree = $worktree
@@ -121,7 +140,7 @@ try {
       sharedPaths = $shared; createdAt = [DateTime]::UtcNow.ToString("o")
     }
     $tempClaim = "$claimFile.tmp"
-    $claim | ConvertTo-Json -Depth 5 | Set-Content $tempClaim -Encoding utf8NoBOM
+    Write-Utf8NoBom $tempClaim ($claim | ConvertTo-Json -Depth 5)
     Move-Item $tempClaim $claimFile
     Write-Output "Task started: $TaskId"
     Write-Output "Worktree: $worktree"

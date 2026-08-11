@@ -1,17 +1,11 @@
 {
-  "taskId": "orchestration-main-baseline",
+  "taskId": "fix-coordination-windows",
   "module": 1,
-  "baseCommit": "d0f79f84f08e61e633a5512d022a29343a4d58f4",
+  "baseCommit": "e469e5b48f88a58701c95a536c1bbb8cbcbb0ef6",
   "paths": [
-    ".coordination/task.example.json",
-    ".github/workflows/integration-guard.yml",
-    "CONTRIBUTING.md",
-    "docs/DEVELOPMENT_ORCHESTRATION.md",
-    "scripts/coordination.ps1",
-    "scripts/validate-task-scope.mjs"
+    ".coordination/task.json",
+    "scripts/coordination.ps1"
   ],
-  "sharedPaths": [
-    "package.json"
-  ],
+  "sharedPaths": [],
   "status": "active"
 }
