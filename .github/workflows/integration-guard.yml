@@ -2,7 +2,7 @@ name: Integration Guard
 
 on:
   pull_request:
-    branches: [main, release/operational-closure-20260727]
+    branches: [main]
 
 concurrency:
   group: prontomedic-integration-${{ github.base_ref }}

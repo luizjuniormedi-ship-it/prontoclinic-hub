@@ -7,7 +7,7 @@ param(
   [int]$Module,
   [string[]]$Paths,
   [string[]]$SharedPaths = @(),
-  [string]$BaseRef = "origin/release/operational-closure-20260727",
+  [string]$BaseRef = "origin/main",
   [string]$WorktreeRoot,
   [switch]$Force
 )
@@ -96,6 +96,10 @@ try {
 
     Invoke-Git fetch origin --prune | Out-Null
     $baseCommit = (Invoke-Git rev-parse "$BaseRef^{commit}" | Select-Object -Last 1).Trim()
+    $mainCommit = (Invoke-Git rev-parse "origin/main^{commit}" | Select-Object -Last 1).Trim()
+    if ($baseCommit -ne $mainCommit -and -not $Force) {
+      throw "BaseRef '$BaseRef' resolves to $baseCommit, but origin/main is $mainCommit. Rebase the task on origin/main or use -Force only for an explicitly approved release branch."
+    }
     $branch = "codex/task-$TaskId"
     $parent = if ($WorktreeRoot) { [IO.Path]::GetFullPath($WorktreeRoot) } else { Split-Path $repoRoot -Parent }
     $worktree = Join-Path $parent "prontomedic-task-$TaskId"

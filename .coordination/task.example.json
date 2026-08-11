@@ -1,7 +1,7 @@
 {
   "taskId": "module-11-reception",
   "module": 11,
-  "baseCommit": "660872f9554900f7307f47dedc84aaf68330c324",
+  "baseCommit": "<sha-atual-de-origin-main>",
   "paths": [
     "src/pages/ReceptionPage.tsx",
     "src/components/patients",

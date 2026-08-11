@@ -1,13 +1,17 @@
 {
-  "taskId": "auth-admin-runtime-evidence-20260805",
-  "module": "authentication-rbac",
-  "baseCommit": "3b53a444b21fe1de61d4d91b82c8624ac962c1d0",
+  "taskId": "orchestration-main-baseline",
+  "module": 1,
+  "baseCommit": "d0f79f84f08e61e633a5512d022a29343a4d58f4",
   "paths": [
-    ".coordination/task.json",
-    "docs/ai-execution/state.json",
-    "docs/ai-execution/MASTER_BACKLOG.md",
-    "docs/ai-execution/MODULE_STATUS.md"
+    ".coordination/task.example.json",
+    ".github/workflows/integration-guard.yml",
+    "CONTRIBUTING.md",
+    "docs/DEVELOPMENT_ORCHESTRATION.md",
+    "scripts/coordination.ps1",
+    "scripts/validate-task-scope.mjs"
   ],
-  "sharedPaths": [],
+  "sharedPaths": [
+    "package.json"
+  ],
   "status": "active"
 }
