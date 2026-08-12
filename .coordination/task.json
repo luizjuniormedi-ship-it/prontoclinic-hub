@@ -3,6 +3,7 @@
   "module": "billing-tiss",
   "baseCommit": "c38bac7e19f2fe89f399fc14be2d784ad1bdd3db",
   "paths": [
+    ".gitattributes",
     ".github/workflows/ci.yml",
     "VERCEL_ENV_VARS.md",
     "docs/VERCEL_CONFIG_GUIDE.md",
