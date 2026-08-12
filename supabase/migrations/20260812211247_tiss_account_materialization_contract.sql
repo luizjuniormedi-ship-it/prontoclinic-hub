@@ -212,12 +212,14 @@ GRANT SELECT ON TABLE
   public.units,
   public.patients,
   public.patient_insurances,
-  public.insurance_companies,
   public.insurance_plans,
   public.price_tables,
   public.professionals,
   public.services_catalog
 TO prontomedic_tiss_rpc_owner;
+REVOKE SELECT ON TABLE public.insurance_companies FROM prontomedic_tiss_rpc_owner;
+GRANT SELECT (id, company_id, name, registro_ans, lg_ativo)
+  ON public.insurance_companies TO prontomedic_tiss_rpc_owner;
 GRANT UPDATE (guide_number, version, updated_at)
   ON public.billing_accounts TO prontomedic_tiss_rpc_owner;
 GRANT EXECUTE ON FUNCTION public.active_unit_id()
@@ -401,7 +403,7 @@ DECLARE
   v_appointment public.appointments;
   v_patient public.patients;
   v_professional public.professionals;
-  v_insurance public.insurance_companies;
+  v_insurance RECORD;
   v_plan public.insurance_plans;
   v_price public.price_tables;
   v_service public.services_catalog;
@@ -508,7 +510,10 @@ BEGIN
    WHERE patient.id = v_account.patient_id AND patient.company_id = v_company;
   SELECT * INTO STRICT v_professional FROM public.professionals professional
    WHERE professional.id = v_appointment.professional_id AND professional.company_id = v_company;
-  SELECT * INTO STRICT v_insurance FROM public.insurance_companies insurance
+  SELECT insurance.id, insurance.company_id, insurance.name,
+         insurance.registro_ans, insurance.lg_ativo
+    INTO STRICT v_insurance
+    FROM public.insurance_companies insurance
    WHERE insurance.id = v_account.insurance_id AND insurance.company_id = v_company
      AND COALESCE(insurance.lg_ativo, TRUE);
   SELECT * INTO STRICT v_plan FROM public.insurance_plans plan
