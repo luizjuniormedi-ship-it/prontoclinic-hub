@@ -1,10 +1,13 @@
 [CmdletBinding()]
 param(
-  [string]$SchemaDirectory = (Join-Path $PSScriptRoot '..\vendor\tiss\040300'),
+  [string]$SchemaDirectory,
   [string]$XmlPath
 )
 
 $ErrorActionPreference = 'Stop'
+if ([string]::IsNullOrWhiteSpace($SchemaDirectory)) {
+  $SchemaDirectory = Join-Path $PSScriptRoot '..\vendor\tiss\040300'
+}
 $schemaRoot = (Resolve-Path -LiteralPath $SchemaDirectory).Path
 $expected = [ordered]@{
   'tissAssinaturaDigital_v1.01.xsd' = '8567690a0eb05b9681fdc575ca7c867f75bf5cb33573175b8d333617ef035221'
