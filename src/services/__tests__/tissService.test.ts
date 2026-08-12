@@ -167,7 +167,8 @@ describe("buildTissXml", () => {
         "while($r.Read()){}",
         "$r.Close()",
       ].join(";");
-      const validation = spawnSync("powershell.exe", ["-NoProfile", "-Command", script], {
+      const powershellExecutable = process.platform === "win32" ? "powershell.exe" : "pwsh";
+      const validation = spawnSync(powershellExecutable, ["-NoProfile", "-Command", script], {
         input: xml,
         encoding: "utf8",
       });
