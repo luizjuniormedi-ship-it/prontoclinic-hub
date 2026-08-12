@@ -23,6 +23,7 @@ on:
           - "20260811120000"
           - "20260811210000"
           - "20260812021457"
+          - "20260812150000"
 
 concurrency:
   group: prontomedic-production-deploy
@@ -72,6 +73,7 @@ jobs:
             20260811120000) name=reception_worklist_handoff; predecessor=20260805123000; rollback_mode=inverse ;;
             20260811210000) name=dicom_worklist_rls_hardening; predecessor=20260811120000; rollback_mode=forward_only ;;
             20260812021457) name=pharmacy_runtime_closure; predecessor=20260811210000; rollback_mode=preserve_schema ;;
+            20260812150000) name=medical_attendance_atomic_completion; predecessor=20260812021457; rollback_mode=preserve_schema ;;
             *) echo '::error::migration nao autorizada'; exit 1 ;;
           esac
           stage="release/stage"
@@ -84,6 +86,7 @@ jobs:
             20260811120000) smoke_prefix=deploy/database/worklist-handoff ;;
             20260811210000) smoke_prefix=deploy/database/dicom-hardening ;;
             20260812021457) smoke_prefix=deploy/database/pharmacy ;;
+            20260812150000) smoke_prefix=deploy/database/medical-attendance ;;
             *) smoke_prefix=deploy/database/smoke ;;
           esac
           cp "${smoke_prefix}-before.sql" "$stage/smoke-before.sql"

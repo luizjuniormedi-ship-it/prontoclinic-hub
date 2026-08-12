@@ -168,7 +168,8 @@ load_manifest_contract() {
     20260805123000:auth_admin_suspension_invariants:20260804143000:inverse|\
     20260811120000:reception_worklist_handoff:20260805123000:inverse|\
     20260811210000:dicom_worklist_rls_hardening:20260811120000:forward_only|\
-    20260812021457:pharmacy_runtime_closure:20260811210000:preserve_schema) ;;
+    20260812021457:pharmacy_runtime_closure:20260811210000:preserve_schema|\
+    20260812150000:medical_attendance_atomic_completion:20260812021457:preserve_schema) ;;
     *) die 'migration fora da allowlist do coordenador' ;;
   esac
 }
