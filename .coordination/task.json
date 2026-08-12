@@ -16,7 +16,8 @@
     "deploy/auth-service/verify-contract.mjs",
     "e2e/fixtures/auth.ts",
     "local-auth-server.mjs",
-    "scripts/seed-e2e-users.sql"
+    "scripts/seed-e2e-users.sql",
+    "src/services/__tests__/localAuthSecurity.test.ts"
   ],
   "status": "active"
 }
