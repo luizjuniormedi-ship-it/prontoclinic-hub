@@ -22,6 +22,84 @@ SELECT pg_temp.assert_true(
   'tabelas operacionais precisam de RLS'
 );
 SELECT pg_temp.assert_true(
+  (SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid = 'public.imaging_orders'::regclass)
+  AND (SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid = 'public.imaging_order_items'::regclass)
+  AND (SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid = 'public.dicom_worklist_queue'::regclass),
+  'ordens de imagem e Worklist precisam manter FORCE RLS'
+);
+SELECT pg_temp.assert_true(
+  NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND policyname = ANY (ARRAY[
+        'app_imaging_patients_tenant',
+        'app_imaging_appointments_tenant',
+        'app_imaging_worklist_read',
+        'imaging_orders_scoped_select',
+        'imaging_orders_owner_insert',
+        'imaging_orders_scoped_update',
+        'imaging_order_items_scoped_select',
+        'imaging_order_items_scoped_insert',
+        'imaging_order_items_scoped_update',
+        'dicom_worklist_queue_tenant_write'
+      ])
+  ),
+  'policies legadas permissivas não podem coexistir com o contrato M10/M11'
+);
+SELECT pg_temp.assert_true(
+  (
+    SELECT count(*) = 9
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND policyname = ANY (ARRAY[
+        'app_imaging_patients_scoped',
+        'app_imaging_orders_select',
+        'app_imaging_orders_insert',
+        'app_imaging_orders_update',
+        'app_imaging_order_items_select',
+        'app_imaging_order_items_insert',
+        'app_imaging_order_items_update',
+        'app_imaging_worklist_scoped',
+        'app_imaging_worklist_update'
+      ])
+      AND roles = ARRAY['app_prontomedic']::NAME[]
+  ),
+  'backend direto precisa manter policies de imagem estritamente por unidade'
+);
+SELECT pg_temp.assert_true(
+  EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'imaging_orders'
+      AND policyname = 'app_imaging_orders_insert' AND cmd = 'INSERT'
+      AND with_check LIKE '%appointment.company_id = imaging_orders.company_id%'
+      AND with_check LIKE '%appointment.unit_id = imaging_orders.unit_id%'
+      AND with_check LIKE '%appointment.patient_id = imaging_orders.patient_id%'
+  )
+  AND EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'imaging_orders'
+      AND policyname = 'app_imaging_orders_update' AND cmd = 'UPDATE'
+      AND qual LIKE '%can_access(''dicom''::text, ''edit''::text)%'
+      AND with_check LIKE '%appointment.company_id = imaging_orders.company_id%'
+  )
+  AND EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'imaging_order_items'
+      AND policyname = 'app_imaging_order_items_insert' AND cmd = 'INSERT'
+      AND with_check LIKE '%imaging_order.company_id = imaging_order_items.company_id%'
+      AND with_check LIKE '%imaging_order.unit_id = imaging_order_items.unit_id%'
+  )
+  AND EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'dicom_worklist_queue'
+      AND policyname = 'app_imaging_worklist_scoped' AND cmd = 'SELECT'
+      AND qual LIKE '%active_unit_id()%'
+      AND qual LIKE '%org_can_access_unit%'
+  ),
+  'policies do backend precisam preservar comandos e integridade relacional do M10'
+);
+SELECT pg_temp.assert_true(
   EXISTS (
     SELECT 1
     FROM pg_policies
@@ -463,14 +541,14 @@ INSERT INTO public.role_permissions (
   company_id, role_id, module, can_view, can_create, can_edit, can_delete, can_export
 )
 SELECT '84000000-0000-0000-0000-000000000001'::UUID, r.id, m.module, TRUE, TRUE, TRUE, FALSE, FALSE
-FROM public.roles r CROSS JOIN (VALUES ('agenda'), ('recepcao'), ('pacientes')) m(module)
+FROM public.roles r CROSS JOIN (VALUES ('agenda'), ('recepcao'), ('pacientes'), ('dicom'), ('worklist')) m(module)
 WHERE r.name = 'recepcao'
 UNION ALL
 SELECT '84000000-0000-0000-0000-000000000001'::UUID, r.id, 'agenda', TRUE, TRUE, TRUE, TRUE, FALSE
 FROM public.roles r WHERE r.name = 'admin'
 UNION ALL
 SELECT '84000000-0000-0000-0000-000000000002'::UUID, r.id, m.module, TRUE, TRUE, TRUE, FALSE, FALSE
-FROM public.roles r CROSS JOIN (VALUES ('pacientes'), ('recepcao')) m(module)
+FROM public.roles r CROSS JOIN (VALUES ('pacientes'), ('recepcao'), ('dicom'), ('worklist')) m(module)
 WHERE r.name = 'recepcao'
 ON CONFLICT (company_id, role_id, module) DO UPDATE SET
   can_view = EXCLUDED.can_view,
@@ -524,11 +602,11 @@ INSERT INTO public.professional_schedules (
   ('84000000-0000-0000-0000-000000000002', 840011, 840003, 'sábado', TRUE, 1000, 1100, 30, 840003);
 
 INSERT INTO public.patients (
-  id, company_id, unit_id, full_name, insurance_plan_id, insurance_card_number
+  id, company_id, unit_id, full_name, cpf, insurance_plan_id, insurance_card_number
 ) VALUES
-  (840020, '84000000-0000-0000-0000-000000000001', 840001, 'Paciente A1', 840040, 'CARD-A1'),
-  (840021, '84000000-0000-0000-0000-000000000001', 840002, 'Paciente A2', NULL, NULL),
-  (840022, '84000000-0000-0000-0000-000000000002', 840003, 'Paciente B1', 840041, 'CARD-B1');
+  (840020, '84000000-0000-0000-0000-000000000001', 840001, 'Paciente A1', '84000000001', 840040, 'CARD-A1'),
+  (840021, '84000000-0000-0000-0000-000000000001', 840002, 'Paciente A2', '84000000002', NULL, NULL),
+  (840022, '84000000-0000-0000-0000-000000000002', 840003, 'Paciente B1', '84000000003', 840041, 'CARD-B1');
 DO $$
 BEGIN
   UPDATE public.patients SET insurance_plan_id = 840041 WHERE id = 840020;
@@ -675,6 +753,38 @@ INSERT INTO public.appointments (
   (840052, '84000000-0000-0000-0000-000000000002', 840003, 840022, 840011,
    DATE '2026-07-20', TIME '10:00', TIME '10:30', 'scheduled', NULL);
 
+INSERT INTO public.imaging_orders (
+  id, company_id, unit_id, appointment_id, patient_id,
+  requesting_physician_id, accession_number, status, created_by
+) VALUES
+  ('84000000-0000-0000-0000-000000000071', '84000000-0000-0000-0000-000000000001',
+   840001, 840050, 840020, 840010, 'RLS840050', 'agendado',
+   '84000000-0000-0000-0000-000000000010'),
+  ('84000000-0000-0000-0000-000000000073', '84000000-0000-0000-0000-000000000001',
+   840002, 840051, 840021, 840010, 'RLS840051', 'agendado',
+   '84000000-0000-0000-0000-000000000010'),
+  ('84000000-0000-0000-0000-000000000072', '84000000-0000-0000-0000-000000000002',
+   840003, 840052, 840022, 840011, 'RLS840052', 'agendado',
+   '84000000-0000-0000-0000-000000000010');
+
+INSERT INTO public.imaging_order_items (
+  id, company_id, unit_id, imaging_order_id, exam_code, exam_name,
+  modality_type, station_aetitle, scheduled_datetime,
+  requested_procedure_id, scheduled_procedure_step_id, status
+) VALUES
+  ('84000000-0000-0000-0000-000000000081', '84000000-0000-0000-0000-000000000001',
+   840001, '84000000-0000-0000-0000-000000000071', 'RX-TORAX', 'RX de tórax',
+   'CR', 'PRONTOMEDIC', TIMESTAMPTZ '2026-07-20 08:00:00-03',
+   'RP840050', 'SPS840050', 'agendado'),
+  ('84000000-0000-0000-0000-000000000083', '84000000-0000-0000-0000-000000000001',
+   840002, '84000000-0000-0000-0000-000000000073', 'RX-MAO', 'RX de mão',
+   'CR', 'PRONTOMEDIC', TIMESTAMPTZ '2026-07-20 09:00:00-03',
+   'RP840051', 'SPS840051', 'agendado'),
+  ('84000000-0000-0000-0000-000000000082', '84000000-0000-0000-0000-000000000002',
+   840003, '84000000-0000-0000-0000-000000000072', 'US-ABD', 'US de abdome',
+   'US', 'PRONTOMEDIC', TIMESTAMPTZ '2026-07-20 10:00:00-03',
+   'RP840052', 'SPS840052', 'agendado');
+
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub = '84000000-0000-0000-0000-000000000010';
 SET LOCAL request.jwt.claim.aal = 'aal2';
@@ -757,6 +867,132 @@ SELECT pg_temp.assert_true(
   (SELECT count(*) FROM public.get_professional_available_slots(840011, DATE '2026-07-18', 30, NULL)) = 0,
   'RPC não pode vazar profissional de outra empresa'
 );
+
+SELECT pg_temp.assert_true(
+  (SELECT array_agg(id ORDER BY id) FROM public.imaging_orders)
+    = ARRAY['84000000-0000-0000-0000-000000000071'::UUID],
+  'ordens de imagem devem filtrar empresa e unidade ativas'
+);
+SELECT pg_temp.assert_true(
+  (SELECT array_agg(id ORDER BY id) FROM public.imaging_order_items)
+    = ARRAY['84000000-0000-0000-0000-000000000081'::UUID],
+  'itens de imagem devem filtrar empresa e unidade ativas'
+);
+UPDATE public.imaging_orders
+SET notes = 'edição RLS autenticada'
+WHERE id = '84000000-0000-0000-0000-000000000071';
+SELECT pg_temp.assert_true(
+  (SELECT notes = 'edição RLS autenticada' FROM public.imaging_orders
+   WHERE id = '84000000-0000-0000-0000-000000000071'),
+  'policy M10 deve preservar escrita autenticada no escopo ativo'
+);
+
+RESET ROLE;
+SET LOCAL ROLE app_prontomedic;
+SELECT pg_temp.assert_true(
+  (SELECT array_agg(id ORDER BY id) FROM public.imaging_orders)
+    = ARRAY['84000000-0000-0000-0000-000000000071'::UUID]
+  AND (SELECT array_agg(id ORDER BY id) FROM public.imaging_order_items)
+    = ARRAY['84000000-0000-0000-0000-000000000081'::UUID],
+  'backend direto deve enxergar somente imagem da empresa e unidade ativas'
+);
+UPDATE public.imaging_orders
+SET notes = 'edição RLS backend'
+WHERE id = '84000000-0000-0000-0000-000000000071';
+SELECT pg_temp.assert_true(
+  (SELECT notes = 'edição RLS backend' FROM public.imaging_orders
+   WHERE id = '84000000-0000-0000-0000-000000000071'),
+  'backend direto com dicom:edit deve atualizar somente a ordem ativa'
+);
+
+RESET ROLE;
+UPDATE public.role_permissions
+SET can_edit = FALSE, can_create = TRUE
+WHERE company_id = '84000000-0000-0000-0000-000000000001'
+  AND role_id = (SELECT id FROM public.roles WHERE name = 'recepcao')
+  AND module = 'dicom';
+SET LOCAL ROLE app_prontomedic;
+UPDATE public.imaging_orders
+SET notes = 'edição indevida apenas com create'
+WHERE id = '84000000-0000-0000-0000-000000000071';
+SELECT pg_temp.assert_true(
+  (SELECT notes = 'edição RLS backend' FROM public.imaging_orders
+   WHERE id = '84000000-0000-0000-0000-000000000071'),
+  'backend com dicom:create sem dicom:edit não pode atualizar ordem existente'
+);
+
+RESET ROLE;
+UPDATE public.role_permissions
+SET can_edit = TRUE
+WHERE company_id = '84000000-0000-0000-0000-000000000001'
+  AND role_id = (SELECT id FROM public.roles WHERE name = 'recepcao')
+  AND module = 'dicom';
+SET LOCAL ROLE authenticated;
+
+SELECT pg_temp.assert_true(
+  (SELECT count(*) FROM public.release_appointment_to_worklist_secure(
+    840050, 'rls-worklist-company-a'
+  )) = 1,
+  'liberação deve criar exatamente um item de Worklist no escopo ativo'
+);
+SELECT pg_temp.assert_true(
+  EXISTS (
+    SELECT 1 FROM public.dicom_worklist_queue
+    WHERE company_id = '84000000-0000-0000-0000-000000000001'
+      AND unit_id = 840001
+      AND appointment_id = 840050
+      AND idempotency_key = 'rls-worklist-company-a'
+  ),
+  'Worklist liberada deve preservar empresa, unidade e agendamento'
+);
+
+DO $$
+BEGIN
+  BEGIN
+    PERFORM public.release_appointment_to_worklist_secure(
+      840051, 'rls-worklist-company-a-unit-b'
+    );
+    RAISE EXCEPTION 'Worklist aceitou agendamento de outra unidade';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM <> 'Appointment not found in active scope' THEN
+        RAISE;
+      END IF;
+  END;
+  BEGIN
+    PERFORM public.release_appointment_to_worklist_secure(
+      840052, 'rls-worklist-company-b'
+    );
+    RAISE EXCEPTION 'Worklist aceitou agendamento de outra empresa';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM <> 'Appointment not found in active scope' THEN
+        RAISE;
+      END IF;
+  END;
+END;
+$$;
+
+RESET ROLE;
+SELECT pg_temp.assert_true(
+  NOT EXISTS (
+    SELECT 1 FROM public.dicom_worklist_queue
+    WHERE company_id = '84000000-0000-0000-0000-000000000002'
+       OR unit_id = 840002
+       OR appointment_id = 840051
+       OR appointment_id = 840052
+  )
+  AND (SELECT status FROM public.imaging_orders
+       WHERE id = '84000000-0000-0000-0000-000000000073') = 'agendado'
+  AND (SELECT status FROM public.imaging_order_items
+       WHERE id = '84000000-0000-0000-0000-000000000083') = 'agendado'
+  AND (SELECT status FROM public.imaging_orders
+       WHERE id = '84000000-0000-0000-0000-000000000072') = 'agendado'
+  AND (SELECT status FROM public.imaging_order_items
+       WHERE id = '84000000-0000-0000-0000-000000000082') = 'agendado',
+  'tentativa fora do escopo não pode produzir efeitos em outra unidade ou empresa'
+);
+SET LOCAL ROLE authenticated;
 
 SELECT public.transition_insurance_authorization_secure(
   '84000000-0000-0000-0000-000000000031', 'solicitada', 'PROTO-A1',
