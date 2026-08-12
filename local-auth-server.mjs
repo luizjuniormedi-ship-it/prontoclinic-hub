@@ -610,6 +610,7 @@ const RPC_PERMISSIONS = {
   ensure_financial_receivable_for_checkin_secure: { module: 'recepcao', action: 'can_create' },
   finalize_attendance_secure: { module: 'prontuario', action: 'can_create' },
   finalize_attendance_with_billing_secure: { module: 'prontuario', action: 'can_create' },
+  m18_finalize_appointment_with_billing_secure: { module: 'prontuario', action: 'can_create' },
   tiss_get_stats: { module: 'faturamento', action: 'can_view' },
   m16_list_xml_secure: { module: 'faturamento', action: 'can_view' },
   m16_get_xml_document_secure: { module: 'faturamento', action: 'can_view' },

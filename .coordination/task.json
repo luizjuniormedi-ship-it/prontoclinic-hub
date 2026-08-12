@@ -6,6 +6,7 @@
     "src/pages/AttendancePage.tsx",
     "src/services/medicalRecordsService.ts",
     "src/services/__tests__/medicalRecordsService.test.ts",
+    "local-auth-server.mjs",
     "supabase/migrations/20260812170000_medical_attendance_billing_handoff.sql",
     "supabase/tests/module18_medical_attendance_billing_handoff_contract.sql",
     "supabase/rollbacks/20260812170000_medical_attendance_billing_handoff.sql",
