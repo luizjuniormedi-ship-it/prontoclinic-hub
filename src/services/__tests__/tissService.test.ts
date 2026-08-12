@@ -171,7 +171,7 @@ describe("buildTissXml", () => {
         input: xml,
         encoding: "utf8",
       });
-      expect(validation.stderr, validation.stderr).toBe("");
+      expect(validation.stderr ?? "", validation.stderr ?? undefined).toBe("");
       expect(validation.status, validation.stderr).toBe(0);
     }
   );
