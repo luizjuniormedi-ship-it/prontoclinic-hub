@@ -110,14 +110,17 @@ export const loteSchema = z.object({
 
 export const dispensacaoItemSchema = z.object({
   cd_lote: z.number().int().positive(),
+  electronic_prescription_item_id: z.string().uuid().optional().nullable(),
   qt_dispensada: z.number().int().positive("Quantidade deve ser positiva"),
   vl_unitario: z.number().nonnegative().optional().nullable(),
 });
 
 export const dispensacaoSchema = z.object({
+  operation_id: z.string().uuid(),
   cd_paciente: z.number().int().positive(),
   cd_appointment: z.number().int().positive().optional().nullable(),
   cd_prescricao_id: z.number().int().positive().optional().nullable(),
+  electronic_prescription_id: z.string().uuid().optional().nullable(),
   ds_observacao: z.string().optional().nullable(),
   itens: z.array(dispensacaoItemSchema).min(1, "Ao menos um item é obrigatório"),
 });
@@ -172,6 +175,8 @@ export type Dispensacao = {
   cd_paciente: number;
   cd_appointment?: number | null;
   cd_prescricao_id?: number | null;
+  electronic_prescription_id?: string | null;
+  operation_id: string;
   dt_dispensacao: string;
   cd_usuario?: string | null;
   ds_observacao?: string | null;
@@ -539,50 +544,24 @@ export const movimentacoesService = {
 
 export const dispensacoesService = {
   /**
-   * Cria uma dispensação com seus itens.
-   * Para cada item, registra movimentação de SAÍDA do lote.
-   * Tudo em uma transação lógica — se algum item falhar, abortar.
+   * Cria dispensação, itens e baixas de estoque em uma única transação.
+   * A operation_id deve permanecer estável durante tentativas do mesmo pedido.
    */
   async create(input: z.infer<typeof dispensacaoSchema>): Promise<Dispensacao> {
     const parsed = dispensacaoSchema.parse(input);
-    // 1. Cria a dispensação
-    const { data: disp, error: dispErr } = await supabase
-      .from("dispensacoes")
-      .insert({
-        cd_paciente: parsed.cd_paciente,
-        cd_appointment: parsed.cd_appointment ?? null,
-        cd_prescricao_id: parsed.cd_prescricao_id ?? null,
-        ds_observacao: parsed.ds_observacao ?? null,
-      })
-      .select()
-      .single();
-    if (dispErr) throw new Error(`Erro ao criar dispensação: ${dispErr.message}`);
-    const dispRow = disp as Dispensacao;
-
-    // 2. Para cada item, registra movimentação + insere em dispensacao_itens
-    for (const item of parsed.itens) {
-      const mov = await movimentacoesService.saida(
-        item.cd_lote,
-        item.qt_dispensada,
-        parsed.cd_paciente,
-        "Dispensação de receita",
-        parsed.cd_appointment ?? undefined,
-        parsed.cd_prescricao_id ?? undefined,
-      );
-      const { error: itemErr } = await supabase.from("dispensacao_itens").insert({
-        cd_dispensacao: dispRow.id,
-        cd_lote: item.cd_lote,
-        qt_dispensada: item.qt_dispensada,
-        vl_unitario: item.vl_unitario ?? null,
-      });
-      if (itemErr) {
-        // Rollback manual: remover a dispensação pai e a movimentação
-        await supabase.from("dispensacoes").delete().eq("id", dispRow.id);
-        throw new Error(`Erro ao inserir item (movimentação ${mov.id}): ${itemErr.message}`);
-      }
-    }
-
-    return dispRow;
+    const { data, error } = await supabase.rpc("dispensar_estoque_atomic", {
+      p_operation_id: parsed.operation_id,
+      p_patient_id: parsed.cd_paciente,
+      p_appointment_id: parsed.cd_appointment ?? null,
+      p_legacy_prescription_id: parsed.cd_prescricao_id ?? null,
+      p_electronic_prescription_id: parsed.electronic_prescription_id ?? null,
+      p_notes: parsed.ds_observacao ?? null,
+      p_items: parsed.itens,
+    });
+    if (error) throw new Error(`Erro ao criar dispensação: ${error.message}`);
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) throw new Error("A dispensação não retornou confirmação");
+    return row as Dispensacao;
   },
 
   async getByPaciente(pacienteId: number, days = 90): Promise<Dispensacao[]> {

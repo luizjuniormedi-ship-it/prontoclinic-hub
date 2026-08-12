@@ -1,11 +1,28 @@
 {
-  "taskId": "dicom-worklist-rls-hardening-20260811",
-  "module": 10,
-  "baseCommit": "cc92cc8277592b7f2ff2f7cc197ff10efff7897f",
+  "taskId": "pharmacy-runtime-closure",
+  "module": 8,
+  "baseCommit": "330f06ac61543841e9440138b1b8d985f3b003d9",
   "paths": [
-    "supabase/migrations/20260811210000_dicom_worklist_rls_hardening.sql",
-    "tests/database/operational_rls.sql"
+    "e2e/pharmacy.spec.ts",
+    "src/components/prescriptions/m20/PrescriptionEditor.tsx",
+    "src/components/pharmacy/DispenseWizard.tsx",
+    "src/components/pharmacy/PharmacyManager.tsx",
+    "src/services/__tests__/pharmacyService.test.ts",
+    "src/services/__tests__/electronicPrescriptionService.test.ts",
+    "src/services/electronicPrescriptionService.ts",
+    "src/services/pharmacyService.ts",
+    "src/types/electronicPrescriptions.ts",
+    "supabase/migrations",
+    "supabase/tests"
   ],
-  "sharedPaths": [],
+  "sharedPaths": [
+    ".github/workflows/ci.yml",
+    "deploy/auth-service/verify-contract.mjs",
+    "e2e/fixtures/auth.ts",
+    "local-auth-server.mjs",
+    "scripts/seed-e2e-users.sql",
+    "src/components/billing/__tests__/TissNumericDisplay.test.tsx",
+    "src/services/__tests__/localAuthSecurity.test.ts"
+  ],
   "status": "active"
 }

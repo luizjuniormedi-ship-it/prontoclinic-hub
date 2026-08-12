@@ -29,6 +29,7 @@ const LOCAL_CREDENTIALS: Partial<Record<UserRole, { email: string; password: str
   },
   patient: { email: 'paciente@prontomedic.test', password: E2E_PASSWORD },
   callcenter: { email: 'callcenter@prontomedic.test', password: E2E_PASSWORD },
+  pharmacyA: { email: 'farmacia@prontomedic.test', password: E2E_PASSWORD },
 };
 
 function decodeBase32(secret: string): Buffer {

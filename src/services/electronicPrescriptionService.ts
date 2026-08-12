@@ -88,6 +88,10 @@ export function normalizePrescriptionItem(
 
   const dose = input.dose == null ? null : Number(input.dose);
   if (input.itemType === "medication") {
+    if (!input.medicationId) throw new Error("Medicamento do catálogo é obrigatório");
+    if (!Number.isInteger(input.dispensableQuantity) || Number(input.dispensableQuantity) <= 0) {
+      throw new Error("Quantidade dispensável deve ser um inteiro positivo");
+    }
     if (!Number.isFinite(dose) || Number(dose) <= 0) throw new Error("Dose deve ser maior que zero");
     if (!optionalText(input.doseUnit)) throw new Error("Unidade da dose é obrigatória");
     if (!optionalText(input.route)) throw new Error("Via é obrigatória");
@@ -108,6 +112,7 @@ export function normalizePrescriptionItem(
   return {
     itemType: input.itemType,
     medicationId: optionalPositiveInteger(input.medicationId, "medicationId"),
+    dispensableQuantity: optionalPositiveInteger(input.dispensableQuantity, "dispensableQuantity"),
     medicationName,
     activeIngredient: optionalText(input.activeIngredient),
     concentration: optionalText(input.concentration),
@@ -139,6 +144,7 @@ function serializeItem(input: ElectronicPrescriptionItemInput): Record<string, u
   return {
     item_type: normalized.itemType,
     medication_id: normalized.medicationId,
+    dispensable_quantity: normalized.dispensableQuantity,
     medication_name: normalized.medicationName,
     active_ingredient: normalized.activeIngredient,
     concentration: normalized.concentration,

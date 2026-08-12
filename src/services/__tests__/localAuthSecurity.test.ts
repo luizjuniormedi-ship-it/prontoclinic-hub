@@ -89,6 +89,9 @@ describe("local auth server security invariants", () => {
       "detectar_alertas_bi",
       "gerar_senha_triagem",
       "upsert_role_permission",
+      "registrar_movimentacao_estoque",
+      "calcular_valor_estoque",
+      "dispensar_estoque_atomic",
     ];
 
     for (const rpc of requiredRpcContracts) {
@@ -109,7 +112,6 @@ describe("local auth server security invariants", () => {
       "billing_check_pending",
       "calc_imc",
       "calcular_kpis_diarios",
-      "calcular_valor_estoque",
       "cancel_pre_cadastro",
       "check_prescription_safety",
       "confirm_pre_cadastro",
@@ -119,7 +121,6 @@ describe("local auth server security invariants", () => {
       "publish_dicom_report",
       "queue_notification",
       "registrar_consentimento_gravacao",
-      "registrar_movimentacao_estoque",
       "set_access_context",
       "set_professional_schedule_grid_status_secure",
       "update_reception_authorization_secure",

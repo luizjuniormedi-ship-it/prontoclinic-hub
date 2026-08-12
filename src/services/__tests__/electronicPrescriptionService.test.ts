@@ -71,12 +71,16 @@ describe("electronicPrescriptionService", () => {
     expect(() => normalizePrescriptionItem({
       itemType: "medication",
       medicationName: "Dipirona",
+      medicationId: 10,
+      dispensableQuantity: 12,
       dose: 500,
     })).toThrow(/Unidade da dose/);
 
     expect(normalizePrescriptionItem({
       itemType: "medication",
       medicationName: " Dipirona ",
+      medicationId: 10,
+      dispensableQuantity: 12,
       activeIngredient: " dipirona ",
       dose: 500,
       doseUnit: "mg",
@@ -88,6 +92,19 @@ describe("electronicPrescriptionService", () => {
       activeIngredient: "dipirona",
       scheduleTimes: ["08:00:00", "16:00:00"],
     });
+  });
+
+  it("não infere quantidade dispensável de dose, frequência ou duração", () => {
+    expect(() => normalizePrescriptionItem({
+      itemType: "medication",
+      medicationId: 10,
+      medicationName: "Dipirona",
+      dose: 500,
+      doseUnit: "mg",
+      route: "oral",
+      frequencyText: "8/8 horas",
+      durationDays: 3,
+    })).toThrow(/Quantidade dispensável/);
   });
 
   it("cria rascunho sem aceitar company ou ator do cliente", async () => {
@@ -122,6 +139,8 @@ describe("electronicPrescriptionService", () => {
 
     await service.upsertItem(PRESCRIPTION_ID, {
       itemType: "medication",
+      medicationId: 10,
+      dispensableQuantity: 9,
       medicationName: "Dipirona",
       dose: 500,
       doseUnit: "mg",
@@ -134,6 +153,8 @@ describe("electronicPrescriptionService", () => {
       p_prescription_id: PRESCRIPTION_ID,
       p_item: expect.objectContaining({
         item_type: "medication",
+        medication_id: 10,
+        dispensable_quantity: 9,
         medication_name: "Dipirona",
         dose: 500,
         dose_unit: "mg",

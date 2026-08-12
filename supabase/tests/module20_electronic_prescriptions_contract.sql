@@ -93,7 +93,11 @@ BEGIN
   JOIN public.roles r ON r.id = rp.role_id
   WHERE (
       (rp.module = 'prescricao_eletronica'
-       AND r.name IN ('admin', 'medico')
+       AND r.name = 'admin'
+       AND rp.can_view AND rp.can_create AND rp.can_edit)
+      OR
+      (rp.module = 'prescricao_eletronica'
+       AND r.name = 'medico'
        AND rp.can_view AND rp.can_create AND rp.can_edit)
       OR
       (rp.module = 'prescricao_eletronica'
@@ -101,11 +105,14 @@ BEGIN
        AND rp.can_view AND NOT rp.can_create AND NOT rp.can_edit)
       OR
       (rp.module = 'revisao_farmaceutica'
-       AND r.name IN ('admin', 'farmacia')
+       AND r.name = 'admin'
+       AND rp.can_view AND rp.can_create AND rp.can_edit)
+      OR
+      (rp.module = 'revisao_farmaceutica'
+       AND r.name = 'farmacia'
        AND rp.can_view AND rp.can_create AND rp.can_edit)
     )
-    AND NOT rp.can_delete
-    AND NOT rp.can_export;
+    AND (r.name = 'admin' OR (NOT rp.can_delete AND NOT rp.can_export));
   IF v_table_count <> (
     SELECT count(*)
     FROM public.roles
@@ -144,6 +151,26 @@ BEGIN
     RAISE EXCEPTION 'M20 immutability triggers incomplete: %', v_trigger_count;
   END IF;
 
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'electronic_prescription_items'
+      AND column_name = 'dispensable_quantity'
+      AND data_type = 'integer'
+  ) THEN
+    RAISE EXCEPTION 'M20 dispensable quantity is not represented explicitly';
+  END IF;
+
+  IF POSITION('Quantidade dispensável deve ser um inteiro positivo' IN pg_get_functiondef(
+       'public.m20_upsert_prescription_item_secure(uuid,jsonb,uuid)'::regprocedure
+     )) = 0
+     OR POSITION('Medicamentos exigem catálogo e quantidade dispensável' IN pg_get_functiondef(
+       'public.m20_transition_prescription_secure(uuid,text,text)'::regprocedure
+     )) = 0
+  THEN
+    RAISE EXCEPTION 'M20 quantity validation is not enforced by secure RPCs';
+  END IF;
+
   IF has_table_privilege('authenticated', 'public.electronic_prescriptions', 'INSERT')
      OR has_table_privilege('authenticated', 'public.electronic_prescriptions', 'UPDATE')
      OR has_table_privilege('authenticated', 'public.electronic_prescriptions', 'DELETE')
@@ -167,6 +194,18 @@ BEGIN
        'EXECUTE'
      ) THEN
     RAISE EXCEPTION 'M20 immutable history helper is callable by application roles';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'm18_unit_accessible'
+      AND p.prosecdef
+      AND pg_get_userbyid(p.proowner) = 'prontomedic_rpc_owner'
+  ) THEN
+    RAISE EXCEPTION 'M20 unit-access wrapper cannot cross the private schema boundary safely';
   END IF;
 
   IF NOT EXISTS (

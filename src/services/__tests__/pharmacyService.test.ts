@@ -256,6 +256,7 @@ describe("dispensacoesService — create (validação de itens)", () => {
   it("valida schema Zod: exige ao menos 1 item", () => {
     expect(() =>
       dispensacaoSchema.parse({
+        operation_id: crypto.randomUUID(),
         cd_paciente: 1,
         itens: [],
       }),
@@ -265,6 +266,7 @@ describe("dispensacoesService — create (validação de itens)", () => {
   it("valida schema Zod: cd_paciente positivo", () => {
     expect(() =>
       dispensacaoSchema.parse({
+        operation_id: crypto.randomUUID(),
         cd_paciente: 0,
         itens: [{ cd_lote: 1, qt_dispensada: 1 }],
       }),
@@ -274,45 +276,29 @@ describe("dispensacoesService — create (validação de itens)", () => {
   it("valida schema Zod: qt_dispensada positivo", () => {
     expect(() =>
       dispensacaoSchema.parse({
+        operation_id: crypto.randomUUID(),
         cd_paciente: 1,
         itens: [{ cd_lote: 1, qt_dispensada: 0 }],
       }),
     ).toThrow();
   });
 
-  it("cria dispensação + chama saida para cada item", async () => {
-    // Mock da criação da dispensação
-    const insertChain: any = {
-      insert: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({
-        data: {
-          id: 50,
-          company_id: "c1",
-          cd_paciente: 1,
-          dt_dispensacao: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-        },
-        error: null,
-      }),
-    };
-    (supabase.from as any).mockReturnValueOnce(insertChain);
-
-    // Mock da RPC de movimentação (sucesso)
+  it("envia toda a dispensação para uma única RPC atômica", async () => {
+    const operationId = crypto.randomUUID();
     (supabase.rpc as any).mockResolvedValue({
-      data: [{ id: 1, qt_anterior: 100, qt_posterior: 90 }],
+      data: {
+        id: 50,
+        operation_id: operationId,
+        company_id: "c1",
+        cd_paciente: 1,
+        dt_dispensacao: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+      },
       error: null,
     });
 
-    // Mock do insert de dispensacao_itens — chamado 2x (um por item)
-    const itemChain: any = {
-      insert: vi.fn().mockReturnThis(),
-    };
-    (itemChain as any).then = (resolve: any) => resolve({ data: null, error: null });
-    (supabase.from as any).mockReturnValueOnce(itemChain);
-    (supabase.from as any).mockReturnValueOnce(itemChain);
-
     const result = await pharmacyService.dispensacoes.create({
+      operation_id: operationId,
       cd_paciente: 1,
       itens: [
         { cd_lote: 10, qt_dispensada: 5 },
@@ -321,15 +307,47 @@ describe("dispensacoesService — create (validação de itens)", () => {
     });
 
     expect(result.id).toBe(50);
-    expect(supabase.rpc).toHaveBeenCalledTimes(2);
-    expect(supabase.rpc).toHaveBeenNthCalledWith(1, "registrar_movimentacao_estoque", expect.objectContaining({
-      p_tipo: "SAIDA",
-      p_quantidade: 5,
-    }));
-    expect(supabase.rpc).toHaveBeenNthCalledWith(2, "registrar_movimentacao_estoque", expect.objectContaining({
-      p_tipo: "SAIDA",
-      p_quantidade: 3,
-    }));
+    expect(supabase.rpc).toHaveBeenCalledTimes(1);
+    expect(supabase.rpc).toHaveBeenCalledWith("dispensar_estoque_atomic", {
+      p_operation_id: operationId,
+      p_patient_id: 1,
+      p_appointment_id: null,
+      p_legacy_prescription_id: null,
+      p_electronic_prescription_id: null,
+      p_notes: null,
+      p_items: [
+        { cd_lote: 10, qt_dispensada: 5 },
+        { cd_lote: 11, qt_dispensada: 3 },
+      ],
+    });
+  });
+
+  it("aceita vínculo explícito com a linha da prescrição eletrônica", () => {
+    expect(dispensacaoSchema.parse({
+      operation_id: crypto.randomUUID(),
+      cd_paciente: 1,
+      electronic_prescription_id: crypto.randomUUID(),
+      itens: [{
+        cd_lote: 1,
+        qt_dispensada: 2,
+        electronic_prescription_item_id: crypto.randomUUID(),
+      }],
+    }).itens[0].electronic_prescription_item_id).toBeTruthy();
+  });
+
+  it("propaga falha atômica sem tentar rollback no cliente", async () => {
+    (supabase.rpc as any).mockResolvedValue({
+      data: null,
+      error: { message: "Estoque insuficiente" },
+    });
+
+    await expect(pharmacyService.dispensacoes.create({
+      operation_id: crypto.randomUUID(),
+      cd_paciente: 1,
+      itens: [{ cd_lote: 10, qt_dispensada: 999 }],
+    })).rejects.toThrow(/Estoque insuficiente/);
+
+    expect(supabase.from).not.toHaveBeenCalled();
   });
 });
 
