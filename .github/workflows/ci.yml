@@ -17,6 +17,7 @@ jobs:
     env:
       VITE_SUPABASE_URL: http://127.0.0.1:18000
       VITE_SUPABASE_ANON_KEY: local-e2e-public-key
+      TISS_XSD_PATH: vendor/tiss/040300/tissV4_03_00.xsd
 
     services:
       postgres:
@@ -45,6 +46,10 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Verify official TISS 04.03.00 schemas
+        shell: pwsh
+        run: ./scripts/verify-tiss-schemas.ps1
 
       - name: Validate published Edge Functions
         run: |

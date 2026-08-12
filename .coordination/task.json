@@ -4,6 +4,11 @@
   "baseCommit": "c38bac7e19f2fe89f399fc14be2d784ad1bdd3db",
   "paths": [
     ".github/workflows/ci.yml",
+    "VERCEL_ENV_VARS.md",
+    "docs/VERCEL_CONFIG_GUIDE.md",
+    "docs/DEPLOY_TESTE_VS_PRODUCAO.md",
+    "vendor/tiss/040300",
+    "scripts/verify-tiss-schemas.ps1",
     "src/components/billing/TissGuideManager.tsx",
     "src/pages/BillingAccountsPage.tsx",
     "src/pages/__tests__/BillingAccountsPage.test.tsx",

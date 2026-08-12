@@ -79,7 +79,7 @@ Conf:   OFF
 ### 8ï¸âƒ£ VITE_TISS_VERSION
 ```
 Key:    VITE_TISS_VERSION
-Value:  3.05.00
+Value:  4.03.00
 Amb:    ProduÃ§Ã£o e PrÃ©-visualizaÃ§Ã£o
 Conf:   OFF
 ```
@@ -115,7 +115,7 @@ VITE_APP_ENV=production
 VITE_ENABLE_TELEMEDICINE=false
 VITE_ENABLE_WHATSAPP=false
 VITE_TISS_AMBIENTE=HOMOLOGACAO
-VITE_TISS_VERSION=3.05.00
+VITE_TISS_VERSION=4.03.00
 VITE_DICOM_BUCKET=dicom
 ```
 
@@ -200,7 +200,7 @@ VALUES ('luizjuniormedi@gmail.com', crypt('<ADMIN_TEMP_PASSWORD>', gen_salt('bf'
 | 5 | `VITE_ENABLE_TELEMEDICINE` | `false` | NÃ£o |
 | 6 | `VITE_ENABLE_WHATSAPP` | `false` | NÃ£o |
 | 7 | `VITE_TISS_AMBIENTE` | `HOMOLOGACAO` | NÃ£o |
-| 8 | `VITE_TISS_VERSION` | `3.05.00` | NÃ£o |
+| 8 | `VITE_TISS_VERSION` | `4.03.00` | NÃ£o |
 | 9 | `VITE_DICOM_BUCKET` | `dicom` | NÃ£o |
 
 ---
