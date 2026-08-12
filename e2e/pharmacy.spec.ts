@@ -18,6 +18,13 @@ test.describe("Farmácia — contrato de rota @readonly", () => {
   });
 
   test("perfil de farmácia abre a superfície de dispensação", async ({ page }) => {
+    const pharmacyRpcFailures: string[] = [];
+    page.on("console", (message) => {
+      if (message.text().includes("calcular_valor_estoque falhou")) {
+        pharmacyRpcFailures.push(message.text());
+      }
+    });
+
     test.skip(
       !credentialsForOrNull("pharmacyA"),
       "Conta pharmacyA não foi provisionada nas variáveis E2E.",
@@ -26,5 +33,12 @@ test.describe("Farmácia — contrato de rota @readonly", () => {
     await page.goto("/pharmacy");
     await expect(page.getByRole("heading", { name: /farmácia/i })).toBeVisible();
     await expect(page.getByText(/dispensa/i).first()).toBeVisible();
+    await page.getByRole("tab", { name: /alertas/i }).click();
+    const stockValue = page
+      .getByText("Valor Total em Estoque")
+      .locator("..")
+      .getByText(/^R\$/);
+    await expect(stockValue).toBeVisible();
+    expect(pharmacyRpcFailures).toEqual([]);
   });
 });

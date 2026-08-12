@@ -63,6 +63,23 @@ BEGIN
     RAISE EXCEPTION 'M8 contract: direct dispensing writes remain granted';
   END IF;
 
+  IF NOT has_function_privilege('prontomedic_rpc_owner', 'public.get_my_company_id()', 'EXECUTE')
+     OR NOT has_function_privilege('prontomedic_rpc_owner', 'public.active_unit_id()', 'EXECUTE')
+     OR NOT has_function_privilege(
+       'prontomedic_rpc_owner',
+       'private.prontomedic_module_action_allowed(text,text,integer,boolean)',
+       'EXECUTE'
+     )
+     OR NOT has_table_privilege('prontomedic_rpc_owner', 'public.patients', 'SELECT')
+     OR NOT has_table_privilege('prontomedic_rpc_owner', 'public.appointments', 'SELECT')
+     OR NOT has_table_privilege('prontomedic_rpc_owner', 'public.lotes', 'SELECT,UPDATE')
+     OR NOT has_table_privilege('prontomedic_rpc_owner', 'public.dispensacoes', 'SELECT,INSERT')
+     OR NOT has_table_privilege('prontomedic_rpc_owner', 'public.dispensacao_itens', 'INSERT')
+     OR NOT has_table_privilege('prontomedic_rpc_owner', 'public.movimentacoes_estoque', 'INSERT')
+  THEN
+    RAISE EXCEPTION 'M8 contract: secure RPC owner lacks minimum object privileges';
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1
     FROM pg_indexes

@@ -51,7 +51,8 @@ VALUES
   ('recepcao', 'Recepcao E2E', true),
   ('supervisor_recepcao', 'Supervisor de recepcao E2E', true),
   ('paciente', 'Paciente E2E', true),
-  ('callcenter', 'Call Center E2E', true)
+  ('callcenter', 'Call Center E2E', true),
+  ('farmacia', 'Farmacia E2E', true)
 ON CONFLICT (name) DO UPDATE SET lg_ativo = true;
 
 WITH base_company AS (
@@ -72,7 +73,8 @@ seed_users(id, email, full_name, role_name) AS (
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 'recepcao@prontomedic.test', 'Recepcao E2E', 'recepcao'),
     ('eeeeeeee-0000-4000-8000-000000000006'::uuid, 'supervisor.recepcao@prontomedic.test', 'Supervisor Recepcao E2E', 'supervisor_recepcao'),
     ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente@prontomedic.test', 'Paciente E2E', 'paciente'),
-    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'callcenter@prontomedic.test', 'Call Center E2E', 'callcenter')
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'callcenter@prontomedic.test', 'Call Center E2E', 'callcenter'),
+    ('eeeeeeee-0000-4000-8000-000000000007'::uuid, 'farmacia@prontomedic.test', 'Farmacia E2E', 'farmacia')
 ),
 upsert_auth AS (
   INSERT INTO auth.users (
@@ -130,7 +132,8 @@ WITH seed_users(id) AS (
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid),
     ('eeeeeeee-0000-4000-8000-000000000006'::uuid),
     ('eeeeeeee-0000-4000-8000-000000000004'::uuid),
-    ('eeeeeeee-0000-4000-8000-000000000005'::uuid)
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000007'::uuid)
 )
 INSERT INTO public.auth_mfa_factors(
   id, user_id, factor_type, friendly_name, secret_ciphertext,
@@ -171,7 +174,8 @@ WITH seed_users(id, role_name) AS (
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 'recepcao'),
     ('eeeeeeee-0000-4000-8000-000000000006'::uuid, 'supervisor_recepcao'),
     ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente'),
-    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'callcenter')
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'callcenter'),
+    ('eeeeeeee-0000-4000-8000-000000000007'::uuid, 'farmacia')
 ), base_company AS (
   SELECT id FROM public.companies WHERE id = 'eeeeeeee-1000-4000-8000-000000000001'
 )
@@ -187,7 +191,8 @@ WITH desired(user_id, role_name) AS (
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 'recepcao'),
     ('eeeeeeee-0000-4000-8000-000000000006'::uuid, 'supervisor_recepcao'),
     ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente'),
-    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'callcenter')
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'callcenter'),
+    ('eeeeeeee-0000-4000-8000-000000000007'::uuid, 'farmacia')
 )
 DELETE FROM public.membership_roles mr
 USING public.memberships m, public.roles r
@@ -207,7 +212,8 @@ WITH seed_users(id, role_name) AS (
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid, 'recepcao'),
     ('eeeeeeee-0000-4000-8000-000000000006'::uuid, 'supervisor_recepcao'),
     ('eeeeeeee-0000-4000-8000-000000000004'::uuid, 'paciente'),
-    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'callcenter')
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid, 'callcenter'),
+    ('eeeeeeee-0000-4000-8000-000000000007'::uuid, 'farmacia')
 )
 INSERT INTO public.membership_roles (membership_id, role_id)
 SELECT m.id, r.id
@@ -228,6 +234,7 @@ WITH permissions(role_name,module,can_view,can_create,can_edit,can_delete,can_ex
     ('admin','laboratorio',TRUE,TRUE,TRUE,TRUE,TRUE),
     ('admin','enfermagem',TRUE,TRUE,TRUE,TRUE,TRUE),
     ('admin','farmacia',TRUE,TRUE,TRUE,TRUE,TRUE),
+    ('admin','revisao_farmaceutica',TRUE,TRUE,TRUE,TRUE,TRUE),
     ('admin','auditoria',TRUE,TRUE,TRUE,TRUE,TRUE),
     ('admin','admin',TRUE,TRUE,TRUE,TRUE,TRUE),
     ('admin','bi',TRUE,TRUE,TRUE,TRUE,TRUE),
@@ -245,7 +252,9 @@ WITH permissions(role_name,module,can_view,can_create,can_edit,can_delete,can_ex
     ('callcenter','pacientes',TRUE,FALSE,FALSE,FALSE,FALSE),
     ('medico','agenda',TRUE,FALSE,TRUE,FALSE,FALSE),
     ('medico','pacientes',TRUE,FALSE,FALSE,FALSE,FALSE),
-    ('medico','prontuario',TRUE,TRUE,TRUE,FALSE,FALSE)
+    ('medico','prontuario',TRUE,TRUE,TRUE,FALSE,FALSE),
+    ('farmacia','farmacia',TRUE,TRUE,TRUE,FALSE,FALSE),
+    ('farmacia','revisao_farmaceutica',TRUE,TRUE,TRUE,FALSE,FALSE)
 )
 INSERT INTO public.role_permissions (
   company_id, role_id, module, can_view, can_create, can_edit, can_delete, can_export
@@ -270,7 +279,8 @@ WITH seed_users(id) AS (
     ('eeeeeeee-0000-4000-8000-000000000003'::uuid),
     ('eeeeeeee-0000-4000-8000-000000000006'::uuid),
     ('eeeeeeee-0000-4000-8000-000000000004'::uuid),
-    ('eeeeeeee-0000-4000-8000-000000000005'::uuid)
+    ('eeeeeeee-0000-4000-8000-000000000005'::uuid),
+    ('eeeeeeee-0000-4000-8000-000000000007'::uuid)
 ), base_unit AS (
   SELECT id, company_id FROM public.units WHERE id = 91001
 )

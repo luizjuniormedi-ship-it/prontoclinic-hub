@@ -1,5 +1,7 @@
 -- Farmácia: fechamento transacional, idempotente e tenant-safe.
 
+BEGIN;
+
 ALTER TABLE public.dispensacoes
   ADD COLUMN IF NOT EXISTS operation_id UUID,
   ADD COLUMN IF NOT EXISTS request_hash TEXT,
@@ -42,15 +44,16 @@ AS $fn$
 DECLARE
   v_lote public.lotes;
   v_company_id UUID := public.get_my_company_id();
+  v_unit_id INTEGER := public.active_unit_id();
   v_qt_posterior INTEGER;
   v_id BIGINT;
 BEGIN
-  IF auth.uid() IS NULL OR v_company_id IS NULL THEN
-    RAISE EXCEPTION 'Contexto autenticado de empresa obrigatório'
+  IF auth.uid() IS NULL OR v_company_id IS NULL OR v_unit_id IS NULL THEN
+    RAISE EXCEPTION 'Contexto autenticado de empresa e unidade obrigatório'
       USING ERRCODE = '42501';
   END IF;
   IF NOT private.prontomedic_module_action_allowed(
-    'revisao_farmaceutica', 'create', NULL, FALSE
+    'revisao_farmaceutica', 'create', v_unit_id, FALSE
   ) THEN
     RAISE EXCEPTION 'Usuário sem permissão para movimentar estoque'
       USING ERRCODE = '42501';
@@ -59,12 +62,37 @@ BEGIN
     RAISE EXCEPTION 'Quantidade deve ser positiva'
       USING ERRCODE = '22023';
   END IF;
+  IF p_prescricao_id IS NOT NULL THEN
+    RAISE EXCEPTION 'Prescrição legada sem contrato de empresa; use a dispensação eletrônica'
+      USING ERRCODE = '22023';
+  END IF;
+  IF p_paciente_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.patients p
+    WHERE p.id = p_paciente_id
+      AND p.company_id = v_company_id
+      AND COALESCE(p.lg_ativo, TRUE)
+  ) THEN
+    RAISE EXCEPTION 'Paciente não pertence à empresa ativa'
+      USING ERRCODE = '42501';
+  END IF;
+  IF p_appointment_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.appointments appointment
+    WHERE appointment.id = p_appointment_id
+      AND appointment.company_id = v_company_id
+      AND appointment.unit_id = v_unit_id
+      AND (p_paciente_id IS NULL OR appointment.patient_id = p_paciente_id)
+  ) THEN
+    RAISE EXCEPTION 'Agendamento incompatível com paciente, empresa ou unidade'
+      USING ERRCODE = '42501';
+  END IF;
 
   SELECT l.* INTO v_lote
   FROM public.lotes l
+  LEFT JOIN public.almoxarifados warehouse ON warehouse.id = l.cd_almoxarifado
   WHERE l.id = p_lote_id
     AND l.company_id = v_company_id
     AND l.lg_ativo = TRUE
+    AND (warehouse.cd_unidade IS NULL OR warehouse.cd_unidade = v_unit_id)
   FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Lote não encontrado no contexto ativo'
@@ -118,10 +146,11 @@ SET row_security = off
 AS $fn$
 DECLARE
   v_company_id UUID := public.get_my_company_id();
+  v_unit_id INTEGER := public.active_unit_id();
   v_total DECIMAL(12,2);
 BEGIN
-  IF auth.uid() IS NULL OR v_company_id IS NULL THEN
-    RAISE EXCEPTION 'Contexto autenticado de empresa obrigatório'
+  IF auth.uid() IS NULL OR v_company_id IS NULL OR v_unit_id IS NULL THEN
+    RAISE EXCEPTION 'Contexto autenticado de empresa e unidade obrigatório'
       USING ERRCODE = '42501';
   END IF;
   IF p_company_id IS NOT NULL AND p_company_id IS DISTINCT FROM v_company_id THEN
@@ -129,7 +158,7 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
   IF NOT private.prontomedic_module_action_allowed(
-    'revisao_farmaceutica', 'view', NULL, FALSE
+    'revisao_farmaceutica', 'view', v_unit_id, FALSE
   ) THEN
     RAISE EXCEPTION 'Usuário sem permissão para consultar estoque'
       USING ERRCODE = '42501';
@@ -138,9 +167,11 @@ BEGIN
   SELECT COALESCE(SUM(l.qt_atual * COALESCE(l.vl_custo_unitario, 0)), 0)
   INTO v_total
   FROM public.lotes l
+  LEFT JOIN public.almoxarifados warehouse ON warehouse.id = l.cd_almoxarifado
   WHERE l.company_id = v_company_id
     AND l.lg_ativo = TRUE
-    AND l.qt_atual > 0;
+    AND l.qt_atual > 0
+    AND (warehouse.cd_unidade IS NULL OR warehouse.cd_unidade = v_unit_id);
 
   RETURN v_total;
 END;
@@ -163,7 +194,9 @@ SET row_security = off
 AS $fn$
 DECLARE
   v_company_id UUID := public.get_my_company_id();
+  v_unit_id INTEGER := public.active_unit_id();
   v_request JSONB;
+  v_items JSONB;
   v_request_hash TEXT;
   v_existing public.dispensacoes;
   v_dispensing public.dispensacoes;
@@ -175,12 +208,12 @@ DECLARE
   v_previous INTEGER;
   v_after INTEGER;
 BEGIN
-  IF auth.uid() IS NULL OR v_company_id IS NULL THEN
-    RAISE EXCEPTION 'Contexto autenticado de empresa obrigatório'
+  IF auth.uid() IS NULL OR v_company_id IS NULL OR v_unit_id IS NULL THEN
+    RAISE EXCEPTION 'Contexto autenticado de empresa e unidade obrigatório'
       USING ERRCODE = '42501';
   END IF;
   IF NOT private.prontomedic_module_action_allowed(
-    'revisao_farmaceutica', 'create', NULL, FALSE
+    'revisao_farmaceutica', 'create', v_unit_id, FALSE
   ) THEN
     RAISE EXCEPTION 'Usuário sem permissão para dispensar'
       USING ERRCODE = '42501';
@@ -205,6 +238,9 @@ BEGIN
     RAISE EXCEPTION 'O mesmo lote não pode aparecer mais de uma vez'
       USING ERRCODE = '22023';
   END IF;
+  SELECT jsonb_agg(item ORDER BY (item->>'cd_lote')::BIGINT)
+  INTO v_items
+  FROM jsonb_array_elements(p_items) item;
   IF NOT EXISTS (
     SELECT 1 FROM public.patients p
     WHERE p.id = p_patient_id
@@ -219,6 +255,7 @@ BEGIN
     WHERE a.id = p_appointment_id
       AND a.company_id = v_company_id
       AND a.patient_id = p_patient_id
+      AND a.unit_id = v_unit_id
   ) THEN
     RAISE EXCEPTION 'Agendamento incompatível com paciente ou empresa'
       USING ERRCODE = '42501';
@@ -239,7 +276,7 @@ BEGIN
     'appointment_id', p_appointment_id,
     'electronic_prescription_id', p_electronic_prescription_id,
     'notes', NULLIF(BTRIM(p_notes), ''),
-    'items', p_items
+    'items', v_items
   );
   v_request_hash := encode(digest(convert_to(v_request::TEXT, 'UTF8'), 'sha256'), 'hex');
 
@@ -263,7 +300,7 @@ BEGIN
   FROM public.lotes l
   WHERE l.id IN (
     SELECT (item->>'cd_lote')::BIGINT
-    FROM jsonb_array_elements(p_items) item
+    FROM jsonb_array_elements(v_items) item
   )
   ORDER BY l.id
   FOR UPDATE;
@@ -279,7 +316,7 @@ BEGIN
   )
   RETURNING * INTO v_dispensing;
 
-  FOR v_item IN SELECT value FROM jsonb_array_elements(p_items)
+  FOR v_item IN SELECT value FROM jsonb_array_elements(v_items)
   LOOP
     BEGIN
       v_lot_id := (v_item->>'cd_lote')::BIGINT;
@@ -295,9 +332,11 @@ BEGIN
 
     SELECT l.* INTO v_lot
     FROM public.lotes l
+    LEFT JOIN public.almoxarifados warehouse ON warehouse.id = l.cd_almoxarifado
     WHERE l.id = v_lot_id
       AND l.company_id = v_company_id
       AND l.lg_ativo = TRUE
+      AND (warehouse.cd_unidade IS NULL OR warehouse.cd_unidade = v_unit_id)
     FOR UPDATE;
     IF NOT FOUND THEN
       RAISE EXCEPTION 'Lote % não encontrado na empresa ativa', v_lot_id
@@ -375,6 +414,21 @@ ALTER FUNCTION public.dispensar_estoque_atomic(
   UUID, BIGINT, BIGINT, BIGINT, UUID, TEXT, JSONB
 ) OWNER TO prontomedic_rpc_owner;
 
+GRANT USAGE ON SCHEMA public, private, auth TO prontomedic_rpc_owner;
+GRANT EXECUTE ON FUNCTION public.get_my_company_id(), public.active_unit_id(),
+  private.prontomedic_module_action_allowed(TEXT, TEXT, INTEGER, BOOLEAN),
+  auth.uid()
+  TO prontomedic_rpc_owner;
+GRANT SELECT ON public.patients, public.appointments,
+  public.electronic_prescriptions, public.electronic_prescription_items,
+  public.almoxarifados
+  TO prontomedic_rpc_owner;
+GRANT SELECT, UPDATE ON public.lotes TO prontomedic_rpc_owner;
+GRANT SELECT, INSERT ON public.dispensacoes TO prontomedic_rpc_owner;
+GRANT INSERT ON public.dispensacao_itens, public.movimentacoes_estoque
+  TO prontomedic_rpc_owner;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO prontomedic_rpc_owner;
+
 GRANT EXECUTE ON FUNCTION public.registrar_movimentacao_estoque(
   BIGINT, VARCHAR, INTEGER, TEXT, BIGINT, BIGINT, BIGINT, TEXT
 ) TO authenticated, app_prontomedic;
@@ -390,3 +444,5 @@ REVOKE INSERT, UPDATE, DELETE, TRUNCATE
 GRANT SELECT
   ON public.dispensacoes, public.dispensacao_itens, public.movimentacoes_estoque
   TO authenticated;
+
+COMMIT;

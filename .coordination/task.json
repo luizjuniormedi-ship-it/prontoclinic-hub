@@ -5,11 +5,18 @@
   "paths": [
     "e2e/pharmacy.spec.ts",
     "src/components/pharmacy/DispenseWizard.tsx",
+    "src/components/pharmacy/PharmacyManager.tsx",
     "src/services/__tests__/pharmacyService.test.ts",
     "src/services/pharmacyService.ts",
     "supabase/migrations",
     "supabase/tests"
   ],
-  "sharedPaths": [],
+  "sharedPaths": [
+    ".github/workflows/ci.yml",
+    "deploy/auth-service/verify-contract.mjs",
+    "e2e/fixtures/auth.ts",
+    "local-auth-server.mjs",
+    "scripts/seed-e2e-users.sql"
+  ],
   "status": "active"
 }

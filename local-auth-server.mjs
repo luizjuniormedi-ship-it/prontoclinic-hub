@@ -657,6 +657,9 @@ const RPC_PERMISSIONS = {
   m23_validate_result_secure: { module: 'laboratorio', action: 'can_edit' },
   m23_acknowledge_critical_alert_secure: { module: 'laboratorio', action: 'can_edit' },
   m23_deliver_order_secure: { module: 'laboratorio', action: 'can_edit' },
+  registrar_movimentacao_estoque: { module: 'revisao_farmaceutica', action: 'can_create' },
+  calcular_valor_estoque: { module: 'revisao_farmaceutica', action: 'can_view' },
+  dispensar_estoque_atomic: { module: 'revisao_farmaceutica', action: 'can_create' },
 };
 
 async function authorizeRpc(profile, functionName, payload) {
