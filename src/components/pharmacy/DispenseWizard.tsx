@@ -44,6 +44,7 @@ export function DispenseWizard() {
   const [error, setError] = useState<string | null>(null);
   const [sucessoMsg, setSucessoMsg] = useState<string | null>(null);
   const stepAnnounceRef = useRef<HTMLDivElement>(null);
+  const operationIdRef = useRef(crypto.randomUUID());
 
   const queryClient = useQueryClient();
 
@@ -85,6 +86,7 @@ export function DispenseWizard() {
     mutationFn: () => {
       if (!paciente) throw new Error("Paciente não selecionado");
       return pharmacyService.dispensacoes.create({
+        operation_id: operationIdRef.current,
         cd_paciente: paciente.id,
         ds_observacao: observacao || null,
         itens: itens.map((i) => ({
@@ -106,6 +108,7 @@ export function DispenseWizard() {
       setObservacao("");
       setSearchPaciente("");
       setMedicamentoSelecionado(null);
+      operationIdRef.current = crypto.randomUUID();
     },
     onError: (e: Error) => setError(e.message),
   });
