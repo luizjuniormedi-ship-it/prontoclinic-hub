@@ -1,10 +1,14 @@
 {
-  "taskId": "dicom-worklist-rls-hardening-20260811",
-  "module": 10,
-  "baseCommit": "cc92cc8277592b7f2ff2f7cc197ff10efff7897f",
+  "taskId": "pharmacy-runtime-closure",
+  "module": 8,
+  "baseCommit": "330f06ac61543841e9440138b1b8d985f3b003d9",
   "paths": [
-    "supabase/migrations/20260811210000_dicom_worklist_rls_hardening.sql",
-    "tests/database/operational_rls.sql"
+    "e2e/pharmacy.spec.ts",
+    "src/components/pharmacy/DispenseWizard.tsx",
+    "src/services/__tests__/pharmacyService.test.ts",
+    "src/services/pharmacyService.ts",
+    "supabase/migrations",
+    "supabase/tests"
   ],
   "sharedPaths": [],
   "status": "active"
