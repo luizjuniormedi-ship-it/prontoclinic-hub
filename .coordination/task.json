@@ -1,16 +1,9 @@
 {
-  "taskId": "reception-worklist-handoff-20260811",
-  "module": 11,
-  "baseCommit": "d0f853a54a56db53438092cca791d3b2c9f17e18",
+  "taskId": "dicom-worklist-rls-hardening-20260811",
+  "module": 10,
+  "baseCommit": "cc92cc8277592b7f2ff2f7cc197ff10efff7897f",
   "paths": [
-    "e2e/recepcao.spec.ts",
-    "local-auth-server.mjs",
-    "scripts/seed-e2e-users.sql",
-    "src/services/__tests__/dicomService.test.ts",
-    "src/services/__tests__/localAuthSecurity.test.ts",
-    "src/services/__tests__/receptionWorkflowService.test.ts",
-    "src/services/receptionWorkflowService.ts",
-    "supabase/migrations/20260811120000_reception_worklist_handoff.sql",
+    "supabase/migrations/20260811210000_dicom_worklist_rls_hardening.sql",
     "tests/database/operational_rls.sql"
   ],
   "sharedPaths": [],
