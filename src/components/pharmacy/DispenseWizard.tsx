@@ -17,12 +17,14 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Search, User, Pill, CheckCircle2, ChevronLeft, ChevronRight,
   Plus, Trash2, FileDown, Loader2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { pharmacyService, type EstoqueAtual, type Medicamento, type DispensacaoItem } from "@/services/pharmacyService";
+import { electronicPrescriptionService } from "@/services/electronicPrescriptionService";
 
 type Patient = { id: number; full_name: string; cpf: string | null; birth_date?: string | null };
 
@@ -40,6 +42,8 @@ export function DispenseWizard() {
   const [searchPaciente, setSearchPaciente] = useState("");
   const [searchMedicamento, setSearchMedicamento] = useState("");
   const [medicamentoSelecionado, setMedicamentoSelecionado] = useState<Medicamento | null>(null);
+  const [prescriptionId, setPrescriptionId] = useState<string | null>(null);
+  const [prescriptionItemId, setPrescriptionItemId] = useState<string | null>(null);
   const [qtSolicitada, setQtSolicitada] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [sucessoMsg, setSucessoMsg] = useState<string | null>(null);
@@ -72,6 +76,43 @@ export function DispenseWizard() {
     enabled: searchMedicamento.length >= 2,
   });
 
+  const { data: prescriptions = [] } = useQuery({
+    queryKey: ["pharmacy-prescriptions", paciente?.id],
+    queryFn: () => electronicPrescriptionService.list({
+      patientId: paciente!.id,
+      statuses: ["signed", "active"],
+    }),
+    enabled: Boolean(paciente),
+  });
+
+  const selectedPrescription = prescriptions.find((entry) => entry.id === prescriptionId) ?? null;
+  const selectedPrescriptionItem = selectedPrescription?.items.find(
+    (entry) => entry.id === prescriptionItemId,
+  ) ?? null;
+
+  const { data: dispensedByItem = {} } = useQuery({
+    queryKey: ["pharmacy-prescription-balances", prescriptionId],
+    queryFn: async () => {
+      const itemIds = selectedPrescription?.items.map((entry) => entry.id) ?? [];
+      if (itemIds.length === 0) return {} as Record<string, number>;
+      const { data, error } = await supabase
+        .from("dispensacao_itens")
+        .select("electronic_prescription_item_id, qt_dispensada")
+        .in("electronic_prescription_item_id", itemIds);
+      if (error) throw new Error(error.message);
+      return (data ?? []).reduce<Record<string, number>>((totals, row) => {
+        const itemId = row.electronic_prescription_item_id as string | null;
+        if (itemId) totals[itemId] = (totals[itemId] ?? 0) + Number(row.qt_dispensada ?? 0);
+        return totals;
+      }, {});
+    },
+    enabled: Boolean(selectedPrescription),
+  });
+
+  const selectedRemaining = selectedPrescriptionItem?.dispensable_quantity == null
+    ? null
+    : selectedPrescriptionItem.dispensable_quantity - (dispensedByItem[selectedPrescriptionItem.id] ?? 0);
+
   // Busca lotes válidos (FEFO) do medicamento selecionado
   const { data: lotes, isLoading: loadingLotes } = useQuery({
     queryKey: ["lotes-validos", medicamentoSelecionado?.id],
@@ -89,8 +130,10 @@ export function DispenseWizard() {
         operation_id: operationIdRef.current,
         cd_paciente: paciente.id,
         ds_observacao: observacao || null,
+        electronic_prescription_id: prescriptionId,
         itens: itens.map((i) => ({
           cd_lote: i.cd_lote,
+          electronic_prescription_item_id: i.electronic_prescription_item_id ?? null,
           qt_dispensada: i.qt_dispensada,
           vl_unitario: i.vl_unitario ?? null,
         })),
@@ -108,6 +151,8 @@ export function DispenseWizard() {
       setObservacao("");
       setSearchPaciente("");
       setMedicamentoSelecionado(null);
+      setPrescriptionId(null);
+      setPrescriptionItemId(null);
       operationIdRef.current = crypto.randomUUID();
     },
     onError: (e: Error) => setError(e.message),
@@ -131,6 +176,18 @@ export function DispenseWizard() {
       setError("Selecione um medicamento");
       return;
     }
+    if (prescriptionId && !selectedPrescriptionItem) {
+      setError("Selecione a linha da prescrição correspondente");
+      return;
+    }
+    if (selectedPrescriptionItem?.medication_id !== medicamentoSelecionado.id) {
+      setError("O medicamento selecionado não corresponde à linha prescrita");
+      return;
+    }
+    if (selectedRemaining != null && qtSolicitada > selectedRemaining) {
+      setError(`Quantidade solicitada excede o saldo prescrito (${selectedRemaining})`);
+      return;
+    }
     if (qtSolicitada <= 0) {
       setError("Quantidade deve ser maior que zero");
       return;
@@ -148,6 +205,7 @@ export function DispenseWizard() {
         ...prev,
         {
           cd_lote: lote.cd_lote,
+          electronic_prescription_item_id: prescriptionItemId,
           qt_dispensada: qtSolicitada,
           vl_unitario: lote.vl_custo_unitario ?? null,
           ds_produto: `${medicamentoSelecionado.cd_principio_ativo} ${medicamentoSelecionado.ds_concentracao ?? ""}`.trim(),
@@ -158,6 +216,7 @@ export function DispenseWizard() {
       setMedicamentoSelecionado(null);
       setSearchMedicamento("");
       setQtSolicitada(1);
+      setPrescriptionItemId(null);
     }
   }
 
@@ -239,6 +298,50 @@ export function DispenseWizard() {
       {passo === 1 && (
         <Card>
           <CardContent className="space-y-3 pt-6">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label>Prescrição eletrônica</Label>
+                <Select
+                  value={prescriptionId ?? "unlinked"}
+                  onValueChange={(value) => {
+                    setPrescriptionId(value === "unlinked" ? null : value);
+                    setPrescriptionItemId(null);
+                  }}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unlinked">Dispensação não vinculada</SelectItem>
+                    {prescriptions.map((entry) => (
+                      <SelectItem key={entry.id} value={entry.id}>
+                        Receita {entry.id.slice(0, 8)} · {entry.status}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {selectedPrescription && (
+                <div className="space-y-1">
+                  <Label>Linha prescrita</Label>
+                  <Select value={prescriptionItemId ?? ""} onValueChange={setPrescriptionItemId}>
+                    <SelectTrigger><SelectValue placeholder="Selecione o item" /></SelectTrigger>
+                    <SelectContent>
+                      {selectedPrescription.items
+                        .filter((entry) => entry.item_type === "medication")
+                        .map((entry) => {
+                          const remaining = entry.dispensable_quantity == null
+                            ? 0
+                            : entry.dispensable_quantity - (dispensedByItem[entry.id] ?? 0);
+                          return (
+                            <SelectItem key={entry.id} value={entry.id} disabled={remaining <= 0}>
+                              {entry.medication_name} · saldo {remaining}
+                            </SelectItem>
+                          );
+                        })}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
             <div>
               <Label htmlFor="search-paciente">Buscar paciente</Label>
               <div className="relative">
@@ -375,6 +478,7 @@ export function DispenseWizard() {
                       min={1}
                       value={qtSolicitada}
                       onChange={(e) => setQtSolicitada(Number(e.target.value))}
+                      max={selectedRemaining ?? undefined}
                     />
                   </div>
                   <Button onClick={adicionarItem}>

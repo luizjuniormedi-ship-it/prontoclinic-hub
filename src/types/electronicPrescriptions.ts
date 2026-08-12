@@ -26,6 +26,7 @@ export interface ElectronicPrescriptionItem {
   prescription_id: string;
   item_type: PrescriptionItemType;
   medication_id: number | null;
+  dispensable_quantity: number | null;
   medication_name: string;
   active_ingredient: string | null;
   concentration: string | null;
@@ -141,6 +142,7 @@ export interface ElectronicPrescriptionDraftInput {
 export interface ElectronicPrescriptionItemInput {
   itemType: PrescriptionItemType;
   medicationId?: number | null;
+  dispensableQuantity?: number | null;
   medicationName: string;
   activeIngredient?: string | null;
   concentration?: string | null;

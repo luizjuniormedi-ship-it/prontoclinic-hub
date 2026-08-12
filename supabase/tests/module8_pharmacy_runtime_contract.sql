@@ -74,7 +74,7 @@ BEGIN
      OR NOT has_table_privilege('prontomedic_rpc_owner', 'public.appointments', 'SELECT')
      OR NOT has_table_privilege('prontomedic_rpc_owner', 'public.lotes', 'SELECT,UPDATE')
      OR NOT has_table_privilege('prontomedic_rpc_owner', 'public.dispensacoes', 'SELECT,INSERT')
-     OR NOT has_table_privilege('prontomedic_rpc_owner', 'public.dispensacao_itens', 'INSERT')
+     OR NOT has_table_privilege('prontomedic_rpc_owner', 'public.dispensacao_itens', 'SELECT,INSERT')
      OR NOT has_table_privilege('prontomedic_rpc_owner', 'public.movimentacoes_estoque', 'INSERT')
   THEN
     RAISE EXCEPTION 'M8 contract: secure RPC owner lacks minimum object privileges';
@@ -88,6 +88,33 @@ BEGIN
       AND indexdef ILIKE '%company_id, operation_id%'
   ) THEN
     RAISE EXCEPTION 'M8 contract: tenant idempotency index missing';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'electronic_prescription_items'
+      AND column_name = 'dispensable_quantity'
+      AND data_type = 'integer'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'dispensacao_itens'
+      AND column_name = 'electronic_prescription_item_id'
+      AND data_type = 'uuid'
+  ) THEN
+    RAISE EXCEPTION 'M8 contract: prescribed quantity or item correlation missing';
+  END IF;
+
+  IF POSITION('FOR UPDATE' IN pg_get_functiondef(
+       'public.dispensar_estoque_atomic(uuid,bigint,bigint,bigint,uuid,text,jsonb)'::regprocedure
+     )) = 0
+     OR POSITION('v_already_dispensed + v_quantity > v_prescription_item.dispensable_quantity'
+       IN pg_get_functiondef(
+         'public.dispensar_estoque_atomic(uuid,bigint,bigint,bigint,uuid,text,jsonb)'::regprocedure
+       )) = 0
+  THEN
+    RAISE EXCEPTION 'M8 contract: atomic prescribed-balance guard missing';
   END IF;
 END;
 $contract$;

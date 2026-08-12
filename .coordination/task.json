@@ -4,10 +4,14 @@
   "baseCommit": "330f06ac61543841e9440138b1b8d985f3b003d9",
   "paths": [
     "e2e/pharmacy.spec.ts",
+    "src/components/prescriptions/m20/PrescriptionEditor.tsx",
     "src/components/pharmacy/DispenseWizard.tsx",
     "src/components/pharmacy/PharmacyManager.tsx",
     "src/services/__tests__/pharmacyService.test.ts",
+    "src/services/__tests__/electronicPrescriptionService.test.ts",
+    "src/services/electronicPrescriptionService.ts",
     "src/services/pharmacyService.ts",
+    "src/types/electronicPrescriptions.ts",
     "supabase/migrations",
     "supabase/tests"
   ],
@@ -17,6 +21,7 @@
     "e2e/fixtures/auth.ts",
     "local-auth-server.mjs",
     "scripts/seed-e2e-users.sql",
+    "src/components/billing/__tests__/TissNumericDisplay.test.tsx",
     "src/services/__tests__/localAuthSecurity.test.ts"
   ],
   "status": "active"

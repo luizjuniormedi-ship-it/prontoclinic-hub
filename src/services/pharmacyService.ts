@@ -110,6 +110,7 @@ export const loteSchema = z.object({
 
 export const dispensacaoItemSchema = z.object({
   cd_lote: z.number().int().positive(),
+  electronic_prescription_item_id: z.string().uuid().optional().nullable(),
   qt_dispensada: z.number().int().positive("Quantidade deve ser positiva"),
   vl_unitario: z.number().nonnegative().optional().nullable(),
 });

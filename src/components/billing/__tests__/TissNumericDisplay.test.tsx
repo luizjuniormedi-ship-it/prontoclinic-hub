@@ -236,9 +236,9 @@ describe("TISS numeric display guards", () => {
       <TissStats companyId="company-1" ano={2026} />,
     );
 
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      "Nenhum indicador TISS disponível para 2026",
-    );
+    expect(
+      await screen.findByText("Nenhum indicador TISS disponível para 2026."),
+    ).toHaveAttribute("role", "status");
   });
 
   it("não renderiza NaN nas linhas de guias com payload numérico inconsistente", async () => {

@@ -52,6 +52,8 @@ interface PrescriptionEditorProps {
 const EMPTY_ITEM: ElectronicPrescriptionItemInput = {
   itemType: "medication",
   medicationName: "",
+  medicationId: null,
+  dispensableQuantity: null,
   activeIngredient: "",
   dose: null,
   doseUnit: "",
@@ -244,6 +246,7 @@ export function PrescriptionEditor({
                 <TableHead>Item</TableHead>
                 <TableHead>Esquema</TableHead>
                 <TableHead>Duração</TableHead>
+                <TableHead>Qtd. dispensável</TableHead>
                 <TableHead className="w-12"><span className="sr-only">Ações</span></TableHead>
               </TableRow>
             </TableHeader>
@@ -262,6 +265,7 @@ export function PrescriptionEditor({
                       : entry.instructions || "Sem instrução adicional"}
                   </TableCell>
                   <TableCell>{entry.duration_days ? `${entry.duration_days} dias` : "Conforme plano"}</TableCell>
+                  <TableCell>{entry.dispensable_quantity ?? "—"}</TableCell>
                   <TableCell>
                     {canEditItems && (
                       <Button
@@ -324,6 +328,33 @@ export function PrescriptionEditor({
               </div>
               {item.itemType === "medication" && (
                 <>
+                  <div className="space-y-1">
+                    <Label htmlFor="m20-medication-id">Código do medicamento</Label>
+                    <Input
+                      id="m20-medication-id"
+                      type="number"
+                      min="1"
+                      value={item.medicationId ?? ""}
+                      onChange={(event) => setItem({
+                        ...item,
+                        medicationId: event.target.value ? Number(event.target.value) : null,
+                      })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="m20-dispensable-quantity">Quantidade dispensável</Label>
+                    <Input
+                      id="m20-dispensable-quantity"
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={item.dispensableQuantity ?? ""}
+                      onChange={(event) => setItem({
+                        ...item,
+                        dispensableQuantity: event.target.value ? Number(event.target.value) : null,
+                      })}
+                    />
+                  </div>
                   <div className="space-y-1">
                     <Label htmlFor="m20-dose">Dose</Label>
                     <Input

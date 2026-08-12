@@ -322,6 +322,19 @@ describe("dispensacoesService — create (validação de itens)", () => {
     });
   });
 
+  it("aceita vínculo explícito com a linha da prescrição eletrônica", () => {
+    expect(dispensacaoSchema.parse({
+      operation_id: crypto.randomUUID(),
+      cd_paciente: 1,
+      electronic_prescription_id: crypto.randomUUID(),
+      itens: [{
+        cd_lote: 1,
+        qt_dispensada: 2,
+        electronic_prescription_item_id: crypto.randomUUID(),
+      }],
+    }).itens[0].electronic_prescription_item_id).toBeTruthy();
+  });
+
   it("propaga falha atômica sem tentar rollback no cliente", async () => {
     (supabase.rpc as any).mockResolvedValue({
       data: null,
