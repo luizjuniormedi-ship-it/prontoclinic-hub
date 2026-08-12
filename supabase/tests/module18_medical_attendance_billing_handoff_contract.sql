@@ -6,6 +6,14 @@ BEGIN
   IF pg_get_functiondef('public.m17_company_id()'::regprocedure) !~ 'current_company_id\(\)' THEN
     RAISE EXCEPTION 'm17_company_id não delega à sessão canônica';
   END IF;
+  IF pg_get_functiondef('public.m18_finalize_appointment_with_billing_secure(bigint,jsonb,text)'::regprocedure)
+       !~ 'app\.reception\.appointment_id'
+     OR pg_get_functiondef('public.m18_finalize_appointment_with_billing_secure(bigint,jsonb,text)'::regprocedure)
+       !~ 'app\.reception\.company_id'
+     OR pg_get_functiondef('public.m18_finalize_appointment_with_billing_secure(bigint,jsonb,text)'::regprocedure)
+       !~ 'app\.reception\.unit_id' THEN
+    RAISE EXCEPTION 'handoff M18 não prepara a capacidade transacional do faturamento';
+  END IF;
   IF to_regprocedure('public.m18_finalize_appointment_with_billing_secure(bigint,jsonb,text)') IS NULL THEN
     RAISE EXCEPTION 'handoff clínico-financeiro M18 ausente';
   END IF;
