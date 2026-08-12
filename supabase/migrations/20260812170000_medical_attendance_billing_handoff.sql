@@ -12,7 +12,6 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_company UUID := public.m17_company_id();
-  v_appointment public.appointments;
   v_encounter public.encounters;
   v_billing JSONB;
 BEGIN
@@ -21,16 +20,10 @@ BEGIN
   END IF;
 
   PERFORM pg_advisory_xact_lock(hashtextextended(v_company::TEXT || ':' || p_appointment_id::TEXT, 0));
-  SELECT * INTO v_appointment
-    FROM public.appointments
-   WHERE id = p_appointment_id AND company_id = v_company
-   FOR UPDATE;
-  IF NOT FOUND THEN RAISE EXCEPTION 'Agendamento não encontrado'; END IF;
-
   v_encounter := public.m18_open_attendance_secure(
     p_appointment_id,
-    v_appointment.unit_id,
-    v_appointment.professional_id
+    NULL,
+    NULL
   );
   v_encounter := public.m18_complete_attendance_secure(v_encounter.id, p_payload, p_disposition);
 
