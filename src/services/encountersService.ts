@@ -6,6 +6,7 @@
  * Regras (bloqueio pós-assinatura, status_history, log de acesso) por trigger no Postgres.
  */
 import { supabase } from "@/lib/supabase";
+import { medicalAttendanceService, type MedicalAttendancePayload } from "@/services/medicalAttendanceService";
 
 export type EncounterStatus =
   | "agendado" | "checkin_realizado" | "aguardando_triagem" | "em_triagem" | "triagem_concluida"
@@ -23,6 +24,9 @@ export interface Encounter {
   priority: string;
   chief_complaint: string | null;
   summary: string | null;
+  anamnesis?: string | null;
+  physical_exam?: string | null;
+  conduct?: string | null;
   signed_by_name: string | null;
   signed_at: string | null;
   started_at: string | null;
@@ -68,21 +72,27 @@ export const encountersService = {
   },
 
   async create(input: Partial<Encounter>): Promise<Encounter> {
-    const { data, error } = await supabase.from("encounters").insert({ status: "em_atendimento", ...input }).select().single();
-    if (error) throw new Error(error.message);
-    return data as unknown as Encounter;
+    if (!input.appointment_id) throw new Error("Agendamento obrigatório para abrir atendimento");
+    return medicalAttendanceService.open(
+      input.appointment_id,
+      undefined,
+      input.professional_id,
+    ) as unknown as Encounter;
   },
 
   async update(id: string, updates: Partial<Encounter>): Promise<void> {
-    const { error } = await supabase.from("encounters").update(updates).eq("id", id);
-    if (error) throw new Error(error.message);
+    const payload: MedicalAttendancePayload = {};
+    if (updates.chief_complaint !== undefined) payload.chief_complaint = updates.chief_complaint ?? "";
+    if (updates.anamnesis !== undefined) payload.anamnesis = updates.anamnesis ?? "";
+    if (updates.physical_exam !== undefined) payload.physical_exam = updates.physical_exam ?? "";
+    if (updates.conduct !== undefined || updates.summary !== undefined) {
+      payload.conduct = updates.conduct ?? updates.summary ?? "";
+    }
+    await medicalAttendanceService.save(id, payload);
   },
 
-  async sign(id: string, signerName: string): Promise<void> {
-    const { error } = await supabase.from("encounters").update({
-      status: "assinado", signed_by_name: signerName, signed_at: new Date().toISOString(),
-    }).eq("id", id);
-    if (error) throw new Error(error.message);
+  async sign(id: string, _signerName: string): Promise<void> {
+    await medicalAttendanceService.finalize(id);
   },
 
   // ── Diagnósticos ──
