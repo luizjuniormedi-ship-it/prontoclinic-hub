@@ -78,28 +78,23 @@ export default function AttendancePage() {
       if (vitalSigns.oxygenSaturation) vs.oxygenSaturation = Number(vitalSigns.oxygenSaturation);
 
       const anamnesis = [
-        chiefComplaint && `**Queixa Principal:** ${chiefComplaint}`,
         hda && `**HDA:** ${hda}`,
         personalHistory && `**Antecedentes Pessoais:** ${personalHistory}`,
         familyHistory && `**Antecedentes Familiares:** ${familyHistory}`,
         medications && `**Medicamentos em Uso:** ${medications}`,
       ].filter(Boolean).join("\n\n");
 
-      const evolution = [
-        physicalExam && `**Exame Físico:** ${physicalExam}`,
-        diagnosis && `**Hipótese Diagnóstica:** ${diagnosis}`,
-        cid && `**CID:** ${cid}`,
-        conduct && `**Conduta:** ${conduct}`,
-        prescription && `**Prescrição:** ${prescription}`,
-        examRequests && `**Solicitação de Exames:** ${examRequests}`,
-        returnNotes && `**Retorno:** ${returnNotes}`,
-      ].filter(Boolean).join("\n\n");
-
       await medicalRecordsService.finalizeAttendance({
         appointment_id: String(appointment.id),
+        chief_complaint: chiefComplaint || undefined,
         anamnesis: anamnesis || undefined,
-        evolution: evolution || undefined,
+        physical_exam: physicalExam || undefined,
         vital_signs: Object.keys(vs).length > 0 ? vs : undefined,
+        diagnoses: diagnosis || cid ? [{ description: diagnosis || undefined, code: cid || undefined }] : undefined,
+        conduct: conduct || undefined,
+        prescriptions: prescription ? [{ text: prescription }] : undefined,
+        exams: examRequests ? [{ text: examRequests }] : undefined,
+        return_plan: returnNotes || undefined,
       });
 
       toast({ title: "Atendimento salvo e finalizado!" });
