@@ -27,6 +27,7 @@ contracts=(
   '20260811210000|dicom_worklist_rls_hardening|20260811120000|forward_only|dicom-hardening'
   '20260812021457|pharmacy_runtime_closure|20260811210000|preserve_schema|pharmacy'
   '20260812150000|medical_attendance_atomic_completion|20260812021457|preserve_schema|medical-attendance'
+  '20260812170000|medical_attendance_billing_handoff|20260812150000|preserve_schema|clinical-billing'
 )
 
 cleanup() {
@@ -94,11 +95,12 @@ NODE
 done
 
 bash deploy/database/deploy-migration.sh rollback
+test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260812170000'" -d "$database")" = 1
 test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260812150000'" -d "$database")" = 1
 test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260812021457'" -d "$database")" = 1
 test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260811210000'" -d "$database")" = 1
 # shellcheck disable=SC1090
 . "$root/state/last-deploy.env"
-test "$MIGRATION_VERSION" = 20260812021457
+test "$MIGRATION_VERSION" = 20260812150000
 bash deploy/database/deploy-migration.test.sh
 echo "DATABASE_DEPLOY_INTEGRATION_PASS"
