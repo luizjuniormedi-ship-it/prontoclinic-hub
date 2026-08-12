@@ -1,5 +1,11 @@
 DO $$
 BEGIN
+  IF pg_get_functiondef('public.m17_company_id()'::regprocedure) ~ 'request\.jwt\.claim\.company_id' THEN
+    RAISE EXCEPTION 'm17_company_id ainda confia no claim legado de empresa';
+  END IF;
+  IF pg_get_functiondef('public.m17_company_id()'::regprocedure) !~ 'current_company_id\(\)' THEN
+    RAISE EXCEPTION 'm17_company_id não delega à sessão canônica';
+  END IF;
   IF to_regprocedure('public.m18_finalize_appointment_with_billing_secure(bigint,jsonb,text)') IS NULL THEN
     RAISE EXCEPTION 'handoff clínico-financeiro M18 ausente';
   END IF;

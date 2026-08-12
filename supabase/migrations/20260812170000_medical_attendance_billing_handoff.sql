@@ -1,5 +1,15 @@
 BEGIN;
 
+CREATE OR REPLACE FUNCTION public.m17_company_id()
+RETURNS UUID
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+  SELECT public.current_company_id();
+$$;
+
 CREATE OR REPLACE FUNCTION public.m18_finalize_appointment_with_billing_secure(
   p_appointment_id BIGINT,
   p_payload JSONB,
@@ -19,7 +29,6 @@ BEGIN
     RAISE EXCEPTION 'Contexto clínico inválido para finalizar atendimento';
   END IF;
 
-  PERFORM set_config('request.jwt.claim.company_id', v_company::TEXT, TRUE);
   PERFORM pg_advisory_xact_lock(hashtextextended(v_company::TEXT || ':' || p_appointment_id::TEXT, 0));
   v_encounter := public.m18_open_attendance_secure(
     p_appointment_id,
