@@ -11,7 +11,7 @@ SECURITY INVOKER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  v_company UUID := public.m17_company_id();
+  v_company UUID := public.current_company_id();
   v_encounter public.encounters;
   v_billing JSONB;
 BEGIN
@@ -19,6 +19,7 @@ BEGIN
     RAISE EXCEPTION 'Contexto clínico inválido para finalizar atendimento';
   END IF;
 
+  PERFORM set_config('request.jwt.claim.company_id', v_company::TEXT, TRUE);
   PERFORM pg_advisory_xact_lock(hashtextextended(v_company::TEXT || ':' || p_appointment_id::TEXT, 0));
   v_encounter := public.m18_open_attendance_secure(
     p_appointment_id,
