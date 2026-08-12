@@ -7,6 +7,8 @@ readonly state_root="${PRONTOMEDIC_DB_STATE_ROOT:-/var/lib/prontomedic/database-
 readonly global_lock="${PRONTOMEDIC_GLOBAL_DEPLOY_LOCK:-/var/lock/prontomedic-deploy.lock}"
 migration_version=""
 migration_name=""
+predecessor_version=""
+rollback_mode=""
 
 die() { printf 'PRONTOMEDIC_DB_DEPLOY_ERROR: %s\n' "$*" >&2; exit 1; }
 log() { printf 'PRONTOMEDIC_DB_DEPLOY: %s\n' "$*"; }
@@ -59,8 +61,8 @@ safe_database_contract() {
 }
 
 history_contract() {
-  local result
-  result="$(psql_db "$database" -Atqc "
+  local target="${1:-$database}" result
+  result="$(psql_db "$target" -Atqc "
     SELECT CASE
       WHEN to_regclass('supabase_migrations.schema_migrations') IS NULL THEN 'missing'
       WHEN (SELECT count(*) FROM information_schema.columns
@@ -73,14 +75,28 @@ history_contract() {
 }
 
 history_absent() {
-  [[ "$(history_contract)" = missing ]] && return 0
-  [[ "$(psql_db "$database" -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '$migration_version'")" = 0 ]] \
+  local target="${1:-$database}"
+  [[ "$(history_contract "$target")" = missing ]] && return 0
+  [[ "$(psql_db "$target" -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '$migration_version'")" = 0 ]] \
     || die "migration $migration_version ja registrada"
 }
 
 history_present() {
-  [[ "$(history_contract)" = ready ]] && \
-    [[ "$(psql_db "$database" -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '$migration_version'")" = 1 ]]
+  local target="${1:-$database}"
+  [[ "$(history_contract "$target")" = ready ]] && \
+    [[ "$(psql_db "$target" -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '$migration_version'")" = 1 ]]
+}
+
+history_version_present() {
+  local target="$1" version="$2"
+  [[ "$(history_contract "$target")" = ready ]] &&
+    [[ "$(psql_db "$target" -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '$version'")" = 1 ]]
+}
+
+require_predecessor() {
+  local target="${1:-$database}"
+  history_version_present "$target" "$predecessor_version" \
+    || die "migration predecessora ausente: $predecessor_version"
 }
 
 ensure_history() {
@@ -122,9 +138,11 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const [stage, sha] = process.argv.slice(2);
 const manifest = JSON.parse(fs.readFileSync(path.join(stage, 'manifest.json'), 'utf8'));
-if (manifest.schemaVersion !== 1 || manifest.commitSha !== sha ||
+if (manifest.schemaVersion !== 2 || manifest.commitSha !== sha ||
     !/^\d{14}$/.test(manifest.migrationVersion) ||
-    !/^[a-z0-9_]+$/.test(manifest.migrationName)) process.exit(2);
+    !/^[a-z0-9_]+$/.test(manifest.migrationName) ||
+    !/^\d{14}$/.test(manifest.predecessorVersion) ||
+    !['inverse', 'forward_only', 'preserve_schema'].includes(manifest.rollbackMode)) process.exit(2);
 const expected = [
   'migration.sql', 'rollback.sql', 'smoke-before.sql',
   'smoke-applied.sql', 'smoke-rollback.sql'
@@ -140,12 +158,17 @@ NODE
 
 load_manifest_contract() {
   local stage="$1"
-  IFS=$'\t' read -r migration_version migration_name < <(
-    node -e "const m=require(process.argv[1]); process.stdout.write(m.migrationVersion+'\\t'+m.migrationName+'\\n')" \
+  IFS=$'\t' read -r migration_version migration_name predecessor_version rollback_mode < <(
+    node -e "const m=require(process.argv[1]); process.stdout.write([m.migrationVersion,m.migrationName,m.predecessorVersion,m.rollbackMode].join('\\t')+'\\n')" \
       "$stage/manifest.json"
   )
-  case "${migration_version}:${migration_name}" in
-    20260804033225:secure_companies_units_admin_contract|20260804143000:rbac_active_context_aal2|20260805123000:auth_admin_suspension_invariants) ;;
+  case "${migration_version}:${migration_name}:${predecessor_version}:${rollback_mode}" in
+    20260804033225:secure_companies_units_admin_contract:20260802183000:inverse|\
+    20260804143000:rbac_active_context_aal2:20260804033225:inverse|\
+    20260805123000:auth_admin_suspension_invariants:20260804143000:inverse|\
+    20260811120000:reception_worklist_handoff:20260805123000:inverse|\
+    20260811210000:dicom_worklist_rls_hardening:20260811120000:forward_only|\
+    20260812021457:pharmacy_runtime_closure:20260811210000:preserve_schema) ;;
     *) die 'migration fora da allowlist do coordenador' ;;
   esac
 }
@@ -187,15 +210,32 @@ write_attestation() {
 }
 
 write_deploy_state() {
-  local file="$1" sha="$2" bundle_copy="$3" backup="$4"
+  local file="$1" sha="$2" bundle_copy="$3" backup="$4" state_record="$5"
   umask 077
   {
     printf 'COMMIT_SHA=%q\n' "$sha"
     printf 'BUNDLE_COPY=%q\n' "$bundle_copy"
     printf 'DATABASE_BACKUP=%q\n' "$backup"
     printf 'MIGRATION_VERSION=%q\n' "$migration_version"
+    printf 'STATE_RECORD=%q\n' "$state_record"
   } >"${file}.next"
   mv -f "${file}.next" "$file"
+}
+
+promote_previous_state() {
+  local last_state="$state_root/last-deploy.env" candidate selected=''
+  rm -f "$last_state"
+  for candidate in "$state_root"/deploy-*.env; do
+    [[ -f "$candidate" && ! -L "$candidate" ]] || continue
+    if [[ -z "$selected" || "$candidate" > "$selected" ]]; then
+      selected="$candidate"
+    fi
+  done
+  if [[ -n "$selected" ]]; then
+    cp -- "$selected" "${last_state}.next"
+    mv -f "${last_state}.next" "$last_state"
+    chmod 600 "$last_state"
+  fi
 }
 
 backup_and_rehearse() {
@@ -221,11 +261,18 @@ backup_and_rehearse() {
     restore_created=1
     host_postgres pg_restore --exit-on-error -d "$restore_db" <"$backup" >/dev/null
     run_smoke "$restore_db" "$stage/smoke-before.sql"
+    require_predecessor "$restore_db"
     ensure_history "$restore_db"
     psql_db "$restore_db" -f "$stage/migration.sql" >/dev/null
+    insert_history "$restore_db" "$(sha256sum "$stage/migration.sql" | cut -d' ' -f1)"
     run_smoke "$restore_db" "$stage/smoke-applied.sql"
     psql_db "$restore_db" -f "$stage/rollback.sql" >/dev/null
     run_smoke "$restore_db" "$stage/smoke-rollback.sql"
+    if [[ "$rollback_mode" = inverse ]]; then
+      history_absent "$restore_db"
+    else
+      history_present "$restore_db" || die "rollback $rollback_mode removeu o ledger indevidamente"
+    fi
   )
   log "RESTORE_REHEARSAL_OK sha=$sha backup=$backup"
 }
@@ -241,6 +288,14 @@ audit() {
   log "AUDIT_OK database=$database history=$(history_contract)"
 }
 
+prepare_private_dirs() {
+  if [[ "${PRONTOMEDIC_DB_TEST_MODE:-0}" = 1 ]]; then
+    mkdir -p "$backup_root" "$state_root"
+  else
+    install -d -m 0700 "$backup_root" "$state_root"
+  fi
+}
+
 preflight() {
   local sha="$1" bundle="$2" checksum="$3"
   local stage timestamp backup bundle_hash attestation
@@ -253,9 +308,10 @@ preflight() {
   extract_bundle "$bundle" "$stage/release"
   validate_bundle "$stage/release" "$sha"
   history_absent
+  require_predecessor
   run_smoke "$database" "$stage/release/smoke-before.sql"
 
-  install -d -m 0700 "$backup_root" "$state_root"
+  prepare_private_dirs
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
   backup="$backup_root/prontoclinic-before-${migration_version}-${sha}-${timestamp}.dump"
   bundle_hash="$(sha256sum "$bundle" | cut -d' ' -f1)"
@@ -269,23 +325,28 @@ preflight() {
 }
 
 insert_history() {
-  local checksum="$1"
-  psql_db "$database" -c "
+  local target="$1" checksum="$2"
+  psql_db "$target" -c "
     INSERT INTO supabase_migrations.schema_migrations(version, name, statements)
     VALUES ('$migration_version', '$migration_name', ARRAY['sha256:$checksum'])
     ON CONFLICT (version) DO NOTHING" >/dev/null
-  history_present || die 'nao foi possivel registrar historico da migration'
+  history_present "$target" || die 'nao foi possivel registrar historico da migration'
 }
 
 apply_rollback() {
   local stage="$1"
   psql_db "$database" -f "$stage/rollback.sql" >/dev/null
   run_smoke "$database" "$stage/smoke-rollback.sql"
+  if [[ "$rollback_mode" = inverse ]]; then
+    history_absent
+  else
+    history_present || die "rollback $rollback_mode removeu o ledger indevidamente"
+  fi
 }
 
 deploy() {
   local sha="$1" bundle="$2" checksum="$3"
-  local stage attestation bundle_hash backup created bundle_copy state
+  local stage attestation bundle_hash backup created bundle_copy state state_record
   audit
   verify_checksum "$bundle" "$checksum"
   stage="$(mktemp -d)"
@@ -303,10 +364,11 @@ deploy() {
   [[ -s "$DATABASE_BACKUP" ]] || die 'backup atestado ausente'
   host_postgres pg_restore --list <"$DATABASE_BACKUP" >/dev/null || die 'backup atestado invalido'
 
-  install -d -m 0700 "$backup_root" "$state_root"
+  prepare_private_dirs
   exec 9>"$global_lock"
   flock -n 9 || die 'outro deploy ProntoMedic esta em andamento'
   history_absent
+  require_predecessor
 
   run_smoke "$database" "$stage/release/smoke-before.sql"
 
@@ -315,7 +377,11 @@ deploy() {
   mv -f "${bundle_copy}.next" "$bundle_copy"
   chmod 600 "$bundle_copy"
   state="$state_root/last-deploy.env"
-  write_deploy_state "$state" "$sha" "$bundle_copy" "$DATABASE_BACKUP"
+  state_record="$state_root/deploy-${migration_version}-${sha}.env"
+  write_deploy_state "$state_record" "$sha" "$bundle_copy" "$DATABASE_BACKUP" "$state_record"
+  cp -- "$state_record" "${state}.next"
+  mv -f "${state}.next" "$state"
+  chmod 600 "$state_record"
   chmod 600 "$state"
 
   created=0
@@ -329,7 +395,8 @@ deploy() {
     else
       rollback_status=0
     fi
-    mv -f "$state" "$state_root/last-deploy.failed-$(date -u +%Y%m%dT%H%M%SZ).env" 2>/dev/null || true
+    mv -f "$state_record" "$state_root/deploy-${migration_version}-${sha}.failed-$(date -u +%Y%m%dT%H%M%SZ).archive" 2>/dev/null || true
+    promote_previous_state
     printf 'PRONTOMEDIC_DB_DEPLOY_ROLLED_BACK status=%s rollback_status=%s backup=%s\n' \
       "$status" "$rollback_status" "$DATABASE_BACKUP" >&2
     [[ "$rollback_status" = 0 ]] || exit 70
@@ -340,7 +407,7 @@ deploy() {
   ensure_history "$database"
   psql_db "$database" -f "$stage/release/migration.sql" >/dev/null
   created=1
-  insert_history "$(sha256sum "$stage/release/migration.sql" | cut -d' ' -f1)"
+  insert_history "$database" "$(sha256sum "$stage/release/migration.sql" | cut -d' ' -f1)"
   run_smoke "$database" "$stage/release/smoke-applied.sql"
 
   trap - ERR
@@ -367,7 +434,11 @@ rollback() {
   validate_bundle "$stage/release" "$COMMIT_SHA"
   [[ "$MIGRATION_VERSION" = "$migration_version" ]] || die 'estado de rollback incompativel'
   apply_rollback "$stage/release"
+  [[ "$STATE_RECORD" = "$state_root"/deploy-*.env && -f "$STATE_RECORD" && ! -L "$STATE_RECORD" ]] \
+    || die 'registro imutavel de rollback invalido'
+  mv -f "$STATE_RECORD" "$state_root/deploy-${migration_version}-${COMMIT_SHA}.rolled-back-$(date -u +%Y%m%dT%H%M%SZ).archive"
   mv -f "$state" "$state_root/last-deploy.rolled-back-$(date -u +%Y%m%dT%H%M%SZ).env"
+  promote_previous_state
   log "ROLLBACK_OK migration=$migration_version backup=$DATABASE_BACKUP"
   rm -rf -- "$stage"
   trap - EXIT

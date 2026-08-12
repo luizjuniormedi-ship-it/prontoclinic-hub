@@ -96,4 +96,7 @@ GRANT EXECUTE ON FUNCTION public.prepare_user_access_active(UUID, UUID, BOOLEAN)
 GRANT EXECUTE ON FUNCTION public.set_user_access_active(UUID, UUID, BOOLEAN)
   TO service_role;
 
+DELETE FROM supabase_migrations.schema_migrations
+WHERE version = '20260805123000';
+
 COMMIT;

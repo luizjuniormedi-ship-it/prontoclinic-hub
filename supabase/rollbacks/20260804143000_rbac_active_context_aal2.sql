@@ -40,4 +40,7 @@ GRANT EXECUTE ON FUNCTION private.is_module_admin() TO authenticated;
 COMMENT ON FUNCTION private.is_module_admin() IS
   'True only for an active AAL2 application context with an administrative role in the active company.';
 
+DELETE FROM supabase_migrations.schema_migrations
+WHERE version = '20260804143000';
+
 COMMIT;

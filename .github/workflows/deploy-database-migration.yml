@@ -20,6 +20,9 @@ on:
           - "20260804033225"
           - "20260804143000"
           - "20260805123000"
+          - "20260811120000"
+          - "20260811210000"
+          - "20260812021457"
 
 concurrency:
   group: prontomedic-production-deploy
@@ -63,9 +66,12 @@ jobs:
           set -Eeuo pipefail
           version='${{ inputs.migration_version }}'
           case "$version" in
-            20260804033225) name=secure_companies_units_admin_contract ;;
-            20260804143000) name=rbac_active_context_aal2 ;;
-            20260805123000) name=auth_admin_suspension_invariants ;;
+            20260804033225) name=secure_companies_units_admin_contract; predecessor=20260802183000; rollback_mode=inverse ;;
+            20260804143000) name=rbac_active_context_aal2; predecessor=20260804033225; rollback_mode=inverse ;;
+            20260805123000) name=auth_admin_suspension_invariants; predecessor=20260804143000; rollback_mode=inverse ;;
+            20260811120000) name=reception_worklist_handoff; predecessor=20260805123000; rollback_mode=inverse ;;
+            20260811210000) name=dicom_worklist_rls_hardening; predecessor=20260811120000; rollback_mode=forward_only ;;
+            20260812021457) name=pharmacy_runtime_closure; predecessor=20260811210000; rollback_mode=preserve_schema ;;
             *) echo '::error::migration nao autorizada'; exit 1 ;;
           esac
           stage="release/stage"
@@ -75,6 +81,9 @@ jobs:
           case "$version" in
             20260804143000) smoke_prefix=deploy/database/rbac ;;
             20260805123000) smoke_prefix=deploy/database/auth-admin ;;
+            20260811120000) smoke_prefix=deploy/database/worklist-handoff ;;
+            20260811210000) smoke_prefix=deploy/database/dicom-hardening ;;
+            20260812021457) smoke_prefix=deploy/database/pharmacy ;;
             *) smoke_prefix=deploy/database/smoke ;;
           esac
           cp "${smoke_prefix}-before.sql" "$stage/smoke-before.sql"
@@ -82,17 +91,18 @@ jobs:
           cp "${smoke_prefix}-rollback.sql" "$stage/smoke-rollback.sql"
           cp deploy/database/deploy-migration.sh release/bootstrap-root/deploy/database/
           bash -n release/bootstrap-root/deploy/database/deploy-migration.sh
-          node - "$stage" "$COMMIT_SHA" "$version" "$name" <<'NODE'
+          node - "$stage" "$COMMIT_SHA" "$version" "$name" "$predecessor" "$rollback_mode" <<'NODE'
           const fs = require('node:fs');
           const path = require('node:path');
           const crypto = require('node:crypto');
-          const [stage, commitSha, migrationVersion, migrationName] = process.argv.slice(2);
+          const [stage, commitSha, migrationVersion, migrationName, predecessorVersion, rollbackMode] = process.argv.slice(2);
           const files = {};
           for (const file of ['migration.sql', 'rollback.sql', 'smoke-before.sql', 'smoke-applied.sql', 'smoke-rollback.sql']) {
             files[file] = crypto.createHash('sha256').update(fs.readFileSync(path.join(stage, file))).digest('hex');
           }
           fs.writeFileSync(path.join(stage, 'manifest.json'), JSON.stringify({
-            schemaVersion: 1, commitSha, migrationVersion, migrationName, files
+            schemaVersion: 2, commitSha, migrationVersion, migrationName,
+            predecessorVersion, rollbackMode, files
           }, null, 2) + '\n');
           NODE
           tar -C "$stage" -czf "release/database-${COMMIT_SHA}.tgz" .
