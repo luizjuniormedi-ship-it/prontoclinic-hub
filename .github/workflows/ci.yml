@@ -41,7 +41,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -172,54 +172,7 @@ jobs:
           PRONTOMEDIC_DB_STATE_ROOT: /tmp/prontomedic-dbdeploy/state
           PRONTOMEDIC_GLOBAL_DEPLOY_LOCK: /tmp/prontomedic-dbdeploy/global.lock
         run: |
-          set -Eeuo pipefail
-          version=20260804033225
-          name=secure_companies_units_admin_contract
-          sha="$(git rev-parse HEAD)"
-          root=/tmp/prontomedic-dbdeploy
-          stage="$root/stage"
-          bundle="$root/database-${sha}.tgz"
-          checksum="${bundle}.sha256"
-          rm -rf "$root"
-          install -d "$stage"
-          createdb "$PRONTOMEDIC_DATABASE"
-          REPLAY_STOP_BEFORE="${version}_${name}.sql" \
-            scripts/replay-migrations.sh "$PRONTOMEDIC_DATABASE"
-          psql -X -v ON_ERROR_STOP=1 -d "$PRONTOMEDIC_DATABASE" <<'SQL'
-          CREATE SCHEMA IF NOT EXISTS supabase_migrations;
-          CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (
-            version text PRIMARY KEY,
-            statements text[] NOT NULL DEFAULT '{}',
-            name text NOT NULL DEFAULT ''
-          );
-          SQL
-          cp "supabase/migrations/${version}_${name}.sql" "$stage/migration.sql"
-          cp "supabase/rollbacks/${version}_${name}.sql" "$stage/rollback.sql"
-          cp deploy/database/smoke-before.sql "$stage/smoke-before.sql"
-          cp deploy/database/smoke-applied.sql "$stage/smoke-applied.sql"
-          cp deploy/database/smoke-rollback.sql "$stage/smoke-rollback.sql"
-          node - "$stage" "$sha" "$version" "$name" <<'NODE'
-          const fs = require('node:fs');
-          const path = require('node:path');
-          const crypto = require('node:crypto');
-          const [stage, commitSha, migrationVersion, migrationName] = process.argv.slice(2);
-          const files = {};
-          for (const file of ['migration.sql', 'rollback.sql', 'smoke-before.sql', 'smoke-applied.sql', 'smoke-rollback.sql']) {
-            files[file] = crypto.createHash('sha256').update(fs.readFileSync(path.join(stage, file))).digest('hex');
-          }
-          fs.writeFileSync(path.join(stage, 'manifest.json'), JSON.stringify({
-            schemaVersion: 1, commitSha, migrationVersion, migrationName, files
-          }, null, 2) + '\n');
-          NODE
-          tar -C "$stage" -czf "$bundle" .
-          (cd "$root" && sha256sum "$(basename "$bundle")" > "$(basename "$checksum")")
-          bash deploy/database/deploy-migration.test.sh
-          bash deploy/database/deploy-migration.sh audit
-          bash deploy/database/deploy-migration.sh preflight "$sha" "$bundle" "$checksum"
-          bash deploy/database/deploy-migration.sh deploy "$sha" "$bundle" "$checksum"
-          bash deploy/database/deploy-migration.sh rollback
-          test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '$version'" -d "$PRONTOMEDIC_DATABASE")" = 0
-          dropdb "$PRONTOMEDIC_DATABASE"
+          bash deploy/database/deploy-migration.integration.sh
 
       - name: Reject unknown legacy authorization policies during upgrade
         env:
@@ -466,4 +419,3 @@ jobs:
           name: playwright-results
           path: test-results/results.json
           retention-days: 30
-

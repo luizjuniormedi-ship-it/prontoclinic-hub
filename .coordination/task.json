@@ -1,28 +1,13 @@
 {
-  "taskId": "pharmacy-runtime-closure",
-  "module": 8,
-  "baseCommit": "330f06ac61543841e9440138b1b8d985f3b003d9",
+  "taskId": "database-release-safety-20260812",
+  "module": "database-release",
+  "baseCommit": "42b16f5d0650c8755a11719bad925e55094c0f31",
   "paths": [
-    "e2e/pharmacy.spec.ts",
-    "src/components/prescriptions/m20/PrescriptionEditor.tsx",
-    "src/components/pharmacy/DispenseWizard.tsx",
-    "src/components/pharmacy/PharmacyManager.tsx",
-    "src/services/__tests__/pharmacyService.test.ts",
-    "src/services/__tests__/electronicPrescriptionService.test.ts",
-    "src/services/electronicPrescriptionService.ts",
-    "src/services/pharmacyService.ts",
-    "src/types/electronicPrescriptions.ts",
-    "supabase/migrations",
-    "supabase/tests"
-  ],
-  "sharedPaths": [
     ".github/workflows/ci.yml",
-    "deploy/auth-service/verify-contract.mjs",
-    "e2e/fixtures/auth.ts",
-    "local-auth-server.mjs",
-    "scripts/seed-e2e-users.sql",
-    "src/components/billing/__tests__/TissNumericDisplay.test.tsx",
-    "src/services/__tests__/localAuthSecurity.test.ts"
+    ".github/workflows/deploy-database-migration.yml",
+    "deploy/database",
+    "supabase/rollbacks"
   ],
+  "sharedPaths": [],
   "status": "active"
 }
