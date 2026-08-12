@@ -7,7 +7,7 @@ CREATE OR REPLACE FUNCTION public.m18_finalize_appointment_with_billing_secure(
 )
 RETURNS JSONB
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
