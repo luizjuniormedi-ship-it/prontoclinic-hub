@@ -41,7 +41,6 @@ const CallCenterPage = lazy(() => import("@/pages/CallCenterPage"));
 // Imaging / PACS / DICOM
 const WorklistPage = lazy(() => import("@/pages/WorklistPage"));
 const PACSPage = lazy(() => import("@/pages/PACSPage"));
-const BillingProductionPage = lazy(() => import("@/pages/BillingProductionPage"));
 const BillingAccountsPage = lazy(() => import("@/pages/BillingAccountsPage"));
 const ProfessionalPaymentPage = lazy(() => import("@/pages/ProfessionalPaymentPage"));
 const MasterDataPage = lazy(() => import("@/pages/MasterDataPage"));
@@ -228,7 +227,7 @@ const App = () => (
 
             {/* Financial */}
             <Route path="/financial" element={<AppLayout><ProtectedRoute path="/financial"><LazyRoute><FinancialPage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            <Route path="/billing-production" element={<AppLayout><ProtectedRoute path="/billing-production"><LazyRoute><BillingProductionPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/billing-production" element={<AppLayout><ProtectedRoute path="/billing-production"><LazyRoute><BillingAccountsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/billing-accounts" element={<AppLayout><ProtectedRoute path="/billing-accounts"><LazyRoute><BillingAccountsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/professional-payment" element={<AppLayout><ProtectedRoute path="/professional-payment"><LazyRoute><ProfessionalPaymentPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/admin/tiss" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><TissManager /></LazyRoute></ProtectedRoute></AppLayout>} />

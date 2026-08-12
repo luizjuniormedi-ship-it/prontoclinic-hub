@@ -152,6 +152,14 @@ describe("BillingAccountsPage — contrato canônico de pré-contas", () => {
     expect(mocks.toast).not.toHaveBeenCalled();
   });
 
+  it("substitui a produção legada pela mesma projeção canônica de contas", async () => {
+    renderBillingAccountsPage("/billing-production");
+
+    expect(await screen.findByText("Paciente Faturamento QA")).toBeInTheDocument();
+    expect(billingAccountsService.list).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Novo Faturamento" })).not.toBeInTheDocument();
+  });
+
   it("falha fechado quando conta e agendamento não correspondem", async () => {
     vi.mocked(billingAccountsService.getFocused).mockRejectedValue(
       new Error("Conta da recepção não localizada no contexto ativo"),
