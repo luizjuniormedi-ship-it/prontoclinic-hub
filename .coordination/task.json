@@ -1,17 +1,11 @@
 {
-  "taskId": "clinical-financial-handoff-20260812",
-  "module": "medical-attendance-billing",
-  "baseCommit": "feaeda139e8204317a9751d652418302de970d4c",
+  "taskId": "billing-tiss-materialization-20260812",
+  "module": "billing-tiss",
+  "baseCommit": "d93372101da9c0be91fd3e04a80a6e2548a221f1",
   "paths": [
-    "src/pages/AttendancePage.tsx",
-    "src/services/medicalRecordsService.ts",
-    "src/services/__tests__/medicalRecordsService.test.ts",
-    "local-auth-server.mjs",
-    "supabase/migrations/20260812170000_medical_attendance_billing_handoff.sql",
-    "supabase/tests/module18_medical_attendance_billing_handoff_contract.sql",
-    "supabase/rollbacks/20260812170000_medical_attendance_billing_handoff.sql",
-    ".github/workflows/deploy-database-migration.yml",
-    "deploy/database"
+    "src/App.tsx",
+    "src/pages/BillingProductionPage.tsx",
+    "src/pages/__tests__/BillingAccountsPage.test.tsx"
   ],
   "sharedPaths": [],
   "status": "active"
