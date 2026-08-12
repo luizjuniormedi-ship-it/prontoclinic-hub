@@ -3,10 +3,14 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import BillingAccountsPage from "@/pages/BillingAccountsPage";
 import { billingAccountsService, type BillingAccount } from "@/services/billingAccountsService";
+import { tissGuideService } from "@/services/tissGuideService";
 
 const mocks = vi.hoisted(() => ({ toast: vi.fn() }));
 
 vi.mock("@/hooks/use-toast", () => ({ toast: mocks.toast }));
+vi.mock("@/services/tissGuideService", () => ({
+  tissGuideService: { materializeAccount: vi.fn() },
+}));
 vi.mock("@/services/billingAccountsService", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/services/billingAccountsService")>();
   return {
@@ -73,6 +77,15 @@ beforeEach(() => {
     pagas: 0,
   });
   vi.mocked(billingAccountsService.review).mockResolvedValue(account.readiness);
+  vi.mocked(tissGuideService.materializeAccount).mockResolvedValue({
+    billing_account_id: account.id,
+    appointment_id: account.appointment_id!,
+    unit_id: 1,
+    guide_id: "guide-qa",
+    guide_number: 2026081201,
+    xml_id: 9001,
+    environment: "HOMOLOGACAO",
+  });
   vi.mocked(billingAccountsService.listCompetences).mockResolvedValue([
     {
       id: null,
@@ -177,6 +190,24 @@ describe("BillingAccountsPage — contrato canônico de pré-contas", () => {
     fireEvent.click(screen.getByRole("button", { name: "Revisar pendências" }));
 
     await waitFor(() => expect(billingAccountsService.review).toHaveBeenCalledWith(account));
+  });
+
+  it("materializa guia e XML somente a partir da conta pronta para envio", async () => {
+    const readyAccount: BillingAccount = { ...account, status: "pronta_envio", version: 4 };
+    vi.mocked(billingAccountsService.list).mockResolvedValue([readyAccount]);
+
+    renderBillingAccountsPage();
+    await screen.findByText("Paciente Faturamento QA");
+    fireEvent.click(screen.getByTitle("Conferir"));
+    fireEvent.click(await screen.findByRole("button", { name: "Gerar guia e XML TISS" }));
+
+    await waitFor(() => expect(tissGuideService.materializeAccount).toHaveBeenCalledWith({
+      billingAccountId: readyAccount.id,
+      expectedAccountVersion: 4,
+    }));
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Guia e XML TISS materializados",
+    }));
   });
 
   it("lista e fecha uma competência aberta pelo contrato seguro", async () => {

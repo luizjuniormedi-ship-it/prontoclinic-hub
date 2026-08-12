@@ -1,1 +1,2 @@
 *.sh text eol=lf
+vendor/tiss/040300/*.xsd -text whitespace=-blank-at-eol,-blank-at-eof,cr-at-eol

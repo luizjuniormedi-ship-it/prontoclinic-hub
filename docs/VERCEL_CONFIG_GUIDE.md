@@ -24,7 +24,7 @@ Para cada uma, clicar **"Add"** e preencher:
 | 3 | `VITE_APP_NAME` | `ProntoClinic Hub` | Production |
 | 4 | `VITE_APP_ENV` | `production` | Production |
 | 5 | `VITE_TISS_AMBIENTE` | `HOMOLOGACAO` | Production |
-| 6 | `VITE_TISS_VERSION` | `3.05.00` | Production |
+| 6 | `VITE_TISS_VERSION` | `4.03.00` | Production |
 | 7 | `VITE_DICOM_BUCKET` | `dicom` | Production |
 | 8 | `VITE_ENABLE_TELEMEDICINE` | `false` | Production |
 | 9 | `VITE_ENABLE_WHATSAPP` | `false` | Production |

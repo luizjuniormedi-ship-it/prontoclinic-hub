@@ -1,11 +1,26 @@
 {
-  "taskId": "billing-tiss-materialization-20260812",
+  "taskId": "tiss-atomic-materialization-20260812",
   "module": "billing-tiss",
-  "baseCommit": "d93372101da9c0be91fd3e04a80a6e2548a221f1",
+  "baseCommit": "c38bac7e19f2fe89f399fc14be2d784ad1bdd3db",
   "paths": [
-    "src/App.tsx",
-    "src/pages/BillingProductionPage.tsx",
-    "src/pages/__tests__/BillingAccountsPage.test.tsx"
+    ".gitattributes",
+    ".github/workflows/ci.yml",
+    "VERCEL_ENV_VARS.md",
+    "docs/VERCEL_CONFIG_GUIDE.md",
+    "docs/DEPLOY_TESTE_VS_PRODUCAO.md",
+    "vendor/tiss/040300",
+    "scripts/verify-tiss-schemas.ps1",
+    "src/components/billing/TissGuideManager.tsx",
+    "src/pages/BillingAccountsPage.tsx",
+    "src/pages/__tests__/BillingAccountsPage.test.tsx",
+    "src/services/tissGuideService.ts",
+    "src/services/__tests__/tissGuideService.test.ts",
+    "src/services/__tests__/tissService.test.ts",
+    "src/services/tissService.ts",
+    "supabase/migrations/20260812211247_tiss_account_materialization_contract.sql",
+    "supabase/rollbacks/20260812211247_tiss_account_materialization_contract.sql",
+    "supabase/tests/module16_tiss_account_materialization_contract.sql",
+    "supabase/tests/module16_tiss_runtime_contract.sql"
   ],
   "sharedPaths": [],
   "status": "active"

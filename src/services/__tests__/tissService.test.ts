@@ -152,26 +152,32 @@ describe("buildTissXml", () => {
         procedimentos: [{ cd_tuss: "10101012", ds_procedimento: "Procedimento teste", qt: 1, vl_unitario: 150 }],
         agora: new Date("2026-07-15T12:00:00.000Z"),
       });
+      const escapedXsdPath = process.env.TISS_XSD_PATH?.replace(/'/g, "''");
       const script = [
         "$xml=[Console]::In.ReadToEnd()",
+        `$xsd=[System.IO.Path]::GetFullPath('${escapedXsdPath}')`,
+        "$schemas=[System.Xml.Schema.XmlSchemaSet]::new()",
+        "$schemas.XmlResolver=$null",
+        "$schemaSettings=[System.Xml.XmlReaderSettings]::new()",
+        "$schemaSettings.DtdProcessing=[System.Xml.DtdProcessing]::Parse",
+        "$schemaSettings.XmlResolver=$null",
+        "foreach($file in [System.IO.Directory]::GetFiles([System.IO.Path]::GetDirectoryName($xsd),'*.xsd')){$reader=[System.Xml.XmlReader]::Create($file,$schemaSettings);try{$schema=[System.Xml.Schema.XmlSchema]::Read($reader,$null);$null=$schemas.Add($schema)}finally{$reader.Dispose()}}",
+        "$schemas.Compile()",
         "$s=[System.Xml.XmlReaderSettings]::new()",
+        "$s.DtdProcessing=[System.Xml.DtdProcessing]::Prohibit",
+        "$s.XmlResolver=$null",
         "$s.ValidationType=[System.Xml.ValidationType]::Schema",
-        "$ds=[System.Xml.XmlReaderSettings]::new()",
-        "$ds.DtdProcessing=[System.Xml.DtdProcessing]::Parse",
-        "$ds.XmlResolver=$null",
-        `$dr=[System.Xml.XmlReader]::Create([System.IO.Path]::Combine([System.IO.Path]::GetDirectoryName('${process.env.TISS_XSD_PATH?.replace(/'/g, "''")}'),'xmldsig-core-schema.xsd'),$ds)`,
-        "$dx=[System.Xml.Schema.XmlSchema]::Read($dr,$null)",
-        "$null=$s.Schemas.Add($dx)",
-        `$null=$s.Schemas.Add('http://www.ans.gov.br/padroes/tiss/schemas','${process.env.TISS_XSD_PATH?.replace(/'/g, "''")}')`,
+        "$s.Schemas=$schemas",
         "$r=[System.Xml.XmlReader]::Create([System.IO.StringReader]::new($xml),$s)",
         "while($r.Read()){}",
         "$r.Close()",
       ].join(";");
-      const validation = spawnSync("powershell.exe", ["-NoProfile", "-Command", script], {
+      const powershellExecutable = process.platform === "win32" ? "powershell.exe" : "pwsh";
+      const validation = spawnSync(powershellExecutable, ["-NoProfile", "-Command", script], {
         input: xml,
         encoding: "utf8",
       });
-      expect(validation.stderr, validation.stderr).toBe("");
+      expect(validation.stderr ?? "", validation.stderr ?? undefined).toBe("");
       expect(validation.status, validation.stderr).toBe(0);
     }
   );
