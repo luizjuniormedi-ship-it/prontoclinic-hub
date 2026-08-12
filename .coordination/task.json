@@ -15,6 +15,7 @@
     "src/pages/__tests__/BillingAccountsPage.test.tsx",
     "src/services/tissGuideService.ts",
     "src/services/__tests__/tissGuideService.test.ts",
+    "src/services/__tests__/tissService.test.ts",
     "src/services/tissService.ts",
     "supabase/migrations/20260812211247_tiss_account_materialization_contract.sql",
     "supabase/rollbacks/20260812211247_tiss_account_materialization_contract.sql",
