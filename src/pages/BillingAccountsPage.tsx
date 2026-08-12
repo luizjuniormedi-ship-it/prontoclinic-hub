@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Receipt, Search, AlertTriangle, Loader2, RotateCcw, CalendarRange, LockKeyhole, ClipboardCheck, UserCheck, Clock } from "lucide-react";
+import { Receipt, Search, AlertTriangle, Loader2, RotateCcw, CalendarRange, LockKeyhole, ClipboardCheck, UserCheck, Clock, FileCode2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -21,6 +21,7 @@ import {
   type BillingCompetence,
 } from "@/services/billingAccountsService";
 import { toast } from "@/hooks/use-toast";
+import { tissGuideService } from "@/services/tissGuideService";
 
 const fmtBRL = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -56,6 +57,7 @@ export default function BillingAccountsPage() {
 
   const [detail, setDetail] = useState<BillingAccount | null>(null);
   const [reviewing, setReviewing] = useState(false);
+  const [materializingTiss, setMaterializingTiss] = useState(false);
   const [reopening, setReopening] = useState(false);
   const [reopenReason, setReopenReason] = useState("");
   const [focusedError, setFocusedError] = useState<string | null>(null);
@@ -176,6 +178,27 @@ export default function BillingAccountsPage() {
       toast({ title: "Não foi possível reabrir a conta", description: String(error), variant: "destructive" });
     } finally {
       setReopening(false);
+    }
+  };
+
+  const materializeTiss = async () => {
+    if (!detail) return;
+    setMaterializingTiss(true);
+    try {
+      const result = await tissGuideService.materializeAccount({
+        billingAccountId: detail.id,
+        expectedAccountVersion: detail.version,
+      });
+      setDetail((current) => current ? { ...current, guide_number: String(result.guide_number) } : current);
+      toast({
+        title: "Guia e XML TISS materializados",
+        description: `Guia ${result.guide_number} vinculada à conta e ao agendamento.`,
+      });
+      load();
+    } catch (error) {
+      toast({ title: "Não foi possível materializar o TISS", description: String(error), variant: "destructive" });
+    } finally {
+      setMaterializingTiss(false);
     }
   };
 
@@ -506,6 +529,14 @@ export default function BillingAccountsPage() {
             </div>
           )}
           <DialogFooter>
+            {detail?.billing_type === "convenio" && detail.status === "pronta_envio" && (
+              <Button variant="outline" onClick={() => void materializeTiss()} disabled={materializingTiss}>
+                {materializingTiss
+                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                  : <FileCode2 className="h-4 w-4" />}
+                Gerar guia e XML TISS
+              </Button>
+            )}
             <Button variant="outline" onClick={() => void reviewAccount()} disabled={reviewing}>
               {reviewing && <Loader2 className="h-4 w-4 animate-spin" />}
               Revisar pendências

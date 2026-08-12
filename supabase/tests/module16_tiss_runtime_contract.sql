@@ -140,6 +140,7 @@ BEGIN
         ('m16_list_guides_secure(text,integer)'),
         ('m16_list_guide_events_secure(uuid)'),
         ('m16_get_xml_document_secure(bigint)'),
+        ('m16_materialize_account_tiss_secure(uuid,uuid,integer,text,text)'),
         ('tiss_get_stats(uuid,integer)')
       ) AS expected(signature)
      WHERE to_regprocedure('public.' || expected.signature) IS NULL
@@ -1013,10 +1014,75 @@ ON CONFLICT (id) DO UPDATE SET
   insurance_company_id = EXCLUDED.insurance_company_id,
   lg_ativo = TRUE;
 
+UPDATE public.companies
+   SET cnpj = CASE id
+     WHEN '16000000-0000-4000-8000-000000000001'::UUID THEN '12345678000195'
+     ELSE '98765432000198'
+   END
+ WHERE id IN (
+   '16000000-0000-4000-8000-000000000001'::UUID,
+   '16000000-0000-4000-8000-000000000002'::UUID
+ );
+UPDATE public.units
+   SET nr_cnpj = CASE id WHEN 16001 THEN '12345678000195' ELSE '98765432000198' END,
+       cnes = CASE id WHEN 16001 THEN '1234567' ELSE '7654321' END,
+       ds_uf = 'SP'
+ WHERE id IN (16001, 16002);
+
+INSERT INTO public.patients (id, company_id, full_name, registration_status)
+OVERRIDING SYSTEM VALUE
+VALUES
+  (160001, '16000000-0000-4000-8000-000000000001', 'Paciente TISS A', 'complete'),
+  (160002, '16000000-0000-4000-8000-000000000002', 'Paciente TISS B', 'complete')
+ON CONFLICT (id) DO UPDATE SET company_id = EXCLUDED.company_id, full_name = EXCLUDED.full_name;
+
+INSERT INTO public.professionals (
+  id, company_id, full_name, crm, council_code, council_state, cbos
+)
+OVERRIDING SYSTEM VALUE
+VALUES
+  (160001, '16000000-0000-4000-8000-000000000001', 'Profissional TISS A', '123456', '06', 'SP', '225125'),
+  (160002, '16000000-0000-4000-8000-000000000002', 'Profissional TISS B', '654321', '06', 'SP', '225125')
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id, crm = EXCLUDED.crm,
+  council_code = EXCLUDED.council_code, council_state = EXCLUDED.council_state, cbos = EXCLUDED.cbos;
+
+INSERT INTO public.services_catalog (id, company_id, code, name, price, lg_ativo)
+OVERRIDING SYSTEM VALUE
+VALUES
+  (160001, '16000000-0000-4000-8000-000000000001', '40301630', 'Procedimento TISS A', 100, TRUE),
+  (160002, '16000000-0000-4000-8000-000000000002', '40301630', 'Procedimento TISS B', 100, TRUE)
+ON CONFLICT (id) DO UPDATE SET company_id = EXCLUDED.company_id, code = EXCLUDED.code, lg_ativo = TRUE;
+
+INSERT INTO public.patient_insurances (
+  id, company_id, patient_id, insurance_plan_id, card_number, is_primary, status
+)
+OVERRIDING SYSTEM VALUE
+VALUES
+  (160001, '16000000-0000-4000-8000-000000000001', 160001, 160011, 'CARTEIRA-A', TRUE, 'active'),
+  (160002, '16000000-0000-4000-8000-000000000002', 160002, 160012, 'CARTEIRA-B', TRUE, 'active')
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id, patient_id = EXCLUDED.patient_id,
+  insurance_plan_id = EXCLUDED.insurance_plan_id, card_number = EXCLUDED.card_number, status = 'active';
+
+INSERT INTO public.price_tables (
+  id, company_id, service_id, insurance_plan_id, dt_inicio, vl_convenio, active
+)
+OVERRIDING SYSTEM VALUE
+VALUES
+  (160001, '16000000-0000-4000-8000-000000000001', 160001, 160011, CURRENT_DATE - 1, 100, TRUE),
+  (160002, '16000000-0000-4000-8000-000000000002', 160002, 160012, CURRENT_DATE - 1, 100, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id, service_id = EXCLUDED.service_id,
+  insurance_plan_id = EXCLUDED.insurance_plan_id, vl_convenio = 100, active = TRUE;
+
 INSERT INTO public.appointments (
   id,
   company_id,
   unit_id,
+  patient_id,
+  professional_id,
+  service_id,
   appointment_date,
   start_time,
   status,
@@ -1028,38 +1094,76 @@ VALUES
   (
     160001,
     '16000000-0000-4000-8000-000000000001',
-    16001,
+    16001, 160001, 160001, 160001,
     CURRENT_DATE,
     TIME '09:00',
-    'COMPLETED',
+    'scheduled',
     160001,
     160011
   ),
   (
     160002,
     '16000000-0000-4000-8000-000000000002',
-    16002,
+    16002, 160002, 160002, 160002,
     CURRENT_DATE,
     TIME '10:00',
-    'COMPLETED',
+    'scheduled',
     160002,
     160012
   ),
   (
     160003,
     '16000000-0000-4000-8000-000000000001',
-    16001,
+    16001, 160001, 160001, 160001,
     CURRENT_DATE,
     TIME '11:00',
-    'COMPLETED',
+    'scheduled',
     160001,
     160011
   )
 ON CONFLICT (id) DO UPDATE SET
   company_id = EXCLUDED.company_id,
   unit_id = EXCLUDED.unit_id,
+  patient_id = EXCLUDED.patient_id,
+  professional_id = EXCLUDED.professional_id,
+  service_id = EXCLUDED.service_id,
   insurance_company_id = EXCLUDED.insurance_company_id,
   insurance_plan_id = EXCLUDED.insurance_plan_id;
+
+INSERT INTO public.billing_accounts (
+  id, company_id, unit_id, appointment_id, insurance_id,
+  patient_id, billing_type, status, total_gross_amount, total_net_amount,
+  authorization_number, has_pending_issues, version
+)
+VALUES
+  (
+    '16000000-0000-4000-8000-000000000301',
+    '16000000-0000-4000-8000-000000000001',
+    16001, 160001, 160001, 160001, 'convenio', 'pronta_envio', 100, 100,
+    'AUTH-A', FALSE, 1
+  ),
+  (
+    '16000000-0000-4000-8000-000000000302',
+    '16000000-0000-4000-8000-000000000002',
+    16002, 160002, 160002, 160002, 'convenio', 'pronta_envio', 100, 100,
+    'AUTH-B', FALSE, 1
+  ),
+  (
+    '16000000-0000-4000-8000-000000000303',
+    '16000000-0000-4000-8000-000000000001',
+    16001, 160003, 160001, 160001, 'convenio', 'aberta', 100, 100,
+    'AUTH-C', FALSE, 1
+  )
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  unit_id = EXCLUDED.unit_id,
+  appointment_id = EXCLUDED.appointment_id,
+  insurance_id = EXCLUDED.insurance_id,
+  patient_id = EXCLUDED.patient_id,
+  status = EXCLUDED.status,
+  authorization_number = EXCLUDED.authorization_number,
+  has_pending_issues = EXCLUDED.has_pending_issues,
+  version = EXCLUDED.version;
 
 -- A database application role with tenant claims but no canonical session
 -- must never regain the former claim-only bypass.
@@ -1167,7 +1271,8 @@ BEGIN
     v_rejected := FALSE;
     BEGIN
       PERFORM public.create_tiss_guide_secure(
-        'CONSULTA', 160001, 16001, NULL, NULL, 'HOMOLOGACAO'
+        'CONSULTA', 160001, 16001,
+        '16000000-0000-4000-8000-000000000301', NULL, 'HOMOLOGACAO'
       );
     EXCEPTION WHEN insufficient_privilege THEN
       v_rejected := TRUE;
@@ -1229,7 +1334,8 @@ BEGIN
 
   BEGIN
     PERFORM public.create_tiss_guide_secure(
-      'CONSULTA', 160001, 16001, NULL, NULL, 'HOMOLOGACAO'
+      'CONSULTA', 160001, 16001,
+      '16000000-0000-4000-8000-000000000301', NULL, 'HOMOLOGACAO'
     );
   EXCEPTION WHEN insufficient_privilege THEN
     v_rejected := TRUE;
@@ -1292,12 +1398,54 @@ BEGIN
 END
 $assert_direct_access_blocked$;
 
+WITH materialized AS (
+  SELECT public.m16_materialize_account_tiss_secure(
+    '16000000-0000-4000-8000-000000000401',
+    '16000000-0000-4000-8000-000000000301',
+    1,
+    'SP/SADT',
+    'HOMOLOGACAO'
+  ) AS result
+), saved_response AS (
+  INSERT INTO tiss_contract_state (key, value)
+  SELECT 'materialized_a', result FROM materialized
+  RETURNING value
+)
 INSERT INTO tiss_contract_state (key, value)
-SELECT
-  'guide_a_draft',
-  to_jsonb(public.create_tiss_guide_secure(
-    'CONSULTA', 160001, 16001, NULL, NULL, 'HOMOLOGACAO'
-  ));
+SELECT 'guide_a_draft', jsonb_build_object('id', value->>'guide_id', 'status', 'DRAFT')
+  FROM saved_response;
+
+DO $assert_materialization_retry$
+DECLARE
+  v_first JSONB;
+  v_retry JSONB;
+  v_guide_count INTEGER;
+  v_xml_count INTEGER;
+  v_version INTEGER;
+BEGIN
+  SELECT value INTO STRICT v_first FROM tiss_contract_state WHERE key = 'materialized_a';
+  v_retry := public.m16_materialize_account_tiss_secure(
+    '16000000-0000-4000-8000-000000000401',
+    '16000000-0000-4000-8000-000000000301',
+    1,
+    'SP/SADT',
+    'HOMOLOGACAO'
+  );
+  IF v_retry IS DISTINCT FROM v_first THEN
+    RAISE EXCEPTION 'Materialization retry returned a different result';
+  END IF;
+  SELECT count(*) INTO v_guide_count FROM public.m16_list_guides_secure(NULL, 500)
+   WHERE billing_account_id = '16000000-0000-4000-8000-000000000301';
+  SELECT count(*) INTO v_xml_count FROM public.m16_list_xml_secure(NULL, 500)
+   WHERE billing_account_id = '16000000-0000-4000-8000-000000000301';
+  SELECT version INTO v_version FROM public.billing_accounts
+   WHERE id = '16000000-0000-4000-8000-000000000301';
+  IF v_guide_count <> 1 OR v_xml_count <> 1 OR v_version <> 2 THEN
+    RAISE EXCEPTION 'Materialization is not atomic/idempotent: guides %, XML %, version %',
+      v_guide_count, v_xml_count, v_version;
+  END IF;
+END
+$assert_materialization_retry$;
 
 INSERT INTO tiss_contract_state (key, value)
 SELECT
@@ -1652,15 +1800,15 @@ BEGIN
     SELECT (value->>'total_xmls')::INTEGER
       FROM tiss_contract_state
      WHERE key = 'batch_a'
-  ) <> 1 OR NOT EXISTS (
+  ) <> 2 OR NOT EXISTS (
     SELECT 1
       FROM public.tiss_get_stats(
         '16000000-0000-4000-8000-000000000001',
         EXTRACT(YEAR FROM CURRENT_DATE)::INTEGER
       )
      WHERE cd_convenio = 160001
-       AND total_guias = 2
-       AND total_enviado = 150.00
+       AND total_guias = 3
+       AND total_enviado = 250.00
   ) THEN
     RAISE EXCEPTION 'TISS batch/statistics contract failed';
   END IF;
@@ -1740,6 +1888,22 @@ BEGIN
   IF NOT v_rejected THEN
     RAISE EXCEPTION 'Tenant B exported tenant A full XML';
   END IF;
+
+  v_rejected := FALSE;
+  BEGIN
+    PERFORM public.m16_materialize_account_tiss_secure(
+      '16000000-0000-4000-8000-000000000402',
+      '16000000-0000-4000-8000-000000000301',
+      2,
+      'SP/SADT',
+      'HOMOLOGACAO'
+    );
+  EXCEPTION WHEN insufficient_privilege THEN
+    v_rejected := TRUE;
+  END;
+  IF NOT v_rejected THEN
+    RAISE EXCEPTION 'Tenant B materialized tenant A billing account';
+  END IF;
 END
 $assert_tenant_b_isolation$;
 
@@ -1767,7 +1931,7 @@ BEGIN
       160001,
       10.00
     );
-  EXCEPTION WHEN foreign_key_violation THEN
+  EXCEPTION WHEN foreign_key_violation OR check_violation THEN
     v_rejected := TRUE;
   END;
   IF NOT v_rejected THEN

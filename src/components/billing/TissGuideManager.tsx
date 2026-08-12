@@ -1,17 +1,10 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Plus, XCircle } from "lucide-react";
+import { CheckCircle2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import {
-  TISS_GUIDE_TYPES,
-  tissGuideService,
-  type TissGuide,
-  type TissGuideType,
-} from "@/services/tissGuideService";
+import { tissGuideService, type TissGuide } from "@/services/tissGuideService";
 
 const statusLabel: Record<TissGuide["status"], string> = {
   DRAFT: "Rascunho",
@@ -21,9 +14,14 @@ const statusLabel: Record<TissGuide["status"], string> = {
   SUBSTITUTED: "Substituida",
 };
 
-export function TissGuideManager({ companyId }: { companyId: string }) {
+export function TissGuideManager({
+  companyId,
+  billingAccountId,
+}: {
+  companyId: string;
+  billingAccountId?: string;
+}) {
   const queryClient = useQueryClient();
-  const [guideType, setGuideType] = useState<TissGuideType>("SP/SADT");
   const [busyId, setBusyId] = useState<string | null>(null);
   const { data: guides = [], isLoading, isError } = useQuery({
     queryKey: ["tiss-guides", companyId],
@@ -45,16 +43,6 @@ export function TissGuideManager({ companyId }: { companyId: string }) {
     }
   };
 
-  const create = async () => {
-    try {
-      await tissGuideService.create({ guideType });
-      toast.success("Guia criada como rascunho");
-      refresh();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
-    }
-  };
-
   return (
     <section className="rounded-lg border bg-card p-4 space-y-4" aria-labelledby="tiss-guide-manager-title">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -64,18 +52,7 @@ export function TissGuideManager({ companyId }: { companyId: string }) {
             Cadastro e validação. O aceite do paciente e o fechamento são feitos na conta vinculada.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Label htmlFor="tiss-guide-type" className="sr-only">Tipo de guia</Label>
-          <Select value={guideType} onValueChange={(value) => setGuideType(value as TissGuideType)}>
-            <SelectTrigger id="tiss-guide-type" className="w-44"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {TISS_GUIDE_TYPES.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Button size="sm" onClick={create} disabled={!companyId}>
-            <Plus className="mr-1 h-4 w-4" />Nova guia
-          </Button>
-        </div>
+        {billingAccountId && <Badge variant="secondary">Conta vinculada</Badge>}
       </div>
 
       {isLoading && <p className="text-sm text-muted-foreground">Carregando guias...</p>}

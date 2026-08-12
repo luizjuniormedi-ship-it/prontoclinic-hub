@@ -33,21 +33,36 @@ describe("tissGuideService — M16", () => {
     expect(() => assertSignedGuideImmutable({ status: "SIGNED" }, { status: "DRAFT" })).toThrow();
   });
 
-  it("cria guia sem aceitar company_id do navegador e usa RPC protegido", async () => {
-    rpc.mockResolvedValue({ data: { id: "guide-1", status: "DRAFT" }, error: null });
-
-    await tissGuideService.create({
-      guideType: "SP/SADT",
-      appointmentId: 42,
-      billingAccountId: "billing-1",
+  it("materializa guia e XML usando somente a identidade e versao da conta", async () => {
+    vi.stubGlobal("crypto", { randomUUID: () => "operation-1" });
+    rpc.mockResolvedValue({
+      data: { billing_account_id: "billing-1", appointment_id: 42, guide_id: "guide-1", xml_id: 91 },
+      error: null,
     });
 
-    expect(rpc).toHaveBeenCalledWith("create_tiss_guide_secure", expect.objectContaining({
-      p_guide_type: "SP/SADT",
-      p_appointment_id: 42,
+    await tissGuideService.materializeAccount({
+      billingAccountId: "billing-1",
+      expectedAccountVersion: 3,
+    });
+
+    expect(rpc).toHaveBeenCalledWith("m16_materialize_account_tiss_secure", {
+      p_operation_id: "operation-1",
       p_billing_account_id: "billing-1",
-    }));
+      p_expected_account_version: 3,
+      p_guide_type: "SP/SADT",
+      p_environment: "HOMOLOGACAO",
+    });
+    expect(rpc.mock.calls[0][1]).not.toHaveProperty("p_payload");
+    expect(rpc.mock.calls[0][1]).not.toHaveProperty("p_xml");
     expect(rpc.mock.calls[0][1]).not.toHaveProperty("p_company_id");
+  });
+
+  it("rejeita materializacao sem conta ou com versao invalida antes do RPC", async () => {
+    await expect(tissGuideService.materializeAccount({ billingAccountId: " ", expectedAccountVersion: 1 }))
+      .rejects.toThrow("Conta de faturamento obrigatoria");
+    await expect(tissGuideService.materializeAccount({ billingAccountId: "billing-1", expectedAccountVersion: 0 }))
+      .rejects.toThrow("Versao da conta invalida");
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("lista guias exclusivamente pela projeção segura do tenant ativo", async () => {

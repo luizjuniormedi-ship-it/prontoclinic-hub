@@ -41,6 +41,16 @@ export interface TissGuide {
   updated_at: string;
 }
 
+export interface TissAccountMaterialization {
+  billing_account_id: string;
+  appointment_id: number;
+  unit_id: number;
+  guide_id: string;
+  guide_number: number;
+  xml_id: number;
+  environment: "HOMOLOGACAO" | "PRODUCAO";
+}
+
 const transitions: Record<TissGuideStatus, readonly TissGuideStatus[]> = {
   DRAFT: ["VALIDATED", "CANCELLED"],
   VALIDATED: ["SIGNED", "CANCELLED"],
@@ -74,6 +84,27 @@ export function assertSignedGuideImmutable(before: Pick<TissGuide, "status">, af
 }
 
 export const tissGuideService = {
+  async materializeAccount(input: {
+    billingAccountId: string;
+    expectedAccountVersion: number;
+    guideType?: "SP/SADT";
+    environment?: "HOMOLOGACAO" | "PRODUCAO";
+  }): Promise<TissAccountMaterialization> {
+    if (!input.billingAccountId.trim()) throw new Error("Conta de faturamento obrigatoria");
+    if (!Number.isSafeInteger(input.expectedAccountVersion) || input.expectedAccountVersion <= 0) {
+      throw new Error("Versao da conta invalida");
+    }
+    const { data, error } = await supabase.rpc("m16_materialize_account_tiss_secure", {
+      p_operation_id: crypto.randomUUID(),
+      p_billing_account_id: input.billingAccountId,
+      p_expected_account_version: input.expectedAccountVersion,
+      p_guide_type: input.guideType ?? "SP/SADT",
+      p_environment: input.environment ?? "HOMOLOGACAO",
+    });
+    if (error) throw new Error(error.message);
+    return data as TissAccountMaterialization;
+  },
+
   async list(companyId: string): Promise<TissGuide[]> {
     if (!companyId) throw new Error("Empresa obrigatória para consultar guias TISS");
     const { data, error } = await supabase.rpc("m16_list_guides_secure", {
@@ -93,28 +124,6 @@ export const tissGuideService = {
       substitution_reason: null,
       created_by: null,
     })) as TissGuide[];
-  },
-
-  async create(input: {
-    guideType: TissGuideType;
-    appointmentId?: number;
-    unitId?: number;
-    billingAccountId?: string;
-    sourceXmlId?: number;
-    environment?: "HOMOLOGACAO" | "PRODUCAO";
-  }): Promise<TissGuide> {
-    const errors = validateTissGuideDraft({ guideType: input.guideType, tissVersion: "4.03.00", environment: input.environment });
-    if (errors.length) throw new Error(errors.join("; "));
-    const { data, error } = await supabase.rpc("create_tiss_guide_secure", {
-      p_guide_type: input.guideType,
-      p_appointment_id: input.appointmentId ?? null,
-      p_unit_id: input.unitId ?? null,
-      p_billing_account_id: input.billingAccountId ?? null,
-      p_source_xml_id: input.sourceXmlId ?? null,
-      p_environment: input.environment ?? "HOMOLOGACAO",
-    });
-    if (error) throw error;
-    return data as TissGuide;
   },
 
   async validate(id: string, errors: string[] = []): Promise<TissGuide> {
