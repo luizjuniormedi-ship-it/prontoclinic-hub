@@ -606,6 +606,7 @@ const RPC_PERMISSIONS = {
   advance_reception_checkin_workflow_secure: { module: 'recepcao', action: 'can_edit' },
   ensure_billing_preaccount_for_checkin_secure: { module: 'recepcao', action: 'can_create' },
   ensure_tiss_guide_for_checkin_secure: { module: 'recepcao', action: 'can_create' },
+  ensure_reception_worklist_for_checkin_secure: { module: 'recepcao', action: 'can_create' },
   ensure_financial_receivable_for_checkin_secure: { module: 'recepcao', action: 'can_create' },
   finalize_attendance_secure: { module: 'prontuario', action: 'can_create' },
   finalize_attendance_with_billing_secure: { module: 'prontuario', action: 'can_create' },

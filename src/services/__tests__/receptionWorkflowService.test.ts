@@ -127,6 +127,11 @@ function createDependencies(initial: ReceptionCheckinWorkflow) {
       issues: [],
       idempotent: false,
     })),
+    ensureWorklist: vi.fn(async () => ({
+      required: true,
+      released: true,
+      item_count: 1,
+    })),
     getCompletedCheckin: vi.fn(async () => ({
       checkin_id: 99,
       ticket_id: 123,
@@ -193,11 +198,17 @@ describe("receptionWorkflowService", () => {
       expect.any(String),
       expect.objectContaining({ amount: 30, type: "copayment" }),
     );
+    expect(mock.dependencies.ensureWorklist).toHaveBeenCalledWith(
+      "0f75bf1a-6f72-4e34-b291-5ee64c256fea",
+    );
     expect(result.workflow.status).toBe("completed");
     expect(result.workflow.result_payload).toMatchObject({
       receivable_pending: true,
       payment_confirmed: false,
       checkin_completed: true,
+      worklist_required: true,
+      worklist_released: true,
+      worklist_item_count: 1,
     });
   });
 
@@ -216,6 +227,7 @@ describe("receptionWorkflowService", () => {
 
     expect(mock.dependencies.getCompletedCheckin).toHaveBeenCalledTimes(1);
     expect(mock.dependencies.performCheckin).not.toHaveBeenCalled();
+    expect(mock.dependencies.ensureWorklist).not.toHaveBeenCalled();
     expect(result.checkin).toMatchObject({
       checkin_id: 99,
       ticket_id: 123,
@@ -240,6 +252,7 @@ describe("receptionWorkflowService", () => {
     expect(mock.dependencies.ensureTiss).not.toHaveBeenCalled();
     expect(mock.dependencies.ensureFinancial).toHaveBeenCalledTimes(1);
     expect(mock.dependencies.performCheckin).toHaveBeenCalledTimes(1);
+    expect(mock.dependencies.ensureWorklist).toHaveBeenCalledTimes(1);
     expect(mock.transitions).toEqual(["checkin", "completed"]);
     expect(result.workflow.financial_transaction_id).toBe(778);
   });
@@ -289,6 +302,7 @@ describe("receptionWorkflowService", () => {
     expect(mock.dependencies.ensureFinancial).toHaveBeenCalledTimes(2);
     expect(financialCreations).toBe(1);
     expect(mock.dependencies.performCheckin).toHaveBeenCalledTimes(1);
+    expect(mock.dependencies.ensureWorklist).toHaveBeenCalledTimes(1);
     expect(result.workflow).toMatchObject({
       status: "completed",
       current_step: "completed",
@@ -296,6 +310,55 @@ describe("receptionWorkflowService", () => {
       tiss_guide_id: "15993f35-ad6b-4585-856c-596a77330468",
       financial_transaction_id: 778,
       checkin_id: 99,
+    });
+  });
+
+  it("conclui atendimento sem imagem sem criar item de Worklist", async () => {
+    const mock = createDependencies(workflowAt("checkin"));
+    vi.mocked(mock.dependencies.ensureWorklist).mockResolvedValueOnce({
+      required: false,
+      released: false,
+      item_count: 0,
+    });
+    const service = createReceptionWorkflowService(mock.dependencies);
+
+    const result = await service.run(baseInput);
+
+    expect(result.workflow.status).toBe("completed");
+    expect(result.workflow.result_payload).toMatchObject({
+      worklist_required: false,
+      worklist_released: false,
+      worklist_item_count: 0,
+    });
+  });
+
+  it("retoma Worklist com a mesma chave sem duplicar check-in", async () => {
+    const mock = createDependencies(workflowAt("checkin"));
+    vi.mocked(mock.dependencies.ensureWorklist)
+      .mockRejectedValueOnce(new Error("Item DICOM incompleto"))
+      .mockResolvedValueOnce({ required: true, released: true, item_count: 1 });
+    const service = createReceptionWorkflowService(mock.dependencies);
+
+    await expect(service.run(baseInput)).rejects.toMatchObject({
+      name: "ReceptionWorkflowExecutionError",
+      workflow: expect.objectContaining({
+        status: "failed",
+        current_step: "checkin",
+      }),
+    });
+
+    const result = await service.run(baseInput);
+
+    expect(mock.dependencies.performCheckin).toHaveBeenCalledTimes(2);
+    expect(mock.dependencies.ensureWorklist).toHaveBeenCalledTimes(2);
+    expect(result.workflow).toMatchObject({
+      status: "completed",
+      current_step: "completed",
+      checkin_id: 99,
+    });
+    expect(result.workflow.result_payload).toMatchObject({
+      worklist_released: true,
+      worklist_item_count: 1,
     });
   });
 

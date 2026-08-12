@@ -555,6 +555,15 @@ ON CONFLICT (id) DO UPDATE SET
 
 DELETE FROM public.reception_checkin_workflows
 WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.dicom_worklist_queue
+WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.imaging_order_items
+WHERE imaging_order_id IN (
+  SELECT id FROM public.imaging_orders
+  WHERE appointment_id IN (91001, 91002, 91003)
+);
+DELETE FROM public.imaging_orders
+WHERE appointment_id IN (91001, 91002, 91003);
 DELETE FROM public.tiss_xml WHERE appointment_id IN (91001, 91002, 91003);
 DELETE FROM public.billings WHERE appointment_id IN (91001, 91002, 91003);
 DELETE FROM public.tiss_guides WHERE appointment_id IN (91001, 91002, 91003);
@@ -611,6 +620,51 @@ ON CONFLICT (id) DO UPDATE SET
   lg_confirmado = EXCLUDED.lg_confirmado,
   lg_checkin = EXCLUDED.lg_checkin,
   notes = EXCLUDED.notes;
+
+INSERT INTO public.imaging_orders (
+  id, company_id, unit_id, appointment_id, patient_id,
+  requesting_physician_id, referring_physician_name,
+  clinical_indication, priority, accession_number, status, created_by
+) VALUES
+(
+  'eeeeeeee-9101-4000-8000-000000000001',
+  'eeeeeeee-1000-4000-8000-000000000001',
+  91001, 91001, 91001, 91001, 'Médico E2E',
+  'Exame sintético para homologação da jornada Recepção → Worklist',
+  'normal', 'PME2E91001', 'agendado',
+  'eeeeeeee-0000-4000-8000-000000000001'
+),
+(
+  'eeeeeeee-9101-4000-8000-000000000003',
+  'eeeeeeee-1000-4000-8000-000000000001',
+  91001, 91003, 91001, 91001, 'Médico E2E',
+  'Exame sintético com exceção de elegibilidade',
+  'normal', 'PME2E91003', 'agendado',
+  'eeeeeeee-0000-4000-8000-000000000001'
+);
+
+INSERT INTO public.imaging_order_items (
+  id, company_id, unit_id, imaging_order_id, service_id,
+  exam_code, exam_name, modality_type, body_part, laterality,
+  contrast_required, station_aetitle, scheduled_datetime,
+  requested_procedure_id, scheduled_procedure_step_id, status
+) VALUES
+(
+  'eeeeeeee-9102-4000-8000-000000000001',
+  'eeeeeeee-1000-4000-8000-000000000001',
+  91001, 'eeeeeeee-9101-4000-8000-000000000001', 91001,
+  'E2E-USG', 'Ultrassonografia sintética E2E', 'US', 'ABDOME', 'na',
+  FALSE, 'PRONTOMEDIC', CURRENT_DATE + TIME '14:00',
+  'E2E-RP-91001', 'E2E-SPS-91001', 'agendado'
+),
+(
+  'eeeeeeee-9102-4000-8000-000000000003',
+  'eeeeeeee-1000-4000-8000-000000000001',
+  91001, 'eeeeeeee-9101-4000-8000-000000000003', 91001,
+  'E2E-USG', 'Ultrassonografia sintética E2E com exceção', 'US', 'ABDOME', 'na',
+  FALSE, 'PRONTOMEDIC', CURRENT_DATE + TIME '16:00',
+  'E2E-RP-91003', 'E2E-SPS-91003', 'agendado'
+);
 
 -- O evento de auditoria da elegibilidade e gravado por uma funcao SECURITY
 -- DEFINER e exige o tenant explicito mesmo durante o seed local.
@@ -733,6 +787,18 @@ BEGIN
      AND price.insurance_plan_id = plan.id
      AND price.active
      AND price.vl_convenio = 125.00
+    JOIN public.imaging_orders imaging_order
+      ON imaging_order.company_id = appointment.company_id
+     AND imaging_order.unit_id = appointment.unit_id
+     AND imaging_order.appointment_id = appointment.id
+     AND imaging_order.patient_id = appointment.patient_id
+     AND imaging_order.status = 'agendado'
+    JOIN public.imaging_order_items imaging_item
+      ON imaging_item.company_id = imaging_order.company_id
+     AND imaging_item.unit_id = imaging_order.unit_id
+     AND imaging_item.imaging_order_id = imaging_order.id
+     AND imaging_item.status = 'agendado'
+     AND imaging_item.station_aetitle = 'PRONTOMEDIC'
     WHERE appointment.id = 91001
       AND appointment.company_id = 'eeeeeeee-1000-4000-8000-000000000001'
       AND appointment.unit_id = 91001
@@ -740,7 +806,7 @@ BEGIN
       AND patient.insurance_card_number = 'E2E-CARD-91001'
   ) THEN
     RAISE EXCEPTION
-      'E2E_FIXTURE_CONTRACT: massa Agenda->Recepcao incompleta ou inconsistente';
+      'E2E_FIXTURE_CONTRACT: massa Agenda->Recepcao->Worklist incompleta ou inconsistente';
   END IF;
 END;
 $fixture_contract$;
