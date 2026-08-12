@@ -152,17 +152,19 @@ describe("buildTissXml", () => {
         procedimentos: [{ cd_tuss: "10101012", ds_procedimento: "Procedimento teste", qt: 1, vl_unitario: 150 }],
         agora: new Date("2026-07-15T12:00:00.000Z"),
       });
+      const escapedXsdPath = process.env.TISS_XSD_PATH?.replace(/'/g, "''");
       const script = [
         "$xml=[Console]::In.ReadToEnd()",
+        `$xsd=[System.IO.Path]::GetFullPath('${escapedXsdPath}')`,
         "$s=[System.Xml.XmlReaderSettings]::new()",
         "$s.ValidationType=[System.Xml.ValidationType]::Schema",
         "$ds=[System.Xml.XmlReaderSettings]::new()",
         "$ds.DtdProcessing=[System.Xml.DtdProcessing]::Parse",
         "$ds.XmlResolver=$null",
-        `$dr=[System.Xml.XmlReader]::Create([System.IO.Path]::Combine([System.IO.Path]::GetDirectoryName('${process.env.TISS_XSD_PATH?.replace(/'/g, "''")}'),'xmldsig-core-schema.xsd'),$ds)`,
+        "$dr=[System.Xml.XmlReader]::Create([System.IO.Path]::Combine([System.IO.Path]::GetDirectoryName($xsd),'xmldsig-core-schema.xsd'),$ds)",
         "$dx=[System.Xml.Schema.XmlSchema]::Read($dr,$null)",
         "$null=$s.Schemas.Add($dx)",
-        `$null=$s.Schemas.Add('http://www.ans.gov.br/padroes/tiss/schemas','${process.env.TISS_XSD_PATH?.replace(/'/g, "''")}')`,
+        "$null=$s.Schemas.Add('http://www.ans.gov.br/padroes/tiss/schemas',$xsd)",
         "$r=[System.Xml.XmlReader]::Create([System.IO.StringReader]::new($xml),$s)",
         "while($r.Read()){}",
         "$r.Close()",
