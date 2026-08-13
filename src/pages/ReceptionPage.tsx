@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Check, Clock, UserCheck, Play, AlertTriangle, Search, Stethoscope, PhoneCall, RotateCcw, ArrowRightLeft, Volume2, Receipt, UserPlus } from "lucide-react";
+import { Check, Clock, UserCheck, AlertTriangle, Search, Stethoscope, PhoneCall, RotateCcw, ArrowRightLeft, Volume2, Receipt, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +16,7 @@ import { AppointmentStatusBadge, AppointmentTypeBadge } from "@/components/Statu
 import { appointmentsService, professionalsLookup, specialtiesLookup, appointmentTypesLookup, servicesCatalogLookup, DbAppointment, DbProfessional, DbSpecialty, DbAppointmentType, DbServiceCatalog } from "@/services/appointmentsService";
 import { unitsService } from "@/services/catalogService";
 import { supabase } from "@/lib/supabase";
-import { Appointment, AppointmentStatus, Patient, Unit } from "@/types";
+import { Appointment, Patient, Unit, type AppointmentStatus } from "@/types";
 import type { AppointmentTypeLiteral, AppointmentStatusForBadge } from "@/types/missing";
 import { useToast } from "@/hooks/use-toast";
 import { calculateAge, localDateKey } from "@/utils/formatters";
@@ -36,6 +36,7 @@ import { ELIGIBILITY_STATUSES, type EligibilityStatus } from "@/services/insuran
 import { withTimeout } from "@/utils/asyncTimeout";
 import { patientsService } from "@/services/patientsService";
 import { receptionCompletionService } from "@/services/receptionCompletionService";
+import { module19NursingService } from "@/services/module19NursingService";
 
 export interface PatientRow { id: string; full_name: string; cpf: string | null; birth_date: string | null; phone: string | null; allergies: string | null; clinical_alerts?: string | null; insurance_plan_id: string | null; }
 
@@ -316,7 +317,7 @@ export default function ReceptionPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const today = localDateKey();
-  const { allowed: canOpenAttendance } = usePermissionGate("/attendance");
+  const { allowed: canOpenClinicalTriage } = usePermissionGate("/nursing/clinical");
   const { allowed: canOpenBilling } = usePermissionGate("/billing-accounts");
   const { allowed: canOpenFinancial } = usePermissionGate("/financial");
   const { activeCompanyId, activeUnitId } = useAuth();
@@ -408,24 +409,35 @@ export default function ReceptionPage() {
     overdue: queueItems.filter((ticket) => ["waiting", "called", "transferred"].includes(ticket.status) && new Date(ticket.sla_due_at).getTime() < Date.now()).length,
   }), [queueItems]);
 
-  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+  const [preparingTriageId, setPreparingTriageId] = useState<string | null>(null);
 
-  const handleStatusChange = async (id: string, newStatus: AppointmentStatus): Promise<boolean> => {
-    if (updatingStatusId) return false;
+  const openClinicalTriage = useCallback(async (appointment: Appointment) => {
+    if (preparingTriageId) return;
+    setPreparingTriageId(appointment.id);
     try {
-      setUpdatingStatusId(id);
-      await appointmentsService.updateStatus(id, newStatus);
-      await loadAll();
-      const labels: Record<string, string> = { waiting: "Check-in realizado!", in_progress: "Atendimento iniciado!", completed: "Finalizado!" };
-      toast({ title: labels[newStatus] || "Atualizado" });
-      return true;
-    } catch (err) {
-      toast({ title: "Erro ao atualizar atendimento", description: friendlyError(err, "Atualizar atendimento"), variant: "destructive" });
-      return false;
+      if (!activeUnitId) throw new Error("Selecione a unidade ativa antes de encaminhar.");
+      const handoff = await module19NursingService.prepareHandoff(
+        Number(appointment.id),
+        Number(appointment.patientId),
+        Number(activeUnitId),
+        appointment.notes,
+      );
+      const params = new URLSearchParams({
+        patientId: appointment.patientId,
+        appointmentId: appointment.id,
+        queueId: String(handoff.queue.id),
+      });
+      navigate(`/nursing/clinical?${params.toString()}`);
+    } catch (cause) {
+      toast({
+        title: "Não foi possível encaminhar para a triagem",
+        description: friendlyError(cause, "Preparar triagem"),
+        variant: "destructive",
+      });
     } finally {
-      setUpdatingStatusId(null);
+      setPreparingTriageId(null);
     }
-  };
+  }, [activeUnitId, navigate, preparingTriageId, toast]);
 
   const fetchCheckinReadiness = useCallback(async (appointmentId: string): Promise<CheckinReadiness> => {
     const [baseReadiness, precheck] = await Promise.all([
@@ -952,8 +964,8 @@ export default function ReceptionPage() {
             [...scheduled, ...waiting].map((a) => renderCard(a,
               a.status === "scheduled" || a.status === "confirmed" ? (
                 <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => void openCheckin(a)}><Check className="mr-1 h-3 w-3" />Check-in</Button>
-              ) : a.status === "waiting" && canOpenAttendance ? (
-                <Button size="sm" className="h-7 text-xs" disabled={updatingStatusId === a.id} onClick={async () => { if (await handleStatusChange(a.id, "in_progress") && canOpenAttendance) navigate(`/attendance/${a.id}`); }}><Play className="mr-1 h-3 w-3" />{updatingStatusId === a.id ? "Abrindo..." : "Iniciar"}</Button>
+              ) : a.status === "waiting" && canOpenClinicalTriage ? (
+                <Button size="sm" className="h-7 text-xs" disabled={Boolean(preparingTriageId)} onClick={() => void openClinicalTriage(a)}><Stethoscope className="mr-1 h-3 w-3" />{preparingTriageId === a.id ? "Encaminhando..." : "Encaminhar à triagem"}</Button>
               ) : null
             ))
           )}
@@ -962,8 +974,8 @@ export default function ReceptionPage() {
         <TabsContent value="attending" className="mt-3 space-y-2">
           {inProgress.length === 0 ? <EmptyState icon={Stethoscope} title="Nenhum atendimento em andamento" /> :
             inProgress.map((a) => renderCard(a,
-              canOpenAttendance ? <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => navigate(`/attendance/${a.id}`)}>
-                <Stethoscope className="mr-1 h-3 w-3" />Abrir
+              canOpenClinicalTriage ? <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => navigate(`/attendance/${a.id}`)}>
+                <Stethoscope className="mr-1 h-3 w-3" />Retomar atendimento
               </Button> : null
             ))
           }

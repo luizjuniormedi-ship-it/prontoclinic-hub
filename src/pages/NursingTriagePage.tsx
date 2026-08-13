@@ -5,9 +5,8 @@
  * Quando ?tv=1 na URL, renderiza o QueueDisplay em modo TV.
  */
 
-import { useSearchParams } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { TriagePanel } from "@/components/nursing/TriagePanel";
 import { QueueDisplay } from "@/components/nursing/QueueDisplay";
 
 export default function NursingTriagePage(): JSX.Element {
@@ -40,9 +39,5 @@ export default function NursingTriagePage(): JSX.Element {
     );
   }
 
-  return (
-    <div className="container mx-auto p-4 md:p-6">
-      <TriagePanel companyId={companyId} unitId={unitId} />
-    </div>
-  );
+  return <Navigate replace to={`/nursing/clinical${params.toString() ? `?${params.toString()}` : ""}`} />;
 }

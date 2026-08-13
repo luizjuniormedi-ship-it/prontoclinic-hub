@@ -5,7 +5,6 @@ import type { Page } from '@playwright/test';
 const UNIT_A = /Empresa E2E.*Unidade E2E A.*admin/;
 const UNIT_A_RECEPTION = /Empresa E2E.*Unidade E2E A.*recepcao/;
 const UNIT_B = /Empresa E2E.*Unidade E2E B.*admin/;
-const RECORD_MARKER = 'Queixa E2E persistida fase 0/1';
 
 async function assertAccessible(page: Page, label: string) {
   const closeNotification = page.getByRole('button', { name: 'Fechar notificação' });
@@ -123,10 +122,17 @@ test.describe('Gate fase 0/1', () => {
     await expect(receipt.getByText(/^Senha C\d{3}$/)).toBeVisible();
     await expect(page.getByRole('dialog', { name: 'Entrada do paciente' })).toBeHidden();
     await receipt.getByRole('button', { name: 'Fechar', exact: true }).click();
+    const waitingState = await authenticatedFetch(
+      page,
+      '/rest/v1/appointments?select=id,status&id=eq.91001',
+      { method: 'GET' },
+    );
+    expect(waitingState.status, waitingState.body).toBe(200);
+    expect(JSON.parse(waitingState.body)).toEqual([{ id: '91001', status: 'waiting' }]);
     await assertAccessible(page, 'recepção após check-in pelo perfil recepcao');
   });
 
-  test('contexto, RLS A/B, recepção, atendimento, prontuário e Axe', async ({ page }) => {
+  test('contexto, RLS A/B e isolamento do handoff clínico', async ({ page }) => {
     test.slow();
     await page.goto('/login');
     await assertAccessible(page, 'login');
@@ -178,20 +184,62 @@ test.describe('Gate fase 0/1', () => {
     await expect(patientAButton).toBeVisible();
     await expect(page.getByText('Paciente E2E B')).toBeHidden();
 
-    await page.getByRole('button', { name: 'Iniciar', exact: true }).click();
-    await expect(page).toHaveURL(/\/attendance\/91001/);
+    await expect(page.getByRole('button', { name: 'Iniciar', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Encaminhar à triagem' }).click();
+    await expect(page).toHaveURL(/\/nursing\/clinical\?.*appointmentId=91001/);
+    const clinicalUrl = new URL(page.url());
+    expect(clinicalUrl.searchParams.get('patientId')).toBe('91001');
+    expect(clinicalUrl.searchParams.get('appointmentId')).toBe('91001');
+    expect(Number(clinicalUrl.searchParams.get('queueId'))).toBeGreaterThan(0);
+    await expect(page.getByLabel('Paciente')).toHaveValue('91001');
+    await expect(page.getByLabel('Agendamento')).toHaveValue('91001');
+    await page.getByRole('combobox', { name: 'Classificação de risco' }).click();
+    await page.getByRole('option').first().click();
+    await page.getByLabel('Motivo clínico').fill('Classificação clínica E2E correlacionada');
+    await page.getByLabel('Queixa principal').fill('Queixa sintética E2E para handoff');
+    await page.getByRole('button', { name: 'Concluir triagem' }).click();
+    await expect(page).toHaveURL(/\/attendance\/91001$/, { timeout: 20_000 });
     await expect(page.getByRole('heading', { name: 'Atendimento' })).toBeVisible();
-    await assertAccessible(page, 'atendimento');
-    await page.getByPlaceholder('Motivo da consulta...').fill(RECORD_MARKER);
+    const inProgressState = await authenticatedFetch(
+      page,
+      '/rest/v1/appointments?select=id,status&id=eq.91001',
+      { method: 'GET' },
+    );
+    expect(inProgressState.status, inProgressState.body).toBe(200);
+    expect(JSON.parse(inProgressState.body)).toEqual([{ id: '91001', status: 'in_progress' }]);
+    await expect(page.getByPlaceholder('Motivo da consulta...')).toHaveValue(
+      /Queixa sintética E2E para handoff|^$/,
+    );
+    await assertAccessible(page, 'handoff recepção M19 M18 correlacionado');
+    await page.getByPlaceholder('Motivo da consulta...').fill('Queixa clínica final E2E');
     await page.getByRole('button', { name: 'Finalizar Atendimento' }).click();
-    await expect(page).toHaveURL(/\/reception/);
-    await expect(page.getByText('Atendimento salvo e finalizado!', { exact: true }).first()).toBeVisible();
-
-    await page.goto('/records');
-    await page.getByPlaceholder('Buscar por nome...').fill('Paciente E2E A');
-    await page.getByText('Paciente E2E A').click();
-    await expect(page.getByText(RECORD_MARKER)).toBeVisible();
-    await assertAccessible(page, 'prontuário persistido');
+    await expect(page).toHaveURL(
+      /\/billing-accounts\?account=[^&]+&appointment=91001$/,
+      { timeout: 20_000 },
+    );
+    const completedState = await authenticatedFetch(
+      page,
+      '/rest/v1/appointments?select=id,status&id=eq.91001',
+      { method: 'GET' },
+    );
+    expect(completedState.status, completedState.body).toBe(200);
+    expect(JSON.parse(completedState.body)).toEqual([{ id: '91001', status: 'completed' }]);
+    const billingState = await authenticatedFetch(
+      page,
+      '/rest/v1/billing_accounts?select=id,appointment_id,status&appointment_id=eq.91001',
+      { method: 'GET' },
+    );
+    expect(billingState.status, billingState.body).toBe(200);
+    const billingAccounts = JSON.parse(billingState.body) as Array<{
+      id: string;
+      appointment_id: number;
+      status: string;
+    }>;
+    expect(billingAccounts).toHaveLength(1);
+    expect(billingAccounts[0]).toMatchObject({ appointment_id: '91001' });
+    expect(page.url()).toContain(`account=${encodeURIComponent(billingAccounts[0].id)}`);
+    await expect(page.getByRole('heading', { name: 'Faturamento' })).toBeVisible();
+    await assertAccessible(page, 'conta focalizada após conclusão M18');
 
     await selectContext(page, UNIT_B);
     await page.goto('/patients');
@@ -208,6 +256,14 @@ test.describe('Gate fase 0/1', () => {
     await waitForReceptionReady(page);
     await expect(page.getByText('Paciente E2E B')).toBeVisible();
     await expect(page.getByText('Paciente E2E A')).toBeHidden();
+
+    await page.goto('/attendance/91001');
+    await expect(page).toHaveURL(/\/attendance\/91001$/);
+    await expect(page.getByRole('alert')).toContainText(
+      /unidade|escopo|não autorizado|não foi possível abrir o atendimento/i,
+      { timeout: 15_000 },
+    );
+    await expect(page.getByRole('heading', { name: 'Atendimento' })).toHaveCount(0);
 
     await page.goto('/records');
     const isolatedRecordRead = await authenticatedFetch(

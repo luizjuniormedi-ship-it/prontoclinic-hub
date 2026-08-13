@@ -209,7 +209,15 @@ validate_bundle() {
 run_smoke() { psql_db "$1" -f "$2" >/dev/null; }
 
 database_fingerprint() {
-  psql_db "$database" -Atqc "SELECT pg_current_wal_lsn()::text"
+  psql_db "$database" -Atqc "
+    SELECT concat_ws(
+      ':',
+      COALESCE(tup_inserted, 0),
+      COALESCE(tup_updated, 0),
+      COALESCE(tup_deleted, 0)
+    )
+    FROM pg_stat_database
+    WHERE datname = current_database()"
 }
 
 verify_private_file() {
@@ -422,11 +430,15 @@ deploy() {
 
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
   backup="$backup_root/prontoclinic-deploy-${migration_version}-${sha}-${timestamp}.dump"
+  # Measure committed tuple writes in the target database across the backup
+  # window. Cluster WAL is unsuitable here because reads, hint bits and the
+  # restore rehearsal in another database can advance it without changing the
+  # target database.
+  run_smoke "$database" "$stage/release/smoke-before.sql"
+  deploy_fingerprint="$(database_fingerprint)"
   backup_and_rehearse "$stage/release" "$sha" "$backup"
   DATABASE_BACKUP="$backup"
   DATABASE_BACKUP_CHECKSUM="${backup}.sha256"
-  deploy_fingerprint="$(database_fingerprint)"
-  run_smoke "$database" "$stage/release/smoke-before.sql"
   [[ "$(database_fingerprint)" = "$deploy_fingerprint" ]] \
     || die 'banco mudou entre o backup sob lock e a migration; deploy recusado'
 

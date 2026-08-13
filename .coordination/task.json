@@ -1,31 +1,31 @@
 {
-  "taskId": "p0-canonical-reception-tiss-20260812",
-  "module": 11,
-  "baseCommit": "596754e266431a9b10ebd8653e16db6b92c4e0b1",
+  "taskId": "m19-m18-canonical-handoff-20260813-v2",
+  "module": 19,
+  "baseCommit": "281b24fc262a46890f19f42204cd132e7cdf7bd9",
   "paths": [
-    "e2e/financeiro.spec.ts",
-    "e2e/recepcao.spec.ts",
-    "local-auth-server.mjs",
-    "scripts/seed-e2e-users.sql",
+    "e2e/clinical-wave-m19-m22.spec.ts",
+    "e2e/gate-phase01.spec.ts",
+    "src/App.tsx",
+    "src/components/nursing/m19/Module19TriageWorkspace.tsx",
+    "src/components/nursing/m19/TriageAtomicForm.tsx",
+    "src/config/navigation.ts",
+    "src/pages/__tests__/NursingPages.test.tsx",
+    "src/pages/AttendancePage.tsx",
+    "src/pages/EncountersPage.tsx",
+    "src/pages/Module19NursingPage.tsx",
+    "src/pages/NursingTriagePage.tsx",
     "src/pages/ReceptionPage.tsx",
-    "src/services/__tests__/receptionWorkflowService.test.ts",
-    "src/services/receptionWorkflowService.ts",
-    "supabase/migrations/20260813001000_canonical_reception_billing_tiss_handoff.sql",
-    "supabase/rollbacks/20260813001000_canonical_reception_billing_tiss_handoff.sql",
-    "supabase/tests/canonical_reception_billing_tiss_handoff_contract.sql"
+    "src/services/__tests__/module19NursingService.test.ts",
+    "src/services/medicalAttendanceService.ts",
+    "src/services/module19NursingService.ts",
+    "supabase/migrations/20260813040000_m19_m18_canonical_handoff.sql",
+    "supabase/rollbacks/20260813040000_m19_m18_canonical_handoff.sql",
+    "supabase/tests/m19_m18_canonical_handoff_contract.sql"
   ],
   "sharedPaths": [
-    ".github/workflows/ci.yml",
-    ".github/workflows/deploy-database-migration.yml",
-    "deploy/database/canonical-reception-tiss-applied.sql",
-    "deploy/database/canonical-reception-tiss-before.sql",
-    "deploy/database/canonical-reception-tiss-rollback.sql",
-    "deploy/database/deploy-migration.integration.sh",
     "deploy/database/deploy-migration.sh",
-    "deploy/database/tiss-materialization-applied.sql",
-    "deploy/database/tiss-materialization-before.sql",
-    "deploy/database/tiss-materialization-rollback.sql",
-    "supabase/migrations/20260716240000_operational_rls_closure.sql"
+    "local-auth-server.mjs",
+    "src/services/__tests__/localAuthSecurity.test.ts"
   ],
   "status": "active"
 }

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
 import { ErrorState } from "@/components/StateViews";
 import { Module19TriageWorkspace } from "@/components/nursing/m19";
@@ -12,11 +12,11 @@ function positiveQueryNumber(value: string | null): number | null {
 }
 
 export default function Module19NursingPage() {
-  const { user } = useAuth();
+  const { user, activeUnitId } = useAuth();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const primaryUnitId = user?.primary_unit_id ? Number(user.primary_unit_id) : null;
-  const unitId = Number.isInteger(primaryUnitId) && Number(primaryUnitId) > 0
-    ? Number(primaryUnitId)
+  const unitId = Number.isInteger(activeUnitId) && Number(activeUnitId) > 0
+    ? Number(activeUnitId)
     : null;
 
   const context = useMemo(
@@ -46,6 +46,7 @@ export default function Module19NursingPage() {
         initialPatientId={context.patientId}
         initialAppointmentId={context.appointmentId}
         initialQueueId={context.queueId}
+        onAttendanceReady={(appointmentId) => navigate(`/attendance/${appointmentId}`)}
       />
     </div>
   );
