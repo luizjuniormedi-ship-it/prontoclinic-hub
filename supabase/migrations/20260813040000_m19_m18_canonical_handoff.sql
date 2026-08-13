@@ -388,7 +388,9 @@ REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON
 GRANT SELECT ON public.triagem_fila, public.triagens, public.news2_avaliacoes,
   public.encounters, public.triagem_reclassificacoes
   TO authenticated, app_prontomedic;
-GRANT SELECT ON public.appointments, public.professionals, public.professional_schedules
+GRANT SELECT ON public.appointments, public.professionals, public.professional_schedules,
+  public.patients, public.mnct_classificacao_risco, public.user_profiles,
+  public.user_permissions, public.permissions, public.roles, public.role_permissions
   TO prontomedic_clinical_handoff_owner;
 GRANT SELECT, INSERT, UPDATE ON public.triagem_fila, public.triagens, public.encounters
   TO prontomedic_clinical_handoff_owner;
@@ -408,8 +410,11 @@ END
 $clinical_sequences$;
 GRANT EXECUTE ON FUNCTION public.active_company_id(), public.active_unit_id(),
   public.request_aal(), public.can_access(TEXT, TEXT),
-  public.current_company_id(), public.audit_has_role(TEXT[]),
+  public.current_company_id(), public.audit_current_user_id(),
+  public.audit_current_company_id(), public.audit_has_role(TEXT[]),
   public.org_can_access_unit(UUID, INTEGER)
+  TO prontomedic_clinical_handoff_owner;
+GRANT EXECUTE ON FUNCTION private.prontomedic_module_action_allowed(TEXT, TEXT, INTEGER, BOOLEAN)
   TO prontomedic_clinical_handoff_owner;
 
 CREATE OR REPLACE FUNCTION public.m19_prepare_triage_handoff_secure(

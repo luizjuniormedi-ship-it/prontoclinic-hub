@@ -137,8 +137,15 @@ BEGIN
      OR NOT has_function_privilege('authenticated','public.m18_open_attendance_secure(bigint,integer,bigint)','EXECUTE')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.can_access(text,text)','EXECUTE')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.current_company_id()','EXECUTE')
+     OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.audit_current_user_id()','EXECUTE')
+     OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.audit_current_company_id()','EXECUTE')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.audit_has_role(text[])','EXECUTE')
-     OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.org_can_access_unit(uuid,integer)','EXECUTE') THEN
+     OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.org_can_access_unit(uuid,integer)','EXECUTE')
+     OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','private.prontomedic_module_action_allowed(text,text,integer,boolean)','EXECUTE')
+     OR NOT has_table_privilege('prontomedic_clinical_handoff_owner','public.patients','SELECT')
+     OR NOT has_table_privilege('prontomedic_clinical_handoff_owner','public.mnct_classificacao_risco','SELECT')
+     OR NOT has_table_privilege('prontomedic_clinical_handoff_owner','public.user_profiles','SELECT')
+     OR NOT has_table_privilege('prontomedic_clinical_handoff_owner','public.role_permissions','SELECT') THEN
     RAISE EXCEPTION 'Authenticated RPC grants incomplete';
   END IF;
   IF EXISTS (
