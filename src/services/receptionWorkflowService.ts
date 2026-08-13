@@ -111,10 +111,6 @@ export interface ReceptionWorkflowDependencies {
     workflowId: string,
     billing: ReceptionWorkflowInput["billing"],
   ): Promise<WorkflowArtifact>;
-  ensureTiss(
-    workflowId: string,
-    tiss: NonNullable<ReceptionWorkflowInput["tiss"]>,
-  ): Promise<WorkflowArtifact>;
   ensureFinancial(
     workflowId: string,
     receivable: NonNullable<ReceptionWorkflowInput["receivable"]>,
@@ -239,9 +235,6 @@ function assertInput(input: ReceptionWorkflowInput): void {
   if (input.billing.type === "particular" && input.billing.insuranceId) {
     throw new Error("Conta particular não aceita convênio");
   }
-  if (input.tiss && input.billing.type !== "convenio") {
-    throw new Error("Guia TISS exige pré-conta de convênio");
-  }
   if (input.receivable) {
     if (!Number.isFinite(input.receivable.amount) || input.receivable.amount <= 0) {
       throw new Error("Valor do título pendente inválido");
@@ -256,7 +249,7 @@ function buildRequestPayload(input: ReceptionWorkflowInput): Record<string, unkn
   return {
     priority: input.priority ?? "normal",
     exception_reason: input.exceptionReason?.trim() || null,
-    requires_tiss: Boolean(input.tiss),
+    requires_tiss: false,
     requires_financial: Boolean(input.receivable),
     billing: {
       type: input.billing.type,
@@ -264,12 +257,6 @@ function buildRequestPayload(input: ReceptionWorkflowInput): Record<string, unkn
       insurance_id: input.billing.insuranceId ?? null,
       total_gross_amount: input.billing.totalGrossAmount,
     },
-    tiss: input.tiss
-      ? {
-          guide_type: input.tiss.guideType,
-          environment: input.tiss.environment ?? "HOMOLOGACAO",
-        }
-      : null,
     receivable: input.receivable
       ? {
           type: input.receivable.type,
@@ -375,16 +362,6 @@ const defaultDependencies: ReceptionWorkflowDependencies = {
         p_total_gross_amount: billing.totalGrossAmount,
       },
       "Erro ao preparar pré-conta",
-    ),
-  ensureTiss: (workflowId, tiss) =>
-    rpcSingle<WorkflowArtifact>(
-      "ensure_tiss_guide_for_checkin_secure",
-      {
-        p_workflow_id: workflowId,
-        p_guide_type: tiss.guideType,
-        p_environment: tiss.environment ?? "HOMOLOGACAO",
-      },
-      "Erro ao preparar guia TISS",
     ),
   ensureFinancial: (workflowId, receivable) =>
     rpcSingle<WorkflowArtifact>(
@@ -559,7 +536,7 @@ export function createReceptionWorkflowService(
           }
           case "billing": {
             const account = await dependencies.ensureBilling(workflow.id, input.billing);
-            const nextStep = input.tiss ? "tiss" : input.receivable ? "financial" : "checkin";
+            const nextStep = input.receivable ? "financial" : "checkin";
             workflow = await dependencies.advance({
               workflowId: workflow.id,
               expectedVersion: workflow.version,
@@ -571,15 +548,12 @@ export function createReceptionWorkflowService(
             break;
           }
           case "tiss": {
-            if (!input.tiss) throw new Error("Payload TISS ausente para etapa obrigatória");
-            const guide = await dependencies.ensureTiss(workflow.id, input.tiss);
             workflow = await dependencies.advance({
               workflowId: workflow.id,
               expectedVersion: workflow.version,
               nextStep: input.receivable ? "financial" : "checkin",
               status: "in_progress",
-              tissGuideId: String(guide.id),
-              resultPayload: { tiss_draft_ready: true, tiss_transmitted: false },
+              resultPayload: { legacy_tiss_step_skipped: true },
             });
             break;
           }

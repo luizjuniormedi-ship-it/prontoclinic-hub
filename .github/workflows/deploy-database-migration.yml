@@ -25,6 +25,21 @@ on:
           - "20260812021457"
           - "20260812150000"
           - "20260812170000"
+          - "20260812211247"
+          - "20260813001000"
+      full_restore:
+        description: Recuperacao integral pelo dump (acao separada do rollback logico)
+        required: true
+        default: false
+        type: boolean
+      restore_backup_path:
+        description: Caminho absoluto do dump validado existente na VPS
+        required: false
+        type: string
+      restore_backup_sha256_path:
+        description: Caminho absoluto do checksum do dump existente na VPS
+        required: false
+        type: string
 
 concurrency:
   group: prontomedic-production-deploy
@@ -76,6 +91,8 @@ jobs:
             20260812021457) name=pharmacy_runtime_closure; predecessor=20260811210000; rollback_mode=preserve_schema ;;
             20260812150000) name=medical_attendance_atomic_completion; predecessor=20260812021457; rollback_mode=preserve_schema ;;
             20260812170000) name=medical_attendance_billing_handoff; predecessor=20260812150000; rollback_mode=preserve_schema ;;
+            20260812211247) name=tiss_account_materialization_contract; predecessor=20260812170000; rollback_mode=preserve_schema ;;
+            20260813001000) name=canonical_reception_billing_tiss_handoff; predecessor=20260812211247; rollback_mode=preserve_schema ;;
             *) echo '::error::migration nao autorizada'; exit 1 ;;
           esac
           stage="release/stage"
@@ -90,6 +107,8 @@ jobs:
             20260812021457) smoke_prefix=deploy/database/pharmacy ;;
             20260812150000) smoke_prefix=deploy/database/medical-attendance ;;
             20260812170000) smoke_prefix=deploy/database/clinical-billing ;;
+            20260812211247) smoke_prefix=deploy/database/tiss-materialization ;;
+            20260813001000) smoke_prefix=deploy/database/canonical-reception-tiss ;;
             *) smoke_prefix=deploy/database/smoke ;;
           esac
           cp "${smoke_prefix}-before.sql" "$stage/smoke-before.sql"
@@ -126,6 +145,7 @@ jobs:
             release/bootstrap-root
 
   deploy:
+    if: ${{ !inputs.full_restore }}
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -243,3 +263,46 @@ jobs:
         run: |
           ssh "${VPS_USER}@${VPS_HOST}" \
             "rm -f '/tmp/database-${COMMIT_SHA}.tgz' '/tmp/database-${COMMIT_SHA}.tgz.sha256'" || true
+
+  restore:
+    if: ${{ inputs.full_restore }}
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: Production-Restore
+    steps:
+      - name: Validate SSH transport secrets
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_KNOWN_HOSTS: ${{ vars.VPS_KNOWN_HOSTS_PUBLIC }}
+          BACKUP: ${{ inputs.restore_backup_path }}
+          BACKUP_SHA256: ${{ inputs.restore_backup_sha256_path }}
+        run: |
+          for variable in VPS_HOST VPS_USER VPS_SSH_PRIVATE_KEY VPS_KNOWN_HOSTS BACKUP BACKUP_SHA256; do
+            test -n "${!variable}" || { echo "::error::Valor obrigatorio ausente: ${variable}"; exit 1; }
+          done
+          [[ "$BACKUP" =~ ^/var/backups/prontomedic/database/[A-Za-z0-9._-]+\.dump$ ]]
+          [[ "$BACKUP_SHA256" = "${BACKUP}.sha256" ]]
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_KNOWN_HOSTS: ${{ vars.VPS_KNOWN_HOSTS_PUBLIC }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Restore complete database from validated dump
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          BACKUP: ${{ inputs.restore_backup_path }}
+          BACKUP_SHA256: ${{ inputs.restore_backup_sha256_path }}
+        run: |
+          ssh "${VPS_USER}@${VPS_HOST}" \
+            "sudo PRONTOMEDIC_DB_RESTORE_CONFIRM=RESTORE:prontoclinic /usr/local/sbin/prontomedic-db-deploy restore '$BACKUP' '$BACKUP_SHA256'"

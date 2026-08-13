@@ -389,6 +389,7 @@ BEGIN
         'insurance_authorizations_select_unit',
         'insurance_authorizations_insert_unit',
         'insurance_authorizations_update_unit',
+        'm11_billing_authz_trigger_select',
         'm15_authorizations_reception_owner_select',
         'm15_authorizations_reception_owner_insert',
         'm15_authorizations_reception_owner_update',

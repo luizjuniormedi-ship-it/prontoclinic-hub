@@ -1,11 +1,17 @@
-import { test as authed, expect } from './fixtures/auth';
+import { clearBrowserAuth, test as authed, expect } from './fixtures/auth';
 import { Client } from 'pg';
 
-function appointmentCardFor(page: import('@playwright/test').Page, patientName: string) {
-  return page.getByRole('button', {
+function appointmentCardFor(
+  page: import('@playwright/test').Page,
+  patientName: string,
+  expectedTime?: string,
+) {
+  const patientButton = page.getByRole('button', {
     name: `Ver agendamentos de ${patientName}`,
     exact: true,
-  }).first().locator('xpath=ancestor::div[contains(@class, "rounded-lg")][1]');
+  });
+  const card = patientButton.locator('xpath=ancestor::div[contains(@class, "rounded-lg")][1]');
+  return expectedTime ? card.filter({ hasText: expectedTime }).first() : card.first();
 }
 
 async function waitForReceptionReady(page: import('@playwright/test').Page) {
@@ -55,7 +61,7 @@ authed.describe.serial('Recepção — operação básica', () => {
     await expect(page.getByRole('tab', { name: /fila/i })).toHaveAttribute('data-state', 'active');
   });
 
-  authed('conclui o check-in 91001 uma única vez e persiste a senha', async ({ page }, testInfo) => {
+  authed('conclui a cadeia 91001 da Recepção até guia e XML TISS sem duplicar artefatos', async ({ loginAs, page }, testInfo) => {
     authed.slow();
     authed.skip(
       testInfo.project.name !== 'chromium',
@@ -69,10 +75,51 @@ authed.describe.serial('Recepção — operação básica', () => {
     await fixtureClient.connect();
     try {
       await fixtureClient.query(
-        `UPDATE public.insurance_companies
+        `DELETE FROM public.reception_checkin_workflows WHERE appointment_id = 91001;
+         DELETE FROM public.dicom_worklist_queue WHERE appointment_id = 91001;
+         DELETE FROM public.tiss_xml WHERE appointment_id = 91001;
+         DELETE FROM public.billings WHERE appointment_id = 91001;
+         DELETE FROM public.tiss_guides WHERE appointment_id = 91001;
+         DELETE FROM public.reception_payments WHERE appointment_id = 91001;
+         DELETE FROM public.financial_transactions WHERE appointment_id = 91001;
+         DELETE FROM public.billing_accounts WHERE appointment_id = 91001;
+         DELETE FROM public.reception_checkin_status_history
+          WHERE checkin_id IN (
+            SELECT id FROM public.reception_checkins WHERE appointment_id = 91001
+          );
+         DELETE FROM public.reception_queue_tickets WHERE appointment_id = 91001;
+         DELETE FROM public.reception_checkins WHERE appointment_id = 91001;
+         UPDATE public.appointments
+            SET status = 'scheduled', tp_status = 'agendado', lg_checkin = FALSE
+          WHERE id = 91001;
+
+         UPDATE public.insurance_companies
             SET lg_guia_obrigatoria = TRUE
           WHERE id = 91001
-            AND company_id = 'eeeeeeee-1000-4000-8000-000000000001'`,
+            AND company_id = 'eeeeeeee-1000-4000-8000-000000000001';
+
+         INSERT INTO public.insurance_authorizations (
+           id, company_id, unit_id, patient_id, appointment_id,
+           insurance_id, insurance_plan_id, procedure_id, procedure_desc,
+           requester_professional_id, status, protocol_number,
+           authorization_number, valid_until, quantity_requested,
+           quantity_authorized, created_by, authorized_at
+         ) VALUES (
+           'eeeeeeee-9104-4000-8000-000000000001',
+           'eeeeeeee-1000-4000-8000-000000000001',
+           91001, 91001, 91001, 91001, 91001, 91001,
+           'Exame SADT E2E', 91001, 'autorizada', 'PROTO-E2E-91001',
+           'AUTH-E2E-91001', CURRENT_DATE + 30, 1, 1,
+           'eeeeeeee-0000-4000-8000-000000000001', NOW()
+         )
+         ON CONFLICT (id) DO UPDATE SET
+           status = 'autorizada',
+           protocol_number = EXCLUDED.protocol_number,
+           authorization_number = EXCLUDED.authorization_number,
+           valid_until = EXCLUDED.valid_until,
+           quantity_authorized = 1,
+           authorized_at = NOW(),
+           updated_at = NOW()`,
       );
     } finally {
       await fixtureClient.end();
@@ -80,7 +127,7 @@ authed.describe.serial('Recepção — operação básica', () => {
     await page.reload();
 
     const patientName = 'Paciente E2E A';
-    const appointmentCard = appointmentCardFor(page, patientName);
+    const appointmentCard = appointmentCardFor(page, patientName, '14:00');
     const patientHistoryButton = appointmentCard.getByRole('button', {
       name: `Ver agendamentos de ${patientName}`,
     });
@@ -131,25 +178,35 @@ authed.describe.serial('Recepção — operação básica', () => {
     await page.reload();
     await expect(page.getByText(new RegExp(`^${ticketLabel} · Paciente #91001$`))).toHaveCount(1);
 
-    const client = new Client({ connectionString: databaseUrl });
-    await client.connect();
+    const preBillingClient = new Client({ connectionString: databaseUrl });
+    await preBillingClient.connect();
+    let billingAccountId = '';
     try {
-      const chain = await client.query<{
+      const preBilling = await preBillingClient.query<{
         appointment_id: string;
         checkin_count: string;
         workflow_count: string;
+        billing_account_id: string;
         billing_count: string;
-        tiss_count: string;
+        billing_type: string;
+        billing_status: string;
+        authorization_number: string;
+        guide_count: string;
+        xml_count: string;
         worklist_count: string;
         worklist_key_matches: boolean;
         worklist_state_matches: boolean;
-        sent_xml_count: string;
       }>(
         `SELECT appointment.id::text AS appointment_id,
                 count(DISTINCT checkin.id)::text AS checkin_count,
                 count(DISTINCT workflow.id)::text AS workflow_count,
+                min(billing.id::text) AS billing_account_id,
                 count(DISTINCT billing.id)::text AS billing_count,
-                count(DISTINCT guide.id)::text AS tiss_count,
+                min(billing.billing_type) AS billing_type,
+                min(billing.status) AS billing_status,
+                min(billing.authorization_number) AS authorization_number,
+                count(DISTINCT guide.id)::text AS guide_count,
+                count(DISTINCT xml.id)::text AS xml_count,
                 count(DISTINCT worklist.id)::text AS worklist_count,
                 bool_and(worklist.idempotency_key = workflow.idempotency_key)
                   AS worklist_key_matches,
@@ -157,10 +214,7 @@ authed.describe.serial('Recepção — operação básica', () => {
                   imaging_order.status = 'liberado_worklist'
                   AND imaging_item.status = 'liberado_worklist'
                   AND worklist.imaging_order_item_id = imaging_item.id
-                ) AS worklist_state_matches,
-                count(DISTINCT xml.id) FILTER (
-                  WHERE lower(COALESCE(xml.status, '')) IN ('enviado', 'transmitido', 'sent')
-                )::text AS sent_xml_count
+                ) AS worklist_state_matches
            FROM public.appointments appointment
            LEFT JOIN public.reception_checkins checkin
              ON checkin.appointment_id = appointment.id
@@ -186,19 +240,125 @@ authed.describe.serial('Recepção — operação básica', () => {
           GROUP BY appointment.id`,
       );
 
-      expect(chain.rows).toEqual([{
+      expect(preBilling.rows).toEqual([{
         appointment_id: '91001',
         checkin_count: '1',
         workflow_count: '1',
+        billing_account_id: expect.any(String),
         billing_count: '1',
-        tiss_count: '1',
+        billing_type: 'convenio',
+        billing_status: 'aberta',
+        authorization_number: 'AUTH-E2E-91001',
+        guide_count: '0',
+        xml_count: '0',
         worklist_count: '1',
         worklist_key_matches: true,
         worklist_state_matches: true,
+      }]);
+      billingAccountId = preBilling.rows[0].billing_account_id;
+    } finally {
+      await preBillingClient.end();
+    }
+
+    await clearBrowserAuth(page);
+    await loginAs('admin');
+    const focusedBillingUrl = `/billing-accounts?account=${billingAccountId}&appointment=91001`;
+    await page.goto(focusedBillingUrl);
+    const accountDialog = page.getByRole('dialog', { name: 'Conferência da Conta' });
+    await expect(accountDialog).toBeVisible();
+    await expect(accountDialog).toContainText('AUTH-E2E-91001');
+    await accountDialog.getByRole('button', { name: 'Revisar pendências' }).click();
+    await expect(page.getByText('Conta revisada sem bloqueios', { exact: true })).toBeVisible();
+    await accountDialog.getByRole('button', { name: 'Fechar' }).click();
+
+    await page.getByRole('tab', { name: 'Auditoria' }).click();
+    const auditRow = page.getByRole('row').filter({ hasText: patientName });
+    await expect(auditRow).toBeVisible();
+    await auditRow.getByRole('button', { name: 'Assumir' }).click();
+    await expect(page.getByText('Conta assumida para auditoria', { exact: true })).toBeVisible();
+    await expect(auditRow.getByRole('button', { name: 'Decidir' })).toBeVisible();
+    await auditRow.getByRole('button', { name: 'Decidir' }).click();
+
+    const decisionDialog = page.getByRole('dialog', { name: 'Decisão da auditoria' });
+    await decisionDialog.getByLabel('Parecer').fill(
+      'Conta sintética conferida e apta para materialização TISS em homologação.',
+    );
+    await decisionDialog.getByLabel('Evidência verificada').fill(
+      'Carteirinha, autorização, procedimento, valor e vínculo ao agendamento 91001 conferidos.',
+    );
+    await decisionDialog.getByRole('button', { name: 'Aprovar' }).click();
+    await expect(page.getByText('Conta aprovada para envio', { exact: true })).toBeVisible();
+
+    await page.goto(focusedBillingUrl);
+    const readyAccountDialog = page.getByRole('dialog', { name: 'Conferência da Conta' });
+    const materializeButton = readyAccountDialog.getByRole('button', {
+      name: 'Gerar guia e XML TISS',
+    });
+    await expect(materializeButton).toBeVisible();
+    await materializeButton.click();
+    await expect(page.getByText('Guia e XML TISS materializados', { exact: true })).toBeVisible();
+    await expect(materializeButton).toBeEnabled();
+    await materializeButton.click();
+    await expect(page.getByText('Guia e XML TISS materializados', { exact: true })).toBeVisible();
+
+    const finalClient = new Client({ connectionString: databaseUrl });
+    await finalClient.connect();
+    try {
+      const finalChain = await finalClient.query<{
+        appointment_id: string;
+        billing_account_id: string;
+        billing_status: string;
+        billing_count: string;
+        guide_count: string;
+        xml_count: string;
+        linked_guide_count: string;
+        linked_xml_count: string;
+        xml_statuses: string;
+        sent_xml_count: string;
+      }>(
+        `SELECT appointment.id::text AS appointment_id,
+                min(billing.id::text) AS billing_account_id,
+                min(billing.status) AS billing_status,
+                count(DISTINCT billing.id)::text AS billing_count,
+                count(DISTINCT guide.id)::text AS guide_count,
+                count(DISTINCT xml.id)::text AS xml_count,
+                count(DISTINCT guide.id) FILTER (
+                  WHERE guide.billing_account_id = billing.id
+                    AND guide.company_id = billing.company_id
+                    AND guide.unit_id = billing.unit_id
+                )::text AS linked_guide_count,
+                count(DISTINCT xml.id) FILTER (
+                  WHERE xml.billing_account_id = billing.id
+                    AND xml.guide_id = guide.id
+                    AND xml.company_id = billing.company_id
+                    AND xml.unit_id = billing.unit_id
+                )::text AS linked_xml_count,
+                string_agg(DISTINCT xml.status, ',' ORDER BY xml.status) AS xml_statuses,
+                count(DISTINCT xml.id) FILTER (
+                  WHERE lower(COALESCE(xml.status, '')) IN ('enviado', 'transmitido', 'sent')
+                )::text AS sent_xml_count
+           FROM public.appointments appointment
+           JOIN public.billing_accounts billing ON billing.appointment_id = appointment.id
+           LEFT JOIN public.tiss_guides guide ON guide.appointment_id = appointment.id
+           LEFT JOIN public.tiss_xml xml ON xml.appointment_id = appointment.id
+          WHERE appointment.id = 91001
+          GROUP BY appointment.id`,
+      );
+
+      expect(finalChain.rows).toEqual([{
+        appointment_id: '91001',
+        billing_account_id: billingAccountId,
+        billing_status: 'pronta_envio',
+        billing_count: '1',
+        guide_count: '1',
+        xml_count: '1',
+        linked_guide_count: '1',
+        linked_xml_count: '1',
+        xml_statuses: 'PENDENTE',
         sent_xml_count: '0',
       }]);
     } finally {
-      await client.end();
+      await finalClient.end();
     }
   });
 });

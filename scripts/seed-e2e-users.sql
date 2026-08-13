@@ -8,19 +8,19 @@
 \if :{?e2e_password}
 \else
   \echo 'Variavel de ambiente obrigatoria ausente: E2E_PASSWORD'
-  \quit 1
+  SELECT 1 / 0;
 \endif
 \getenv e2e_mfa_secret E2E_MFA_SECRET
 \if :{?e2e_mfa_secret}
 \else
   \echo 'Variavel de ambiente obrigatoria ausente: E2E_MFA_SECRET'
-  \quit 1
+  SELECT 1 / 0;
 \endif
 \getenv e2e_mfa_encryption_key AUTH_MFA_ENCRYPTION_KEY
 \if :{?e2e_mfa_encryption_key}
 \else
   \echo 'Variavel de ambiente obrigatoria ausente: AUTH_MFA_ENCRYPTION_KEY'
-  \quit 1
+  SELECT 1 / 0;
 \endif
 
 BEGIN;
@@ -28,18 +28,26 @@ SET LOCAL TIME ZONE 'America/Sao_Paulo';
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-INSERT INTO public.companies (id, name, lg_ativo)
-VALUES ('eeeeeeee-1000-4000-8000-000000000001', 'Empresa E2E', TRUE)
-ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, lg_ativo = TRUE;
+INSERT INTO public.companies (id, name, cnpj, lg_ativo)
+VALUES (
+  'eeeeeeee-1000-4000-8000-000000000001',
+  'Empresa E2E', '99999999000191', TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name, cnpj = EXCLUDED.cnpj, lg_ativo = TRUE;
 
-INSERT INTO public.units (id, company_id, cd_codigo, ds_nome, lg_principal, lg_ativo)
+INSERT INTO public.units (
+  id, company_id, cd_codigo, ds_nome, ds_uf, cnes, lg_principal, lg_ativo
+)
 VALUES
-  (91001, 'eeeeeeee-1000-4000-8000-000000000001', 'E2E-A', 'Unidade E2E A', TRUE, TRUE),
-  (91002, 'eeeeeeee-1000-4000-8000-000000000001', 'E2E-B', 'Unidade E2E B', FALSE, TRUE)
+  (91001, 'eeeeeeee-1000-4000-8000-000000000001', 'E2E-A', 'Unidade E2E A', 'BA', '9999999', TRUE, TRUE),
+  (91002, 'eeeeeeee-1000-4000-8000-000000000001', 'E2E-B', 'Unidade E2E B', 'BA', '9999998', FALSE, TRUE)
 ON CONFLICT (id) DO UPDATE SET
   company_id = EXCLUDED.company_id,
   cd_codigo = EXCLUDED.cd_codigo,
   ds_nome = EXCLUDED.ds_nome,
+  ds_uf = EXCLUDED.ds_uf,
+  cnes = EXCLUDED.cnes,
   lg_ativo = TRUE;
 
 -- O trigger de user_profiles valida o papel antes do INSERT/UPDATE. Em um
@@ -335,7 +343,7 @@ INSERT INTO public.services_catalog (id, company_id, code, name, price, lg_ativo
 VALUES (
   91001,
   'eeeeeeee-1000-4000-8000-000000000001',
-  'E2E-SADT-USG',
+  '40301010',
   'Ultrassonografia SADT E2E',
   150.00,
   TRUE
@@ -435,16 +443,22 @@ ON CONFLICT (id) DO UPDATE SET
   active = TRUE;
 
 INSERT INTO public.professionals (
-  id, company_id, user_id, full_name, crm, specialty, email, lg_ativo
+  id, company_id, user_id, full_name, crm, specialty, email,
+  council_code, council_state, cbos, lg_ativo
 ) VALUES (
   91001, 'eeeeeeee-1000-4000-8000-000000000001',
   'eeeeeeee-0000-4000-8000-000000000002', 'Médico E2E',
-  'CRM-E2E', 'Clínica Médica E2E', 'doctor@prontomedic.test', TRUE
+  'CRM-12345', 'Clínica Médica E2E', 'doctor@prontomedic.test',
+  '06', 'BA', '225125', TRUE
 )
 ON CONFLICT (id) DO UPDATE SET
   company_id = EXCLUDED.company_id,
   user_id = EXCLUDED.user_id,
   full_name = EXCLUDED.full_name,
+  crm = EXCLUDED.crm,
+  council_code = EXCLUDED.council_code,
+  council_state = EXCLUDED.council_state,
+  cbos = EXCLUDED.cbos,
   lg_ativo = TRUE;
 
 INSERT INTO public.professional_insurances (
@@ -579,6 +593,11 @@ DELETE FROM public.billings WHERE appointment_id IN (91001, 91002, 91003);
 DELETE FROM public.tiss_guides WHERE appointment_id IN (91001, 91002, 91003);
 DELETE FROM public.reception_payments WHERE appointment_id IN (91001, 91002, 91003);
 DELETE FROM public.financial_transactions WHERE appointment_id IN (91001, 91002, 91003);
+DELETE FROM public.billing_account_audit_reviews
+WHERE billing_account_id IN (
+  SELECT id FROM public.billing_accounts
+  WHERE appointment_id IN (91001, 91002, 91003)
+);
 DELETE FROM public.billing_accounts WHERE appointment_id IN (91001, 91002, 91003);
 DELETE FROM public.reception_checkin_status_history
 WHERE checkin_id IN (SELECT id FROM public.reception_checkins WHERE appointment_id IN (91001, 91002, 91003));
@@ -788,7 +807,7 @@ BEGIN
     JOIN public.services_catalog service
       ON service.id = appointment.service_id
      AND service.company_id = appointment.company_id
-     AND service.code = 'E2E-SADT-USG'
+     AND service.code = '40301010'
      AND service.lg_ativo
     JOIN public.price_tables price
       ON price.company_id = appointment.company_id
