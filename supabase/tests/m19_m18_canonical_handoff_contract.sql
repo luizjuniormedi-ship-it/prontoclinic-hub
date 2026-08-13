@@ -2,6 +2,23 @@
 -- Never run against VPS production or DataSIGH.
 BEGIN;
 
+DO $classification_catalog$
+DECLARE
+  v_count INTEGER;
+BEGIN
+  SELECT count(*)
+    INTO v_count
+    FROM public.mnct_classificacao_risco
+   WHERE company_id IS NULL
+     AND lg_ativo IS TRUE
+     AND ds_classificacao IN ('VERMELHO', 'LARANJA', 'AMARELO', 'VERDE', 'AZUL');
+
+  IF v_count <> 5 THEN
+    RAISE EXCEPTION 'Canonical Manchester catalog is incomplete: %/5', v_count;
+  END IF;
+END
+$classification_catalog$;
+
 DO $contract$
 DECLARE v_count INTEGER; v_source TEXT;
 BEGIN

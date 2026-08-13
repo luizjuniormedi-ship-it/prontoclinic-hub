@@ -134,6 +134,38 @@ BEGIN
 END
 $preflight$;
 
+WITH inserted_classifications AS (
+  INSERT INTO public.mnct_classificacao_risco (
+    company_id,
+    ds_classificacao,
+    cd_cor_hex,
+    nr_tempo_max_atendimento_min,
+    ds_descricao,
+    lg_ativo
+  )
+  VALUES
+    (NULL, 'VERMELHO', '#DC2626', 0,   'Emergência: atendimento imediato.', TRUE),
+    (NULL, 'LARANJA',  '#EA580C', 10,  'Muito urgente: atendimento em até 10 minutos.', TRUE),
+    (NULL, 'AMARELO',  '#EAB308', 60,  'Urgente: atendimento em até 60 minutos.', TRUE),
+    (NULL, 'VERDE',    '#16A34A', 120, 'Pouco urgente: atendimento em até 120 minutos.', TRUE),
+    (NULL, 'AZUL',     '#2563EB', 240, 'Não urgente: atendimento em até 240 minutos.', TRUE)
+  ON CONFLICT (ds_classificacao) DO NOTHING
+  RETURNING ds_classificacao
+)
+INSERT INTO private.m19_m18_handoff_rollback_state (
+  object_type,
+  object_name,
+  metadata,
+  migration_version
+)
+SELECT
+  'catalog_seed',
+  'mnct_classificacao_risco.' || ds_classificacao,
+  jsonb_build_object('ds_classificacao', ds_classificacao),
+  '20260813040000'
+FROM inserted_classifications
+ON CONFLICT (object_type, object_name) DO NOTHING;
+
 ALTER TABLE public.triagem_fila
   ADD COLUMN IF NOT EXISTS appointment_id BIGINT;
 

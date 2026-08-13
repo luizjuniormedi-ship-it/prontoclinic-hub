@@ -163,6 +163,12 @@ BEGIN
 END
 $optional_column$;
 
+DELETE FROM public.mnct_classificacao_risco classification
+ USING private.m19_m18_handoff_rollback_state state
+ WHERE state.object_type = 'catalog_seed'
+   AND state.migration_version = '20260813040000'
+   AND classification.ds_classificacao = state.metadata->>'ds_classificacao';
+
 DO $drop_new_clinical_owner$
 DECLARE v_existed BOOLEAN;
 BEGIN
