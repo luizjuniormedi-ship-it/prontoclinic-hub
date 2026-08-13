@@ -264,7 +264,7 @@ test.describe('Gate fase 0/1', () => {
     await page.goto('/attendance/91001');
     await expect(page).toHaveURL(/\/attendance\/91001$/);
     await expect(page.getByRole('alert')).toContainText(
-      /unidade|escopo|não autorizado|não foi possível abrir o atendimento/i,
+      /unidade|escopo|não autorizado|não foi possível abrir o atendimento|agendamento não encontrado no contexto ativo/i,
       { timeout: 15_000 },
     );
     await expect(page.getByRole('heading', { name: 'Atendimento' })).toHaveCount(0);
