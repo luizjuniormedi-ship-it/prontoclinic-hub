@@ -65,7 +65,7 @@ BEGIN
        'm19_reclassify_triage_secure','m18_open_attendance_secure',
        'm18_save_attendance_secure','m18_finalize_attendance_secure',
        'm18_complete_attendance_secure')
-     AND p.prosecdef AND pg_get_userbyid(p.proowner) = 'prontomedic_rpc_owner';
+     AND p.prosecdef AND pg_get_userbyid(p.proowner) = 'prontomedic_clinical_handoff_owner';
   IF v_count <> 7 THEN RAISE EXCEPTION 'Security definer ownership incomplete: %', v_count; END IF;
 
   IF has_table_privilege('authenticated','public.triagem_fila','INSERT')
@@ -113,8 +113,15 @@ BEGIN
   IF NOT has_function_privilege('authenticated','public.m19_prepare_triage_handoff_secure(bigint,text)','EXECUTE')
      OR NOT has_function_privilege('authenticated','public.m19_complete_triage_secure(integer,bigint,bigint,bigint,integer,text,jsonb,jsonb)','EXECUTE')
      OR NOT has_function_privilege('authenticated','public.m18_open_attendance_secure(bigint,integer,bigint)','EXECUTE')
-     OR NOT has_function_privilege('prontomedic_rpc_owner','public.can_access(text,text)','EXECUTE') THEN
+     OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.can_access(text,text)','EXECUTE') THEN
     RAISE EXCEPTION 'Authenticated RPC grants incomplete';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_roles
+     WHERE rolname = 'prontomedic_clinical_handoff_owner'
+       AND (rolcanlogin OR rolbypassrls)
+  ) THEN
+    RAISE EXCEPTION 'Clinical handoff owner must be NOLOGIN NOBYPASSRLS';
   END IF;
 
 END
@@ -122,7 +129,7 @@ $contract$;
 
 -- Database-enforced idempotency and tenant/unit correlation.
 DO $constraints$
-DECLARE v_def TEXT;
+DECLARE v_def TEXT; v_count INTEGER;
 BEGIN
   SELECT indexdef INTO v_def FROM pg_indexes
    WHERE schemaname = 'public' AND indexname = 'uq_triagem_fila_appointment_scope';
@@ -140,16 +147,16 @@ BEGIN
   SELECT count(*) INTO v_count
     FROM pg_policies
    WHERE schemaname = 'public'
-     AND roles && ARRAY['prontomedic_rpc_owner']::name[]
+     AND roles && ARRAY['prontomedic_clinical_handoff_owner']::name[]
      AND (
-       (tablename = 'appointments' AND cmd = 'SELECT')
+       (tablename IN ('appointments','professionals','professional_schedules') AND cmd = 'SELECT')
        OR (tablename IN ('triagem_fila','triagens','news2_avaliacoes','encounters','triagem_reclassificacoes') AND cmd = 'ALL')
      )
      AND coalesce(qual, '') LIKE '%active_company_id%'
      AND coalesce(qual, '') LIKE '%active_unit_id%'
      AND coalesce(qual, '') LIKE '%request_aal%';
-  IF v_count <> 6 THEN
-    RAISE EXCEPTION 'Restricted RPC owner policies are incomplete: %/6', v_count;
+  IF v_count <> 8 THEN
+    RAISE EXCEPTION 'Restricted RPC owner policies are incomplete: %/8', v_count;
   END IF;
   IF EXISTS (
     SELECT 1 FROM pg_policies
@@ -183,7 +190,7 @@ AS $$ SELECT current_setting('test.can_edit', TRUE) = 'true' $$;
 
 GRANT EXECUTE ON FUNCTION public.active_company_id(), public.active_unit_id(),
   public.request_aal(), public.audit_current_user_id(), public.m18_can_edit_attendance()
-  TO authenticated, prontomedic_rpc_owner;
+  TO authenticated, prontomedic_clinical_handoff_owner;
 
 INSERT INTO public.companies(id, name) VALUES
   ('c1800000-0000-4000-8000-000000000001','M18 Tenant A'),

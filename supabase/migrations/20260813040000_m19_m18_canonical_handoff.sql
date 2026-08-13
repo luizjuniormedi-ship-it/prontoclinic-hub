@@ -35,6 +35,27 @@ BEGIN
 END
 $snapshot_lifecycle$;
 
+DO $clinical_owner$
+DECLARE v_existed BOOLEAN := EXISTS (
+  SELECT 1 FROM pg_roles WHERE rolname = 'prontomedic_clinical_handoff_owner'
+);
+BEGIN
+  INSERT INTO private.m19_m18_handoff_rollback_state(object_type, object_name, metadata)
+  VALUES ('role', 'prontomedic_clinical_handoff_owner', jsonb_build_object('existed', v_existed))
+  ON CONFLICT (object_type, object_name) DO NOTHING;
+  IF NOT v_existed THEN
+    CREATE ROLE prontomedic_clinical_handoff_owner NOLOGIN NOBYPASSRLS;
+  ELSIF EXISTS (
+    SELECT 1 FROM pg_roles
+     WHERE rolname = 'prontomedic_clinical_handoff_owner' AND rolbypassrls
+  ) THEN
+    RAISE EXCEPTION 'Clinical handoff owner must not bypass RLS';
+  END IF;
+END
+$clinical_owner$;
+
+GRANT USAGE ON SCHEMA public, private, auth TO prontomedic_clinical_handoff_owner;
+
 INSERT INTO private.m19_m18_handoff_rollback_state(object_type, object_name, ddl, metadata)
 SELECT 'function', p.oid::regprocedure::TEXT, pg_get_functiondef(p.oid),
        jsonb_build_object(
@@ -86,7 +107,7 @@ SELECT 'policy', format('%I.%I.%I', schemaname, tablename, policyname),
          CASE WHEN with_check IS NULL THEN '' ELSE format(' WITH CHECK (%s)', with_check) END)
   FROM pg_policies
  WHERE schemaname = 'public'
-   AND tablename IN ('triagem_fila','triagens','news2_avaliacoes','encounters','triagem_reclassificacoes')
+   AND tablename IN ('appointments','professionals','professional_schedules','triagem_fila','triagens','news2_avaliacoes','encounters','triagem_reclassificacoes')
    AND current_setting('prontomedic.snapshot_new') = 'true'
 ON CONFLICT (object_type, object_name) DO NOTHING;
 
@@ -281,31 +302,50 @@ CREATE POLICY clinical_reclassifications_read ON public.triagem_reclassificacoes
 
 DROP POLICY IF EXISTS clinical_appointments_rpc_read ON public.appointments;
 CREATE POLICY clinical_appointments_rpc_read ON public.appointments
-  FOR SELECT TO prontomedic_rpc_owner
+  FOR SELECT TO prontomedic_clinical_handoff_owner
   USING (
     public.request_aal() = 'aal2'
     AND company_id = public.active_company_id()
     AND unit_id = public.active_unit_id()
   );
 
+DROP POLICY IF EXISTS clinical_professionals_rpc_read ON public.professionals;
+CREATE POLICY clinical_professionals_rpc_read ON public.professionals
+  FOR SELECT TO prontomedic_clinical_handoff_owner
+  USING (
+    public.request_aal() = 'aal2'
+    AND company_id = public.active_company_id()
+    AND public.active_unit_id() IS NOT NULL
+    AND lg_ativo = TRUE
+  );
+DROP POLICY IF EXISTS clinical_professional_schedules_rpc_read ON public.professional_schedules;
+CREATE POLICY clinical_professional_schedules_rpc_read ON public.professional_schedules
+  FOR SELECT TO prontomedic_clinical_handoff_owner
+  USING (
+    public.request_aal() = 'aal2'
+    AND company_id = public.active_company_id()
+    AND public.active_unit_id() IN (unit_id, slot1_unit_id, slot2_unit_id, slot3_unit_id)
+    AND lg_habilitado = TRUE
+  );
+
 CREATE POLICY clinical_queue_rpc_write ON public.triagem_fila
-  FOR ALL TO prontomedic_rpc_owner
+  FOR ALL TO prontomedic_clinical_handoff_owner
   USING (public.request_aal() = 'aal2' AND company_id = public.active_company_id() AND unit_id = public.active_unit_id())
   WITH CHECK (public.request_aal() = 'aal2' AND company_id = public.active_company_id() AND unit_id = public.active_unit_id());
 CREATE POLICY clinical_triages_rpc_write ON public.triagens
-  FOR ALL TO prontomedic_rpc_owner
+  FOR ALL TO prontomedic_clinical_handoff_owner
   USING (public.request_aal() = 'aal2' AND company_id = public.active_company_id() AND unit_id = public.active_unit_id())
   WITH CHECK (public.request_aal() = 'aal2' AND company_id = public.active_company_id() AND unit_id = public.active_unit_id());
 CREATE POLICY clinical_news2_rpc_write ON public.news2_avaliacoes
-  FOR ALL TO prontomedic_rpc_owner
+  FOR ALL TO prontomedic_clinical_handoff_owner
   USING (public.request_aal() = 'aal2' AND company_id = public.active_company_id() AND unit_id = public.active_unit_id())
   WITH CHECK (public.request_aal() = 'aal2' AND company_id = public.active_company_id() AND unit_id = public.active_unit_id());
 CREATE POLICY clinical_encounters_rpc_write ON public.encounters
-  FOR ALL TO prontomedic_rpc_owner
+  FOR ALL TO prontomedic_clinical_handoff_owner
   USING (public.request_aal() = 'aal2' AND company_id = public.active_company_id() AND unit_id = public.active_unit_id())
   WITH CHECK (public.request_aal() = 'aal2' AND company_id = public.active_company_id() AND unit_id = public.active_unit_id());
 CREATE POLICY clinical_reclassifications_rpc_write ON public.triagem_reclassificacoes
-  FOR ALL TO prontomedic_rpc_owner
+  FOR ALL TO prontomedic_clinical_handoff_owner
   USING (public.request_aal() = 'aal2' AND company_id = public.active_company_id() AND unit_id = public.active_unit_id())
   WITH CHECK (public.request_aal() = 'aal2' AND company_id = public.active_company_id() AND unit_id = public.active_unit_id());
 
@@ -316,11 +356,12 @@ REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON
 GRANT SELECT ON public.triagem_fila, public.triagens, public.news2_avaliacoes,
   public.encounters, public.triagem_reclassificacoes
   TO authenticated, app_prontomedic;
-GRANT SELECT ON public.appointments TO prontomedic_rpc_owner;
-GRANT SELECT, INSERT, UPDATE, DELETE ON
-  public.triagem_fila, public.triagens, public.news2_avaliacoes, public.encounters,
-  public.triagem_reclassificacoes
-  TO prontomedic_rpc_owner;
+GRANT SELECT ON public.appointments, public.professionals, public.professional_schedules
+  TO prontomedic_clinical_handoff_owner;
+GRANT SELECT, INSERT, UPDATE ON public.triagem_fila, public.triagens, public.encounters
+  TO prontomedic_clinical_handoff_owner;
+GRANT SELECT, INSERT ON public.news2_avaliacoes, public.triagem_reclassificacoes
+  TO prontomedic_clinical_handoff_owner;
 DO $clinical_sequences$
 DECLARE v_table TEXT; v_sequence TEXT;
 BEGIN
@@ -328,14 +369,14 @@ BEGIN
   LOOP
     SELECT pg_get_serial_sequence('public.' || v_table, 'id') INTO v_sequence;
     IF v_sequence IS NOT NULL THEN
-      EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE %s TO prontomedic_rpc_owner', v_sequence);
+      EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE %s TO prontomedic_clinical_handoff_owner', v_sequence);
     END IF;
   END LOOP;
 END
 $clinical_sequences$;
 GRANT EXECUTE ON FUNCTION public.active_company_id(), public.active_unit_id(),
   public.request_aal(), public.can_access(TEXT, TEXT)
-  TO prontomedic_rpc_owner;
+  TO prontomedic_clinical_handoff_owner;
 
 CREATE OR REPLACE FUNCTION public.m19_prepare_triage_handoff_secure(
   p_appointment_id BIGINT,
@@ -368,8 +409,7 @@ BEGIN
      AND appointment.company_id = v_company
      AND appointment.unit_id = v_unit
      AND appointment.patient_id IS NOT NULL
-     AND appointment.status IN ('waiting','checked_in','confirmed')
-   FOR UPDATE;
+     AND appointment.status IN ('waiting','checked_in','confirmed');
   IF NOT FOUND THEN RAISE EXCEPTION 'Agendamento indisponível no contexto clínico ativo' USING ERRCODE = 'P0002'; END IF;
 
   SELECT * INTO v_queue FROM public.triagem_fila queue
@@ -424,8 +464,7 @@ BEGIN
   END IF;
   SELECT * INTO v_appointment FROM public.appointments appointment
    WHERE appointment.id = p_appointment_id AND appointment.company_id = v_company
-     AND appointment.unit_id = v_unit AND appointment.patient_id = p_patient_id
-   FOR UPDATE;
+     AND appointment.unit_id = v_unit AND appointment.patient_id = p_patient_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'Agendamento fora do contexto clínico ativo' USING ERRCODE = 'P0002'; END IF;
   SELECT * INTO v_queue FROM public.triagem_fila queue
    WHERE queue.id = p_queue_id AND queue.company_id = v_company AND queue.unit_id = v_unit
@@ -696,25 +735,25 @@ GRANT EXECUTE ON FUNCTION public.m19_prepare_triage_handoff_secure(BIGINT, TEXT)
   public.m19_reclassify_triage_secure(BIGINT, INTEGER, TEXT)
   TO authenticated, app_prontomedic;
 
-ALTER FUNCTION public.m19_prepare_triage_handoff_secure(BIGINT, TEXT) OWNER TO prontomedic_rpc_owner;
+ALTER FUNCTION public.m19_prepare_triage_handoff_secure(BIGINT, TEXT) OWNER TO prontomedic_clinical_handoff_owner;
 ALTER FUNCTION public.m19_complete_triage_secure(INTEGER, BIGINT, BIGINT, BIGINT, INTEGER, TEXT, JSONB, JSONB)
-  OWNER TO prontomedic_rpc_owner;
+  OWNER TO prontomedic_clinical_handoff_owner;
 ALTER FUNCTION public.m18_open_attendance_secure(BIGINT, INTEGER, BIGINT)
-  OWNER TO prontomedic_rpc_owner;
+  OWNER TO prontomedic_clinical_handoff_owner;
 ALTER FUNCTION public.m19_reclassify_triage_secure(BIGINT, INTEGER, TEXT)
-  OWNER TO prontomedic_rpc_owner;
+  OWNER TO prontomedic_clinical_handoff_owner;
 ALTER FUNCTION private.m19_complete_triage(INTEGER, BIGINT, BIGINT, BIGINT, INTEGER, TEXT, JSONB, JSONB)
-  OWNER TO prontomedic_rpc_owner;
+  OWNER TO prontomedic_clinical_handoff_owner;
 ALTER FUNCTION private.m19_reclassify_triage(BIGINT, INTEGER, TEXT)
-  OWNER TO prontomedic_rpc_owner;
+  OWNER TO prontomedic_clinical_handoff_owner;
 ALTER FUNCTION private.transition_triage_queue(BIGINT, TEXT, TEXT)
-  OWNER TO prontomedic_rpc_owner;
+  OWNER TO prontomedic_clinical_handoff_owner;
 ALTER FUNCTION public.m18_save_attendance_secure(UUID, JSONB)
-  OWNER TO prontomedic_rpc_owner;
+  OWNER TO prontomedic_clinical_handoff_owner;
 ALTER FUNCTION public.m18_finalize_attendance_secure(UUID, TEXT)
-  OWNER TO prontomedic_rpc_owner;
+  OWNER TO prontomedic_clinical_handoff_owner;
 ALTER FUNCTION public.m18_complete_attendance_secure(UUID, JSONB, TEXT)
-  OWNER TO prontomedic_rpc_owner;
+  OWNER TO prontomedic_clinical_handoff_owner;
 
 COMMENT ON COLUMN public.triagem_fila.appointment_id IS
   'Canonical appointment correlation for the Reception -> M19 -> M18 handoff, protected by a tenant/unit composite FK.';

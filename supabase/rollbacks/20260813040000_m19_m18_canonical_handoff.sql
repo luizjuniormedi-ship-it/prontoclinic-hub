@@ -48,7 +48,10 @@ $restore_functions$;
 DO $restore_policies$
 DECLARE v_table TEXT; v_policy RECORD;
 BEGIN
-  FOREACH v_table IN ARRAY ARRAY['triagem_fila','triagens','news2_avaliacoes','encounters','triagem_reclassificacoes']
+  DROP POLICY IF EXISTS clinical_appointments_rpc_read ON public.appointments;
+  DROP POLICY IF EXISTS clinical_professionals_rpc_read ON public.professionals;
+  DROP POLICY IF EXISTS clinical_professional_schedules_rpc_read ON public.professional_schedules;
+  FOREACH v_table IN ARRAY ARRAY['appointments','professionals','professional_schedules','triagem_fila','triagens','news2_avaliacoes','encounters','triagem_reclassificacoes']
   LOOP
     FOR v_policy IN
       SELECT policyname FROM pg_policies
@@ -65,6 +68,39 @@ BEGIN
   END LOOP;
 END
 $restore_policies$;
+
+DO $cleanup_clinical_owner$
+DECLARE v_existed BOOLEAN; v_sequence RECORD;
+BEGIN
+  SELECT (metadata->>'existed')::BOOLEAN INTO v_existed
+    FROM private.m19_m18_handoff_rollback_state
+   WHERE object_type = 'role' AND object_name = 'prontomedic_clinical_handoff_owner';
+  IF v_existed IS FALSE THEN
+    REVOKE ALL PRIVILEGES ON public.appointments, public.professionals,
+      public.professional_schedules, public.triagem_fila, public.triagens,
+      public.news2_avaliacoes, public.encounters, public.triagem_reclassificacoes
+      FROM prontomedic_clinical_handoff_owner;
+    REVOKE EXECUTE ON FUNCTION public.active_company_id(), public.active_unit_id(),
+      public.request_aal(), public.can_access(TEXT, TEXT)
+      FROM prontomedic_clinical_handoff_owner;
+    REVOKE USAGE ON SCHEMA public, private, auth FROM prontomedic_clinical_handoff_owner;
+    FOR v_sequence IN
+      SELECT quote_ident(sequence_schema) || '.' || quote_ident(sequence_name) AS qualified_name
+        FROM information_schema.sequences
+       WHERE sequence_schema = 'public'
+         AND sequence_name IN (
+           SELECT split_part(pg_get_serial_sequence('public.' || table_name, column_name), '.', 2)
+             FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name IN ('triagem_fila','triagens','news2_avaliacoes','encounters','triagem_reclassificacoes')
+              AND pg_get_serial_sequence('public.' || table_name, column_name) IS NOT NULL
+         )
+    LOOP
+      EXECUTE format('REVOKE USAGE, SELECT ON SEQUENCE %s FROM prontomedic_clinical_handoff_owner', v_sequence.qualified_name);
+    END LOOP;
+  END IF;
+END
+$cleanup_clinical_owner$;
 
 
 DO $restore_table_security$
@@ -126,6 +162,25 @@ BEGIN
   END IF;
 END
 $optional_column$;
+
+DO $drop_new_clinical_owner$
+DECLARE v_existed BOOLEAN;
+BEGIN
+  SELECT (metadata->>'existed')::BOOLEAN INTO v_existed
+    FROM private.m19_m18_handoff_rollback_state
+   WHERE object_type = 'role' AND object_name = 'prontomedic_clinical_handoff_owner';
+  IF v_existed IS FALSE
+     AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'prontomedic_clinical_handoff_owner')
+     AND NOT EXISTS (
+       SELECT 1 FROM pg_shdepend dependency
+        JOIN pg_roles role ON role.oid = dependency.refobjid
+       WHERE role.rolname = 'prontomedic_clinical_handoff_owner'
+         AND dependency.deptype IN ('a','o')
+     ) THEN
+    DROP ROLE prontomedic_clinical_handoff_owner;
+  END IF;
+END
+$drop_new_clinical_owner$;
 
 DELETE FROM private.m19_m18_handoff_rollback_state
  WHERE migration_version = '20260813040000';
