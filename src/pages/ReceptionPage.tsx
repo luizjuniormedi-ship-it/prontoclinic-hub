@@ -45,7 +45,6 @@ interface CheckinHandoffReceipt {
   billingType: "particular" | "convenio";
   billingAccountId: string;
   financialTransactionId: number | null;
-  tissGuideId: string | null;
   ticket?: string;
   totalGrossAmount: number;
 }
@@ -283,8 +282,6 @@ export default function ReceptionPage() {
   const [grossAmount, setGrossAmount] = useState("0,00");
   const [validatedBillingQuote, setValidatedBillingQuote] =
     useState<ReceptionBillingQuote | null>(null);
-  const [requiresTiss, setRequiresTiss] = useState(false);
-  const [tissGuideType] = useState<NonNullable<ReceptionWorkflowInput["tiss"]>["guideType"]>("SP/SADT");
   const [createReceivable, setCreateReceivable] = useState(false);
   const [receivableType, setReceivableType] = useState<NonNullable<ReceptionWorkflowInput["receivable"]>["type"]>("copayment");
   const [receivableAmount, setReceivableAmount] = useState("");
@@ -500,7 +497,6 @@ export default function ReceptionPage() {
         insuranceId: insurer?.id ?? null,
         totalGrossAmount: estimatedAmount,
       });
-      setRequiresTiss(Boolean(isInsurance && insurer?.lg_guia_obrigatoria));
       setCreateReceivable(!isInsurance && estimatedAmount > 0);
       setReceivableType(isInsurance ? "copayment" : "private");
       setReceivableAmount(
@@ -596,7 +592,6 @@ export default function ReceptionPage() {
           insuranceId: submittedInsuranceId ?? undefined,
           totalGrossAmount,
         },
-        tiss: requiresTiss ? { guideType: tissGuideType, environment: "HOMOLOGACAO" } : undefined,
         receivable: createReceivable ? {
           type: receivableType,
           amount: pendingAmount,
@@ -619,7 +614,6 @@ export default function ReceptionPage() {
         billingType,
         billingAccountId,
         financialTransactionId: result.workflow.financial_transaction_id,
-        tissGuideId: result.workflow.tiss_guide_id,
         ticket,
         totalGrossAmount,
       });
@@ -1051,26 +1045,12 @@ export default function ReceptionPage() {
                   </div>
                 )}
               </div>
-              <div className="flex items-start gap-2">
-                <Checkbox
-                  id="reception-requires-tiss"
-                  checked={requiresTiss}
-                  disabled
-                />
-                <div className="space-y-0.5">
-                  <Label htmlFor="reception-requires-tiss">Preparar guia TISS</Label>
-                  <p className="text-xs text-muted-foreground">A guia nasce como rascunho em homologação; não há transmissão automática.</p>
-                </div>
+              <div className="rounded-md border p-3 text-sm">
+                <p className="font-medium">Fluxo TISS</p>
+                <p className="text-xs text-muted-foreground">
+                  A Recepção abre a pré-conta. A guia SP/SADT e o XML são gerados pelo Faturamento somente após conferência e aprovação.
+                </p>
               </div>
-              {requiresTiss && (
-                <div className="space-y-2">
-                  <Label htmlFor="reception-tiss-guide-type">Tipo de guia</Label>
-                  <Input id="reception-tiss-guide-type" value="SP/SADT" readOnly />
-                  <p className="text-xs text-muted-foreground">
-                    O fluxo ambulatorial gera somente SP/SADT 4.03.00. Outros modelos exigem gerador específico.
-                  </p>
-                </div>
-              )}
               <div className="flex items-start gap-2">
                 <Checkbox
                   id="reception-create-receivable"
@@ -1238,9 +1218,6 @@ export default function ReceptionPage() {
                     : "O atendimento está vinculado à conta particular. O Caixa deve confirmar Pix, cartão, dinheiro ou transferência antes de registrar a baixa."}
                 </p>
               </div>
-              {checkinReceipt.tissGuideId && (
-                <p className="text-xs text-muted-foreground">Guia TISS em rascunho: {checkinReceipt.tissGuideId}</p>
-              )}
             </div>
           )}
           <DialogFooter className="gap-2 sm:justify-between">
