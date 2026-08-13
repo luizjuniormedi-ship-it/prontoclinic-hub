@@ -238,6 +238,10 @@ test.describe('Gate fase 0/1', () => {
     expect(billingAccounts).toHaveLength(1);
     expect(billingAccounts[0]).toMatchObject({ appointment_id: '91001' });
     expect(page.url()).toContain(`account=${encodeURIComponent(billingAccounts[0].id)}`);
+    const billingDialog = page.getByRole('dialog', { name: 'Conferência da Conta' });
+    await expect(billingDialog).toBeVisible();
+    await expect(billingDialog).toContainText('Paciente E2E A');
+    await billingDialog.getByRole('button', { name: 'Fechar', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Faturamento' })).toBeVisible();
     await assertAccessible(page, 'conta focalizada após conclusão M18');
 
