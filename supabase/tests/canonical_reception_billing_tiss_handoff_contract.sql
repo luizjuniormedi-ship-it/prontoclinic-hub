@@ -76,10 +76,61 @@ SELECT pg_temp.assert_true(
     WHERE namespace_record.nspname = 'private'
       AND procedure_record.proname = 'm11_assign_billing_authorization'
       AND procedure_record.prosecdef
-      AND owner_record.rolname = 'prontomedic_rpc_owner'
-      AND owner_record.rolbypassrls
+      AND owner_record.rolname = 'prontomedic_billing_authz_trigger_owner'
+      AND NOT owner_record.rolcanlogin
+      AND NOT owner_record.rolbypassrls
+      AND NOT owner_record.rolsuper
   ),
-  'Billing authorization trigger must use the private BYPASSRLS RPC owner'
+  'Billing authorization trigger must use its restricted NOBYPASSRLS owner'
+);
+
+SELECT pg_temp.assert_true(
+  EXISTS (
+    SELECT 1 FROM pg_policies
+     WHERE schemaname = 'public'
+       AND tablename = 'insurance_authorizations'
+       AND policyname = 'm11_billing_authz_trigger_select'
+       AND roles = ARRAY['prontomedic_billing_authz_trigger_owner']::NAME[]
+  )
+  AND EXISTS (
+    SELECT 1 FROM pg_policies
+     WHERE schemaname = 'public'
+       AND tablename = 'appointments'
+       AND policyname = 'm11_billing_appointment_trigger_select'
+       AND roles = ARRAY['prontomedic_billing_authz_trigger_owner']::NAME[]
+  ),
+  'Restricted trigger owner must have only unit-scoped SELECT policies'
+);
+
+SELECT pg_temp.assert_true(
+  NOT has_table_privilege(
+    'prontomedic_billing_authz_trigger_owner',
+    'public.insurance_authorizations', 'SELECT'
+  )
+  AND NOT has_table_privilege(
+    'prontomedic_billing_authz_trigger_owner',
+    'public.appointments', 'SELECT'
+  )
+  AND has_column_privilege(
+    'prontomedic_billing_authz_trigger_owner',
+    'public.insurance_authorizations', 'authorization_number', 'SELECT'
+  )
+  AND has_column_privilege(
+    'prontomedic_billing_authz_trigger_owner',
+    'public.appointments', 'insurance_plan_id', 'SELECT'
+  ),
+  'Trigger owner must receive column-level reads instead of table-wide SELECT'
+);
+
+SELECT pg_temp.assert_true(
+  to_regclass('private.m11_legacy_tiss_workflow_snapshot') IS NOT NULL
+  AND NOT has_table_privilege(
+    'authenticated', 'private.m11_legacy_tiss_workflow_snapshot', 'SELECT'
+  )
+  AND NOT has_table_privilege(
+    'app_prontomedic', 'private.m11_legacy_tiss_workflow_snapshot', 'SELECT'
+  ),
+  'Legacy workflow snapshot must exist and remain private'
 );
 
 SELECT pg_temp.assert_true(
@@ -390,6 +441,59 @@ SELECT pg_temp.assert_true(
   'Billing account must select only the matching usable authorization'
 );
 
+DO $arbitrary_authorization$
+BEGIN
+  BEGIN
+    INSERT INTO public.billing_accounts(
+      id, company_id, unit_id, appointment_id, patient_id, insurance_id,
+      billing_type, account_type, status, competence_month,
+      authorization_number, total_gross_amount, total_net_amount,
+      total_pending_amount
+    ) VALUES (
+      'c1000000-0000-4000-8000-000000000015',
+      'c1000000-0000-4000-8000-000000000002', 991001, 991001, 991001, 991001,
+      'convenio', 'ambulatorial', 'aberta', date_trunc('month', CURRENT_DATE)::DATE,
+      'ARBITRARY-AUTHORIZATION', 100, 100, 100
+    );
+    RAISE EXCEPTION
+      'CANONICAL_RECEPTION_TISS_ASSERTION_FAILED: arbitrary authorization was accepted';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM <> 'Billing authorization is not valid for the appointment scope' THEN
+        RAISE;
+      END IF;
+  END;
+END;
+$arbitrary_authorization$;
+
+UPDATE public.user_access_context
+   SET unit_id = NULL
+ WHERE user_id = 'c1000000-0000-4000-8000-000000000001'
+   AND session_id = 'c1000000-0000-4000-8000-000000000006';
+
+SET LOCAL ROLE authenticated;
+DO $missing_active_unit$
+BEGIN
+  BEGIN
+    PERFORM public.release_appointment_to_worklist_secure(
+      991001, 'canonical-worklist-no-unit-991001'
+    );
+    RAISE EXCEPTION
+      'CANONICAL_RECEPTION_TISS_ASSERTION_FAILED: missing active unit was accepted';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM <> 'Active company and unit are required to release DICOM worklist' THEN
+        RAISE;
+      END IF;
+  END;
+END;
+$missing_active_unit$;
+
+RESET ROLE;
+UPDATE public.user_access_context
+   SET unit_id = 991001
+ WHERE user_id = 'c1000000-0000-4000-8000-000000000001'
+   AND session_id = 'c1000000-0000-4000-8000-000000000006';
 SET LOCAL ROLE authenticated;
 
 SELECT pg_temp.assert_true(

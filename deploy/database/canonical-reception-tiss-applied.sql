@@ -32,8 +32,55 @@ BEGIN
   END IF;
   IF v_worklist !~* 'item.status[[:space:]]+IN[[:space:]]*[(]'
      OR v_worklist !~ 'liberado_worklist'
-     OR v_worklist !~ 'another idempotency key' THEN
+     OR v_worklist !~ 'another idempotency key'
+     OR v_worklist !~ 'Active company and unit are required' THEN
     RAISE EXCEPTION 'retomada idempotente da Worklist ausente';
+  END IF;
+  IF to_regclass('private.m11_legacy_tiss_workflow_snapshot') IS NULL THEN
+    RAISE EXCEPTION 'snapshot reversivel dos workflows legados ausente';
+  END IF;
+  IF EXISTS (
+    SELECT 1
+      FROM private.m11_legacy_tiss_workflow_snapshot snapshot
+      JOIN public.reception_checkin_workflows workflow
+        ON workflow.id = snapshot.workflow_id
+     WHERE workflow.current_step = 'tiss'
+        OR workflow.requires_tiss
+        OR NOT (
+          COALESCE(workflow.result_payload, '{}'::JSONB)
+            @> '{"legacy_tiss_handoff_migrated": true}'::JSONB
+        )
+  ) THEN
+    RAISE EXCEPTION 'workflow legado capturado nao foi migrado integralmente';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_proc procedure_record
+      JOIN pg_namespace namespace_record
+        ON namespace_record.oid = procedure_record.pronamespace
+      JOIN pg_roles owner_record
+        ON owner_record.oid = procedure_record.proowner
+     WHERE namespace_record.nspname = 'private'
+       AND procedure_record.proname = 'm11_assign_billing_authorization'
+       AND owner_record.rolname = 'prontomedic_billing_authz_trigger_owner'
+       AND NOT owner_record.rolcanlogin
+       AND NOT owner_record.rolbypassrls
+       AND NOT owner_record.rolsuper
+  ) THEN
+    RAISE EXCEPTION 'owner restrito da autorizacao de faturamento ausente';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+     WHERE schemaname = 'public'
+       AND tablename = 'insurance_authorizations'
+       AND policyname = 'm11_billing_authz_trigger_select'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_policies
+     WHERE schemaname = 'public'
+       AND tablename = 'appointments'
+       AND policyname = 'm11_billing_appointment_trigger_select'
+  ) THEN
+    RAISE EXCEPTION 'policies minimas do owner restrito ausentes';
   END IF;
   IF NOT EXISTS (
        SELECT 1 FROM pg_trigger

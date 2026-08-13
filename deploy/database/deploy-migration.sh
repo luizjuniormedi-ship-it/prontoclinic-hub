@@ -20,6 +20,7 @@ Uso:
   deploy-migration.sh preflight <commit-sha> <bundle.tgz> <bundle.tgz.sha256>
   deploy-migration.sh deploy <commit-sha> <bundle.tgz> <bundle.tgz.sha256>
   deploy-migration.sh rollback
+  PRONTOMEDIC_DB_RESTORE_CONFIRM=RESTORE:<database> deploy-migration.sh restore <backup.dump> <backup.dump.sha256>
 USAGE
   exit 64
 }
@@ -85,6 +86,12 @@ history_present() {
   local target="${1:-$database}"
   [[ "$(history_contract "$target")" = ready ]] && \
     [[ "$(psql_db "$target" -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '$migration_version'")" = 1 ]]
+}
+
+delete_history() {
+  local target="${1:-$database}"
+  psql_db "$target" -c "DELETE FROM supabase_migrations.schema_migrations WHERE version = '$migration_version'" >/dev/null
+  history_absent "$target"
 }
 
 history_version_present() {
@@ -201,25 +208,57 @@ validate_bundle() {
 
 run_smoke() { psql_db "$1" -f "$2" >/dev/null; }
 
+database_fingerprint() {
+  psql_db "$database" -Atqc "SELECT pg_current_wal_lsn()::text"
+}
+
+verify_private_file() {
+  local file="$1" mode
+  require_absolute_file "$file"
+  mode="$(stat -c '%a' "$file")"
+  [[ "$mode" = 600 ]] || die "permissao insegura em $file: $mode"
+}
+
+verify_backup() {
+  local backup="$1" checksum="$2"
+  verify_private_file "$backup"
+  verify_private_file "$checksum"
+  (cd "$(dirname "$backup")" && sha256sum -c "$(basename "$checksum")") >/dev/null \
+    || die 'checksum do backup PostgreSQL invalido'
+  host_postgres pg_restore --list <"$backup" >/dev/null || die 'catalogo do backup PostgreSQL invalido'
+}
+
+require_backup_space() {
+  local available_kb database_bytes required_kb
+  available_kb="$(df -Pk "$backup_root" | awk 'NR==2 {print $4}')"
+  database_bytes="$(psql_db "$database" -Atqc "SELECT pg_database_size(current_database())")"
+  [[ "$available_kb" =~ ^[0-9]+$ && "$database_bytes" =~ ^[0-9]+$ ]] || die 'nao foi possivel calcular espaco para backup'
+  required_kb=$(( (database_bytes * 2 + 1023) / 1024 ))
+  (( available_kb >= required_kb )) || die "espaco insuficiente para backup e restauracao: disponivel=${available_kb}KB requerido=${required_kb}KB"
+}
+
 write_attestation() {
-  local file="$1" sha="$2" bundle_hash="$3" backup="$4"
+  local file="$1" sha="$2" bundle_hash="$3" backup="$4" backup_checksum="$5" fingerprint="$6"
   umask 077
   {
     printf 'COMMIT_SHA=%q\n' "$sha"
     printf 'BUNDLE_SHA256=%q\n' "$bundle_hash"
     printf 'DATABASE_BACKUP=%q\n' "$backup"
+    printf 'DATABASE_BACKUP_CHECKSUM=%q\n' "$backup_checksum"
+    printf 'DATABASE_FINGERPRINT=%q\n' "$fingerprint"
     printf 'CREATED_AT_EPOCH=%q\n' "$(date +%s)"
   } >"${file}.next"
   mv -f "${file}.next" "$file"
 }
 
 write_deploy_state() {
-  local file="$1" sha="$2" bundle_copy="$3" backup="$4" state_record="$5"
+  local file="$1" sha="$2" bundle_copy="$3" backup="$4" backup_checksum="$5" state_record="$6"
   umask 077
   {
     printf 'COMMIT_SHA=%q\n' "$sha"
     printf 'BUNDLE_COPY=%q\n' "$bundle_copy"
     printf 'DATABASE_BACKUP=%q\n' "$backup"
+    printf 'DATABASE_BACKUP_CHECKSUM=%q\n' "$backup_checksum"
     printf 'MIGRATION_VERSION=%q\n' "$migration_version"
     printf 'STATE_RECORD=%q\n' "$state_record"
   } >"${file}.next"
@@ -243,7 +282,7 @@ promote_previous_state() {
 }
 
 backup_and_rehearse() {
-  local stage="$1" sha="$2" backup="$3"
+  local stage="$1" sha="$2" backup="$3" backup_checksum="${3}.sha256"
   local restore_db="prontoclinic_restore_${migration_version}_$$"
 
   host_postgres pg_dump -Fc -d "$database" >"${backup}.next"
@@ -252,6 +291,10 @@ backup_and_rehearse() {
     || die 'catalogo do backup PostgreSQL invalido'
   mv -f "${backup}.next" "$backup"
   chmod 600 "$backup"
+  (cd "$(dirname "$backup")" && sha256sum "$(basename "$backup")" >"$(basename "$backup_checksum").next")
+  mv -f "${backup_checksum}.next" "$backup_checksum"
+  chmod 600 "$backup_checksum"
+  verify_backup "$backup" "$backup_checksum"
 
   (
     restore_created=0
@@ -284,7 +327,7 @@ backup_and_rehearse() {
 audit() {
   require_root
   safe_database_contract
-  for command in docker tar sha256sum node flock date; do require_command "$command"; done
+  for command in docker tar sha256sum node flock date stat df awk; do require_command "$command"; done
   if [[ "${PRONTOMEDIC_DB_DIRECT_POSTGRES:-0}" = 1 ]]; then
     for command in psql pg_dump pg_restore createdb dropdb; do require_command "$command"; done
   fi
@@ -302,7 +345,7 @@ prepare_private_dirs() {
 
 preflight() {
   local sha="$1" bundle="$2" checksum="$3"
-  local stage timestamp backup bundle_hash attestation
+  local stage timestamp backup bundle_hash attestation fingerprint
   audit
   exec 9>"$global_lock"
   flock -n 9 || die 'outro deploy ProntoMedic esta em andamento'
@@ -316,12 +359,14 @@ preflight() {
   run_smoke "$database" "$stage/release/smoke-before.sql"
 
   prepare_private_dirs
+  require_backup_space
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
   backup="$backup_root/prontoclinic-before-${migration_version}-${sha}-${timestamp}.dump"
   bundle_hash="$(sha256sum "$bundle" | cut -d' ' -f1)"
   attestation="$state_root/preflight-${migration_version}-${sha}.env"
   backup_and_rehearse "$stage/release" "$sha" "$backup"
-  write_attestation "$attestation" "$sha" "$bundle_hash" "$backup"
+  fingerprint="$(database_fingerprint)"
+  write_attestation "$attestation" "$sha" "$bundle_hash" "$backup" "${backup}.sha256" "$fingerprint"
   chmod 600 "$attestation"
   log "PREFLIGHT_OK sha=$sha attestation=$attestation"
   rm -rf -- "$stage"
@@ -343,6 +388,8 @@ apply_rollback() {
   run_smoke "$database" "$stage/smoke-rollback.sql"
   if [[ "$rollback_mode" = inverse ]]; then
     history_absent
+  elif [[ "$rollback_mode" = preserve_schema ]]; then
+    delete_history
   else
     history_present || die "rollback $rollback_mode removeu o ledger indevidamente"
   fi
@@ -350,7 +397,7 @@ apply_rollback() {
 
 deploy() {
   local sha="$1" bundle="$2" checksum="$3"
-  local stage attestation bundle_hash backup created bundle_copy state state_record
+  local stage attestation bundle_hash backup created bundle_copy state state_record timestamp deploy_fingerprint
   audit
   verify_checksum "$bundle" "$checksum"
   stage="$(mktemp -d)"
@@ -365,8 +412,7 @@ deploy() {
   [[ "$COMMIT_SHA" = "$sha" && "$BUNDLE_SHA256" = "$bundle_hash" ]] \
     || die 'atestacao nao corresponde ao bundle'
   [[ $(( $(date +%s) - CREATED_AT_EPOCH )) -le 3600 ]] || die 'atestacao de preflight expirada'
-  [[ -s "$DATABASE_BACKUP" ]] || die 'backup atestado ausente'
-  host_postgres pg_restore --list <"$DATABASE_BACKUP" >/dev/null || die 'backup atestado invalido'
+  verify_backup "$DATABASE_BACKUP" "$DATABASE_BACKUP_CHECKSUM"
 
   prepare_private_dirs
   exec 9>"$global_lock"
@@ -374,7 +420,15 @@ deploy() {
   history_absent
   require_predecessor
 
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  backup="$backup_root/prontoclinic-deploy-${migration_version}-${sha}-${timestamp}.dump"
+  backup_and_rehearse "$stage/release" "$sha" "$backup"
+  DATABASE_BACKUP="$backup"
+  DATABASE_BACKUP_CHECKSUM="${backup}.sha256"
+  deploy_fingerprint="$(database_fingerprint)"
   run_smoke "$database" "$stage/release/smoke-before.sql"
+  [[ "$(database_fingerprint)" = "$deploy_fingerprint" ]] \
+    || die 'banco mudou entre o backup sob lock e a migration; deploy recusado'
 
   bundle_copy="$backup_root/bundle-${migration_version}-${sha}.tgz"
   cp -- "$bundle" "${bundle_copy}.next"
@@ -382,7 +436,7 @@ deploy() {
   chmod 600 "$bundle_copy"
   state="$state_root/last-deploy.env"
   state_record="$state_root/deploy-${migration_version}-${sha}.env"
-  write_deploy_state "$state_record" "$sha" "$bundle_copy" "$DATABASE_BACKUP" "$state_record"
+  write_deploy_state "$state_record" "$sha" "$bundle_copy" "$DATABASE_BACKUP" "$DATABASE_BACKUP_CHECKSUM" "$state_record"
   cp -- "$state_record" "${state}.next"
   mv -f "${state}.next" "$state"
   chmod 600 "$state_record"
@@ -428,7 +482,8 @@ rollback() {
   # shellcheck disable=SC1090
   . "$state"
   migration_version="$MIGRATION_VERSION"
-  [[ -s "$BUNDLE_COPY" && -s "$DATABASE_BACKUP" ]] || die 'artefato ou backup de rollback ausente'
+  [[ -s "$BUNDLE_COPY" ]] || die 'artefato de rollback ausente'
+  verify_backup "$DATABASE_BACKUP" "$DATABASE_BACKUP_CHECKSUM"
   exec 9>"$global_lock"
   flock -n 9 || die 'outro deploy ProntoMedic esta em andamento'
   history_present || die 'migration nao esta registrada; rollback recusado'
@@ -448,6 +503,61 @@ rollback() {
   trap - EXIT
 }
 
+restore() {
+  local backup="$1" checksum="$2" confirmation="${PRONTOMEDIC_DB_RESTORE_CONFIRM:-}"
+  local rehearsal_db="prontoclinic_restore_verify_$$" safety_backup timestamp restore_failed
+  audit
+  [[ "$confirmation" = "RESTORE:${database}" ]] || die "restauracao integral requer PRONTOMEDIC_DB_RESTORE_CONFIRM=RESTORE:${database}"
+  [[ "$backup" = "$backup_root"/*.dump && "$(basename "$backup")" =~ ^[A-Za-z0-9._-]+\.dump$ ]] \
+    || die 'dump fora do diretorio privado de backups'
+  [[ "$checksum" = "${backup}.sha256" ]] || die 'checksum nao corresponde ao dump solicitado'
+  prepare_private_dirs
+  verify_backup "$backup" "$checksum"
+  require_backup_space
+  exec 9>"$global_lock"
+  flock -n 9 || die 'outro deploy ProntoMedic esta em andamento'
+
+  host_postgres createdb -T template0 "$rehearsal_db"
+  trap 'host_postgres dropdb --if-exists "$rehearsal_db" >/dev/null 2>&1 || true' EXIT
+  host_postgres pg_restore --exit-on-error -d "$rehearsal_db" <"$backup" >/dev/null
+  [[ "$(psql_db "$rehearsal_db" -Atqc 'SELECT 1')" = 1 ]] || die 'ensaio do dump falhou'
+  host_postgres dropdb --if-exists "$rehearsal_db" >/dev/null
+  trap - EXIT
+
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  safety_backup="$backup_root/prontoclinic-before-full-restore-${timestamp}.dump"
+  host_postgres pg_dump -Fc -d "$database" >"${safety_backup}.next"
+  mv -f "${safety_backup}.next" "$safety_backup"
+  chmod 600 "$safety_backup"
+  (cd "$backup_root" && sha256sum "$(basename "$safety_backup")" >"$(basename "$safety_backup").sha256.next")
+  mv -f "${safety_backup}.sha256.next" "${safety_backup}.sha256"
+  chmod 600 "${safety_backup}.sha256"
+  verify_backup "$safety_backup" "${safety_backup}.sha256"
+
+  restore_failed=0
+  recover_failed_restore() {
+    local status=$?
+    trap - ERR
+    set +e
+    host_postgres dropdb --if-exists "$database" >/dev/null 2>&1
+    host_postgres createdb -T template0 "$database" >/dev/null 2>&1
+    host_postgres pg_restore --exit-on-error -d "$database" <"$safety_backup" >/dev/null 2>&1
+    restore_failed=$?
+    printf 'PRONTOMEDIC_DB_FULL_RESTORE_FAILED status=%s recovery_status=%s safety_backup=%s\n' \
+      "$status" "$restore_failed" "$safety_backup" >&2
+    [[ "$restore_failed" = 0 ]] || exit 71
+    exit "$status"
+  }
+  trap recover_failed_restore ERR
+  psql_db postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$database' AND pid <> pg_backend_pid()" >/dev/null
+  host_postgres dropdb "$database"
+  host_postgres createdb -T template0 "$database"
+  host_postgres pg_restore --exit-on-error -d "$database" <"$backup" >/dev/null
+  [[ "$(psql_db "$database" -Atqc 'SELECT 1')" = 1 ]] || die 'banco restaurado indisponivel'
+  trap - ERR
+  log "FULL_RESTORE_OK database=$database backup=$backup safety_backup=$safety_backup"
+}
+
 command="${1:-}"
 case "$command" in
   audit|rollback)
@@ -458,6 +568,11 @@ case "$command" in
     [[ "$#" = 4 ]] || usage
     shift
     "$command" "$@"
+    ;;
+  restore)
+    [[ "$#" = 3 ]] || usage
+    shift
+    restore "$@"
     ;;
   *) usage ;;
 esac

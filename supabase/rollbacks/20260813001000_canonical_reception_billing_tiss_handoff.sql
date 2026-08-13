@@ -12,6 +12,31 @@ REVOKE ALL ON FUNCTION private.m11_assign_billing_authorization()
 REVOKE ALL ON FUNCTION private.m39_advance_reviewed_billing_account()
   FROM PUBLIC, anon, authenticated, app_prontomedic;
 
+DROP POLICY IF EXISTS m11_billing_authz_trigger_select
+  ON public.insurance_authorizations;
+DROP POLICY IF EXISTS m11_billing_appointment_trigger_select
+  ON public.appointments;
+REVOKE ALL PRIVILEGES ON public.insurance_authorizations, public.appointments
+  FROM prontomedic_billing_authz_trigger_owner;
+REVOKE EXECUTE ON FUNCTION public.active_company_id(), public.active_unit_id()
+  FROM prontomedic_billing_authz_trigger_owner;
+REVOKE USAGE ON SCHEMA public, private
+  FROM prontomedic_billing_authz_trigger_owner;
+
+-- Restore only workflows captured by this migration and only while they still
+-- carry its marker. The snapshot remains as immutable operational evidence.
+UPDATE public.reception_checkin_workflows workflow
+   SET requires_tiss = snapshot.requires_tiss,
+       current_step = snapshot.current_step,
+       request_payload = snapshot.request_payload,
+       result_payload = snapshot.result_payload,
+       version = snapshot.version,
+       updated_at = snapshot.updated_at
+  FROM private.m11_legacy_tiss_workflow_snapshot snapshot
+ WHERE workflow.id = snapshot.workflow_id
+   AND COALESCE(workflow.result_payload, '{}'::JSONB)
+         @> '{"legacy_tiss_handoff_migrated": true}'::JSONB;
+
 CREATE OR REPLACE FUNCTION public.start_reception_checkin_workflow_secure(
   p_appointment_id BIGINT,
   p_idempotency_key TEXT,
@@ -36,8 +61,9 @@ REVOKE ALL ON FUNCTION public.start_reception_checkin_workflow_secure(BIGINT, TE
 GRANT EXECUTE ON FUNCTION public.start_reception_checkin_workflow_secure(BIGINT, TEXT, JSONB)
   TO authenticated, app_prontomedic;
 
-GRANT EXECUTE ON FUNCTION public.ensure_tiss_guide_for_checkin_secure(UUID, TEXT, TEXT)
-  TO authenticated, app_prontomedic;
+-- Never restore the revoked Reception -> TISS materialization privilege.
+REVOKE EXECUTE ON FUNCTION public.ensure_tiss_guide_for_checkin_secure(UUID, TEXT, TEXT)
+  FROM authenticated, app_prontomedic;
 
 CREATE OR REPLACE FUNCTION public.m39_billing_readiness(
   p_account public.billing_accounts
@@ -100,6 +126,9 @@ BEGIN
   IF public.request_aal() <> 'aal2' THEN
     RAISE EXCEPTION 'AAL2 required to release DICOM worklist';
   END IF;
+  IF v_company IS NULL OR v_unit IS NULL THEN
+    RAISE EXCEPTION 'Active company and unit are required to release DICOM worklist';
+  END IF;
   IF NOT (
     public.can_access('recepcao', 'edit')
     OR public.can_access('dicom', 'create')
@@ -111,12 +140,11 @@ BEGIN
      OR p_idempotency_key !~ '^[A-Za-z0-9._:-]{8,120}$' THEN
     RAISE EXCEPTION 'Invalid worklist idempotency key';
   END IF;
-
   SELECT * INTO v_appointment
   FROM public.appointments appointment
   WHERE appointment.id = p_appointment_id
     AND appointment.company_id = v_company
-    AND (v_unit IS NULL OR appointment.unit_id = v_unit)
+    AND appointment.unit_id = v_unit
   FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Appointment not found in active scope';

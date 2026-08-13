@@ -35,6 +35,30 @@ GRANT EXECUTE ON FUNCTION public.start_reception_checkin_workflow_secure(BIGINT,
 -- Workflows criados antes da separacao de responsabilidades podem estar
 -- parados na etapa TISS. A Recepcao deve retoma-los na proxima etapa que
 -- efetivamente possui, preservando ids, versao e artefatos ja existentes.
+CREATE TABLE IF NOT EXISTS private.m11_legacy_tiss_workflow_snapshot (
+  workflow_id UUID PRIMARY KEY,
+  requires_tiss BOOLEAN NOT NULL,
+  current_step TEXT NOT NULL,
+  request_payload JSONB NOT NULL,
+  result_payload JSONB NOT NULL,
+  version INTEGER NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL,
+  captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+REVOKE ALL ON TABLE private.m11_legacy_tiss_workflow_snapshot
+  FROM PUBLIC, anon, authenticated, app_prontomedic;
+
+INSERT INTO private.m11_legacy_tiss_workflow_snapshot(
+  workflow_id, requires_tiss, current_step, request_payload,
+  result_payload, version, updated_at
+)
+SELECT id, requires_tiss, current_step, request_payload,
+       result_payload, version, updated_at
+  FROM public.reception_checkin_workflows
+ WHERE current_step = 'tiss'
+   AND status IN ('in_progress', 'blocked', 'failed')
+ON CONFLICT (workflow_id) DO NOTHING;
+
 UPDATE public.reception_checkin_workflows
    SET requires_tiss = FALSE,
        current_step = CASE
@@ -50,18 +74,88 @@ UPDATE public.reception_checkin_workflows
  WHERE current_step = 'tiss'
    AND status IN ('in_progress', 'blocked', 'failed');
 
+DO $owner$
+DECLARE
+  v_executor_is_superuser BOOLEAN;
+BEGIN
+  SELECT rolsuper INTO v_executor_is_superuser
+    FROM pg_roles WHERE rolname = CURRENT_USER;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_roles
+     WHERE rolname = 'prontomedic_billing_authz_trigger_owner'
+  ) THEN
+    IF NOT COALESCE(v_executor_is_superuser, FALSE) THEN
+      RAISE EXCEPTION 'A superuser is required to create the billing authorization trigger owner';
+    END IF;
+    CREATE ROLE prontomedic_billing_authz_trigger_owner
+      NOLOGIN NOINHERIT NOBYPASSRLS NOSUPERUSER
+      NOCREATEDB NOCREATEROLE NOREPLICATION;
+  ELSIF EXISTS (
+    SELECT 1 FROM pg_roles
+     WHERE rolname = 'prontomedic_billing_authz_trigger_owner'
+       AND (rolcanlogin OR rolinherit OR rolbypassrls OR rolsuper
+            OR rolcreatedb OR rolcreaterole OR rolreplication)
+  ) THEN
+    IF NOT COALESCE(v_executor_is_superuser, FALSE) THEN
+      RAISE EXCEPTION 'A superuser is required to harden the billing authorization trigger owner';
+    END IF;
+    ALTER ROLE prontomedic_billing_authz_trigger_owner
+      NOLOGIN NOINHERIT NOBYPASSRLS NOSUPERUSER
+      NOCREATEDB NOCREATEROLE NOREPLICATION;
+  END IF;
+END
+$owner$;
+
+GRANT USAGE ON SCHEMA public, private
+  TO prontomedic_billing_authz_trigger_owner;
+GRANT EXECUTE ON FUNCTION public.active_company_id(), public.active_unit_id()
+  TO prontomedic_billing_authz_trigger_owner;
+REVOKE ALL PRIVILEGES ON public.insurance_authorizations, public.appointments
+  FROM prontomedic_billing_authz_trigger_owner;
+GRANT SELECT (
+  id, appointment_id, company_id, unit_id, patient_id, insurance_id,
+  insurance_plan_id, procedure_id, status, authorization_number,
+  quantity_authorized, quantity_used, valid_until, updated_at, created_at
+) ON public.insurance_authorizations TO prontomedic_billing_authz_trigger_owner;
+GRANT SELECT (
+  id, company_id, unit_id, patient_id, insurance_plan_id, service_id
+) ON public.appointments TO prontomedic_billing_authz_trigger_owner;
+
+DROP POLICY IF EXISTS m11_billing_authz_trigger_select
+  ON public.insurance_authorizations;
+CREATE POLICY m11_billing_authz_trigger_select
+  ON public.insurance_authorizations
+  FOR SELECT TO prontomedic_billing_authz_trigger_owner
+  USING (
+    company_id = public.active_company_id()
+    AND unit_id = public.active_unit_id()
+  );
+
+DROP POLICY IF EXISTS m11_billing_appointment_trigger_select
+  ON public.appointments;
+CREATE POLICY m11_billing_appointment_trigger_select
+  ON public.appointments
+  FOR SELECT TO prontomedic_billing_authz_trigger_owner
+  USING (
+    company_id = public.active_company_id()
+    AND unit_id = public.active_unit_id()
+  );
+
 CREATE OR REPLACE FUNCTION private.m11_assign_billing_authorization()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, public, private
 AS $function$
+DECLARE
+  v_requested_authorization TEXT := NULLIF(btrim(COALESCE(NEW.authorization_number, '')), '');
+  v_selected_authorization TEXT;
 BEGIN
   IF NEW.billing_type = 'convenio'
-     AND NEW.appointment_id IS NOT NULL
-     AND NULLIF(btrim(COALESCE(NEW.authorization_number, '')), '') IS NULL THEN
+     AND NEW.appointment_id IS NOT NULL THEN
     SELECT NULLIF(btrim(authz.authorization_number), '')
-      INTO NEW.authorization_number
+      INTO v_selected_authorization
       FROM public.insurance_authorizations authz
       JOIN public.appointments appointment
         ON appointment.id = NEW.appointment_id
@@ -79,16 +173,28 @@ BEGIN
        AND NULLIF(btrim(COALESCE(authz.authorization_number, '')), '') IS NOT NULL
        AND COALESCE(authz.quantity_authorized, 0) > COALESCE(authz.quantity_used, 0)
        AND (authz.valid_until IS NULL OR authz.valid_until >= CURRENT_DATE)
+       AND (
+         v_requested_authorization IS NULL
+         OR NULLIF(btrim(authz.authorization_number), '') = v_requested_authorization
+       )
      ORDER BY authz.updated_at DESC NULLS LAST,
-              authz.created_at DESC
+              authz.created_at DESC,
+              authz.id DESC
      LIMIT 1;
+
+    IF v_requested_authorization IS NOT NULL
+       AND v_selected_authorization IS NULL THEN
+      RAISE EXCEPTION 'Billing authorization is not valid for the appointment scope';
+    END IF;
+
+    NEW.authorization_number := v_selected_authorization;
   END IF;
   RETURN NEW;
 END
 $function$;
 
 ALTER FUNCTION private.m11_assign_billing_authorization()
-  OWNER TO prontomedic_rpc_owner;
+  OWNER TO prontomedic_billing_authz_trigger_owner;
 REVOKE ALL ON FUNCTION private.m11_assign_billing_authorization()
   FROM PUBLIC, anon, authenticated, app_prontomedic;
 
@@ -150,7 +256,8 @@ UPDATE public.billing_accounts account
             AND COALESCE(candidate.quantity_authorized, 0) > COALESCE(candidate.quantity_used, 0)
             AND (candidate.valid_until IS NULL OR candidate.valid_until >= CURRENT_DATE)
           ORDER BY candidate.updated_at DESC NULLS LAST,
-                   candidate.created_at DESC
+                   candidate.created_at DESC,
+                   candidate.id DESC
           LIMIT 1
        ),
        updated_at = NOW()
@@ -341,6 +448,9 @@ BEGIN
   IF public.request_aal() <> 'aal2' THEN
     RAISE EXCEPTION 'AAL2 required to release DICOM worklist';
   END IF;
+  IF v_company IS NULL OR v_unit IS NULL THEN
+    RAISE EXCEPTION 'Active company and unit are required to release DICOM worklist';
+  END IF;
   IF NOT (
     public.can_access('recepcao', 'edit')
     OR public.can_access('dicom', 'create')
@@ -352,12 +462,11 @@ BEGIN
      OR p_idempotency_key !~ '^[A-Za-z0-9._:-]{8,120}$' THEN
     RAISE EXCEPTION 'Invalid worklist idempotency key';
   END IF;
-
   SELECT * INTO v_appointment
   FROM public.appointments appointment
   WHERE appointment.id = p_appointment_id
     AND appointment.company_id = v_company
-    AND (v_unit IS NULL OR appointment.unit_id = v_unit)
+    AND appointment.unit_id = v_unit
   FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Appointment not found in active scope';

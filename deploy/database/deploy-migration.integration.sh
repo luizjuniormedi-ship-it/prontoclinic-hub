@@ -89,7 +89,11 @@ NODE
   (cd "$(dirname "$bundle")" && sha256sum "$(basename "$bundle")" > "$(basename "$checksum")")
   bash deploy/database/deploy-migration.sh audit
   bash deploy/database/deploy-migration.sh preflight "$sha" "$bundle" "$checksum"
+  if [[ "$version" = 20260804033225 ]]; then
+    psql -X -v ON_ERROR_STOP=1 -d "$database" -c 'CREATE TABLE public.preflight_staleness_probe(id integer); DROP TABLE public.preflight_staleness_probe' >/dev/null
+  fi
   bash deploy/database/deploy-migration.sh deploy "$sha" "$bundle" "$checksum"
+  test "$(find "$root/$version/backups" -maxdepth 1 -name '*.dump' -type f | wc -l)" -ge 2
   if bash deploy/database/deploy-migration.sh preflight "$sha" "$bundle" "$checksum"; then
     echo "migration aplicada aceitou novo preflight: $version" >&2
     exit 1
@@ -97,7 +101,7 @@ NODE
 done
 
 bash deploy/database/deploy-migration.sh rollback
-test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260813001000'" -d "$database")" = 1
+test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260813001000'" -d "$database")" = 0
 test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260812211247'" -d "$database")" = 1
 test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260812170000'" -d "$database")" = 1
 test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260812150000'" -d "$database")" = 1
@@ -106,5 +110,10 @@ test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migration
 # shellcheck disable=SC1090
 . "$root/state/last-deploy.env"
 test "$MIGRATION_VERSION" = 20260812211247
+latest_backup="$(find "$root/20260813001000/backups" -maxdepth 1 -name '*.dump' -type f | sort | tail -n 1)"
+test -n "$latest_backup"
+PRONTOMEDIC_DB_RESTORE_CONFIRM="RESTORE:${database}" \
+  bash deploy/database/deploy-migration.sh restore "$latest_backup" "${latest_backup}.sha256"
+test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260813001000'" -d "$database")" = 0
 bash deploy/database/deploy-migration.test.sh
 echo "DATABASE_DEPLOY_INTEGRATION_PASS"
