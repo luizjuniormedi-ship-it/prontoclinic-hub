@@ -24,7 +24,8 @@
     "deploy/database/deploy-migration.sh",
     "deploy/database/tiss-materialization-applied.sql",
     "deploy/database/tiss-materialization-before.sql",
-    "deploy/database/tiss-materialization-rollback.sql"
+    "deploy/database/tiss-materialization-rollback.sql",
+    "supabase/migrations/20260716240000_operational_rls_closure.sql"
   ],
   "status": "active"
 }
