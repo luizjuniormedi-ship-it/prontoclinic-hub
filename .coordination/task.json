@@ -3,8 +3,10 @@
   "module": 19,
   "baseCommit": "281b24fc262a46890f19f42204cd132e7cdf7bd9",
   "paths": [
+    ".github/workflows/ci.yml",
     "e2e/clinical-wave-m19-m22.spec.ts",
     "e2e/gate-phase01.spec.ts",
+    "e2e/pharmacy.spec.ts",
     "src/App.tsx",
     "src/components/nursing/m19/Module19TriageWorkspace.tsx",
     "src/components/nursing/m19/TriageAtomicForm.tsx",
@@ -13,6 +15,7 @@
     "src/pages/__tests__/NursingPages.test.tsx",
     "src/pages/AttendancePage.tsx",
     "src/pages/BillingAccountsPage.tsx",
+    "src/pages/__tests__/BillingAccountsPage.test.tsx",
     "src/pages/EncountersPage.tsx",
     "src/pages/Module19NursingPage.tsx",
     "src/pages/NursingTriagePage.tsx",
@@ -21,9 +24,15 @@
     "src/services/medicalAttendanceService.ts",
     "src/services/module19NursingService.ts",
     "supabase/migrations/20260813040000_m19_m18_canonical_handoff.sql",
+    "supabase/migrations/20260813210000_pharmacy_catalog_authenticated_read_acl.sql",
+    "supabase/migrations/20260813233537_financial_appointment_future_uniqueness.sql",
+    "supabase/rollbacks/20260813210000_pharmacy_catalog_authenticated_read_acl.sql",
+    "supabase/rollbacks/20260813233537_financial_appointment_future_uniqueness.sql",
     "supabase/rollbacks/20260813040000_m19_m18_canonical_handoff.sql",
     "supabase/tests/m19_m18_canonical_handoff_contract.sql",
-    "supabase/tests/module18_medical_attendance_billing_handoff_contract.sql"
+    "supabase/tests/financial_appointment_future_uniqueness_contract.sql",
+    "supabase/tests/module18_medical_attendance_billing_handoff_contract.sql",
+    "supabase/tests/module8_pharmacy_runtime_contract.sql"
   ],
   "sharedPaths": [
     "deploy/database/deploy-migration.sh",

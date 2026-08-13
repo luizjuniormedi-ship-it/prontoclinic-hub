@@ -23,7 +23,13 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { tissGuideService } from "@/services/tissGuideService";
 
-const fmtBRL = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const fmtBRL = (value: number | string | null | undefined) => {
+  const amount = typeof value === "number" ? value : Number(value ?? 0);
+  return (Number.isFinite(amount) ? amount : 0).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+};
 
 export default function BillingAccountsPage() {
   const [searchParams] = useSearchParams();

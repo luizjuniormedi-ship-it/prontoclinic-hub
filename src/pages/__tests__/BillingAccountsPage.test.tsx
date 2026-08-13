@@ -165,6 +165,19 @@ describe("BillingAccountsPage — contrato canônico de pré-contas", () => {
     expect(mocks.toast).not.toHaveBeenCalled();
   });
 
+  it("normaliza valores NUMERIC serializados pelo PostgreSQL", async () => {
+    vi.mocked(billingAccountsService.list).mockResolvedValue([{
+      ...account,
+      total_gross_amount: "150.50" as unknown as number,
+      total_net_amount: "149.25" as unknown as number,
+    }]);
+
+    await openAccountDetail();
+
+    expect(screen.getByText("R$ 150,50")).toBeInTheDocument();
+    expect(screen.getAllByText("R$ 149,25")).toHaveLength(2);
+  });
+
   it("substitui a produção legada pela mesma projeção canônica de contas", async () => {
     renderBillingAccountsPage("/billing-production");
 
