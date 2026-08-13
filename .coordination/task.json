@@ -22,7 +22,8 @@
     "src/services/module19NursingService.ts",
     "supabase/migrations/20260813040000_m19_m18_canonical_handoff.sql",
     "supabase/rollbacks/20260813040000_m19_m18_canonical_handoff.sql",
-    "supabase/tests/m19_m18_canonical_handoff_contract.sql"
+    "supabase/tests/m19_m18_canonical_handoff_contract.sql",
+    "supabase/tests/module18_medical_attendance_billing_handoff_contract.sql"
   ],
   "sharedPaths": [
     "deploy/database/deploy-migration.sh",

@@ -149,6 +149,7 @@ BEGIN
      OR NOT has_function_privilege('authenticated','public.m19_complete_triage_secure(integer,bigint,bigint,bigint,integer,text,jsonb,jsonb)','EXECUTE')
      OR NOT has_function_privilege('authenticated','public.m18_open_attendance_secure(bigint,integer,bigint)','EXECUTE')
      OR NOT has_function_privilege('authenticated','public.m18_finalize_appointment_with_billing_secure(bigint,jsonb,text)','EXECUTE')
+     OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.sync_completed_appointment_billing_secure(bigint,text)','EXECUTE')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.can_access(text,text)','EXECUTE')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.update_appointment_status_secure(bigint,text,text)','EXECUTE')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.current_company_id()','EXECUTE')
@@ -173,6 +174,14 @@ BEGIN
     (SELECT proowner FROM pg_proc WHERE oid = 'private.transition_triage_queue(bigint,text,text)'::regprocedure)
   ) <> 'prontomedic_clinical_handoff_owner' THEN
     RAISE EXCEPTION 'Queue transition does not use the scoped clinical handoff owner';
+  END IF;
+  IF NOT (SELECT prosecdef FROM pg_proc
+           WHERE oid = 'public.m18_finalize_appointment_with_billing_secure(bigint,jsonb,text)'::regprocedure)
+     OR pg_get_userbyid(
+          (SELECT proowner FROM pg_proc
+            WHERE oid = 'public.m18_finalize_appointment_with_billing_secure(bigint,jsonb,text)'::regprocedure)
+        ) <> 'prontomedic_clinical_handoff_owner' THEN
+    RAISE EXCEPTION 'M18 billing handoff must use the scoped clinical owner under FORCE RLS';
   END IF;
   IF EXISTS (
     SELECT 1 FROM pg_roles

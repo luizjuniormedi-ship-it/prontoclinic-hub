@@ -56,6 +56,19 @@ $clinical_owner$;
 
 GRANT USAGE ON SCHEMA public, private, auth TO prontomedic_clinical_handoff_owner;
 
+INSERT INTO private.m19_m18_handoff_rollback_state(object_type, object_name, metadata)
+SELECT 'function_grant',
+       'prontomedic_clinical_handoff_owner.sync_completed_appointment_billing_secure(bigint,text)',
+       jsonb_build_object(
+         'execute', has_function_privilege(
+           'prontomedic_clinical_handoff_owner',
+           'public.sync_completed_appointment_billing_secure(bigint,text)',
+           'EXECUTE'
+         )
+       )
+ WHERE current_setting('prontomedic.snapshot_new') = 'true'
+ON CONFLICT (object_type, object_name) DO NOTHING;
+
 INSERT INTO private.m19_m18_handoff_rollback_state(object_type, object_name, ddl, metadata)
 SELECT 'function', p.oid::regprocedure::TEXT, pg_get_functiondef(p.oid),
        jsonb_build_object(
@@ -793,7 +806,7 @@ CREATE OR REPLACE FUNCTION public.m18_finalize_appointment_with_billing_secure(
 )
 RETURNS JSONB
 LANGUAGE plpgsql
-SECURITY INVOKER
+SECURITY DEFINER
 SET search_path = pg_catalog, public, private, auth
 AS $function$
 DECLARE
@@ -887,6 +900,8 @@ GRANT EXECUTE ON FUNCTION public.m19_prepare_triage_handoff_secure(BIGINT, TEXT)
   TO authenticated, app_prontomedic;
 GRANT EXECUTE ON FUNCTION public.update_appointment_status_secure(BIGINT, TEXT, TEXT)
   TO prontomedic_clinical_handoff_owner;
+GRANT EXECUTE ON FUNCTION public.sync_completed_appointment_billing_secure(BIGINT, TEXT)
+  TO prontomedic_clinical_handoff_owner;
 
 ALTER FUNCTION public.m19_prepare_triage_handoff_secure(BIGINT, TEXT) OWNER TO prontomedic_clinical_handoff_owner;
 ALTER FUNCTION public.m19_complete_triage_secure(INTEGER, BIGINT, BIGINT, BIGINT, INTEGER, TEXT, JSONB, JSONB)
@@ -906,6 +921,8 @@ ALTER FUNCTION public.m18_save_attendance_secure(UUID, JSONB)
 ALTER FUNCTION public.m18_finalize_attendance_secure(UUID, TEXT)
   OWNER TO prontomedic_clinical_handoff_owner;
 ALTER FUNCTION public.m18_complete_attendance_secure(UUID, JSONB, TEXT)
+  OWNER TO prontomedic_clinical_handoff_owner;
+ALTER FUNCTION public.m18_finalize_appointment_with_billing_secure(BIGINT, JSONB, TEXT)
   OWNER TO prontomedic_clinical_handoff_owner;
 
 COMMENT ON COLUMN public.triagem_fila.appointment_id IS

@@ -45,6 +45,21 @@ BEGIN
 END
 $restore_functions$;
 
+DO $restore_function_grants$
+DECLARE v_execute BOOLEAN;
+BEGIN
+  SELECT COALESCE((metadata->>'execute')::BOOLEAN, FALSE)
+    INTO v_execute
+    FROM private.m19_m18_handoff_rollback_state
+   WHERE object_type = 'function_grant'
+     AND object_name = 'prontomedic_clinical_handoff_owner.sync_completed_appointment_billing_secure(bigint,text)';
+  IF NOT COALESCE(v_execute, FALSE) THEN
+    REVOKE EXECUTE ON FUNCTION public.sync_completed_appointment_billing_secure(BIGINT, TEXT)
+      FROM prontomedic_clinical_handoff_owner;
+  END IF;
+END
+$restore_function_grants$;
+
 DO $restore_policies$
 DECLARE v_table TEXT; v_policy RECORD;
 BEGIN
@@ -82,7 +97,8 @@ BEGIN
       FROM prontomedic_clinical_handoff_owner;
     REVOKE EXECUTE ON FUNCTION public.active_company_id(), public.active_unit_id(),
       public.request_aal(), public.can_access(TEXT, TEXT),
-      public.update_appointment_status_secure(BIGINT, TEXT, TEXT)
+      public.update_appointment_status_secure(BIGINT, TEXT, TEXT),
+      public.sync_completed_appointment_billing_secure(BIGINT, TEXT)
       FROM prontomedic_clinical_handoff_owner;
     REVOKE USAGE ON SCHEMA public, private, auth FROM prontomedic_clinical_handoff_owner;
     FOR v_sequence IN
