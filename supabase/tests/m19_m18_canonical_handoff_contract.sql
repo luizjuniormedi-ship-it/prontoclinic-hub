@@ -138,15 +138,21 @@ BEGIN
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.can_access(text,text)','EXECUTE')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.current_company_id()','EXECUTE')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.audit_current_user_id()','EXECUTE')
-     OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.audit_current_company_id()','EXECUTE')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.audit_has_role(text[])','EXECUTE')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.org_can_access_unit(uuid,integer)','EXECUTE')
-     OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','private.prontomedic_module_action_allowed(text,text,integer,boolean)','EXECUTE')
-     OR NOT has_table_privilege('prontomedic_clinical_handoff_owner','public.patients','SELECT')
-     OR NOT has_table_privilege('prontomedic_clinical_handoff_owner','public.mnct_classificacao_risco','SELECT')
-     OR NOT has_table_privilege('prontomedic_clinical_handoff_owner','public.user_profiles','SELECT')
-     OR NOT has_table_privilege('prontomedic_clinical_handoff_owner','public.role_permissions','SELECT') THEN
+     OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','private.m19_complete_triage(integer,bigint,bigint,bigint,integer,text,jsonb,jsonb)','EXECUTE')
+     OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','private.transition_triage_queue(bigint,text,text)','EXECUTE') THEN
     RAISE EXCEPTION 'Authenticated RPC grants incomplete';
+  END IF;
+
+  SELECT count(*) INTO v_count
+    FROM pg_proc procedure
+    JOIN pg_namespace namespace ON namespace.oid = procedure.pronamespace
+   WHERE namespace.nspname = 'private'
+     AND procedure.proname IN ('m19_complete_triage','m19_reclassify_triage','transition_triage_queue')
+     AND pg_get_userbyid(procedure.proowner) = 'prontomedic_rpc_owner';
+  IF v_count <> 3 THEN
+    RAISE EXCEPTION 'Private M19 owners diverge from the canonical RPC owner: %', v_count;
   END IF;
   IF EXISTS (
     SELECT 1 FROM pg_roles

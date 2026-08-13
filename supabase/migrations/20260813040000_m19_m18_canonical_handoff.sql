@@ -388,9 +388,7 @@ REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON
 GRANT SELECT ON public.triagem_fila, public.triagens, public.news2_avaliacoes,
   public.encounters, public.triagem_reclassificacoes
   TO authenticated, app_prontomedic;
-GRANT SELECT ON public.appointments, public.professionals, public.professional_schedules,
-  public.patients, public.mnct_classificacao_risco, public.user_profiles,
-  public.user_permissions, public.permissions, public.roles, public.role_permissions
+GRANT SELECT ON public.appointments, public.professionals, public.professional_schedules
   TO prontomedic_clinical_handoff_owner;
 GRANT SELECT, INSERT, UPDATE ON public.triagem_fila, public.triagens, public.encounters
   TO prontomedic_clinical_handoff_owner;
@@ -411,10 +409,12 @@ $clinical_sequences$;
 GRANT EXECUTE ON FUNCTION public.active_company_id(), public.active_unit_id(),
   public.request_aal(), public.can_access(TEXT, TEXT),
   public.current_company_id(), public.audit_current_user_id(),
-  public.audit_current_company_id(), public.audit_has_role(TEXT[]),
+  public.audit_has_role(TEXT[]),
   public.org_can_access_unit(UUID, INTEGER)
   TO prontomedic_clinical_handoff_owner;
-GRANT EXECUTE ON FUNCTION private.prontomedic_module_action_allowed(TEXT, TEXT, INTEGER, BOOLEAN)
+GRANT EXECUTE ON FUNCTION private.m19_complete_triage(INTEGER, BIGINT, BIGINT, BIGINT, INTEGER, TEXT, JSONB, JSONB),
+  private.m19_reclassify_triage(BIGINT, INTEGER, TEXT),
+  private.transition_triage_queue(BIGINT, TEXT, TEXT)
   TO prontomedic_clinical_handoff_owner;
 
 CREATE OR REPLACE FUNCTION public.m19_prepare_triage_handoff_secure(
@@ -801,11 +801,11 @@ ALTER FUNCTION public.m18_open_attendance_secure(BIGINT, INTEGER, BIGINT)
 ALTER FUNCTION public.m19_reclassify_triage_secure(BIGINT, INTEGER, TEXT)
   OWNER TO prontomedic_clinical_handoff_owner;
 ALTER FUNCTION private.m19_complete_triage(INTEGER, BIGINT, BIGINT, BIGINT, INTEGER, TEXT, JSONB, JSONB)
-  OWNER TO prontomedic_clinical_handoff_owner;
+  OWNER TO prontomedic_rpc_owner;
 ALTER FUNCTION private.m19_reclassify_triage(BIGINT, INTEGER, TEXT)
-  OWNER TO prontomedic_clinical_handoff_owner;
+  OWNER TO prontomedic_rpc_owner;
 ALTER FUNCTION private.transition_triage_queue(BIGINT, TEXT, TEXT)
-  OWNER TO prontomedic_clinical_handoff_owner;
+  OWNER TO prontomedic_rpc_owner;
 ALTER FUNCTION public.m18_save_attendance_secure(UUID, JSONB)
   OWNER TO prontomedic_clinical_handoff_owner;
 ALTER FUNCTION public.m18_finalize_attendance_secure(UUID, TEXT)
