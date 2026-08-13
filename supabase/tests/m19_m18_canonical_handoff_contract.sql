@@ -128,7 +128,10 @@ BEGIN
   IF position('triage.cd_appointment = v_appointment.id' IN v_source) = 0
      OR position('triage.tp_status IN' IN v_source) = 0
      OR position('v_appointment.unit_id' IN v_source) = 0
-     OR position('public.request_aal()' IN v_source) = 0 THEN
+     OR position('public.request_aal()' IN v_source) = 0
+     OR position('public.can_access(''prontuario'', ''create'')' IN v_source) = 0
+     OR position('public.can_access(''prontuario'', ''edit'')' IN v_source) = 0
+     OR position('public.m18_can_edit_attendance()' IN v_source) <> 0 THEN
     RAISE EXCEPTION 'M18 does not enforce completed correlated M19 triage';
   END IF;
 
@@ -227,12 +230,16 @@ AS $$ SELECT COALESCE(NULLIF(current_setting('test.aal', TRUE), ''), 'aal1') $$;
 CREATE OR REPLACE FUNCTION public.audit_current_user_id() RETURNS UUID
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog
 AS $$ SELECT NULL::UUID $$;
-CREATE OR REPLACE FUNCTION public.m18_can_edit_attendance() RETURNS BOOLEAN
+CREATE OR REPLACE FUNCTION public.can_access(p_module TEXT, p_action TEXT) RETURNS BOOLEAN
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog
-AS $$ SELECT current_setting('test.can_edit', TRUE) = 'true' $$;
+AS $$
+  SELECT current_setting('test.can_edit', TRUE) = 'true'
+     AND p_module = 'prontuario'
+     AND p_action IN ('create', 'edit')
+$$;
 
 GRANT EXECUTE ON FUNCTION public.active_company_id(), public.active_unit_id(),
-  public.request_aal(), public.audit_current_user_id(), public.m18_can_edit_attendance()
+  public.request_aal(), public.audit_current_user_id(), public.can_access(TEXT, TEXT)
   TO authenticated, prontomedic_clinical_handoff_owner;
 
 INSERT INTO public.companies(id, name) VALUES

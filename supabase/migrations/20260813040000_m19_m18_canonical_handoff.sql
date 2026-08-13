@@ -562,7 +562,7 @@ DECLARE
   v_professional_id BIGINT;
 BEGIN
   IF public.request_aal() <> 'aal2' OR v_company IS NULL OR v_unit IS NULL
-     OR NOT public.m18_can_edit_attendance() THEN
+     OR NOT (public.can_access('prontuario', 'create') OR public.can_access('prontuario', 'edit')) THEN
     RAISE EXCEPTION 'Contexto AAL2 ou permissão clínica inválidos' USING ERRCODE = '42501';
   END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended(
@@ -637,7 +637,7 @@ DECLARE
   v_row public.encounters;
 BEGIN
   IF public.request_aal() <> 'aal2' OR v_company IS NULL OR v_unit IS NULL
-     OR NOT public.m18_can_edit_attendance() THEN
+     OR NOT public.can_access('prontuario', 'edit') THEN
     RAISE EXCEPTION 'Contexto AAL2, empresa, unidade e permissão clínica são obrigatórios' USING ERRCODE = '42501';
   END IF;
   IF jsonb_typeof(COALESCE(p_payload, '{}'::JSONB)) <> 'object' THEN
@@ -696,7 +696,7 @@ DECLARE
     ELSE '' END;
 BEGIN
   IF public.request_aal() <> 'aal2' OR v_company IS NULL OR v_unit IS NULL
-     OR NOT public.m18_can_edit_attendance() THEN
+     OR NOT public.can_access('prontuario', 'edit') THEN
     RAISE EXCEPTION 'Contexto AAL2, empresa, unidade e permissão clínica são obrigatórios' USING ERRCODE = '42501';
   END IF;
   IF v_status = '' THEN RAISE EXCEPTION 'Destino clínico inválido'; END IF;
@@ -734,7 +734,7 @@ DECLARE
   v_row public.encounters;
 BEGIN
   IF public.request_aal() <> 'aal2' OR v_company IS NULL OR v_unit IS NULL
-     OR NOT public.m18_can_edit_attendance() THEN
+     OR NOT public.can_access('prontuario', 'edit') THEN
     RAISE EXCEPTION 'Contexto AAL2, empresa, unidade e permissão clínica são obrigatórios' USING ERRCODE = '42501';
   END IF;
   IF NOT EXISTS (
