@@ -46,7 +46,7 @@ function workflowAt(
     request_hash: "a".repeat(64),
     request_payload: {},
     correlation_id: "12aac558-3b5c-4c4f-bfa8-218a62c4dc0b",
-    requires_tiss: true,
+    requires_tiss: false,
     requires_financial: true,
     status: "in_progress",
     current_step: currentStep,
@@ -114,9 +114,6 @@ function createDependencies(initial: ReceptionCheckinWorkflow) {
     })),
     ensureBilling: vi.fn(async () => ({
       id: "3e0cfdf4-66af-44af-a500-81e9f25a7587",
-    })),
-    ensureTiss: vi.fn(async () => ({
-      id: "15993f35-ad6b-4585-856c-596a77330468",
     })),
     ensureFinancial: vi.fn(async () => ({ id: 778 })),
     performCheckin: vi.fn(async () => ({
@@ -187,13 +184,21 @@ describe("receptionWorkflowService", () => {
 
     expect(mock.transitions).toEqual([
       "billing",
-      "tiss",
       "financial",
       "checkin",
       "completed",
     ]);
     expect(mock.dependencies.ensureBilling).toHaveBeenCalledTimes(1);
-    expect(mock.dependencies.ensureTiss).toHaveBeenCalledTimes(1);
+    expect(mock.dependencies.start).toHaveBeenCalledWith(
+      baseInput.appointmentId,
+      baseInput.idempotencyKey,
+      expect.not.objectContaining({ tiss: expect.anything() }),
+    );
+    expect(mock.dependencies.start).toHaveBeenCalledWith(
+      baseInput.appointmentId,
+      baseInput.idempotencyKey,
+      expect.objectContaining({ requires_tiss: false }),
+    );
     expect(mock.dependencies.ensureFinancial).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ amount: 30, type: "copayment" }),
@@ -249,7 +254,6 @@ describe("receptionWorkflowService", () => {
     const result = await service.run(baseInput);
 
     expect(mock.dependencies.ensureBilling).not.toHaveBeenCalled();
-    expect(mock.dependencies.ensureTiss).not.toHaveBeenCalled();
     expect(mock.dependencies.ensureFinancial).toHaveBeenCalledTimes(1);
     expect(mock.dependencies.performCheckin).toHaveBeenCalledTimes(1);
     expect(mock.dependencies.ensureWorklist).toHaveBeenCalledTimes(1);
@@ -276,7 +280,7 @@ describe("receptionWorkflowService", () => {
         status: "failed",
         current_step: "financial",
         billing_account_id: "3e0cfdf4-66af-44af-a500-81e9f25a7587",
-        tiss_guide_id: "15993f35-ad6b-4585-856c-596a77330468",
+        tiss_guide_id: null,
         financial_transaction_id: null,
         checkin_id: null,
       }),
@@ -298,7 +302,6 @@ describe("receptionWorkflowService", () => {
       expect.any(Object),
     );
     expect(mock.dependencies.ensureBilling).toHaveBeenCalledTimes(1);
-    expect(mock.dependencies.ensureTiss).toHaveBeenCalledTimes(1);
     expect(mock.dependencies.ensureFinancial).toHaveBeenCalledTimes(2);
     expect(financialCreations).toBe(1);
     expect(mock.dependencies.performCheckin).toHaveBeenCalledTimes(1);
@@ -307,7 +310,7 @@ describe("receptionWorkflowService", () => {
       status: "completed",
       current_step: "completed",
       billing_account_id: "3e0cfdf4-66af-44af-a500-81e9f25a7587",
-      tiss_guide_id: "15993f35-ad6b-4585-856c-596a77330468",
+      tiss_guide_id: null,
       financial_transaction_id: 778,
       checkin_id: 99,
     });
@@ -400,7 +403,6 @@ describe("receptionWorkflowService", () => {
         error_code: "OWNER_HANDOFF_BILLING",
       }),
     } satisfies Partial<ReceptionWorkflowBlockedError>);
-    expect(mock.dependencies.ensureTiss).not.toHaveBeenCalled();
     expect(mock.dependencies.ensureFinancial).not.toHaveBeenCalled();
     expect(mock.dependencies.performCheckin).not.toHaveBeenCalled();
   });
@@ -430,21 +432,53 @@ describe("receptionWorkflowService", () => {
     expect(mock.dependencies.ensureBilling).not.toHaveBeenCalled();
   });
 
-  it("rejeita qualquer tentativa de modelar TISS em conta particular", async () => {
+  it("ignora input TISS legado e não o envia no payload da Recepção", async () => {
     const mock = createDependencies(workflowAt("precheck"));
     const service = createReceptionWorkflowService(mock.dependencies);
 
-    await expect(
-      service.run({
-        ...baseInput,
-        billing: {
-          type: "particular",
-          totalGrossAmount: 100,
-        },
-      }),
-    ).rejects.toThrow(/TISS exige pré-conta de convênio/);
-    expect(mock.dependencies.start).not.toHaveBeenCalled();
+    await service.run({
+      ...baseInput,
+      billing: {
+        type: "particular",
+        totalGrossAmount: 100,
+      },
+      receivable: undefined,
+    });
+
+    expect(mock.transitions).toEqual(["billing", "checkin", "completed"]);
+    const requestPayload = vi.mocked(mock.dependencies.start).mock.calls[0]?.[2];
+    expect(requestPayload).toMatchObject({ requires_tiss: false });
+    expect(requestPayload).not.toHaveProperty("tiss");
   });
+
+  it.each([
+    {
+      receivable: baseInput.receivable,
+      expected: ["financial", "checkin", "completed"],
+    },
+    { receivable: undefined, expected: ["checkin", "completed"] },
+  ])(
+    "retoma etapa TISS legada sem chamar RPC revogada: $expected",
+    async ({ receivable, expected }) => {
+      const mock = createDependencies(
+        workflowAt("tiss", {
+          version: 8,
+          requires_tiss: true,
+          billing_account_id: "3e0cfdf4-66af-44af-a500-81e9f25a7587",
+        }),
+      );
+      const service = createReceptionWorkflowService(mock.dependencies);
+
+      const result = await service.run({ ...baseInput, receivable });
+
+      expect(mock.transitions).toEqual(expected);
+      expect(mock.dependencies.ensureBilling).not.toHaveBeenCalled();
+      expect(result.workflow.result_payload).toMatchObject({
+        legacy_tiss_step_skipped: true,
+      });
+      expect(result.workflow.status).toBe("completed");
+    },
+  );
 });
 
 describe("migration M11 check-in workflow — regressões P0/P1", () => {

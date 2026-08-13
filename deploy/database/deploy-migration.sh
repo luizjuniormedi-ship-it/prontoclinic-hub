@@ -170,7 +170,9 @@ load_manifest_contract() {
     20260811210000:dicom_worklist_rls_hardening:20260811120000:forward_only|\
     20260812021457:pharmacy_runtime_closure:20260811210000:preserve_schema|\
     20260812150000:medical_attendance_atomic_completion:20260812021457:preserve_schema|\
-    20260812170000:medical_attendance_billing_handoff:20260812150000:preserve_schema) ;;
+    20260812170000:medical_attendance_billing_handoff:20260812150000:preserve_schema|\
+    20260812211247:tiss_account_materialization_contract:20260812170000:preserve_schema|\
+    20260813001000:canonical_reception_billing_tiss_handoff:20260812211247:preserve_schema) ;;
     *) die 'migration fora da allowlist do coordenador' ;;
   esac
 }

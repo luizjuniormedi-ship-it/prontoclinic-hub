@@ -11,10 +11,20 @@
     "src/services/__tests__/receptionWorkflowService.test.ts",
     "src/services/receptionWorkflowService.ts",
     "supabase/migrations/20260813001000_canonical_reception_billing_tiss_handoff.sql",
+    "supabase/rollbacks/20260813001000_canonical_reception_billing_tiss_handoff.sql",
     "supabase/tests/canonical_reception_billing_tiss_handoff_contract.sql"
   ],
   "sharedPaths": [
-    ".github/workflows/ci.yml"
+    ".github/workflows/ci.yml",
+    ".github/workflows/deploy-database-migration.yml",
+    "deploy/database/canonical-reception-tiss-applied.sql",
+    "deploy/database/canonical-reception-tiss-before.sql",
+    "deploy/database/canonical-reception-tiss-rollback.sql",
+    "deploy/database/deploy-migration.integration.sh",
+    "deploy/database/deploy-migration.sh",
+    "deploy/database/tiss-materialization-applied.sql",
+    "deploy/database/tiss-materialization-before.sql",
+    "deploy/database/tiss-materialization-rollback.sql"
   ],
   "status": "active"
 }

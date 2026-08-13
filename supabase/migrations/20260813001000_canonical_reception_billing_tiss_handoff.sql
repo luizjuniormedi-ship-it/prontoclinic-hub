@@ -1,5 +1,8 @@
 BEGIN;
 
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '10min';
+
 -- Reception owns check-in and the pre-account. Billing owns guide/XML creation.
 REVOKE EXECUTE ON FUNCTION public.ensure_tiss_guide_for_checkin_secure(UUID, TEXT, TEXT)
   FROM authenticated, app_prontomedic;
@@ -29,6 +32,24 @@ REVOKE ALL ON FUNCTION public.start_reception_checkin_workflow_secure(BIGINT, TE
 GRANT EXECUTE ON FUNCTION public.start_reception_checkin_workflow_secure(BIGINT, TEXT, JSONB)
   TO authenticated, app_prontomedic;
 
+-- Workflows criados antes da separacao de responsabilidades podem estar
+-- parados na etapa TISS. A Recepcao deve retoma-los na proxima etapa que
+-- efetivamente possui, preservando ids, versao e artefatos ja existentes.
+UPDATE public.reception_checkin_workflows
+   SET requires_tiss = FALSE,
+       current_step = CASE
+         WHEN requires_financial THEN 'financial'
+         ELSE 'checkin'
+       END,
+       request_payload = (COALESCE(request_payload, '{}'::JSONB) - 'requires_tiss' - 'tiss')
+         || jsonb_build_object('requires_tiss', FALSE),
+       result_payload = COALESCE(result_payload, '{}'::JSONB)
+         || jsonb_build_object('legacy_tiss_handoff_migrated', TRUE),
+       updated_at = NOW(),
+       version = version + 1
+ WHERE current_step = 'tiss'
+   AND status IN ('in_progress', 'blocked', 'failed');
+
 CREATE OR REPLACE FUNCTION private.m11_assign_billing_authorization()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -42,10 +63,21 @@ BEGIN
     SELECT NULLIF(btrim(authz.authorization_number), '')
       INTO NEW.authorization_number
       FROM public.insurance_authorizations authz
+      JOIN public.appointments appointment
+        ON appointment.id = NEW.appointment_id
+       AND appointment.company_id = NEW.company_id
+       AND appointment.unit_id = NEW.unit_id
+       AND appointment.patient_id = NEW.patient_id
      WHERE authz.appointment_id = NEW.appointment_id
        AND authz.company_id = NEW.company_id
        AND authz.unit_id = NEW.unit_id
+       AND authz.patient_id = NEW.patient_id
+       AND authz.insurance_id::BIGINT = NEW.insurance_id
+       AND authz.insurance_plan_id IS NOT DISTINCT FROM appointment.insurance_plan_id
+       AND authz.procedure_id IS NOT DISTINCT FROM appointment.service_id
        AND authz.status IN ('autorizada', 'parcialmente_autorizada')
+       AND NULLIF(btrim(COALESCE(authz.authorization_number, '')), '') IS NOT NULL
+       AND COALESCE(authz.quantity_authorized, 0) > COALESCE(authz.quantity_used, 0)
        AND (authz.valid_until IS NULL OR authz.valid_until >= CURRENT_DATE)
      ORDER BY authz.updated_at DESC NULLS LAST,
               authz.created_at DESC
@@ -56,13 +88,14 @@ END
 $function$;
 
 ALTER FUNCTION private.m11_assign_billing_authorization()
-  OWNER TO prontomedic_reception_rpc_owner;
+  OWNER TO prontomedic_rpc_owner;
 REVOKE ALL ON FUNCTION private.m11_assign_billing_authorization()
   FROM PUBLIC, anon, authenticated, app_prontomedic;
 
 DROP TRIGGER IF EXISTS trg_m11_assign_billing_authorization ON public.billing_accounts;
 CREATE TRIGGER trg_m11_assign_billing_authorization
-  BEFORE INSERT OR UPDATE OF appointment_id, billing_type, authorization_number
+  BEFORE INSERT OR UPDATE OF appointment_id, patient_id, insurance_id,
+    billing_type, authorization_number
   ON public.billing_accounts
   FOR EACH ROW EXECUTE FUNCTION private.m11_assign_billing_authorization();
 
@@ -90,14 +123,31 @@ CREATE TRIGGER trg_m39_advance_reviewed_billing_account
   ON public.billing_accounts
   FOR EACH ROW EXECUTE FUNCTION private.m39_advance_reviewed_billing_account();
 
+-- The competence guard is an interactive business invariant and requires an
+-- authenticated access context. This administrative backfill changes only the
+-- authorization reference, so suspend that single guard inside this transaction.
+ALTER TABLE public.billing_accounts
+  DISABLE TRIGGER trg_enforce_open_billing_competence;
+
 UPDATE public.billing_accounts account
    SET authorization_number = (
          SELECT NULLIF(btrim(candidate.authorization_number), '')
            FROM public.insurance_authorizations candidate
+           JOIN public.appointments appointment
+             ON appointment.id = account.appointment_id
+            AND appointment.company_id = account.company_id
+            AND appointment.unit_id = account.unit_id
+            AND appointment.patient_id = account.patient_id
           WHERE candidate.appointment_id = account.appointment_id
             AND candidate.company_id = account.company_id
             AND candidate.unit_id = account.unit_id
+            AND candidate.patient_id = account.patient_id
+            AND candidate.insurance_id::BIGINT = account.insurance_id
+            AND candidate.insurance_plan_id IS NOT DISTINCT FROM appointment.insurance_plan_id
+            AND candidate.procedure_id IS NOT DISTINCT FROM appointment.service_id
             AND candidate.status IN ('autorizada', 'parcialmente_autorizada')
+            AND NULLIF(btrim(COALESCE(candidate.authorization_number, '')), '') IS NOT NULL
+            AND COALESCE(candidate.quantity_authorized, 0) > COALESCE(candidate.quantity_used, 0)
             AND (candidate.valid_until IS NULL OR candidate.valid_until >= CURRENT_DATE)
           ORDER BY candidate.updated_at DESC NULLS LAST,
                    candidate.created_at DESC
@@ -110,13 +160,26 @@ UPDATE public.billing_accounts account
    AND EXISTS (
      SELECT 1
        FROM public.insurance_authorizations candidate
+       JOIN public.appointments appointment
+         ON appointment.id = account.appointment_id
+        AND appointment.company_id = account.company_id
+        AND appointment.unit_id = account.unit_id
+        AND appointment.patient_id = account.patient_id
       WHERE candidate.appointment_id = account.appointment_id
         AND candidate.company_id = account.company_id
         AND candidate.unit_id = account.unit_id
+        AND candidate.patient_id = account.patient_id
+        AND candidate.insurance_id::BIGINT = account.insurance_id
+        AND candidate.insurance_plan_id IS NOT DISTINCT FROM appointment.insurance_plan_id
+        AND candidate.procedure_id IS NOT DISTINCT FROM appointment.service_id
         AND candidate.status IN ('autorizada', 'parcialmente_autorizada')
         AND NULLIF(btrim(COALESCE(candidate.authorization_number, '')), '') IS NOT NULL
+        AND COALESCE(candidate.quantity_authorized, 0) > COALESCE(candidate.quantity_used, 0)
         AND (candidate.valid_until IS NULL OR candidate.valid_until >= CURRENT_DATE)
    );
+
+ALTER TABLE public.billing_accounts
+  ENABLE TRIGGER trg_enforce_open_billing_competence;
 
 CREATE OR REPLACE FUNCTION public.m39_billing_readiness(
   p_account public.billing_accounts
@@ -219,7 +282,8 @@ BEGIN
     ALTER TABLE public.dicom_worklist_queue
       ADD CONSTRAINT dicom_worklist_queue_imaging_order_item_id_fkey
       FOREIGN KEY (imaging_order_item_id)
-      REFERENCES public.imaging_order_items(id) ON DELETE RESTRICT;
+      REFERENCES public.imaging_order_items(id) ON DELETE RESTRICT
+      NOT VALID;
   END IF;
 
   IF NOT EXISTS (
@@ -230,7 +294,8 @@ BEGIN
     ALTER TABLE public.dicom_worklist_queue
       ADD CONSTRAINT dicom_worklist_queue_patient_id_fkey
       FOREIGN KEY (patient_id)
-      REFERENCES public.patients(id) ON DELETE RESTRICT;
+      REFERENCES public.patients(id) ON DELETE RESTRICT
+      NOT VALID;
   END IF;
 
   IF NOT EXISTS (
@@ -247,6 +312,11 @@ BEGIN
   END IF;
 END;
 $block$;
+
+ALTER TABLE public.dicom_worklist_queue
+  VALIDATE CONSTRAINT dicom_worklist_queue_imaging_order_item_id_fkey;
+ALTER TABLE public.dicom_worklist_queue
+  VALIDATE CONSTRAINT dicom_worklist_queue_patient_id_fkey;
 
 -- A retomada do check-in pode encontrar o item ja liberado pela transicao
 -- anterior, mas ainda sem a fila MWL. Reutilize o contrato canonico e a mesma

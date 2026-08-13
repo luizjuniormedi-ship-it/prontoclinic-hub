@@ -28,6 +28,8 @@ contracts=(
   '20260812021457|pharmacy_runtime_closure|20260811210000|preserve_schema|pharmacy'
   '20260812150000|medical_attendance_atomic_completion|20260812021457|preserve_schema|medical-attendance'
   '20260812170000|medical_attendance_billing_handoff|20260812150000|preserve_schema|clinical-billing'
+  '20260812211247|tiss_account_materialization_contract|20260812170000|preserve_schema|tiss-materialization'
+  '20260813001000|canonical_reception_billing_tiss_handoff|20260812211247|preserve_schema|canonical-reception-tiss'
 )
 
 cleanup() {
@@ -95,12 +97,14 @@ NODE
 done
 
 bash deploy/database/deploy-migration.sh rollback
+test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260813001000'" -d "$database")" = 1
+test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260812211247'" -d "$database")" = 1
 test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260812170000'" -d "$database")" = 1
 test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260812150000'" -d "$database")" = 1
 test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260812021457'" -d "$database")" = 1
 test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260811210000'" -d "$database")" = 1
 # shellcheck disable=SC1090
 . "$root/state/last-deploy.env"
-test "$MIGRATION_VERSION" = 20260812150000
+test "$MIGRATION_VERSION" = 20260812211247
 bash deploy/database/deploy-migration.test.sh
 echo "DATABASE_DEPLOY_INTEGRATION_PASS"

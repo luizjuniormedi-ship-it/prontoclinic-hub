@@ -66,63 +66,388 @@ SELECT pg_temp.assert_true(
 );
 
 SELECT pg_temp.assert_true(
-  position(
-    'item.status IN (''agendado'', ''liberado_worklist'')' IN
-    pg_get_functiondef(
-      'public.release_appointment_to_worklist_secure(bigint,text)'::REGPROCEDURE
-    )
-  ) > 0,
-  'Worklist release must resume after an item was already marked as released'
-);
-
-SELECT pg_temp.assert_true(
-  position(
-    'dicom_worklist_queue.idempotency_key = EXCLUDED.idempotency_key' IN
-    pg_get_functiondef(
-      'public.release_appointment_to_worklist_secure(bigint,text)'::REGPROCEDURE
-    )
-  ) > 0,
-  'Worklist resume must reject a conflicting idempotency key'
-);
-
-SELECT pg_temp.assert_true(
-  NOT EXISTS (
+  EXISTS (
     SELECT 1
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name = 'dicom_worklist_queue'
-      AND column_name IN (
-        'unit_id', 'appointment_id', 'imaging_order_item_id',
-        'idempotency_key', 'patient_id', 'patient_identifier',
-        'requested_procedure_id', 'scheduled_procedure_step_id',
-        'scheduled_station_aetitle', 'scheduled_datetime'
-      )
-      AND is_nullable = 'YES'
+    FROM pg_proc procedure_record
+    JOIN pg_namespace namespace_record
+      ON namespace_record.oid = procedure_record.pronamespace
+    JOIN pg_roles owner_record
+      ON owner_record.oid = procedure_record.proowner
+    WHERE namespace_record.nspname = 'private'
+      AND procedure_record.proname = 'm11_assign_billing_authorization'
+      AND procedure_record.prosecdef
+      AND owner_record.rolname = 'prontomedic_rpc_owner'
+      AND owner_record.rolbypassrls
   ),
+  'Billing authorization trigger must use the private BYPASSRLS RPC owner'
+);
+
+SELECT pg_temp.assert_true(
+  (
+    SELECT array_agg(attribute.attname::TEXT ORDER BY required_column.ordinality)
+    FROM unnest(ARRAY[
+      'unit_id', 'appointment_id', 'imaging_order_item_id',
+      'idempotency_key', 'patient_id', 'patient_identifier',
+      'requested_procedure_id', 'scheduled_procedure_step_id',
+      'scheduled_station_aetitle', 'scheduled_datetime'
+    ]) WITH ORDINALITY AS required_column(column_name, ordinality)
+    JOIN pg_attribute attribute
+      ON attribute.attrelid = 'public.dicom_worklist_queue'::REGCLASS
+     AND attribute.attname = required_column.column_name
+     AND attribute.attnum > 0
+     AND NOT attribute.attisdropped
+     AND attribute.attnotnull
+  ) = ARRAY[
+    'unit_id', 'appointment_id', 'imaging_order_item_id',
+    'idempotency_key', 'patient_id', 'patient_identifier',
+    'requested_procedure_id', 'scheduled_procedure_step_id',
+    'scheduled_station_aetitle', 'scheduled_datetime'
+  ],
   'Canonical DICOM worklist identity and projection fields must be required'
 );
 
 SELECT pg_temp.assert_true(
   EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conrelid = 'public.dicom_worklist_queue'::REGCLASS
-      AND conname = 'dicom_worklist_queue_imaging_order_item_id_fkey'
-  )
-  AND EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conrelid = 'public.dicom_worklist_queue'::REGCLASS
-      AND conname = 'dicom_worklist_queue_patient_id_fkey'
+    SELECT 1
+    FROM pg_constraint constraint_record
+    JOIN pg_attribute source_column
+      ON source_column.attrelid = constraint_record.conrelid
+     AND source_column.attnum = constraint_record.conkey[1]
+    JOIN pg_attribute target_column
+      ON target_column.attrelid = constraint_record.confrelid
+     AND target_column.attnum = constraint_record.confkey[1]
+    WHERE constraint_record.conrelid = 'public.dicom_worklist_queue'::REGCLASS
+      AND constraint_record.contype = 'f'
+      AND cardinality(constraint_record.conkey) = 1
+      AND constraint_record.confrelid = 'public.imaging_order_items'::REGCLASS
+      AND source_column.attname = 'imaging_order_item_id'
+      AND target_column.attname = 'id'
+      AND constraint_record.confdeltype = 'r'
+      AND constraint_record.convalidated
   )
   AND EXISTS (
     SELECT 1
-    FROM pg_class index_relation
-    JOIN pg_namespace index_namespace
-      ON index_namespace.oid = index_relation.relnamespace
-    WHERE index_namespace.nspname = 'public'
-      AND index_relation.relname = 'dicom_worklist_queue_company_item_uq'
-      AND index_relation.relkind = 'i'
+    FROM pg_constraint constraint_record
+    JOIN pg_attribute source_column
+      ON source_column.attrelid = constraint_record.conrelid
+     AND source_column.attnum = constraint_record.conkey[1]
+    JOIN pg_attribute target_column
+      ON target_column.attrelid = constraint_record.confrelid
+     AND target_column.attnum = constraint_record.confkey[1]
+    WHERE constraint_record.conrelid = 'public.dicom_worklist_queue'::REGCLASS
+      AND constraint_record.contype = 'f'
+      AND cardinality(constraint_record.conkey) = 1
+      AND constraint_record.confrelid = 'public.patients'::REGCLASS
+      AND source_column.attname = 'patient_id'
+      AND target_column.attname = 'id'
+      AND constraint_record.confdeltype = 'r'
+      AND constraint_record.convalidated
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM pg_index index_record
+    WHERE index_record.indrelid = 'public.dicom_worklist_queue'::REGCLASS
+      AND index_record.indisvalid
+      AND index_record.indisready
+      AND index_record.indisunique
+      AND index_record.indpred IS NULL
+      AND index_record.indexprs IS NULL
+      AND index_record.indnkeyatts = 2
+      AND (
+        SELECT array_agg(attribute.attname::TEXT ORDER BY key_column.ordinality)
+        FROM unnest(index_record.indkey::SMALLINT[])
+          WITH ORDINALITY AS key_column(attnum, ordinality)
+        JOIN pg_attribute attribute
+          ON attribute.attrelid = index_record.indrelid
+         AND attribute.attnum = key_column.attnum
+        WHERE key_column.ordinality <= index_record.indnkeyatts
+      ) = ARRAY['company_id', 'imaging_order_item_id']
   ),
   'DICOM worklist queue must enforce item, patient and uniqueness integrity'
+);
+
+INSERT INTO auth.users (
+  id, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+) VALUES (
+  'c1000000-0000-4000-8000-000000000001',
+  'canonical-worklist-contract@prontomedic.test',
+  'contract-only', NOW(),
+  '{"provider":"email","providers":["email"]}'::JSONB,
+  '{"e2e":true}'::JSONB, NOW(), NOW()
+);
+
+INSERT INTO public.companies(id, name, cnpj, lg_ativo)
+VALUES (
+  'c1000000-0000-4000-8000-000000000002',
+  'Canonical Worklist Contract', '99999999000272', TRUE
+);
+
+INSERT INTO public.units(id, company_id, cd_codigo, ds_nome, lg_ativo)
+VALUES (
+  991001, 'c1000000-0000-4000-8000-000000000002',
+  'C-WL-01', 'Canonical Worklist Unit', TRUE
+);
+
+INSERT INTO public.user_profiles(
+  id, full_name, email, role_name, company_id, primary_unit_id, lg_ativo
+) VALUES (
+  'c1000000-0000-4000-8000-000000000001',
+  'Canonical Worklist User', 'canonical-worklist-contract@prontomedic.test',
+  'recepcao', 'c1000000-0000-4000-8000-000000000002', 991001, TRUE
+);
+
+INSERT INTO public.memberships(id, user_id, company_id, status)
+VALUES (
+  'c1000000-0000-4000-8000-000000000003',
+  'c1000000-0000-4000-8000-000000000001',
+  'c1000000-0000-4000-8000-000000000002', 'active'
+);
+
+INSERT INTO public.membership_roles(membership_id, role_id)
+SELECT 'c1000000-0000-4000-8000-000000000003', id
+FROM public.roles
+WHERE name = 'recepcao';
+
+INSERT INTO public.membership_units(membership_id, unit_id)
+VALUES ('c1000000-0000-4000-8000-000000000003', 991001);
+
+INSERT INTO public.application_devices(
+  id, user_id, company_id, unit_id, client_device_id, display_name
+) VALUES (
+  'c1000000-0000-4000-8000-000000000007',
+  'c1000000-0000-4000-8000-000000000001',
+  'c1000000-0000-4000-8000-000000000002', 991001,
+  'c1000000-0000-4000-8000-000000000008', 'Contract device'
+);
+
+INSERT INTO public.application_sessions(
+  id, user_id, company_id, unit_id, device_id, gotrue_session_id,
+  idle_expires_at, absolute_expires_at
+) VALUES (
+  'c1000000-0000-4000-8000-000000000009',
+  'c1000000-0000-4000-8000-000000000001',
+  'c1000000-0000-4000-8000-000000000002', 991001,
+  'c1000000-0000-4000-8000-000000000007',
+  'c1000000-0000-4000-8000-000000000006',
+  NOW() + INTERVAL '30 minutes', NOW() + INTERVAL '12 hours'
+);
+
+INSERT INTO public.user_access_context(
+  user_id, session_id, membership_id, role_id, unit_id
+)
+SELECT
+  'c1000000-0000-4000-8000-000000000001',
+  'c1000000-0000-4000-8000-000000000006',
+  'c1000000-0000-4000-8000-000000000003', id, 991001
+FROM public.roles
+WHERE name = 'recepcao';
+
+INSERT INTO public.role_permissions(id, company_id, role_id, module, can_view, can_create, can_edit)
+SELECT 991001, 'c1000000-0000-4000-8000-000000000002', id,
+       'worklist', TRUE, TRUE, TRUE
+FROM public.roles
+WHERE name = 'recepcao';
+
+INSERT INTO public.role_permissions(id, company_id, role_id, module, can_view, can_create, can_edit)
+SELECT 991002, 'c1000000-0000-4000-8000-000000000002', id,
+       'recepcao', TRUE, TRUE, TRUE
+FROM public.roles
+WHERE name = 'recepcao';
+
+INSERT INTO public.patients(
+  id, company_id, unit_id, full_name, cpf, birth_date, sex, lg_ativo
+) VALUES (
+  991001, 'c1000000-0000-4000-8000-000000000002', 991001,
+  'Canonical Worklist Patient', '99999999999', DATE '1990-01-01', 'F', TRUE
+);
+
+INSERT INTO public.professionals(id, company_id, full_name, lg_ativo)
+VALUES (
+  991001, 'c1000000-0000-4000-8000-000000000002',
+  'Canonical Worklist Physician', TRUE
+);
+
+INSERT INTO public.insurance_companies(id, company_id, name, lg_ativo)
+VALUES (
+  991001, 'c1000000-0000-4000-8000-000000000002',
+  'Canonical Insurance', TRUE
+);
+
+INSERT INTO public.insurance_plans(
+  id, company_id, insurance_company_id, name, lg_ativo
+) VALUES (
+  991001, 'c1000000-0000-4000-8000-000000000002',
+  991001, 'Canonical Plan', TRUE
+);
+
+INSERT INTO public.services_catalog(id, name, lg_ativo)
+VALUES (991001, 'Canonical Ultrasound', TRUE);
+
+INSERT INTO public.patients(
+  id, company_id, unit_id, full_name, cpf, birth_date, sex, lg_ativo
+) VALUES (
+  991002, 'c1000000-0000-4000-8000-000000000002', 991001,
+  'Wrong Authorization Patient', '99999999998', DATE '1991-01-01', 'M', TRUE
+);
+
+INSERT INTO public.appointments(
+  id, company_id, unit_id, patient_id, professional_id,
+  appointment_date, start_time, end_time, status,
+  insurance_company_id, insurance_plan_id, service_id
+) VALUES (
+  991001, 'c1000000-0000-4000-8000-000000000002', 991001,
+  991001, 991001, CURRENT_DATE + 1, TIME '08:00', TIME '08:30', 'scheduled',
+  991001, 991001, 991001
+);
+
+-- A autorizacao mais nova pertence a outro paciente e nunca pode contaminar
+-- a conta. A segunda tem numero vazio e tambem deve ser ignorada.
+INSERT INTO public.insurance_authorizations(
+  id, company_id, unit_id, patient_id, appointment_id,
+  insurance_id, insurance_plan_id, procedure_id, status,
+  authorization_number, quantity_requested, quantity_authorized,
+  quantity_used, valid_until, created_at, updated_at
+) VALUES
+  (
+    'c1000000-0000-4000-8000-000000000011',
+    'c1000000-0000-4000-8000-000000000002', 991001, 991002, 991001,
+    991001, 991001, 991001, 'autorizada', 'WRONG-PATIENT',
+    1, 1, 0, CURRENT_DATE + 5, NOW(), NOW() + INTERVAL '2 minutes'
+  ),
+  (
+    'c1000000-0000-4000-8000-000000000012',
+    'c1000000-0000-4000-8000-000000000002', 991001, 991001, 991001,
+    991001, 991001, 991001, 'autorizada', '   ',
+    1, 1, 0, CURRENT_DATE + 5, NOW(), NOW() + INTERVAL '1 minute'
+  ),
+  (
+    'c1000000-0000-4000-8000-000000000013',
+    'c1000000-0000-4000-8000-000000000002', 991001, 991001, 991001,
+    991001, 991001, 991001, 'autorizada', 'AUTH-CORRECT-991001',
+    1, 1, 0, CURRENT_DATE + 5, NOW(), NOW()
+  );
+
+INSERT INTO public.imaging_orders(
+  id, company_id, unit_id, patient_id, appointment_id,
+  requesting_physician_id, accession_number, status, created_by
+) VALUES (
+  'c1000000-0000-4000-8000-000000000004',
+  'c1000000-0000-4000-8000-000000000002', 991001, 991001, 991001,
+  991001, 'CONTRACT991001', 'agendado',
+  'c1000000-0000-4000-8000-000000000001'
+);
+
+INSERT INTO public.imaging_order_items(
+  id, company_id, unit_id, imaging_order_id, exam_name, modality_type,
+  requested_procedure_id, scheduled_procedure_step_id,
+  station_aetitle, scheduled_datetime, status
+) VALUES (
+  'c1000000-0000-4000-8000-000000000005',
+  'c1000000-0000-4000-8000-000000000002', 991001,
+  'c1000000-0000-4000-8000-000000000004',
+  'Ultrasound Contract', 'US', 'CONTRACT-US', 'CONTRACT-SPS-01',
+  'PMCONTRACT', NOW() + INTERVAL '1 day', 'agendado'
+);
+
+SELECT set_config(
+  'request.jwt.claim.sub',
+  'c1000000-0000-4000-8000-000000000001', TRUE
+);
+SELECT set_config(
+  'request.jwt.claim.company_id',
+  'c1000000-0000-4000-8000-000000000002', TRUE
+);
+SELECT set_config('request.jwt.claim.role', 'authenticated', TRUE);
+SELECT set_config('request.jwt.claim.aal', 'aal2', TRUE);
+SELECT set_config(
+  'request.jwt.claims',
+  '{"sub":"c1000000-0000-4000-8000-000000000001","company_id":"c1000000-0000-4000-8000-000000000002","role":"authenticated","session_id":"c1000000-0000-4000-8000-000000000006","aal":"aal2"}',
+  TRUE
+);
+SELECT set_config('app.reception.appointment_id', '991001', TRUE);
+SELECT set_config(
+  'app.reception.company_id',
+  'c1000000-0000-4000-8000-000000000002', TRUE
+);
+SELECT set_config('app.reception.unit_id', '991001', TRUE);
+
+INSERT INTO public.billing_accounts(
+  id, company_id, unit_id, appointment_id, patient_id, insurance_id,
+  billing_type, account_type, status, competence_month,
+  total_gross_amount, total_net_amount, total_pending_amount
+) VALUES (
+  'c1000000-0000-4000-8000-000000000014',
+  'c1000000-0000-4000-8000-000000000002', 991001, 991001, 991001, 991001,
+  'convenio', 'ambulatorial', 'aberta', date_trunc('month', CURRENT_DATE)::DATE,
+  100, 100, 100
+);
+
+SELECT pg_temp.assert_true(
+  (SELECT authorization_number = 'AUTH-CORRECT-991001'
+   FROM public.billing_accounts
+   WHERE id = 'c1000000-0000-4000-8000-000000000014'),
+  'Billing account must select only the matching usable authorization'
+);
+
+SET LOCAL ROLE authenticated;
+
+SELECT pg_temp.assert_true(
+  auth.uid() = 'c1000000-0000-4000-8000-000000000001'
+  AND public.active_company_id() = 'c1000000-0000-4000-8000-000000000002'
+  AND public.active_unit_id() = 991001,
+  'Synthetic Worklist actor must resolve the expected user, company and unit'
+);
+
+SELECT pg_temp.assert_true(
+  (SELECT count(*) FROM public.release_appointment_to_worklist_secure(
+    991001, 'canonical-worklist-991001'
+  )) = 1,
+  'First Worklist release must create exactly one queue item'
+);
+
+SELECT pg_temp.assert_true(
+  (SELECT count(*) FROM public.release_appointment_to_worklist_secure(
+    991001, 'canonical-worklist-991001'
+  )) = 1,
+  'Retry with the same idempotency key must return the existing queue item'
+);
+
+DO $conflicting_idempotency_key$
+BEGIN
+  BEGIN
+    PERFORM public.release_appointment_to_worklist_secure(
+      991001, 'canonical-worklist-conflict-991001'
+    );
+    RAISE EXCEPTION
+      'CANONICAL_RECEPTION_TISS_ASSERTION_FAILED: conflicting idempotency key was accepted';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM <> 'Worklist item already exists with another idempotency key' THEN
+        RAISE;
+      END IF;
+  END;
+END;
+$conflicting_idempotency_key$;
+
+RESET ROLE;
+
+SELECT pg_temp.assert_true(
+  (SELECT count(*)
+   FROM public.dicom_worklist_queue
+   WHERE company_id = 'c1000000-0000-4000-8000-000000000002'
+     AND imaging_order_item_id = 'c1000000-0000-4000-8000-000000000005') = 1
+  AND (SELECT idempotency_key = 'canonical-worklist-991001'
+       FROM public.dicom_worklist_queue
+       WHERE company_id = 'c1000000-0000-4000-8000-000000000002'
+         AND imaging_order_item_id = 'c1000000-0000-4000-8000-000000000005')
+  AND (SELECT status = 'liberado_worklist'
+       FROM public.imaging_orders
+       WHERE id = 'c1000000-0000-4000-8000-000000000004')
+  AND (SELECT status = 'liberado_worklist'
+       FROM public.imaging_order_items
+       WHERE id = 'c1000000-0000-4000-8000-000000000005'),
+  'Worklist retry must preserve one queue item, the original key and released states'
 );
 
 ROLLBACK;
