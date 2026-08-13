@@ -158,7 +158,9 @@ REVOKE ALL ON FUNCTION private.enforce_financial_appointment_uniqueness()
 
 DROP TRIGGER IF EXISTS trg_financial_appointment_uniqueness
   ON public.billing_accounts;
-CREATE TRIGGER trg_financial_appointment_uniqueness
+DROP TRIGGER IF EXISTS trg_zz_financial_appointment_uniqueness
+  ON public.billing_accounts;
+CREATE TRIGGER trg_zz_financial_appointment_uniqueness
   BEFORE INSERT OR UPDATE OF appointment_id, deleted_at
   ON public.billing_accounts
   FOR EACH ROW
@@ -166,7 +168,9 @@ CREATE TRIGGER trg_financial_appointment_uniqueness
 
 DROP TRIGGER IF EXISTS trg_financial_appointment_uniqueness
   ON public.billings;
-CREATE TRIGGER trg_financial_appointment_uniqueness
+DROP TRIGGER IF EXISTS trg_zz_financial_appointment_uniqueness
+  ON public.billings;
+CREATE TRIGGER trg_zz_financial_appointment_uniqueness
   BEFORE INSERT OR UPDATE OF appointment_id, lg_ativo
   ON public.billings
   FOR EACH ROW

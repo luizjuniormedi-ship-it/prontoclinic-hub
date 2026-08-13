@@ -46,7 +46,7 @@ SELECT pg_temp.assert_true(
   (
     SELECT count(*)
     FROM pg_trigger trigger_record
-    WHERE trigger_record.tgname = 'trg_financial_appointment_uniqueness'
+    WHERE trigger_record.tgname = 'trg_zz_financial_appointment_uniqueness'
       AND trigger_record.tgrelid IN (
         'public.billing_accounts'::REGCLASS,
         'public.billings'::REGCLASS
@@ -145,10 +145,10 @@ SELECT pg_temp.assert_true(
 
 ALTER TABLE public.billing_accounts DISABLE TRIGGER USER;
 ALTER TABLE public.billing_accounts
-  ENABLE TRIGGER trg_financial_appointment_uniqueness;
+  ENABLE TRIGGER trg_zz_financial_appointment_uniqueness;
 ALTER TABLE public.billings DISABLE TRIGGER USER;
 ALTER TABLE public.billings
-  ENABLE TRIGGER trg_financial_appointment_uniqueness;
+  ENABLE TRIGGER trg_zz_financial_appointment_uniqueness;
 
 DO $billing_account_duplicate$
 BEGIN
