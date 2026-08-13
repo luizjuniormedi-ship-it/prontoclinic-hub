@@ -839,8 +839,7 @@ BEGIN
     FROM public.appointments appointment
    WHERE appointment.id = p_appointment_id
      AND appointment.company_id = v_company
-     AND appointment.unit_id = v_unit
-   FOR UPDATE;
+     AND appointment.unit_id = v_unit;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Agendamento não encontrado no contexto ativo' USING ERRCODE = 'P0002';
   END IF;

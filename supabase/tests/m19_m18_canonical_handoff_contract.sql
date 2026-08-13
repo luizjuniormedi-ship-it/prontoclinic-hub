@@ -141,6 +141,7 @@ BEGIN
     INTO v_source;
   IF position('v_encounter.status IN (''em_atendimento'',''aguardando_assinatura'',''reaberto'')' IN v_source) = 0
      OR position('v_encounter.status NOT IN (''finalizado'',''alta_ambulatorial'',''encaminhado'',''internado'')' IN v_source) = 0
+     OR position('''m18-finalize:''' IN v_source) = 0
      OR position('public.sync_completed_appointment_billing_secure(' IN v_source) = 0 THEN
     RAISE EXCEPTION 'M18 billing handoff is not retry-safe after clinical completion';
   END IF;
