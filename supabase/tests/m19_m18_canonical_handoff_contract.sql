@@ -103,7 +103,10 @@ BEGIN
      OR position('public.can_access(''enfermagem'', ''create'')' IN v_source) = 0
      OR position('queue.appointment_id = v_appointment.id' IN v_source) = 0
      OR position('queue.tp_status IN (''AGUARDANDO'',''CHAMADO'',''EM_TRIAGEM'',''TRIADO'')' IN v_source) = 0
-     OR position('private.transition_triage_queue(' IN v_source) = 0 THEN
+     OR position('''CHAMADO''' IN v_source) = 0
+     OR position('''EM_TRIAGEM''' IN v_source) = 0
+     OR (length(v_source) - length(replace(v_source, 'private.transition_triage_queue(', ''))) /
+        length('private.transition_triage_queue(') < 3 THEN
     RAISE EXCEPTION 'M19 completion lacks active context, AAL2, nursing permission or queue correlation';
   END IF;
 

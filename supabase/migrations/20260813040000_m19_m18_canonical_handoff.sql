@@ -508,6 +508,17 @@ BEGIN
   IF v_queue.tp_status = 'AGUARDANDO' THEN
     PERFORM private.transition_triage_queue(
       p_queue_id,
+      'CHAMADO',
+      'Paciente chamado pela conclusão clínica atômica da triagem M19'
+    );
+    PERFORM private.transition_triage_queue(
+      p_queue_id,
+      'EM_TRIAGEM',
+      'Triagem M19 iniciada pela conclusão clínica atômica'
+    );
+  ELSIF v_queue.tp_status = 'CHAMADO' THEN
+    PERFORM private.transition_triage_queue(
+      p_queue_id,
       'EM_TRIAGEM',
       'Triagem M19 iniciada pela conclusão clínica atômica'
     );
