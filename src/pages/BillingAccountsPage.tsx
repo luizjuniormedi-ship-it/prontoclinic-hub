@@ -301,13 +301,13 @@ export default function BillingAccountsPage() {
               <Input placeholder="Buscar paciente ou guia..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[170px]"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectTrigger aria-label="Filtrar por status" className="w-[170px]"><SelectValue placeholder="Status" /></SelectTrigger>
               <SelectContent><SelectItem value="all">Todos os status</SelectItem>
                 {Object.entries(BILLING_STATUS_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-[140px]"><SelectValue placeholder="Tipo" /></SelectTrigger>
+              <SelectTrigger aria-label="Filtrar por tipo de cobrança" className="w-[140px]"><SelectValue placeholder="Tipo" /></SelectTrigger>
               <SelectContent><SelectItem value="all">Todos</SelectItem><SelectItem value="convenio">Convênio</SelectItem><SelectItem value="particular">Particular</SelectItem></SelectContent>
             </Select>
             <Button variant={pendingOnly ? "default" : "outline"} onClick={() => setPendingOnly(!pendingOnly)} className="gap-1"><AlertTriangle className="h-4 w-4" />Só pendências</Button>
@@ -318,7 +318,7 @@ export default function BillingAccountsPage() {
               <Table>
                 <TableHeader><TableRow>
                   <TableHead>Paciente</TableHead><TableHead>Tipo</TableHead><TableHead>Status</TableHead>
-                  <TableHead>Competência</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Guia</TableHead><TableHead></TableHead>
+                  <TableHead>Competência</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Guia</TableHead><TableHead><span className="sr-only">Ações</span></TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
                   {filtered.map((a) => (
@@ -334,7 +334,7 @@ export default function BillingAccountsPage() {
                       <TableCell className="text-[10px] font-mono text-muted-foreground">{a.guide_number || "—"}</TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setDetail(a)} title="Conferir"><Receipt className="h-3 w-3" /></Button>
+                          <Button aria-label={`Conferir conta de ${a.patient_name || "paciente"}`} size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setDetail(a)} title="Conferir"><Receipt className="h-3 w-3" /></Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -369,7 +369,7 @@ export default function BillingAccountsPage() {
                     <TableHead>Responsável</TableHead>
                     <TableHead>SLA</TableHead>
                     <TableHead className="text-right">Valor</TableHead>
-                    <TableHead className="w-28"></TableHead>
+                    <TableHead className="w-28"><span className="sr-only">Ações</span></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
