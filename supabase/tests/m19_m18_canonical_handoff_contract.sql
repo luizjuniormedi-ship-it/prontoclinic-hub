@@ -135,7 +135,10 @@ BEGIN
   IF NOT has_function_privilege('authenticated','public.m19_prepare_triage_handoff_secure(bigint,text)','EXECUTE')
      OR NOT has_function_privilege('authenticated','public.m19_complete_triage_secure(integer,bigint,bigint,bigint,integer,text,jsonb,jsonb)','EXECUTE')
      OR NOT has_function_privilege('authenticated','public.m18_open_attendance_secure(bigint,integer,bigint)','EXECUTE')
-     OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.can_access(text,text)','EXECUTE') THEN
+     OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.can_access(text,text)','EXECUTE')
+     OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.current_company_id()','EXECUTE')
+     OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.audit_has_role(text[])','EXECUTE')
+     OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.org_can_access_unit(uuid,integer)','EXECUTE') THEN
     RAISE EXCEPTION 'Authenticated RPC grants incomplete';
   END IF;
   IF EXISTS (

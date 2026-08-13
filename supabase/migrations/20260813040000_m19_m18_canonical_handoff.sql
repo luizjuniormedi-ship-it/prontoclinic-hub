@@ -407,7 +407,9 @@ BEGIN
 END
 $clinical_sequences$;
 GRANT EXECUTE ON FUNCTION public.active_company_id(), public.active_unit_id(),
-  public.request_aal(), public.can_access(TEXT, TEXT)
+  public.request_aal(), public.can_access(TEXT, TEXT),
+  public.current_company_id(), public.audit_has_role(TEXT[]),
+  public.org_can_access_unit(UUID, INTEGER)
   TO prontomedic_clinical_handoff_owner;
 
 CREATE OR REPLACE FUNCTION public.m19_prepare_triage_handoff_secure(
