@@ -25,7 +25,8 @@
   "sharedPaths": [
     "deploy/database/deploy-migration.sh",
     "local-auth-server.mjs",
-    "src/services/__tests__/localAuthSecurity.test.ts"
+    "src/services/__tests__/localAuthSecurity.test.ts",
+    "supabase/migrations/20260716240000_operational_rls_closure.sql"
   ],
   "status": "active"
 }
