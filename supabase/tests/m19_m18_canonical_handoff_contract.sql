@@ -150,6 +150,7 @@ BEGIN
      OR NOT has_function_privilege('authenticated','public.m18_open_attendance_secure(bigint,integer,bigint)','EXECUTE')
      OR NOT has_function_privilege('authenticated','public.m18_finalize_appointment_with_billing_secure(bigint,jsonb,text)','EXECUTE')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.sync_completed_appointment_billing_secure(bigint,text)','EXECUTE')
+     OR NOT has_table_privilege('prontomedic_clinical_handoff_owner','public.appointments','SELECT')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.can_access(text,text)','EXECUTE')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.update_appointment_status_secure(bigint,text,text)','EXECUTE')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.current_company_id()','EXECUTE')

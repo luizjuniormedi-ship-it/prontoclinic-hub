@@ -60,6 +60,20 @@ BEGIN
 END
 $restore_function_grants$;
 
+DO $restore_table_grants$
+DECLARE v_allowed BOOLEAN;
+BEGIN
+  SELECT COALESCE((metadata->>'allowed')::BOOLEAN, FALSE)
+    INTO v_allowed
+    FROM private.m19_m18_handoff_rollback_state
+   WHERE object_type = 'table_grant'
+     AND object_name = 'prontomedic_clinical_handoff_owner.public.appointments.select';
+  IF NOT COALESCE(v_allowed, FALSE) THEN
+    REVOKE SELECT ON TABLE public.appointments FROM prontomedic_clinical_handoff_owner;
+  END IF;
+END
+$restore_table_grants$;
+
 DO $restore_policies$
 DECLARE v_table TEXT; v_policy RECORD;
 BEGIN

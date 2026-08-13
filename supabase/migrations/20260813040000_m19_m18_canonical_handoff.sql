@@ -69,6 +69,17 @@ SELECT 'function_grant',
  WHERE current_setting('prontomedic.snapshot_new') = 'true'
 ON CONFLICT (object_type, object_name) DO NOTHING;
 
+INSERT INTO private.m19_m18_handoff_rollback_state(object_type, object_name, metadata)
+SELECT 'table_grant',
+       'prontomedic_clinical_handoff_owner.public.appointments.select',
+       jsonb_build_object(
+         'allowed', has_table_privilege(
+           'prontomedic_clinical_handoff_owner', 'public.appointments', 'SELECT'
+         )
+       )
+ WHERE current_setting('prontomedic.snapshot_new') = 'true'
+ON CONFLICT (object_type, object_name) DO NOTHING;
+
 INSERT INTO private.m19_m18_handoff_rollback_state(object_type, object_name, ddl, metadata)
 SELECT 'function', p.oid::regprocedure::TEXT, pg_get_functiondef(p.oid),
        jsonb_build_object(
@@ -924,6 +935,7 @@ ALTER FUNCTION public.m18_complete_attendance_secure(UUID, JSONB, TEXT)
   OWNER TO prontomedic_clinical_handoff_owner;
 ALTER FUNCTION public.m18_finalize_appointment_with_billing_secure(BIGINT, JSONB, TEXT)
   OWNER TO prontomedic_clinical_handoff_owner;
+GRANT SELECT ON TABLE public.appointments TO prontomedic_clinical_handoff_owner;
 
 COMMENT ON COLUMN public.triagem_fila.appointment_id IS
   'Canonical appointment correlation for the Reception -> M19 -> M18 handoff, protected by a tenant/unit composite FK.';
