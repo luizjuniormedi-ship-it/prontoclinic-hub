@@ -209,22 +209,26 @@ validate_bundle() {
 run_smoke() { psql_db "$1" -f "$2" >/dev/null; }
 
 database_fingerprint() {
-  local previous current attempt
-  previous="$(psql_db "$database" -Atqc "
-    SELECT concat_ws(':', COALESCE(tup_inserted, 0), COALESCE(tup_updated, 0), COALESCE(tup_deleted, 0))
-      FROM pg_stat_database WHERE datname = current_database()")"
-  for attempt in {1..10}; do
-    sleep 1
-    current="$(psql_db "$database" -Atqc "
-      SELECT concat_ws(':', COALESCE(tup_inserted, 0), COALESCE(tup_updated, 0), COALESCE(tup_deleted, 0))
-        FROM pg_stat_database WHERE datname = current_database()")"
-    if [[ "$current" = "$previous" ]]; then
-      printf '%s\n' "$current"
-      return 0
-    fi
-    previous="$current"
-  done
-  die 'contadores logicos do banco nao estabilizaram; deploy recusado'
+  local statements
+  statements="$(psql_db "$database" -Atqc "
+    SELECT format(
+      'SELECT %L || '':'' || count(*)::text || '':'' || COALESCE(sum(hashtextextended(xmin::text || '':'' || ctid::text, 0)::numeric), 0)::text FROM %I.%I;',
+      namespace.nspname || '.' || relation.relname,
+      namespace.nspname,
+      relation.relname
+    )
+      FROM pg_class relation
+      JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+     WHERE relation.relkind IN ('r','p')
+       AND namespace.nspname NOT IN ('pg_catalog','information_schema')
+       AND namespace.nspname NOT LIKE 'pg_toast%'
+       AND namespace.nspname NOT LIKE 'pg_temp%'
+     ORDER BY namespace.nspname, relation.relname")"
+  [[ -n "$statements" ]] || die 'nao foi possivel enumerar tabelas para o fingerprint'
+  printf '%s\n' "$statements" |
+    psql_db "$database" -Atq |
+    LC_ALL=C sort |
+    sha256sum | cut -d' ' -f1
 }
 
 verify_private_file() {
