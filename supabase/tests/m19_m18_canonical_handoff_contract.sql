@@ -137,9 +137,18 @@ BEGIN
     RAISE EXCEPTION 'M18 does not enforce completed correlated M19 triage';
   END IF;
 
+  SELECT pg_get_functiondef('public.m18_finalize_appointment_with_billing_secure(bigint,jsonb,text)'::regprocedure)
+    INTO v_source;
+  IF position('v_encounter.status IN (''em_atendimento'',''aguardando_assinatura'',''reaberto'')' IN v_source) = 0
+     OR position('v_encounter.status NOT IN (''finalizado'',''alta_ambulatorial'',''encaminhado'',''internado'')' IN v_source) = 0
+     OR position('public.sync_completed_appointment_billing_secure(' IN v_source) = 0 THEN
+    RAISE EXCEPTION 'M18 billing handoff is not retry-safe after clinical completion';
+  END IF;
+
   IF NOT has_function_privilege('authenticated','public.m19_prepare_triage_handoff_secure(bigint,text)','EXECUTE')
      OR NOT has_function_privilege('authenticated','public.m19_complete_triage_secure(integer,bigint,bigint,bigint,integer,text,jsonb,jsonb)','EXECUTE')
      OR NOT has_function_privilege('authenticated','public.m18_open_attendance_secure(bigint,integer,bigint)','EXECUTE')
+     OR NOT has_function_privilege('authenticated','public.m18_finalize_appointment_with_billing_secure(bigint,jsonb,text)','EXECUTE')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.can_access(text,text)','EXECUTE')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.update_appointment_status_secure(bigint,text,text)','EXECUTE')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.current_company_id()','EXECUTE')

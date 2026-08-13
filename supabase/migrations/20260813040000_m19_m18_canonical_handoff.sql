@@ -69,6 +69,7 @@ SELECT 'function', p.oid::regprocedure::TEXT, pg_get_functiondef(p.oid),
    'public.m18_save_attendance_secure(uuid,jsonb)'::regprocedure,
    'public.m18_finalize_attendance_secure(uuid,text)'::regprocedure,
    'public.m18_complete_attendance_secure(uuid,jsonb,text)'::regprocedure,
+   'public.m18_finalize_appointment_with_billing_secure(bigint,jsonb,text)'::regprocedure,
    'private.m19_complete_triage(integer,bigint,bigint,bigint,integer,text,jsonb,jsonb)'::regprocedure,
    'private.m19_reclassify_triage(bigint,integer,text)'::regprocedure,
    'private.transition_triage_queue(bigint,text,text)'::regprocedure
@@ -785,12 +786,95 @@ BEGIN
 END;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.m18_finalize_appointment_with_billing_secure(
+  p_appointment_id BIGINT,
+  p_payload JSONB,
+  p_disposition TEXT DEFAULT 'FINALIZED'
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, public, private, auth
+AS $function$
+DECLARE
+  v_company UUID := public.active_company_id();
+  v_unit INTEGER := public.active_unit_id();
+  v_appointment public.appointments;
+  v_encounter public.encounters;
+  v_billing JSONB;
+BEGIN
+  IF public.request_aal() <> 'aal2' OR p_appointment_id IS NULL
+     OR v_company IS NULL OR v_unit IS NULL
+     OR NOT public.can_access('prontuario', 'edit') THEN
+    RAISE EXCEPTION 'Contexto clínico inválido para finalizar atendimento' USING ERRCODE = '42501';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended(
+    'm18-finalize:' || v_company::TEXT || ':' || p_appointment_id::TEXT, 0));
+  SELECT * INTO v_appointment
+    FROM public.appointments appointment
+   WHERE appointment.id = p_appointment_id
+     AND appointment.company_id = v_company
+     AND appointment.unit_id = v_unit
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Agendamento não encontrado no contexto ativo' USING ERRCODE = 'P0002';
+  END IF;
+
+  SELECT * INTO v_encounter
+    FROM public.encounters encounter
+   WHERE encounter.company_id = v_company
+     AND encounter.unit_id = v_unit
+     AND encounter.appointment_id = p_appointment_id
+     AND encounter.status <> 'cancelado'
+   ORDER BY encounter.created_at DESC, encounter.id DESC
+   LIMIT 1
+   FOR UPDATE;
+
+  IF NOT FOUND THEN
+    v_encounter := public.m18_open_attendance_secure(
+      p_appointment_id,
+      v_appointment.unit_id,
+      v_appointment.professional_id
+    );
+  END IF;
+
+  IF v_encounter.status IN ('em_atendimento','aguardando_assinatura','reaberto') THEN
+    v_encounter := public.m18_complete_attendance_secure(
+      v_encounter.id,
+      p_payload,
+      p_disposition
+    );
+  ELSIF v_encounter.status NOT IN ('finalizado','alta_ambulatorial','encaminhado','internado') THEN
+    RAISE EXCEPTION 'Atendimento não pode ser concluído no estado %', v_encounter.status;
+  END IF;
+
+  IF v_appointment.status <> 'completed' THEN
+    PERFORM public.update_appointment_status_secure(
+      p_appointment_id,
+      'completed',
+      'Atendimento finalizado pelo contrato clínico M18'
+    );
+  END IF;
+  PERFORM set_config('app.reception.appointment_id', p_appointment_id::TEXT, TRUE);
+  PERFORM set_config('app.reception.company_id', v_company::TEXT, TRUE);
+  PERFORM set_config('app.reception.unit_id', v_unit::TEXT, TRUE);
+  v_billing := public.sync_completed_appointment_billing_secure(
+    p_appointment_id,
+    'Faturamento consolidado pelo encontro ' || v_encounter.id::TEXT
+  );
+
+  RETURN jsonb_build_object('encounter', to_jsonb(v_encounter), 'billing', v_billing);
+END;
+$function$;
+
 REVOKE ALL ON FUNCTION public.m19_prepare_triage_handoff_secure(BIGINT, TEXT) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.m19_complete_triage_secure(INTEGER, BIGINT, BIGINT, BIGINT, INTEGER, TEXT, JSONB, JSONB) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.m18_open_attendance_secure(BIGINT, INTEGER, BIGINT) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.m18_save_attendance_secure(UUID, JSONB) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.m18_finalize_attendance_secure(UUID, TEXT) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.m18_complete_attendance_secure(UUID, JSONB, TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.m18_finalize_appointment_with_billing_secure(BIGINT, JSONB, TEXT) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.m19_reclassify_triage_secure(BIGINT, INTEGER, TEXT) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.m19_prepare_triage_handoff_secure(BIGINT, TEXT),
   public.m19_complete_triage_secure(INTEGER, BIGINT, BIGINT, BIGINT, INTEGER, TEXT, JSONB, JSONB),
@@ -798,6 +882,7 @@ GRANT EXECUTE ON FUNCTION public.m19_prepare_triage_handoff_secure(BIGINT, TEXT)
   public.m18_save_attendance_secure(UUID, JSONB),
   public.m18_finalize_attendance_secure(UUID, TEXT),
   public.m18_complete_attendance_secure(UUID, JSONB, TEXT),
+  public.m18_finalize_appointment_with_billing_secure(BIGINT, JSONB, TEXT),
   public.m19_reclassify_triage_secure(BIGINT, INTEGER, TEXT)
   TO authenticated, app_prontomedic;
 GRANT EXECUTE ON FUNCTION public.update_appointment_status_secure(BIGINT, TEXT, TEXT)

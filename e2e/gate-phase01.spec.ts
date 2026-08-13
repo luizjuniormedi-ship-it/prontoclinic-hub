@@ -237,6 +237,32 @@ test.describe('Gate fase 0/1', () => {
     }>;
     expect(billingAccounts).toHaveLength(1);
     expect(billingAccounts[0]).toMatchObject({ appointment_id: '91001' });
+    const retryCompletion = await authenticatedFetch(
+      page,
+      '/rest/v1/rpc/m18_finalize_appointment_with_billing_secure',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          p_appointment_id: 91001,
+          p_payload: { chief_complaint: 'Queixa clínica final E2E' },
+          p_disposition: 'FINALIZED',
+        }),
+      },
+    );
+    expect(retryCompletion.status, retryCompletion.body).toBe(200);
+    const retryResult = JSON.parse(retryCompletion.body) as {
+      encounter: { appointment_id: number };
+      billing: { billing_account_id: string };
+    };
+    expect(retryResult.encounter.appointment_id).toBe(91001);
+    expect(retryResult.billing.billing_account_id).toBe(billingAccounts[0].id);
+    const billingRowsAfterRetry = await authenticatedFetch(
+      page,
+      '/rest/v1/billings?select=id&appointment_id=eq.91001',
+      { method: 'GET' },
+    );
+    expect(billingRowsAfterRetry.status, billingRowsAfterRetry.body).toBe(200);
+    expect(JSON.parse(billingRowsAfterRetry.body)).toHaveLength(1);
     expect(page.url()).toContain(`account=${encodeURIComponent(billingAccounts[0].id)}`);
     const billingDialog = page.getByRole('dialog', { name: 'Conferência da Conta' });
     await expect(billingDialog).toBeVisible();
