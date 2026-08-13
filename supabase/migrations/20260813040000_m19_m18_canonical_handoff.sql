@@ -600,6 +600,14 @@ BEGIN
     RAISE EXCEPTION 'Profissional não pertence à empresa/unidade clínica ativa' USING ERRCODE = '42501';
   END IF;
 
+  IF v_appointment.status <> 'in_progress' THEN
+    PERFORM public.update_appointment_status_secure(
+      v_appointment.id,
+      'in_progress',
+      'Atendimento clínico M18 iniciado após triagem M19'
+    );
+  END IF;
+
   SELECT * INTO v_row FROM public.encounters encounter
    WHERE encounter.company_id = v_company AND encounter.unit_id = v_appointment.unit_id
      AND encounter.appointment_id = v_appointment.id AND encounter.status <> 'cancelado'
@@ -792,6 +800,8 @@ GRANT EXECUTE ON FUNCTION public.m19_prepare_triage_handoff_secure(BIGINT, TEXT)
   public.m18_complete_attendance_secure(UUID, JSONB, TEXT),
   public.m19_reclassify_triage_secure(BIGINT, INTEGER, TEXT)
   TO authenticated, app_prontomedic;
+GRANT EXECUTE ON FUNCTION public.update_appointment_status_secure(BIGINT, TEXT, TEXT)
+  TO prontomedic_clinical_handoff_owner;
 
 ALTER FUNCTION public.m19_prepare_triage_handoff_secure(BIGINT, TEXT) OWNER TO prontomedic_clinical_handoff_owner;
 ALTER FUNCTION public.m19_complete_triage_secure(INTEGER, BIGINT, BIGINT, BIGINT, INTEGER, TEXT, JSONB, JSONB)

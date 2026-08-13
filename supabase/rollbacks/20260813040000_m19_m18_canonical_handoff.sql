@@ -81,7 +81,8 @@ BEGIN
       public.news2_avaliacoes, public.encounters, public.triagem_reclassificacoes
       FROM prontomedic_clinical_handoff_owner;
     REVOKE EXECUTE ON FUNCTION public.active_company_id(), public.active_unit_id(),
-      public.request_aal(), public.can_access(TEXT, TEXT)
+      public.request_aal(), public.can_access(TEXT, TEXT),
+      public.update_appointment_status_secure(BIGINT, TEXT, TEXT)
       FROM prontomedic_clinical_handoff_owner;
     REVOKE USAGE ON SCHEMA public, private, auth FROM prontomedic_clinical_handoff_owner;
     FOR v_sequence IN

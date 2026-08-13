@@ -131,6 +131,8 @@ BEGIN
      OR position('public.request_aal()' IN v_source) = 0
      OR position('public.can_access(''prontuario'', ''create'')' IN v_source) = 0
      OR position('public.can_access(''prontuario'', ''edit'')' IN v_source) = 0
+     OR position('public.update_appointment_status_secure(' IN v_source) = 0
+     OR position('''in_progress''' IN v_source) = 0
      OR position('public.m18_can_edit_attendance()' IN v_source) <> 0 THEN
     RAISE EXCEPTION 'M18 does not enforce completed correlated M19 triage';
   END IF;
@@ -139,6 +141,7 @@ BEGIN
      OR NOT has_function_privilege('authenticated','public.m19_complete_triage_secure(integer,bigint,bigint,bigint,integer,text,jsonb,jsonb)','EXECUTE')
      OR NOT has_function_privilege('authenticated','public.m18_open_attendance_secure(bigint,integer,bigint)','EXECUTE')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.can_access(text,text)','EXECUTE')
+     OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.update_appointment_status_secure(bigint,text,text)','EXECUTE')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.current_company_id()','EXECUTE')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.audit_current_user_id()','EXECUTE')
      OR NOT has_function_privilege('prontomedic_clinical_handoff_owner','public.audit_has_role(text[])','EXECUTE')
@@ -234,8 +237,10 @@ CREATE OR REPLACE FUNCTION public.can_access(p_module TEXT, p_action TEXT) RETUR
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog
 AS $$
   SELECT current_setting('test.can_edit', TRUE) = 'true'
-     AND p_module = 'prontuario'
-     AND p_action IN ('create', 'edit')
+     AND (
+       (p_module = 'prontuario' AND p_action IN ('create', 'edit'))
+       OR (p_module = 'agenda' AND p_action = 'edit')
+     )
 $$;
 
 GRANT EXECUTE ON FUNCTION public.active_company_id(), public.active_unit_id(),
@@ -262,12 +267,16 @@ INSERT INTO public.professional_schedules(company_id, professional_id, unit_id, 
 VALUES
   ('c1800000-0000-4000-8000-000000000001',91801,91801,'MONDAY',TRUE),
   ('c1800000-0000-4000-8000-000000000002',91802,91802,'MONDAY',TRUE);
+-- The behavioral proof starts after reception check-in. The real E2E exercises
+-- that workflow; this transaction only seeds its canonical waiting outcome.
+SET LOCAL session_replication_role = replica;
 INSERT INTO public.appointments(id, company_id, unit_id, patient_id, professional_id,
   appointment_date, start_time, end_time, status)
 VALUES
-  (91801,'c1800000-0000-4000-8000-000000000001',91801,91801,91801,CURRENT_DATE,'08:00','08:30','scheduled'),
-  (91802,'c1800000-0000-4000-8000-000000000002',91802,91802,91802,CURRENT_DATE,'09:00','09:30','scheduled'),
-  (91803,'c1800000-0000-4000-8000-000000000001',91801,91801,91801,CURRENT_DATE,'10:00','10:30','scheduled');
+  (91801,'c1800000-0000-4000-8000-000000000001',91801,91801,91801,CURRENT_DATE,'08:00','08:30','waiting'),
+  (91802,'c1800000-0000-4000-8000-000000000002',91802,91802,91802,CURRENT_DATE,'09:00','09:30','waiting'),
+  (91803,'c1800000-0000-4000-8000-000000000001',91801,91801,91801,CURRENT_DATE,'10:00','10:30','waiting');
+SET LOCAL session_replication_role = origin;
 INSERT INTO public.triagens(company_id, unit_id, cd_paciente, cd_appointment, tp_status)
 VALUES
   ('c1800000-0000-4000-8000-000000000001',91801,91801,91801,'TRIADO'),
