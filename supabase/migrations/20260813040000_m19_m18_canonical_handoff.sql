@@ -805,7 +805,7 @@ ALTER FUNCTION private.m19_complete_triage(INTEGER, BIGINT, BIGINT, BIGINT, INTE
 ALTER FUNCTION private.m19_reclassify_triage(BIGINT, INTEGER, TEXT)
   OWNER TO prontomedic_rpc_owner;
 ALTER FUNCTION private.transition_triage_queue(BIGINT, TEXT, TEXT)
-  OWNER TO prontomedic_rpc_owner;
+  OWNER TO prontomedic_clinical_handoff_owner;
 ALTER FUNCTION public.m18_save_attendance_secure(UUID, JSONB)
   OWNER TO prontomedic_clinical_handoff_owner;
 ALTER FUNCTION public.m18_finalize_attendance_secure(UUID, TEXT)

@@ -149,10 +149,15 @@ BEGIN
     FROM pg_proc procedure
     JOIN pg_namespace namespace ON namespace.oid = procedure.pronamespace
    WHERE namespace.nspname = 'private'
-     AND procedure.proname IN ('m19_complete_triage','m19_reclassify_triage','transition_triage_queue')
+     AND procedure.proname IN ('m19_complete_triage','m19_reclassify_triage')
      AND pg_get_userbyid(procedure.proowner) = 'prontomedic_rpc_owner';
-  IF v_count <> 3 THEN
+  IF v_count <> 2 THEN
     RAISE EXCEPTION 'Private M19 owners diverge from the canonical RPC owner: %', v_count;
+  END IF;
+  IF pg_get_userbyid(
+    (SELECT proowner FROM pg_proc WHERE oid = 'private.transition_triage_queue(bigint,text,text)'::regprocedure)
+  ) <> 'prontomedic_clinical_handoff_owner' THEN
+    RAISE EXCEPTION 'Queue transition does not use the scoped clinical handoff owner';
   END IF;
   IF EXISTS (
     SELECT 1 FROM pg_roles
