@@ -9,6 +9,7 @@
     "src/components/nursing/m19/Module19TriageWorkspace.tsx",
     "src/components/nursing/m19/TriageAtomicForm.tsx",
     "src/config/navigation.ts",
+    "src/lib/env.ts",
     "src/pages/__tests__/NursingPages.test.tsx",
     "src/pages/AttendancePage.tsx",
     "src/pages/EncountersPage.tsx",

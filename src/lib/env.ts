@@ -48,7 +48,7 @@ const envSchema = z.object({
   VITE_S3_REGION: z.string().default("us-east-1"),
   VITE_ENABLE_TELEMEDICINE: z.string().transform((v) => v === "true").default("false"),
   VITE_ENABLE_WHATSAPP: z.string().transform((v) => v === "true").default("false"),
-  VITE_ENABLE_MODULE_19: z.string().transform((v) => v === "true").default("false"),
+  VITE_ENABLE_MODULE_19: z.string().transform((v) => v === "true").default("true"),
   VITE_ENABLE_MODULE_20: z.string().transform((v) => v === "true").default("false"),
   VITE_ENABLE_MODULE_21: z.string().transform((v) => v === "true").default("false"),
   VITE_ENABLE_MODULE_22: z.string().transform((v) => v === "true").default("false"),
