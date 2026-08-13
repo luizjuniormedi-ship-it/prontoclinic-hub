@@ -209,15 +209,22 @@ validate_bundle() {
 run_smoke() { psql_db "$1" -f "$2" >/dev/null; }
 
 database_fingerprint() {
-  psql_db "$database" -Atqc "
-    SELECT concat_ws(
-      ':',
-      COALESCE(tup_inserted, 0),
-      COALESCE(tup_updated, 0),
-      COALESCE(tup_deleted, 0)
-    )
-    FROM pg_stat_database
-    WHERE datname = current_database()"
+  local previous current attempt
+  previous="$(psql_db "$database" -Atqc "
+    SELECT concat_ws(':', COALESCE(tup_inserted, 0), COALESCE(tup_updated, 0), COALESCE(tup_deleted, 0))
+      FROM pg_stat_database WHERE datname = current_database()")"
+  for attempt in {1..10}; do
+    sleep 1
+    current="$(psql_db "$database" -Atqc "
+      SELECT concat_ws(':', COALESCE(tup_inserted, 0), COALESCE(tup_updated, 0), COALESCE(tup_deleted, 0))
+        FROM pg_stat_database WHERE datname = current_database()")"
+    if [[ "$current" = "$previous" ]]; then
+      printf '%s\n' "$current"
+      return 0
+    fi
+    previous="$current"
+  done
+  die 'contadores logicos do banco nao estabilizaram; deploy recusado'
 }
 
 verify_private_file() {
