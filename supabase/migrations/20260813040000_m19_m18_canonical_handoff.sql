@@ -501,9 +501,17 @@ BEGIN
   SELECT * INTO v_queue FROM public.triagem_fila queue
    WHERE queue.id = p_queue_id AND queue.company_id = v_company AND queue.unit_id = v_unit
      AND queue.appointment_id = v_appointment.id AND queue.cd_paciente = v_appointment.patient_id
-     AND queue.tp_status IN ('CHAMADO','EM_TRIAGEM','TRIADO')
+     AND queue.tp_status IN ('AGUARDANDO','CHAMADO','EM_TRIAGEM','TRIADO')
    FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Fila não corresponde ao agendamento, paciente e unidade'; END IF;
+
+  IF v_queue.tp_status = 'AGUARDANDO' THEN
+    PERFORM private.transition_triage_queue(
+      p_queue_id,
+      'EM_TRIAGEM',
+      'Triagem M19 iniciada pela conclusão clínica atômica'
+    );
+  END IF;
 
   v_result := private.m19_complete_triage(p_unit_id, p_patient_id, p_appointment_id,
     p_queue_id, p_classification_id, p_classification_reason, p_payload, p_news2);
