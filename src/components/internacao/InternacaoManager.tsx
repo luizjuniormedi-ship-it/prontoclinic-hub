@@ -158,7 +158,7 @@ export function InternacaoManager() {
         variant: "destructive",
       });
     }
-  }, [selectedInternacao, toast, carregar]);
+  }, [selectedInternacao, toast, carregar, confirm]);
 
   const handleCriarPrescricao = useCallback(async () => {
     if (!selectedInternacao) return;

@@ -52,7 +52,9 @@ declare global {
   }
 }
 
-const CDN_SCRIPTS = [
+type CornerstoneGlobalKey = "dicomParser" | "cornerstone" | "cornerstoneTools";
+
+const CDN_SCRIPTS: ReadonlyArray<{ src: string; check: CornerstoneGlobalKey }> = [
   { src: "https://unpkg.com/dicom-parser@1.8.21/dist/dicomParser.min.js", check: "dicomParser" },
   { src: "https://unpkg.com/cornerstone-core@2.6.1/dist/cornerstone.min.js", check: "cornerstone" },
   { src: "https://unpkg.com/cornerstone-tools@2.6.1/dist/cornerstone-tools.min.js", check: "cornerstoneTools" },
@@ -69,7 +71,7 @@ async function loadCornerstone(): Promise<boolean> {
       }
     };
     CDN_SCRIPTS.forEach(({ src, check }) => {
-      if ((window as any)[check]) {
+      if (window[check]) {
         tryResolve();
         return;
       }
@@ -123,36 +125,38 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
   // Carregar Cornerstone + imagem
   useEffect(() => {
     let mounted = true;
-    const cs = window.cornerstone;
-    const cst = window.cornerstoneTools;
+    let enabled = false;
+    const element = elementRef.current;
     (async () => {
       try {
         setStatus("loading");
         const ok = await loadCornerstone();
-        if (!ok || !window.cornerstone) {
+        const cornerstone = window.cornerstone;
+        const cornerstoneTools = window.cornerstoneTools;
+        if (!ok || !cornerstone) {
           // Fallback: usar WADO-URI JPEG
           setStatus("fallback");
           return;
         }
         if (!mounted) return;
-        const el = elementRef.current;
-        if (!el) return;
-        cs.enable(el);
-        if (cst) cst.init();
+        if (!element) return;
+        cornerstone.enable(element);
+        enabled = true;
+        if (cornerstoneTools) cornerstoneTools.init();
 
         const imageId = buildImageId(displayImage);
         if (!imageId) {
           setStatus("fallback");
           return;
         }
-        await cs.loadAndCacheImage(imageId);
+        await cornerstone.loadAndCacheImage(imageId);
         if (!mounted) return;
-        const img = await cs.loadImage(imageId);
-        cs.displayImage(el, img);
+        const img = await cornerstone.loadImage(imageId);
+        cornerstone.displayImage(element, img);
 
         // Ativar tool padrao
-        if (cst) {
-          cst.setToolActive("WwwcTool", { mouseButtonMask: 1 });
+        if (cornerstoneTools) {
+          cornerstoneTools.setToolActive("WwwcTool", { mouseButtonMask: 1 });
         }
         setStatus("ready");
       } catch (e) {
@@ -164,10 +168,12 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
     return () => {
       mounted = false;
       try {
-        if (elementRef.current && cs) cs.disable(elementRef.current);
+        if (enabled && element && window.cornerstone) {
+          window.cornerstone.disable(element);
+        }
       } catch { /* noop */ }
     };
-  }, [displayImage.id, exam.id]);
+  }, [displayImage, exam.id]);
 
   // Ajustar window/level em tempo real
   useEffect(() => {

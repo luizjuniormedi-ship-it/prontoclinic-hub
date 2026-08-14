@@ -19,7 +19,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Search, Calculator } from "lucide-react";
-import { priceTableService, type PriceTable } from "@/services/priceTableService";
+import { priceTableService, type PriceLookup, type PriceTable } from "@/services/priceTableService";
 import { insuranceCompanyService } from "@/services/insuranceService";
 import { supabase } from "@/lib/supabase";
 
@@ -28,7 +28,7 @@ export function PriceTableEditor() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [testServiceId, setTestServiceId] = useState<number | null>(null);
   const [testPlanId, setTestPlanId] = useState<number | null>(null);
-  const [lookupResult, setLookupResult] = useState<any>(null);
+  const [lookupResult, setLookupResult] = useState<PriceLookup | null>(null);
   const queryClient = useQueryClient();
 
   const { data: prices, isLoading, isError, error } = useQuery({

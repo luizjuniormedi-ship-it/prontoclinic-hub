@@ -24,6 +24,7 @@ const ACAO_CORES: Record<string, string> = {
   PRINT: "bg-orange-100 text-orange-800",
 };
 
+// eslint-disable-next-line react-refresh/only-export-components -- shared formatter is part of this module's public API
 export function formatDateTime(iso: string): string {
   try {
     const d = new Date(iso);

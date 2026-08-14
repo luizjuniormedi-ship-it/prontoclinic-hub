@@ -38,6 +38,7 @@ export function LiveRegion({ message, politeness = 'polite', atomic = true }: Li
  * The double-setState (clear then re-set) ensures SR re-announces the same
  * message if fired consecutively.
  */
+// eslint-disable-next-line react-refresh/only-export-components -- hook is intentionally co-located with its live region
 export function useLiveAnnounce() {
   const [message, setMessage] = useState('');
 
