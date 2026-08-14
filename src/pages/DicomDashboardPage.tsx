@@ -11,8 +11,10 @@ import { dicomDashboardService, dicomModalitiesService, dicomNodesService } from
 import type { DicomModality, DicomNode } from "@/types/dicom";
 import { toast } from "@/hooks/use-toast";
 
+type DicomDashboardStats = Awaited<ReturnType<typeof dicomDashboardService.getStats>>;
+
 export default function DicomDashboardPage() {
-  const [stats, setStats] = useState<any>(null);
+  const [stats, setStats] = useState<DicomDashboardStats | null>(null);
   const [modalities, setModalities] = useState<DicomModality[]>([]);
   const [nodes, setNodes] = useState<DicomNode[]>([]);
   const [loading, setLoading] = useState(true);

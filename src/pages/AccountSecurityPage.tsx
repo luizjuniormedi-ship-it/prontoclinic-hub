@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Loader2, MonitorSmartphone, RefreshCw, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,7 +19,7 @@ export default function AccountSecurityPage() {
   const [revoking, setRevoking] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const loadDevices = async () => {
+  const loadDevices = useCallback(async () => {
     setLoading(true);
     try {
       setDevices((await authSessionService.listDevices()) as Device[]);
@@ -32,11 +32,11 @@ export default function AccountSecurityPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
 
   useEffect(() => {
     void loadDevices();
-  }, []);
+  }, [loadDevices]);
 
   const revoke = async (deviceId: string) => {
     setRevoking(deviceId);

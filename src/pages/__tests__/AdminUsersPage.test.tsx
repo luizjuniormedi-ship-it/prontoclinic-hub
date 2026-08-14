@@ -13,7 +13,8 @@ vi.mock("@/services/authAdminService", () => ({
 vi.mock("@/services/applicationSessionStorage", () => ({
   readStoredAccessContext: () => ({ companyId: "company-1", unitId: 7 }),
 }));
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+const { toastMock } = vi.hoisted(() => ({ toastMock: vi.fn() }));
+vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: toastMock }) }));
 vi.mock("@/hooks/useConfirm", () => ({ useConfirm: () => ({ confirm: vi.fn().mockResolvedValue(true) }) }));
 
 const user = {
