@@ -60,10 +60,43 @@ function requiredNumber(value: string | number | null | undefined, field: string
   return parsed;
 }
 
-function optionalNumber(value: string | number | null | undefined): number | null {
+function optionalNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function asRecords(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (row): row is Record<string, unknown> =>
+      typeof row === "object" && row !== null && !Array.isArray(row),
+  );
+}
+
+function optionalText(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function toPrecheckIssue(
+  row: Record<string, unknown>,
+  kind: PrecheckIssue["kind"],
+  detailField: "procedure_desc" | "result_detail",
+): PrecheckIssue | null {
+  const status = optionalText(row.status);
+  const createdAt = optionalText(row.created_at);
+  if ((typeof row.id !== "string" && typeof row.id !== "number") || !status || !createdAt) {
+    return null;
+  }
+  return {
+    id: String(row.id),
+    kind,
+    appointment_id: optionalNumber(row.appointment_id),
+    patient_id: optionalNumber(row.patient_id),
+    status,
+    detail: optionalText(row[detailField]),
+    created_at: createdAt,
+  };
 }
 
 export const schedulingOperationsService = {
@@ -85,9 +118,28 @@ export const schedulingOperationsService = {
       professionalIds.length ? supabase.from("professionals").select("id, full_name").in("id", professionalIds) : Promise.resolve({ data: [] }),
       specialtyIds.length ? supabase.from("specialties").select("id, name").in("id", specialtyIds) : Promise.resolve({ data: [] }),
     ]);
-    const patientMap = new Map((patients.data || []).map((row: any) => [Number(row.id), row]));
-    const professionalMap = new Map((professionals.data || []).map((row: any) => [Number(row.id), row.full_name]));
-    const specialtyMap = new Map((specialties.data || []).map((row: any) => [Number(row.id), row.name]));
+    const patientMap = new Map(
+      asRecords(patients.data).flatMap((row) => {
+        const id = optionalNumber(row.id);
+        return id === null
+          ? []
+          : [[id, { full_name: optionalText(row.full_name) ?? undefined, phone: optionalText(row.phone) ?? undefined }] as const];
+      }),
+    );
+    const professionalMap = new Map(
+      asRecords(professionals.data).flatMap((row) => {
+        const id = optionalNumber(row.id);
+        const name = optionalText(row.full_name);
+        return id === null || name === null ? [] : [[id, name] as const];
+      }),
+    );
+    const specialtyMap = new Map(
+      asRecords(specialties.data).flatMap((row) => {
+        const id = optionalNumber(row.id);
+        const name = optionalText(row.name);
+        return id === null || name === null ? [] : [[id, name] as const];
+      }),
+    );
     return rows.map((row) => ({
       ...row,
       patient_name: patientMap.get(Number(row.patient_id))?.full_name,
@@ -196,12 +248,20 @@ export const schedulingOperationsService = {
     if (authorizations.error) throw new Error(`Erro ao carregar autorizações: ${authorizations.error.message}`);
     if (eligibility.error) throw new Error(`Erro ao carregar elegibilidades: ${eligibility.error.message}`);
     const issues: PrecheckIssue[] = [
-      ...(authorizations.data || []).map((row: any) => ({ id: row.id, kind: "authorization" as const, appointment_id: row.appointment_id, patient_id: row.patient_id, status: row.status, detail: row.procedure_desc, created_at: row.created_at })),
-      ...(eligibility.data || []).map((row: any) => ({ id: row.id, kind: "eligibility" as const, appointment_id: row.appointment_id, patient_id: row.patient_id, status: row.status, detail: row.result_detail, created_at: row.created_at })),
-    ];
+      ...asRecords(authorizations.data).map((row) => toPrecheckIssue(row, "authorization", "procedure_desc")),
+      ...asRecords(eligibility.data).map((row) => toPrecheckIssue(row, "eligibility", "result_detail")),
+    ].filter((issue): issue is PrecheckIssue => issue !== null);
     const patientIds = [...new Set(issues.map((row) => row.patient_id).filter(Boolean))] as number[];
-    const patients = patientIds.length ? await supabase.from("patients").select("id, full_name").in("id", patientIds) : { data: [] as any[] };
-    const patientMap = new Map((patients.data || []).map((row: any) => [Number(row.id), row.full_name]));
+    const patients = patientIds.length
+      ? await supabase.from("patients").select("id, full_name").in("id", patientIds)
+      : { data: [] };
+    const patientMap = new Map(
+      asRecords(patients.data).flatMap((row) => {
+        const id = optionalNumber(row.id);
+        const name = optionalText(row.full_name);
+        return id === null || name === null ? [] : [[id, name] as const];
+      }),
+    );
     return issues.map((issue) => ({ ...issue, patient_name: issue.patient_id ? patientMap.get(Number(issue.patient_id)) : undefined })).sort((a, b) => a.created_at.localeCompare(b.created_at));
   },
 };

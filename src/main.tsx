@@ -10,7 +10,7 @@ if (import.meta.env.DEV) {
     import("react-dom"),
     import("react"),
   ]).then(([axe, ReactDOM, React]) => {
-    axe.default((React as any).default ?? (React as any), ReactDOM as any, 1000);
+    void axe.default(React, ReactDOM, 1000);
   });
 }
 
@@ -29,19 +29,24 @@ function boot() {
         <App />
       </ErrorBoundary>
     );
-  } catch (err) {
-    // eslint-disable-next-line no-console
+  } catch (err: unknown) {
     console.error("[BOOT] Falha fatal ao iniciar React:", err);
     const root = document.getElementById("root");
     if (root) {
+      const errorDetails = err instanceof Error
+        ? err.stack ?? err.message
+        : String(err);
+
       root.innerHTML = `
         <div style="font-family:system-ui,sans-serif;padding:24px;background:#1a1a1a;color:#fff;min-height:100vh">
           <h1 style="color:#ff6b6b;margin:0 0 12px">❌ Falha ao iniciar o aplicativo</h1>
           <p style="color:#aaa;margin:0 0 16px">Ocorreu um erro durante a inicialização. Detalhes abaixo:</p>
-          <pre style="background:#000;padding:12px;border-radius:6px;overflow:auto;font-size:12px;white-space:pre-wrap">${String(err?.stack || err?.message || err)}</pre>
+          <pre data-boot-error style="background:#000;padding:12px;border-radius:6px;overflow:auto;font-size:12px;white-space:pre-wrap"></pre>
           <hr style="border:0;border-top:1px solid #333;margin:20px 0">
           <p style="color:#aaa;font-size:13px">Verifique o console do navegador (F12) para mais detalhes.</p>
         </div>`;
+      const errorOutput = root.querySelector<HTMLElement>("[data-boot-error]");
+      if (errorOutput) errorOutput.textContent = errorDetails;
     }
   }
 }

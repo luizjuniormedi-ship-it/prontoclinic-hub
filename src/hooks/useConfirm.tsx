@@ -118,6 +118,8 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// Provider e hook compartilham o mesmo contexto para preservar a API pública deste módulo.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useConfirm(): ConfirmCtx {
   const ctx = useContext(Ctx);
   if (!ctx) throw new Error("useConfirm deve ser usado dentro de ConfirmProvider");
