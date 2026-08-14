@@ -1,6 +1,5 @@
-import { useState, useEffect, createContext, useContext, ReactNode, useCallback, useRef } from "react";
+import { useState, useEffect, ReactNode, useCallback, useRef } from "react";
 import { Session, User as SupabaseUser } from "@supabase/supabase-js";
-import { normalizeRoleName } from "@/config/routePermissions";
 import { supabase } from "@/lib/supabase";
 import { getMfaNextStep, verifyTotpFactor } from "@/services/authMfaService";
 import { authSessionService } from "@/services/authSessionService";
@@ -10,63 +9,14 @@ import {
   readStoredAccessContext,
 } from "@/services/applicationSessionStorage";
 import { accessContextService, type AccessContextOption } from "@/services/accessContextService";
-
-export interface UserProfile {
-  id: string;
-  email: string;
-  full_name: string;
-  role_id: number | null;
-  role_name: string | null;
-  company_id: string | null;
-  primary_unit_id: number | null;
-  lg_ativo: boolean;
-  must_change_password: boolean;
-}
-
-const CORPORATE_ROLES_WITHOUT_UNIT = new Set([
-  "admin",
-  "gestor",
-  "financeiro",
-  "auditor",
-  "dpo",
-]);
-
-export function isProfileAccessAllowed(profile: UserProfile | null): profile is UserProfile {
-  if (!profile?.lg_ativo || !profile.company_id || !(profile.role_id || profile.role_name)) return false;
-  const roleName = normalizeRoleName(profile.role_name) ?? profile.role_name?.trim().toLowerCase();
-  return Boolean(profile.primary_unit_id || (roleName && CORPORATE_ROLES_WITHOUT_UNIT.has(roleName)));
-}
-
-export function requiresPasswordChange(profile: UserProfile): boolean {
-  return profile.must_change_password === true;
-}
-
-export type MfaStep = "none" | "challenge" | "enroll" | "verified";
-export type AuthNextAction = "authenticated" | "mfa-challenge" | "mfa-enroll" | "password-change";
-export interface AuthResult {
-  success: boolean;
-  next?: AuthNextAction;
-  error?: string;
-}
-
-interface AuthContextType {
-  user: UserProfile | null;
-  session: Session | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  companyId: string | null;
-  activeCompanyId: string | null;
-  activeUnitId: number | null;
-  mfaStep: MfaStep;
-  mfaFactorId: string | null;
-  mustChangePassword: boolean;
-  passwordRecoveryAuthorized: boolean;
-  login: (email: string, password: string) => Promise<AuthResult>;
-  verifyMfa: (code: string, factorId?: string) => Promise<AuthResult>;
-  logout: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextType | null>(null);
+import {
+  AuthContext,
+  requiresPasswordChange,
+  type AuthNextAction,
+  type AuthResult,
+  type MfaStep,
+  type UserProfile,
+} from "@/hooks/useAuth";
 
 async function fetchUserProfile(supabaseUser: SupabaseUser): Promise<UserProfile | null> {
   try {
@@ -343,10 +293,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       {children}
     </AuthContext.Provider>
   );
-}
-
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-  return ctx;
 }

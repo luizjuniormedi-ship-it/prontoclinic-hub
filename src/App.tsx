@@ -4,7 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConfirmProvider } from "@/hooks/useConfirm";
-import { AuthProvider } from "@/hooks/useAuth";
+import { AuthProvider } from "@/hooks/AuthProvider";
 import { AppLayout } from "@/components/AppLayout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { isWaveModuleEnabled } from "@/config/moduleRollout";
