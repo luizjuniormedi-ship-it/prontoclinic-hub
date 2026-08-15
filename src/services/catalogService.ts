@@ -121,7 +121,7 @@ export const roomsService = {
       .order("name", { ascending: true });
     if (onlyActive) q = q.eq("lg_ativo", true);
     const { data, error } = await q;
-    if (error) return [];
+    if (error) throw new Error(`Erro ao listar salas: ${error.message}`);
     return (data ?? []).map((row): Room => {
       const parsed = roomRowSchema.parse(row);
       return {

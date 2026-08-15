@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { supabase } from "@/lib/supabase";
-import { companiesService, unitsService } from "@/services/catalogService";
+import { companiesService, roomsService, unitsService } from "@/services/catalogService";
 
-vi.mock("@/lib/supabase", () => ({ supabase: { rpc: vi.fn() } }));
+vi.mock("@/lib/supabase", () => ({ supabase: { rpc: vi.fn(), from: vi.fn() } }));
 
 describe("companies and units catalog mutations", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -35,5 +35,18 @@ describe("companies and units catalog mutations", () => {
     vi.mocked(supabase.rpc).mockResolvedValue({ data: null, error: { message: "AAL2 required" } } as never);
     await expect(unitsService.save({ code: "QA01", name: "Unidade QA", type: "filial", active: true }))
       .rejects.toThrow("AAL2 required");
+  });
+
+  it("does not turn a rooms query failure into an empty catalog", async () => {
+    const chain = {
+      order: vi.fn(),
+      eq: vi.fn().mockResolvedValue({ data: null, error: { message: "RLS denied" } }),
+    };
+    chain.order.mockReturnValue(chain);
+    vi.mocked(supabase.from).mockReturnValue({
+      select: vi.fn().mockReturnValue(chain),
+    } as never);
+
+    await expect(roomsService.getAll()).rejects.toThrow("Erro ao listar salas: RLS denied");
   });
 });

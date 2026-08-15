@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Database, Search, Plus, Pencil, Trash2, DollarSign } from "lucide-react";
+import { AlertTriangle, Database, Search, Plus, Pencil, Trash2, DollarSign, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +20,12 @@ import { ConsultationType, ExamType, ProcedureType, TherapyService, HealthInsura
 import { formatCurrency } from "@/utils/formatters";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+
+const catalogNames = [
+  "especialidades", "consultas", "exames", "procedimentos", "terapias",
+  "convênios", "salas", "preços",
+] as const;
 
 export default function MasterDataPage() {
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
@@ -33,6 +39,7 @@ export default function MasterDataPage() {
   const [priceTotal, setPriceTotal] = useState(0);
   const [appointmentTypes, setAppointmentTypes] = useState<DbAppointmentType[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadErrors, setLoadErrors] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const { toast } = useToast();
   const { user } = useAuth();
@@ -44,29 +51,28 @@ export default function MasterDataPage() {
   const [savingPrice, setSavingPrice] = useState(false);
 
   const loadPrices = useCallback(async () => {
-    try {
-      const [p, at, total] = await Promise.all([priceTableService.getAll(), appointmentTypesLookup.getAll(), priceTableService.count()]);
-      // Converter PriceTable[] → DbPriceEntry[]
-      const dbEntries: DbPriceEntry[] = (p || []).map((entry) => ({
-        id: entry.id,
-        company_id: entry.company_id,
-        appointment_type_id: entry.appointment_type_id ?? null,
-        service_id: entry.service_id ?? null,
-        insurance_plan_id: entry.insurance_plan_id ?? null,
-        price: entry.vl_particular,
-        description: entry.description ?? null,
-        active: entry.active,
-        created_at: entry.created_at,
-        updated_at: entry.updated_at,
-      }));
-      setPrices(dbEntries);
-      setPriceTotal(total);
-      setAppointmentTypes(at);
-    } catch { /* table may not exist yet */ }
+    const [p, at, total] = await Promise.all([priceTableService.getAll(), appointmentTypesLookup.getAll(), priceTableService.count()]);
+    // Converter PriceTable[] → DbPriceEntry[]
+    const dbEntries: DbPriceEntry[] = (p || []).map((entry) => ({
+      id: entry.id,
+      company_id: entry.company_id,
+      appointment_type_id: entry.appointment_type_id ?? null,
+      service_id: entry.service_id ?? null,
+      insurance_plan_id: entry.insurance_plan_id ?? null,
+      price: entry.vl_particular,
+      description: entry.description ?? null,
+      active: entry.active,
+      created_at: entry.created_at,
+      updated_at: entry.updated_at,
+    }));
+    setPrices(dbEntries);
+    setPriceTotal(total);
+    setAppointmentTypes(at);
   }, []);
 
-  useEffect(() => {
-    Promise.allSettled([
+  const loadCatalogs = useCallback(async () => {
+    setLoading(true);
+    const results = await Promise.allSettled([
       catalogService.specialties.getAll(),
       catalogService.appointmentTypes.getConsultations(),
       catalogService.appointmentTypes.getExams(),
@@ -75,17 +81,20 @@ export default function MasterDataPage() {
       catalogService.insurancePlans.getAll(),
       catalogService.rooms.getAllWithUnits(),
       loadPrices(),
-    ]).then(([sp, ct, ex, pr, th, ins, rm]) => {
-      setSpecialties(sp.status === "fulfilled" ? sp.value : []);
-      setConsultations(ct.status === "fulfilled" ? ct.value : []);
-      setExams(ex.status === "fulfilled" ? ex.value : []);
-      setProcedures(pr.status === "fulfilled" ? pr.value : []);
-      setTherapies(th.status === "fulfilled" ? th.value : []);
-      setInsurances(ins.status === "fulfilled" ? ins.value : []);
-      setRooms(rm.status === "fulfilled" ? rm.value : []);
-      setLoading(false);
-    });
+    ]);
+    const [sp, ct, ex, pr, th, ins, rm] = results;
+    if (sp.status === "fulfilled") setSpecialties(sp.value);
+    if (ct.status === "fulfilled") setConsultations(ct.value);
+    if (ex.status === "fulfilled") setExams(ex.value);
+    if (pr.status === "fulfilled") setProcedures(pr.value);
+    if (th.status === "fulfilled") setTherapies(th.value);
+    if (ins.status === "fulfilled") setInsurances(ins.value);
+    if (rm.status === "fulfilled") setRooms(rm.value);
+    setLoadErrors(results.flatMap((result, index) => result.status === "rejected" ? [catalogNames[index]] : []));
+    setLoading(false);
   }, [loadPrices]);
+
+  useEffect(() => { void loadCatalogs(); }, [loadCatalogs]);
 
   const openNewPrice = () => {
     setEditingPrice(null);
@@ -182,6 +191,19 @@ export default function MasterDataPage() {
   return (
     <div className="space-y-6 animate-fade-in">
       <PageHeader title="Cadastros Mestres" description="Especialidades, consultas, exames, procedimentos, terapias, convênios, salas e preços" />
+
+      {loadErrors.length > 0 && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Falha ao carregar parte dos cadastros</AlertTitle>
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+            <span>Não foi possível consultar: {loadErrors.join(", ")}.</span>
+            <Button type="button" size="sm" variant="outline" onClick={() => void loadCatalogs()}>
+              <RefreshCw className="mr-2 h-4 w-4" />Tentar novamente
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
