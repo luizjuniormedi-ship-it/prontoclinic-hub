@@ -36,12 +36,16 @@ describe("tissGuideService — M16", () => {
   it("materializa guia e XML usando somente a identidade e versao da conta", async () => {
     vi.stubGlobal("crypto", { randomUUID: () => "operation-1" });
     rpc.mockResolvedValue({
-      data: { billing_account_id: "billing-1", appointment_id: 42, guide_id: "guide-1", xml_id: 91 },
+      data: {
+        billing_account_id: "billing-1", appointment_id: 42, unit_id: 7,
+        guide_id: "guide-1", guide_number: 1001, xml_id: 91, environment: "HOMOLOGACAO",
+      },
       error: null,
     });
 
     await tissGuideService.materializeAccount({
       billingAccountId: "billing-1",
+      expectedAppointmentId: 42,
       expectedAccountVersion: 3,
     });
 
@@ -58,11 +62,44 @@ describe("tissGuideService — M16", () => {
   });
 
   it("rejeita materializacao sem conta ou com versao invalida antes do RPC", async () => {
-    await expect(tissGuideService.materializeAccount({ billingAccountId: " ", expectedAccountVersion: 1 }))
+    await expect(tissGuideService.materializeAccount({ billingAccountId: " ", expectedAppointmentId: 42, expectedAccountVersion: 1 }))
       .rejects.toThrow("Conta de faturamento obrigatoria");
-    await expect(tissGuideService.materializeAccount({ billingAccountId: "billing-1", expectedAccountVersion: 0 }))
+    await expect(tissGuideService.materializeAccount({ billingAccountId: "billing-1", expectedAppointmentId: 0, expectedAccountVersion: 1 }))
+      .rejects.toThrow("Agendamento da conta invalido");
+    await expect(tissGuideService.materializeAccount({ billingAccountId: "billing-1", expectedAppointmentId: 42, expectedAccountVersion: 0 }))
       .rejects.toThrow("Versao da conta invalida");
     expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("falha fechado para resposta estruturalmente invalida ou sem correlacao", async () => {
+    rpc.mockResolvedValue({ data: null, error: null });
+    await expect(tissGuideService.materializeAccount({
+      billingAccountId: "billing-1", expectedAppointmentId: 42, expectedAccountVersion: 1,
+    })).rejects.toThrow("resposta invalida");
+
+    rpc.mockResolvedValue({
+      data: {
+        billing_account_id: "billing-2", appointment_id: 99, unit_id: 7,
+        guide_id: "guide-1", guide_number: 1001, xml_id: 91, environment: "HOMOLOGACAO",
+      },
+      error: null,
+    });
+    await expect(tissGuideService.materializeAccount({
+      billingAccountId: "billing-1", expectedAppointmentId: 42, expectedAccountVersion: 1,
+    })).rejects.toThrow("conta ou agendamento divergente");
+  });
+
+  it("rejeita identificadores e ambiente invalidos na materializacao", async () => {
+    rpc.mockResolvedValue({
+      data: {
+        billing_account_id: "billing-1", appointment_id: 42, unit_id: 0,
+        guide_id: "guide-1", guide_number: 1001, xml_id: 91, environment: "LOCAL",
+      },
+      error: null,
+    });
+    await expect(tissGuideService.materializeAccount({
+      billingAccountId: "billing-1", expectedAppointmentId: 42, expectedAccountVersion: 1,
+    })).rejects.toThrow("environment invalido");
   });
 
   it("lista guias exclusivamente pela projeção segura do tenant ativo", async () => {

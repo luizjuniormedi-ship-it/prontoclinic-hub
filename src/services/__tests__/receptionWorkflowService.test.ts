@@ -147,6 +147,52 @@ function createDependencies(initial: ReceptionCheckinWorkflow) {
 }
 
 describe("receptionWorkflowService", () => {
+  it("rejeita workflow inicial associado a outro agendamento", async () => {
+    const mock = createDependencies(workflowAt("precheck", { appointment_id: 99 }));
+    const service = createReceptionWorkflowService(mock.dependencies);
+
+    await expect(service.run(baseInput)).rejects.toThrow(
+      "Workflow retornado não corresponde ao agendamento solicitado",
+    );
+    expect(mock.dependencies.getReadiness).not.toHaveBeenCalled();
+    expect(mock.dependencies.ensureBilling).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ company_id: "empresa-inválida" }, /empresa do workflow inválida/],
+    [{ unit_id: 0 }, /unidade do workflow inválido/],
+    [{ unit_id: "3" as unknown as number }, /unidade do workflow inválido/],
+    [{ appointment_id: 1.5 }, /agendamento do workflow inválido/],
+    [{ patient_id: Number.MAX_SAFE_INTEGER + 1 }, /paciente do workflow inválido/],
+  ] as const)(
+    "rejeita campos de tenant e inteiros inválidos no workflow: %j",
+    async (overrides, expectedError) => {
+      const mock = createDependencies(workflowAt("precheck", overrides));
+      const service = createReceptionWorkflowService(mock.dependencies);
+
+      await expect(service.run(baseInput)).rejects.toThrow(expectedError);
+      expect(mock.dependencies.getReadiness).not.toHaveBeenCalled();
+    },
+  );
+
+  it("interrompe quando uma transição troca a identidade do workflow", async () => {
+    const mock = createDependencies(workflowAt("precheck"));
+    const canonicalAdvance = mock.dependencies.advance;
+    vi.mocked(mock.dependencies.advance).mockImplementationOnce(async (input) => ({
+      ...await canonicalAdvance(input),
+      patient_id: 10,
+    }));
+    const service = createReceptionWorkflowService(mock.dependencies);
+
+    await expect(service.run(baseInput)).rejects.toMatchObject({
+      name: "ReceptionWorkflowExecutionError",
+      cause: expect.objectContaining({
+        message: expect.stringContaining("identidade do workflow divergiu"),
+      }),
+    });
+    expect(mock.dependencies.ensureBilling).not.toHaveBeenCalled();
+  });
+
   it("bloqueia pré-conta zerada sem gratuidade formal", async () => {
     const { dependencies } = createDependencies(workflowAt("precheck"));
     const service = createReceptionWorkflowService(dependencies);

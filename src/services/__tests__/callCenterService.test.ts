@@ -16,11 +16,12 @@ vi.mock("@/lib/supabase", () => {
 import { supabase } from "@/lib/supabase";
 
 function chainWith(result: unknown) {
-  const chain: Record<string, any> = {
+  const chain: Record<string, ReturnType<typeof vi.fn>> = {
     select: vi.fn().mockReturnThis(),
     insert: vi.fn().mockReturnThis(),
     update: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
+    in: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue(result),
@@ -32,19 +33,31 @@ function chainWith(result: unknown) {
 describe("callCenterService", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  const contactRow = {
+    id: 1,
+    company_id: "company-1",
+    patient_id: 10,
+    appointment_id: null,
+    operator_id: "operator-1",
+    channel: "telefone",
+    direction: "inbound",
+    contact_reason: "Marcação",
+    result: "agendado",
+    notes: null,
+    next_action: null,
+    next_action_at: null,
+    created_at: "2026-08-14T12:00:00Z",
+    updated_at: "2026-08-14T12:00:00Z",
+  };
+
   it("lista contatos com dados do paciente embutidos", async () => {
     const rows = [{
-      id: 1,
-      patient_id: 10,
-      channel: "telefone",
-      direction: "inbound",
-      contact_reason: "Marcação",
-      result: "agendado",
+      ...contactRow,
       patients: { full_name: "Maria Souza", cpf: "123", phone: "21999999999" },
     }];
     const chain = chainWith({ data: rows, error: null });
     chain.limit.mockResolvedValue({ data: rows, error: null });
-    (supabase.from as any).mockReturnValue(chain);
+    vi.mocked(supabase.from).mockReturnValue(chain as never);
 
     const result = await callCenterService.listContacts();
 
@@ -55,19 +68,48 @@ describe("callCenterService", () => {
     expect(result[0].patient_phone).toBe("21999999999");
   });
 
+  it("falha fechado quando contato viola o contrato de runtime", async () => {
+    const chain = chainWith({ data: [], error: null });
+    chain.limit.mockResolvedValue({ data: [{ ...contactRow, contact_reason: null }], error: null });
+    vi.mocked(supabase.from).mockReturnValue(chain as never);
+
+    await expect(callCenterService.listContacts()).rejects.toThrow("contact.contact_reason");
+  });
+
   it("materializa a fila de confirmações pelo RPC seguro somente quando solicitado", async () => {
-    (supabase.rpc as any).mockResolvedValue({ data: 4, error: null });
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: 4, error: null } as never);
 
     await expect(callCenterService.materializeConfirmationQueue(3)).resolves.toBe(4);
     expect(supabase.rpc).toHaveBeenCalledWith("refresh_confirmation_queue_secure", { p_days_ahead: 3 });
     expect(supabase.rpc).toHaveBeenCalledTimes(1);
   });
 
+  it("rejeita quantidade invalida retornada pela materializacao", async () => {
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: "invalido", error: null } as never);
+    await expect(callCenterService.materializeConfirmationQueue(3)).rejects.toThrow("quantidade inválida");
+  });
+
+  it("propaga erro da consulta de pacientes da fila de confirmacao", async () => {
+    const queue = [{
+      id: 1, appointment_id: 42, patient_id: 10, due_at: "2026-08-15T12:00:00Z",
+      status: "pending", attempt_count: 0, last_attempt_at: null,
+    }];
+    const queueChain = chainWith({ data: queue, error: null });
+    queueChain.limit.mockResolvedValue({ data: queue, error: null });
+    const patientChain = chainWith({ data: null, error: null });
+    patientChain.in.mockResolvedValue({ data: null, error: { message: "RLS bloqueou leitura" } });
+    vi.mocked(supabase.from).mockReturnValueOnce(queueChain as never).mockReturnValueOnce(patientChain as never);
+
+    await expect(callCenterService.listConfirmationQueue()).rejects.toThrow(
+      "Erro ao carregar pacientes da fila de confirmação: RLS bloqueou leitura",
+    );
+  });
+
   it("cria contato e tarefa quando proxima acao é informada", async () => {
-    (supabase.rpc as any).mockResolvedValue({
-      data: { id: 77, result: "recado" },
+    vi.mocked(supabase.rpc).mockResolvedValue({
+      data: { ...contactRow, id: 77, result: "recado" },
       error: null,
-    });
+    } as never);
 
     const result = await callCenterService.createContact({
       patient_id: "10",
@@ -105,7 +147,7 @@ describe("callCenterService", () => {
   });
 
   it("conclui tarefa", async () => {
-    (supabase.rpc as any).mockResolvedValue({ data: { id: 5, status: "done" }, error: null });
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: { id: 5, status: "done" }, error: null } as never);
 
     await expect(callCenterService.completeTask(5)).resolves.toBeUndefined();
     expect(supabase.rpc).toHaveBeenCalledWith("complete_call_center_task_secure", {

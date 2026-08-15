@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ClipboardList, Search, Plus, AlertTriangle, Clock, CheckCircle, XCircle, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,7 +46,7 @@ export default function WorklistPage() {
   const [unitFilter, setUnitFilter] = useState("all");
   const { toast } = useToast();
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const [raw, u] = await Promise.all([
@@ -86,9 +86,9 @@ export default function WorklistPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [load]);
 
   const handleAction = async (id: number, action: string) => {
     try {

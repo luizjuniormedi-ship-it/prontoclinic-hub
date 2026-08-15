@@ -751,7 +751,7 @@ export const reportService = {
   },
 
   mapRow(row: Record<string, unknown>): DicomReport {
-    const r = row as Record<string, any>;
+    const r = row;
     return {
       id: (r.id as number) ?? 0,
       cd_dicom_exam: (r.imaging_order_item_id as number) ?? 0,

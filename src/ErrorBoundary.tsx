@@ -10,9 +10,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   }
 
   componentDidCatch(err: Error, info: { componentStack?: string | null }) {
-    // eslint-disable-next-line no-console
     console.error("[ErrorBoundary] CAUGHT:", err?.stack || err);
-    // eslint-disable-next-line no-console
     console.error("[ErrorBoundary] COMPONENT STACK:", info?.componentStack);
     this.setState({ info: info?.componentStack || null });
   }

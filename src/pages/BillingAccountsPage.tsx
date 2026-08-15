@@ -24,8 +24,10 @@ import { toast } from "@/hooks/use-toast";
 import { tissGuideService } from "@/services/tissGuideService";
 
 const fmtBRL = (value: number | string | null | undefined) => {
-  const amount = typeof value === "number" ? value : Number(value ?? 0);
-  return (Number.isFinite(amount) ? amount : 0).toLocaleString("pt-BR", {
+  if (value === null || value === undefined || value === "") return "—";
+  const amount = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(amount)) return "—";
+  return amount.toLocaleString("pt-BR", {
     style: "currency",
     currency: "BRL",
   });
@@ -189,12 +191,25 @@ export default function BillingAccountsPage() {
 
   const materializeTiss = async () => {
     if (!detail) return;
+    const appointmentId = detail.appointment_id;
+    if (!Number.isSafeInteger(appointmentId) || Number(appointmentId) <= 0) {
+      toast({
+        title: "Não foi possível materializar o TISS",
+        description: "A conta não possui um agendamento válido para correlação.",
+        variant: "destructive",
+      });
+      return;
+    }
     setMaterializingTiss(true);
     try {
       const result = await tissGuideService.materializeAccount({
         billingAccountId: detail.id,
+        expectedAppointmentId: appointmentId as number,
         expectedAccountVersion: detail.version,
       });
+      if (result.billing_account_id !== detail.id || result.appointment_id !== appointmentId) {
+        throw new Error("Materialização TISS retornou conta ou agendamento divergente.");
+      }
       setDetail((current) => current ? { ...current, guide_number: String(result.guide_number) } : current);
       toast({
         title: "Guia e XML TISS materializados",
