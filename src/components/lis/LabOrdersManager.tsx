@@ -206,20 +206,18 @@ export function LabOrdersManager() {
     onError: (e: Error) => toast({ title: "Erro ao atualizar", description: e.message, variant: "destructive" }),
   });
 
-  const iniciarAnaliseMutation = useMutation({
-    mutationFn: (id: number) => pedidoService.atualizarStatus(id, "EM_ANALISE"),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["lab-pedidos"] });
-      toast({ title: "Análise iniciada" });
-    },
-  });
-
   const cancelarPedidoMutation = useMutation({
     mutationFn: (id: number) => pedidoService.atualizarStatus(id, "CANCELADO"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["lab-pedidos"] });
       toast({ title: "Pedido cancelado" });
     },
+    onError: (e: Error) =>
+      toast({
+        title: "Erro ao cancelar pedido",
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   if (!companyId) {
@@ -373,17 +371,9 @@ export function LabOrdersManager() {
                                 Registrar coleta
                               </Button>
                             )}
-                            {p.tp_status === "COLETADO" && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => iniciarAnaliseMutation.mutate(p.id)}
-                              >
-                                Analisar
-                              </Button>
-                            )}
                             {(p.tp_status === "PENDENTE" || p.tp_status === "COLETADO") && (
                               <Button
+                                aria-label={`Cancelar pedido ${p.id}`}
                                 size="sm"
                                 variant="ghost"
                                 onClick={() => cancelarPedidoMutation.mutate(p.id)}
@@ -981,6 +971,12 @@ function AlertasTab({ userId }: { userId?: string }) {
       queryClient.invalidateQueries({ queryKey: ["lab-alertas-pendentes"] });
       toast({ title: "Alerta comunicado" });
     },
+    onError: (e: Error) =>
+      toast({
+        title: "Erro ao comunicar alerta",
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   if (isLoading) return <LoadingState message="Carregando alertas críticos..." />;
