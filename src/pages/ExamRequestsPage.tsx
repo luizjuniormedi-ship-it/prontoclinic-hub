@@ -151,7 +151,7 @@ export default function ExamRequestsPage() {
             <ExamRequestForm
               unitId={contextualUnitId}
               isSubmitting={create.isPending}
-              onSubmit={(input) => create.mutate(input)}
+              onSubmit={(input) => create.mutateAsync(input).then(() => undefined)}
             />
           </CardContent>
         </Card>

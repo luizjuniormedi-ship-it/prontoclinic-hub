@@ -14,6 +14,7 @@
     "src/components/dicom/DicomViewer.tsx",
     "src/components/dicom/__tests__/DicomViewer.test.tsx",
     "src/components/exams/m22/ExamRequestForm.tsx",
+    "src/components/exams/m22/__tests__/ExamRequestForm.test.tsx",
     "src/components/internacao/InternacaoManager.tsx",
     "src/App.tsx",
     "src/components/nursing/m19/Module19TriageWorkspace.tsx",
