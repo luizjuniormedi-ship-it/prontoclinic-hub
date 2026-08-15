@@ -65,6 +65,7 @@
     "src/pages/__tests__/BillingAccountsPage.test.tsx",
     "src/pages/BillingAccountsPage.tsx",
     "src/services/__tests__/receptionWorkflowService.test.ts",
+    "src/services/__tests__/callCenterService.test.ts",
     "src/services/__tests__/tissGuideService.test.ts",
     "src/services/callCenterService.ts",
     "src/services/receptionWorkflowService.ts",
