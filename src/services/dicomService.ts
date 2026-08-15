@@ -311,56 +311,6 @@ export const worklistService = {
     return (data || []) as DicomWorklistItem[];
   },
 
-  /**
-   * Lista todos os itens da worklist (alias para WorklistPage).
-   * Retorna uma estrutura flat com campos derivados mapeados.
-   */
-  async list(): Promise<Array<{
-    id: number;
-    cd_patient?: number;
-    cd_unit?: number;
-    ds_procedure?: string;
-    modality?: string;
-    requesting_physician?: string;
-    scheduled_at?: string;
-    priority?: string;
-    status?: string;
-    created_at?: string;
-  }>> {
-    const { data, error } = await supabase
-      .from("dicom_worklist_queue")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(200);
-    if (error) {
-      if ((error as { code?: string }).code === "PGRST116") return [];
-      throw error;
-    }
-    return (data || []) as Array<{
-      id: number;
-      cd_patient?: number;
-      cd_unit?: number;
-      ds_procedure?: string;
-      modality?: string;
-      requesting_physician?: string;
-      scheduled_at?: string;
-      priority?: string;
-      status?: string;
-      created_at?: string;
-    }>;
-  },
-
-  /**
-   * Atualiza um item da worklist (alias para WorklistPage).
-   */
-  async update(id: number, updates: { status?: string; [key: string]: unknown }): Promise<void> {
-    const { error } = await supabase
-      .from("dicom_worklist_queue")
-      .update(updates)
-      .eq("id", id);
-    if (error) throw error;
-  },
-
   async addWorklistTag(
     equipmentId: number,
     companyId: string,

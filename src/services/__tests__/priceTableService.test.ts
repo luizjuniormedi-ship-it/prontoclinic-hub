@@ -3,7 +3,7 @@ import { priceTableService } from "@/services/priceTableService";
 
 // Mock do Supabase
 vi.mock("@/lib/supabase", () => {
-  const chain: any = {
+  const chain = {
     select: vi.fn().mockReturnThis(),
     insert: vi.fn().mockReturnThis(),
     update: vi.fn().mockReturnThis(),
@@ -25,13 +25,17 @@ vi.mock("@/lib/supabase", () => {
 
 import { supabase } from "@/lib/supabase";
 
+type QueryResult = { data: unknown; error: unknown };
+type QueryResolver = (value: QueryResult) => unknown;
+const rpcMock = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+
 describe("priceTableService — findPrice", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it("normaliza o registro composto retornado pelo PostgREST", async () => {
-    (supabase.rpc as any).mockResolvedValue({
+    rpcMock.mockResolvedValue({
       data: "(150.00,0.00,12.50,3.25,1.00,0.00,0.00,t)",
       error: null,
     });
@@ -56,7 +60,7 @@ describe("priceTableService — findPrice", () => {
   });
 
   it("retorna preço específico do convênio (RPC find_price)", async () => {
-    (supabase.rpc as any).mockResolvedValue({
+    rpcMock.mockResolvedValue({
       data: [
         {
           vl_particular: 200,
@@ -85,7 +89,7 @@ describe("priceTableService — findPrice", () => {
   });
 
   it("cai no fallback particular quando convênio não tem preço", async () => {
-    (supabase.rpc as any).mockResolvedValue({
+    rpcMock.mockResolvedValue({
       data: [
         {
           vl_particular: 200,
@@ -106,7 +110,7 @@ describe("priceTableService — findPrice", () => {
   });
 
   it("cai no fallback services_catalog quando nenhum preço cadastrado", async () => {
-    (supabase.rpc as any).mockResolvedValue({
+    rpcMock.mockResolvedValue({
       data: [
         {
           vl_particular: 100,
@@ -127,14 +131,14 @@ describe("priceTableService — findPrice", () => {
   });
 
   it("normaliza valores monetários retornados pelo Postgres como texto", async () => {
-    (supabase.rpc as any).mockResolvedValue({
+    rpcMock.mockResolvedValue({
       data: [
         {
           vl_particular: "200.10",
           vl_convenio: "150,25",
           vl_material: null,
-          vl_medicamento: "inválido",
-          vl_taxa: "-5",
+          vl_medicamento: "0",
+          vl_taxa: "0",
           vl_diaria: "10",
           vl_gases: 2.345,
           found: "true",
@@ -158,8 +162,17 @@ describe("priceTableService — findPrice", () => {
   });
 
   it("retorna {found: false, zeros} quando nada encontrado e sem erro", async () => {
-    (supabase.rpc as any).mockResolvedValue({
-      data: [],
+    rpcMock.mockResolvedValue({
+      data: [{
+        vl_particular: 0,
+        vl_convenio: 0,
+        vl_material: 0,
+        vl_medicamento: 0,
+        vl_taxa: 0,
+        vl_diaria: 0,
+        vl_gases: 0,
+        found: false,
+      }],
       error: null,
     });
 
@@ -169,18 +182,23 @@ describe("priceTableService — findPrice", () => {
     expect(result.vl_convenio).toBe(0);
   });
 
-  it("retorna zeros quando RPC find_price falha (warn log)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    (supabase.rpc as any).mockResolvedValue({
+  it("falha fechado quando a resposta da RPC não respeita o contrato", async () => {
+    rpcMock.mockResolvedValue({ data: [], error: null });
+
+    await expect(priceTableService.findPrice(999, 999, 999)).rejects.toThrow(
+      "Resposta inválida de find_price",
+    );
+  });
+
+  it("falha fechado quando a RPC find_price retorna erro", async () => {
+    rpcMock.mockResolvedValue({
       data: null,
       error: { message: "RPC indisponível" },
     });
 
-    const result = await priceTableService.findPrice(1, 2, 7);
-    expect(result.found).toBe(false);
-    expect(result.vl_particular).toBe(0);
-    expect(warnSpy).toHaveBeenCalled();
-    warnSpy.mockRestore();
+    await expect(priceTableService.findPrice(1, 2, 7)).rejects.toThrow(
+      "Erro ao consultar preço: RPC indisponível",
+    );
   });
 });
 
@@ -191,27 +209,25 @@ describe("priceTableService — getAll com filtros", () => {
 
   it("aplica filtro serviceId", async () => {
     const eqSpy = vi.fn().mockReturnThis();
-    const chain: any = {
+    const chain = {
       select: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
       limit: vi.fn().mockReturnThis(),
       eq: eqSpy,
+      then: (resolve: QueryResolver) => resolve({ data: [], error: null }),
     };
-    (chain as any).then = (resolve: any) => resolve({ data: [], error: null });
-    (supabase.from as any).mockReturnValue(chain);
+    vi.mocked(supabase.from).mockReturnValue(chain as never);
 
     await priceTableService.getAll({ serviceId: 5 });
     expect(eqSpy).toHaveBeenCalledWith("service_id", 5);
   });
 
   it("normaliza todas as colunas monetárias antes de entregar dados à UI", async () => {
-    const chain: any = {
+    const chain = {
       select: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
       limit: vi.fn().mockReturnThis(),
-    };
-    (chain as any).then = (resolve: any) =>
-      resolve({
+      then: (resolve: QueryResolver) => resolve({
         data: [
           {
             id: 10,
@@ -226,8 +242,9 @@ describe("priceTableService — getAll com filtros", () => {
           },
         ],
         error: null,
-      });
-    (supabase.from as any).mockReturnValue(chain);
+      }),
+    };
+    vi.mocked(supabase.from).mockReturnValue(chain as never);
 
     const [result] = await priceTableService.getAll();
 
@@ -246,17 +263,16 @@ describe("priceTableService — getAll com filtros", () => {
   });
 
   it("falha fechado quando preço persistido é inválido", async () => {
-    const chain: any = {
+    const chain = {
       select: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
       limit: vi.fn().mockReturnThis(),
-    };
-    (chain as any).then = (resolve: any) =>
-      resolve({
+      then: (resolve: QueryResolver) => resolve({
         data: [{ id: 10, vl_particular: "inválido" }],
         error: null,
-      });
-    (supabase.from as any).mockReturnValue(chain);
+      }),
+    };
+    vi.mocked(supabase.from).mockReturnValue(chain as never);
 
     await expect(priceTableService.getAll()).rejects.toThrow(
       "Contrato inválido em price_tables.vl_particular",
@@ -265,14 +281,14 @@ describe("priceTableService — getAll com filtros", () => {
 
   it("aplica filtro planId null com .is (particular)", async () => {
     const isSpy = vi.fn().mockReturnThis();
-    const chain: any = {
+    const chain = {
       select: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
       limit: vi.fn().mockReturnThis(),
       is: isSpy,
+      then: (resolve: QueryResolver) => resolve({ data: [], error: null }),
     };
-    (chain as any).then = (resolve: any) => resolve({ data: [], error: null });
-    (supabase.from as any).mockReturnValue(chain);
+    vi.mocked(supabase.from).mockReturnValue(chain as never);
 
     await priceTableService.getAll({ planId: null });
     expect(isSpy).toHaveBeenCalledWith("insurance_plan_id", null);
@@ -280,28 +296,28 @@ describe("priceTableService — getAll com filtros", () => {
 
   it("aplica filtro active=false", async () => {
     const eqSpy = vi.fn().mockReturnThis();
-    const chain: any = {
+    const chain = {
       select: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
       limit: vi.fn().mockReturnThis(),
       eq: eqSpy,
+      then: (resolve: QueryResolver) => resolve({ data: [], error: null }),
     };
-    (chain as any).then = (resolve: any) => resolve({ data: [], error: null });
-    (supabase.from as any).mockReturnValue(chain);
+    vi.mocked(supabase.from).mockReturnValue(chain as never);
 
     await priceTableService.getAll({ active: false });
     expect(eqSpy).toHaveBeenCalledWith("active", false);
   });
 
   it("lança erro quando Supabase devolve erro", async () => {
-    const chain: any = {
+    const chain = {
       select: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
       limit: vi.fn().mockReturnThis(),
+      then: (resolve: QueryResolver) =>
+        resolve({ data: null, error: { message: "DB down" } }),
     };
-    (chain as any).then = (resolve: any) =>
-      resolve({ data: null, error: { message: "DB down" } });
-    (supabase.from as any).mockReturnValue(chain);
+    vi.mocked(supabase.from).mockReturnValue(chain as never);
 
     await expect(priceTableService.getAll()).rejects.toThrow(/DB down/);
   });

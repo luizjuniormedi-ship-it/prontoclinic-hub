@@ -5,6 +5,7 @@
   "paths": [
     ".github/workflows/ci.yml",
     "e2e/clinical-wave-m19-m22.spec.ts",
+    "e2e/dicom.spec.ts",
     "e2e/gate-phase01.spec.ts",
     "e2e/pharmacy.spec.ts",
     "src/components/a11y/LiveRegion.tsx",
@@ -17,6 +18,8 @@
     "src/components/nursing/m19/Module19TriageWorkspace.tsx",
     "src/components/nursing/m19/TriageAtomicForm.tsx",
     "src/components/price-table/PriceTableEditor.tsx",
+    "src/services/priceTableService.ts",
+    "src/services/__tests__/priceTableService.test.ts",
     "src/components/schedule/AppointmentCard.tsx",
     "src/components/ui/badge.tsx",
     "src/components/ui/button.tsx",

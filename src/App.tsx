@@ -39,7 +39,6 @@ const AttendancePage = lazy(() => import("@/pages/AttendancePage"));
 const CallCenterPage = lazy(() => import("@/pages/CallCenterPage"));
 
 // Imaging / PACS / DICOM
-const WorklistPage = lazy(() => import("@/pages/WorklistPage"));
 const PACSPage = lazy(() => import("@/pages/PACSPage"));
 const BillingAccountsPage = lazy(() => import("@/pages/BillingAccountsPage"));
 const ProfessionalPaymentPage = lazy(() => import("@/pages/ProfessionalPaymentPage"));
@@ -210,16 +209,14 @@ const App = () => (
             <Route path="/attendance/:appointmentId" element={<AppLayout><ProtectedRoute path="/attendance"><LazyRoute><AttendancePage /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* Imaging / PACS / DICOM */}
-            <Route path="/worklist" element={<AppLayout><ProtectedRoute path="/worklist"><LazyRoute><WorklistPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            <Route path="/worklist" element={<Navigate to="/dicom/worklist" replace />} />
             <Route path="/pacs" element={<AppLayout><ProtectedRoute path="/pacs"><LazyRoute><PACSPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/dicom/nodes" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomNodesPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/dicom/modalities" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomModalitiesPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             {isWaveModuleEnabled(24) && (
               <Route path="/dicom/orders" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><ImagingOrdersPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             )}
-            {isWaveModuleEnabled(24) && (
-              <Route path="/dicom/worklist" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomWorklistPage /></LazyRoute></ProtectedRoute></AppLayout>} />
-            )}
+            <Route path="/dicom/worklist" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomWorklistPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/dicom/dashboard" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomDashboardPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/dicom/reports" element={<AppLayout><ProtectedRoute path="/dicom/reports"><LazyRoute><RadiologyReportsPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/admin/dicom" element={<AppLayout><ProtectedRoute path="/admin"><LazyRoute><DicomEquipmentManager /></LazyRoute></ProtectedRoute></AppLayout>} />
