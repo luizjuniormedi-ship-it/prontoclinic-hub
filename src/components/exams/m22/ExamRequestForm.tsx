@@ -44,9 +44,11 @@ function numberOrNull(value: FormDataEntryValue | null): number | null {
 }
 
 export function ExamRequestForm({
+  unitId,
   isSubmitting,
   onSubmit,
 }: {
+  unitId: number;
   isSubmitting: boolean;
   onSubmit: (input: CreateExamRequestInput) => Promise<void> | void;
 }) {
@@ -65,10 +67,9 @@ export function ExamRequestForm({
   const submit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const unitId = numberOrNull(form.get("unit_id"));
     const patientId = numberOrNull(form.get("patient_id"));
     const requesterProfessionalId = numberOrNull(form.get("requester_professional_id"));
-    if (!unitId || !patientId || !requesterProfessionalId) return;
+    if (!patientId || !requesterProfessionalId) return;
 
     void onSubmit({
       unitId,
@@ -87,10 +88,6 @@ export function ExamRequestForm({
   return (
     <form className="space-y-5" onSubmit={submit}>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <div className="space-y-1">
-          <Label htmlFor="m22-unit">Unidade ID</Label>
-          <Input id="m22-unit" name="unit_id" type="number" min="1" required />
-        </div>
         <div className="space-y-1">
           <Label htmlFor="m22-patient">Paciente ID</Label>
           <Input id="m22-patient" name="patient_id" type="number" min="1" required />

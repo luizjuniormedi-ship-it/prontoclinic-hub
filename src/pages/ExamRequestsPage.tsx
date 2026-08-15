@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ClipboardList, RefreshCw } from "lucide-react";
+import { AlertTriangle, ClipboardList, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ExamRequestForm } from "@/components/exams/m22/ExamRequestForm";
@@ -16,18 +16,26 @@ import type {
   ExamRequestStatus,
   TransitionExamRequestItemInput,
 } from "@/types/examRequests";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+
+function isValidUnitId(value: number | null): value is number {
+  return Number.isSafeInteger(value) && value > 0;
+}
 
 export default function ExamRequestsPage() {
   const [status, setStatus] = useState<ExamRequestStatus | "">("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, companyId, activeUnitId } = useAuth();
   const permissions = clinicalPermissionsFor(user?.role_name).m22;
+  const contextualUnitId = isValidUnitId(activeUnitId) ? activeUnitId : null;
+  const hasContext = Boolean(companyId?.trim()) && contextualUnitId !== null;
 
   const query = useQuery({
-    queryKey: ["m22-exam-requests", status],
-    queryFn: () => examRequestService.list({ status: status || undefined }),
+    queryKey: ["m22-exam-requests", companyId, contextualUnitId, status],
+    queryFn: () => examRequestService.list({ unitId: contextualUnitId ?? undefined, status: status || undefined }),
+    enabled: hasContext,
   });
 
   const invalidate = async () => {
@@ -35,7 +43,10 @@ export default function ExamRequestsPage() {
   };
 
   const create = useMutation({
-    mutationFn: (input: CreateExamRequestInput) => examRequestService.create(input),
+    mutationFn: (input: CreateExamRequestInput) => {
+      if (contextualUnitId === null) throw new Error("Contexto de unidade indisponível");
+      return examRequestService.create({ ...input, unitId: contextualUnitId });
+    },
     onSuccess: async (request) => {
       setSelectedId(request.id);
       await invalidate();
@@ -123,13 +134,22 @@ export default function ExamRequestsPage() {
         </Button>
       </div>
 
-      {permissions.canCreate && (
+      {!hasContext && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Contexto de acesso indisponível</AlertTitle>
+          <AlertDescription>Selecione uma empresa e uma unidade válidas para acessar solicitações de exames.</AlertDescription>
+        </Alert>
+      )}
+
+      {hasContext && contextualUnitId !== null && permissions.canCreate && (
         <Card>
           <CardHeader>
             <CardTitle>Nova requisição</CardTitle>
           </CardHeader>
           <CardContent>
             <ExamRequestForm
+              unitId={contextualUnitId}
               isSubmitting={create.isPending}
               onSubmit={(input) => create.mutate(input)}
             />
@@ -137,7 +157,7 @@ export default function ExamRequestsPage() {
         </Card>
       )}
 
-      <div className="flex flex-wrap items-center gap-3">
+      {hasContext && <div className="flex flex-wrap items-center gap-3">
         <label htmlFor="m22-status-filter" className="text-sm font-medium">Status</label>
         <select
           id="m22-status-filter"
@@ -153,9 +173,9 @@ export default function ExamRequestsPage() {
           <option value="COMPLETED">Concluída</option>
           <option value="CANCELLED">Cancelada</option>
         </select>
-      </div>
+      </div>}
 
-      <Card>
+      {hasContext && <Card>
         <CardHeader>
           <CardTitle>Requisições ({rows.length})</CardTitle>
         </CardHeader>
@@ -183,9 +203,9 @@ export default function ExamRequestsPage() {
             </button>
           ))}
         </CardContent>
-      </Card>
+      </Card>}
 
-      {selected && (
+      {hasContext && selected && (
         <Card>
           <CardContent className="p-5">
             <ExamRequestWorkflow
