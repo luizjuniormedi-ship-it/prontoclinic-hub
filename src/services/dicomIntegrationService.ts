@@ -155,23 +155,6 @@ export const dicomIntegrationService = {
   },
 
   /**
-   * Batch export all pending worklist items formatted for Orthanc.
-   * Returns the formatted entries and marks them as exported.
-   */
-  async exportPendingWorklist(): Promise<{ exported: OrthancWorklistEntry[]; count: number }> {
-    const items = await worklistQueueService.list({ status: 'pending' });
-
-    const entries = items.map((item) => this.formatWorklistForOrthanc(item));
-
-    // Mark all as exported
-    for (const item of items) {
-      await worklistQueueService.markExported(item.id);
-    }
-
-    return { exported: entries, count: entries.length };
-  },
-
-  /**
    * Handle incoming study notification from Orthanc (or PACS webhook).
    * Links the received study to the imaging order via accession_number.
    * 

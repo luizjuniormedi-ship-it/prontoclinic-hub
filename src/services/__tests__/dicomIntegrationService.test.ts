@@ -245,29 +245,6 @@ describe("dicomIntegrationService — integração com worklist e PACS", () => {
     vi.clearAllMocks();
   });
 
-  it("exporta todos os itens pendentes e os marca como exportados", async () => {
-    const segundoItem = {
-      ...mockWorklistItem,
-      id: "wl2",
-      accession_number: "ACC002",
-      patient_identifier: undefined,
-      patient_name: "Madonna",
-    };
-    (worklistQueueService.list as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([
-      mockWorklistItem,
-      segundoItem,
-    ]);
-    (worklistQueueService.markExported as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
-
-    const result = await dicomIntegrationService.exportPendingWorklist();
-
-    expect(worklistQueueService.list).toHaveBeenCalledWith({ status: "pending" });
-    expect(worklistQueueService.markExported).toHaveBeenNthCalledWith(1, "wl1");
-    expect(worklistQueueService.markExported).toHaveBeenNthCalledWith(2, "wl2");
-    expect(result.count).toBe(2);
-    expect(result.exported[1]["0010,0020"]).toBe("p1");
-  });
-
   it("ignora notificação sem accession number", async () => {
     await expect(
       dicomIntegrationService.handleStudyReceived({
