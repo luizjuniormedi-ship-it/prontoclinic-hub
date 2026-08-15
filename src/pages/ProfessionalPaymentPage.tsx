@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Banknote, Search, TrendingUp, CheckCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -33,31 +33,35 @@ export default function ProfessionalPaymentPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [unitFilter, setUnitFilter] = useState("all");
+  const loadRequestRef = useRef(0);
   const { toast } = useToast();
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    const requestId = ++loadRequestRef.current;
     setLoading(true);
     try {
       const [p, u] = await Promise.all([
         professionalPaymentsService.getAllWithDetails(),
         catalogService.units.getAll(),
       ]);
+      if (loadRequestRef.current !== requestId) return;
       setPayments(p);
       setUnits(u.map((unit) => ({ id: unit.id, name: unit.name })));
     } catch (err) {
+      if (loadRequestRef.current !== requestId) return;
       toast({
         title: "Erro ao carregar repasses",
         description: err instanceof Error ? err.message : String(err),
         variant: "destructive",
       });
     } finally {
-      setLoading(false);
+      if (loadRequestRef.current === requestId) setLoading(false);
     }
-  };
+  }, [toast]);
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
   const handleMarcarPago = async (id: number) => {
     try {

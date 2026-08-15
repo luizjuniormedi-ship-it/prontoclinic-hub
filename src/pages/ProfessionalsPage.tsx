@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Plus, Search, Stethoscope } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,19 @@ import { professionalsLookup, specialtiesLookup, DbProfessional, DbSpecialty } f
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 
+type ProfessionalMutation = Pick<
+  DbProfessional,
+  | "full_name"
+  | "category"
+  | "council_type"
+  | "council_number"
+  | "cpf"
+  | "phone"
+  | "email"
+  | "status"
+  | "default_duration_minutes"
+> & { updated_at?: string };
+
 export default function ProfessionalsPage() {
   const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
   const [specialties, setSpecialties] = useState<DbSpecialty[]>([]);
@@ -25,6 +38,7 @@ export default function ProfessionalsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<DbProfessional | null>(null);
   const [saving, setSaving] = useState(false);
+  const loadRequestRef = useRef(0);
   const { toast } = useToast();
 
   // Form fields
@@ -39,6 +53,7 @@ export default function ProfessionalsPage() {
   const [defaultDuration, setDefaultDuration] = useState("30");
 
   const loadData = useCallback(async () => {
+    const requestId = ++loadRequestRef.current;
     try {
       setLoading(true);
       setError(null);
@@ -46,12 +61,14 @@ export default function ProfessionalsPage() {
         professionalsLookup.getAll(),
         specialtiesLookup.getAll(),
       ]);
+      if (loadRequestRef.current !== requestId) return;
       setProfessionals(profs);
       setSpecialties(specs);
     } catch (err) {
+      if (loadRequestRef.current !== requestId) return;
       setError((err as Error).message || "Erro ao carregar profissionais");
     } finally {
-      setLoading(false);
+      if (loadRequestRef.current === requestId) setLoading(false);
     }
   }, []);
 
@@ -87,7 +104,7 @@ export default function ProfessionalsPage() {
     }
     try {
       setSaving(true);
-      const row: Record<string, any> = {
+      const row: ProfessionalMutation = {
         full_name: fullName,
         category,
         council_type: councilType,

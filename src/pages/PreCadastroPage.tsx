@@ -609,4 +609,5 @@ export default function PreCadastroPage() {
 }
 
 // Pequeno helper exportado caso queiramos reusar fora
+// eslint-disable-next-line react-refresh/only-export-components -- step metadata is part of this page module's public API
 export { STEPS as _PRE_CADASTRO_STEPS };

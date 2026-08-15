@@ -15,6 +15,36 @@ import { useToast } from "@/hooks/use-toast";
 
 interface PatientRow { id: string; full_name: string; birth_date: string | null; sex: string | null; allergies: string | null; clinical_alerts: string | null; insurance_plan_id: string | null; }
 
+interface VitalSigns {
+  bloodPressure?: string | number;
+  heartRate?: string | number;
+  temperature?: string | number;
+  weight?: string | number;
+}
+
+function isVitalSignValue(value: unknown): value is string | number | undefined {
+  return value === undefined || typeof value === "string" || typeof value === "number";
+}
+
+function asVitalSigns(value: unknown): VitalSigns | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  if (
+    !isVitalSignValue(row.bloodPressure)
+    || !isVitalSignValue(row.heartRate)
+    || !isVitalSignValue(row.temperature)
+    || !isVitalSignValue(row.weight)
+  ) {
+    return null;
+  }
+  return {
+    bloodPressure: row.bloodPressure,
+    heartRate: row.heartRate,
+    temperature: row.temperature,
+    weight: row.weight,
+  };
+}
+
 export default function MedicalRecordsPage() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
@@ -31,7 +61,7 @@ export default function MedicalRecordsPage() {
   useEffect(() => {
     professionalsLookup.getAll()
       .then(setProfessionals)
-      .catch((err) => setError((err as Error).message))
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Erro ao carregar profissionais"))
       .finally(() => setLoading(false));
   }, []);
 
@@ -61,7 +91,11 @@ export default function MedicalRecordsPage() {
       const data = await medicalRecordsService.getByPatient(patientId);
       setRecords(data);
     } catch (err) {
-      toast({ title: "Erro ao carregar prontuários", description: (err as Error).message, variant: "destructive" });
+      toast({
+        title: "Erro ao carregar prontuários",
+        description: err instanceof Error ? err.message : "Erro desconhecido",
+        variant: "destructive",
+      });
     } finally { setRecordsLoading(false); }
   }, [toast]);
 
@@ -101,7 +135,7 @@ export default function MedicalRecordsPage() {
           <div className="space-y-3">
             {records.map((r) => {
               const prof = professionals.find((p) => p.id === r.professional_id);
-              const vs = r.vital_signs as Record<string, any> | null;
+              const vs = asVitalSigns(r.vital_signs);
               return (
                 <Card key={r.id}>
                   <CardHeader className="py-3">
