@@ -2,21 +2,32 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const { rpc } = vi.hoisted(() => ({
+const { rpc, from } = vi.hoisted(() => ({
   rpc: vi.fn(),
+  from: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase", () => ({
   supabase: {
     rpc,
-    from: vi.fn(),
+    from,
   },
 }));
 
-import { worklistQueueService } from "@/services/dicomService";
+import { modalitiesService, nodesService, worklistQueueService } from "@/services/dicomService";
+
+function createInsertQuery(result: unknown) {
+  const single = vi.fn().mockResolvedValue(result);
+  const select = vi.fn().mockReturnValue({ single });
+  const insert = vi.fn().mockReturnValue({ select });
+  return { insert, select, single };
+}
 
 describe("worklistQueueService.releaseAppointment", () => {
-  beforeEach(() => rpc.mockReset());
+  beforeEach(() => {
+    rpc.mockReset();
+    from.mockReset();
+  });
 
   it("usa somente a RPC transacional e preserva a chave de idempotência", async () => {
     rpc.mockResolvedValue({
@@ -52,6 +63,64 @@ describe("worklistQueueService.releaseAppointment", () => {
     await expect(
       worklistQueueService.releaseAppointment(42, "reception:42:attempt-1"),
     ).rejects.toThrow("não retornou itens");
+  });
+});
+
+describe("DICOM node and modality persistence contracts", () => {
+  beforeEach(() => from.mockReset());
+
+  it("persiste nós na tabela canônica com escopo multiempresa", async () => {
+    const query = createInsertQuery({ data: { id: "node-uuid" }, error: null });
+    from.mockReturnValue(query);
+
+    await expect(nodesService.create({
+      company_id: "company-1",
+      unit_id: 7,
+      name: "PACS principal",
+      node_type: "pacs",
+      aetitle: "PRONTOPACS",
+      ip_address: "10.0.0.8",
+      port: 4242,
+    })).resolves.toEqual({ id: "node-uuid" });
+
+    expect(from).toHaveBeenCalledWith("dicom_nodes");
+    expect(query.insert).toHaveBeenCalledWith(expect.objectContaining({
+      company_id: "company-1",
+      unit_id: 7,
+      node_kind: "pacs",
+      dicom_host: "10.0.0.8",
+      dicom_port: 4242,
+    }));
+  });
+
+  it("preserva o UUID do PACS e o escopo ao criar modalidade", async () => {
+    const query = createInsertQuery({ data: { id: 31 }, error: null });
+    from.mockReturnValue(query);
+
+    await modalitiesService.create({
+      company_id: "company-1",
+      unit_id: 7,
+      name: "Tomógrafo",
+      modality_type: "CT",
+      aetitle: "CT01",
+      pacs_node_id: "853ef08b-873a-43c6-a501-7c4fb42f6fd0",
+    });
+
+    expect(from).toHaveBeenCalledWith("dicom_equipment");
+    expect(query.insert).toHaveBeenCalledWith(expect.objectContaining({
+      company_id: "company-1",
+      unit_id: 7,
+      pacs_node_id: "853ef08b-873a-43c6-a501-7c4fb42f6fd0",
+    }));
+    expect(query.insert).not.toHaveBeenCalledWith(expect.objectContaining({
+      cd_pacs_node: expect.anything(),
+    }));
+  });
+
+  it("falha fechado sem empresa antes de consultar", async () => {
+    await expect(nodesService.list(" ")).rejects.toThrow("Empresa inválida");
+    await expect(modalitiesService.list("")).rejects.toThrow("Empresa inválida");
+    expect(from).not.toHaveBeenCalled();
   });
 });
 

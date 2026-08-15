@@ -13,34 +13,44 @@ import { LoadingState, EmptyState } from "@/components/StateViews";
 import { dicomNodesService } from "@/services/dicomService";
 import type { DicomNode, DicomNodeType } from "@/types/dicom";
 import { toast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertTriangle } from "lucide-react";
 
 const nodeTypeLabels: Record<DicomNodeType, string> = {
-  pacs: 'PACS Server', modality: 'Modalidade', ris: 'RIS', worklist: 'Worklist SCP', viewer: 'Viewer',
+  pacs: 'PACS Server', worklist: 'Worklist SCP',
 };
 
 export default function DicomNodesPage() {
+  const { companyId, activeUnitId } = useAuth();
   const [nodes, setNodes] = useState<DicomNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<DicomNode | null>(null);
-  const [form, setForm] = useState({ name: '', node_type: 'pacs' as DicomNodeType, aetitle: '', ip_address: '', port: '', description: '', active: true });
+  const [form, setForm] = useState({ name: '', node_type: 'pacs' as DicomNodeType, aetitle: '', ip_address: '', port: '', active: true });
 
   const load = () => {
     setLoading(true);
-    dicomNodesService.list().then((data) => setNodes(data as unknown as DicomNode[])).catch(() => toast({ title: "Erro ao carregar nós DICOM", variant: "destructive" })).finally(() => setLoading(false));
+    if (!companyId?.trim()) {
+      setNodes([]);
+      setLoading(false);
+      return;
+    }
+    dicomNodesService.list(companyId).then(setNodes).catch(() => toast({ title: "Erro ao carregar nós DICOM", variant: "destructive" })).finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
+  useEffect(load, [companyId]);
 
-  const openNew = () => { setEditing(null); setForm({ name: '', node_type: 'pacs', aetitle: '', ip_address: '', port: '', description: '', active: true }); setDialogOpen(true); };
-  const openEdit = (n: DicomNode) => { setEditing(n); setForm({ name: n.name, node_type: n.node_type, aetitle: n.aetitle, ip_address: n.ip_address || '', port: n.port?.toString() || '', description: n.description || '', active: n.active }); setDialogOpen(true); };
+  const openNew = () => { setEditing(null); setForm({ name: '', node_type: 'pacs', aetitle: '', ip_address: '', port: '', active: true }); setDialogOpen(true); };
+  const openEdit = (n: DicomNode) => { setEditing(n); setForm({ name: n.name, node_type: n.node_type, aetitle: n.aetitle, ip_address: n.ip_address || '', port: n.port?.toString() || '', active: n.active }); setDialogOpen(true); };
 
   const save = async () => {
     if (!form.name || !form.aetitle) { toast({ title: "Nome e AE Title são obrigatórios", variant: "destructive" }); return; }
     try {
       const payload = { ...form, port: form.port ? parseInt(form.port, 10) : null };
-      if (editing) await dicomNodesService.update(editing.id, payload);
-      else await dicomNodesService.create(payload);
+      if (!companyId?.trim()) throw new Error("Contexto de empresa indisponível");
+      if (editing) await dicomNodesService.update(editing.id, companyId, payload);
+      else await dicomNodesService.create({ ...payload, company_id: companyId, unit_id: activeUnitId });
       toast({ title: editing ? "Nó atualizado" : "Nó criado" });
       setDialogOpen(false);
       load();
@@ -48,6 +58,14 @@ export default function DicomNodesPage() {
   };
 
   if (loading) return <LoadingState />;
+
+  if (!companyId?.trim()) return (
+    <Alert variant="destructive">
+      <AlertTriangle className="h-4 w-4" />
+      <AlertTitle>Contexto de acesso indisponível</AlertTitle>
+      <AlertDescription>Selecione uma empresa válida para configurar nós DICOM.</AlertDescription>
+    </Alert>
+  );
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -93,7 +111,6 @@ export default function DicomNodesPage() {
               <div><Label>IP</Label><Input value={form.ip_address} onChange={(e) => setForm({ ...form, ip_address: e.target.value })} placeholder="192.168.1.100" /></div>
               <div><Label>Porta</Label><Input type="number" value={form.port} onChange={(e) => setForm({ ...form, port: e.target.value })} placeholder="4242" /></div>
             </div>
-            <div><Label>Descrição</Label><Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
             <div className="flex items-center gap-2"><Switch checked={form.active} onCheckedChange={(v) => setForm({ ...form, active: v })} /><Label>Ativo</Label></div>
           </div>
           <DialogFooter><Button onClick={save}>{editing ? 'Salvar' : 'Criar'}</Button></DialogFooter>

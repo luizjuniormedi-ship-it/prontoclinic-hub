@@ -1,9 +1,11 @@
 // ── DICOM/PACS Types ──────────────────────────────────
 
-export type DicomNodeType = 'pacs' | 'modality' | 'ris' | 'worklist' | 'viewer';
+export type DicomNodeType = 'pacs' | 'worklist';
 
 export interface DicomNode {
   id: string;
+  company_id: string;
+  unit_id?: number;
   name: string;
   node_type: DicomNodeType;
   aetitle: string;
@@ -12,8 +14,8 @@ export interface DicomNode {
   local_port?: number;
   description?: string;
   active: boolean;
-  created_at: string;
-  updated_at: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface DicomModality {
@@ -30,8 +32,8 @@ export interface DicomModality {
   pacs_node_id?: string;
   room_name?: string;
   active: boolean;
-  created_at: string;
-  updated_at: string;
+  created_at?: string;
+  updated_at?: string;
   // joined
   unit_name?: string;
   pacs_node_name?: string;

@@ -18,6 +18,7 @@
  */
 
 import { supabase } from "@/lib/supabase";
+import type { DicomNodeType } from "@/types/dicom";
 
 const DICOM_BUCKET = "dicom";
 const DICOM_SIGNED_URL_TTL_SECONDS = 15 * 60;
@@ -754,58 +755,70 @@ export const dicomWeb = {
   },
 };
 
-// ── DICOM Nodes (PACS/MWL/Viewer) Service ──────────────────────────
-// Persistido em `dicom_nodes` (novo alias da tabela dicom_equipment ou
-// tabela dedicada `dicom_nodes`). Para este projeto, reaproveitamos o
-// storage da tabela `dicom_equipment` mapeando os campos.
+// ── DICOM Nodes (PACS/MWL) Service ─────────────────────────────────
 
 export const nodesService = {
-  async list(companyId?: string): Promise<Array<{
+  async list(companyId: string): Promise<Array<{
     id: string;
+    company_id: string;
+    unit_id?: number;
     name: string;
-    node_type: string;
+    node_type: DicomNodeType;
     aetitle: string;
     ip_address?: string;
     port?: number;
     description?: string;
     active: boolean;
   }>> {
-    // Se houver companyId, filtra; senão retorna todos
-    let q = supabase.from("dicom_equipment").select("*").order("ds_equipment");
-    if (companyId) q = q.eq("company_id", companyId);
-    const { data, error } = await q;
+    if (!companyId.trim()) throw new Error("Empresa inválida para consultar nós DICOM");
+    const { data, error } = await supabase
+      .from("dicom_nodes")
+      .select("*")
+      .eq("company_id", companyId)
+      .order("priority")
+      .order("name");
     if (error) throw error;
-    return (data || []).map((r: Record<string, unknown>) => ({
+    return (data || []).map((r: Record<string, unknown>) => {
+      const nodeType = r.node_kind;
+      if (nodeType !== "pacs" && nodeType !== "worklist") {
+        throw new Error("Tipo de nó DICOM inválido");
+      }
+      return {
       id: String(r.id),
-      name: (r.ds_equipment as string) ?? "",
-      node_type: (r.ds_type as string) ?? "pacs",
-      aetitle: (r.ds_aetitle as string) ?? "",
-      ip_address: r.ds_ip as string | undefined,
-      port: r.ds_port as number | undefined,
-      description: r.ds_observacao as string | undefined,
-      active: (r.lg_active as boolean) ?? true,
-    }));
+      company_id: String(r.company_id),
+      unit_id: r.unit_id as number | undefined,
+      name: (r.name as string) ?? "",
+      node_type: nodeType,
+      aetitle: (r.aetitle as string) ?? "",
+      ip_address: r.dicom_host as string | undefined,
+      port: r.dicom_port as number | undefined,
+      active: (r.is_active as boolean) ?? true,
+      };
+    });
   },
 
   async create(payload: {
+    company_id: string;
+    unit_id?: number | null;
     name: string;
-    node_type: string;
+    node_type: DicomNodeType;
     aetitle: string;
     ip_address?: string;
     port?: number;
-    description?: string;
     active?: boolean;
   }): Promise<{ id: string }> {
+    if (!payload.company_id.trim()) throw new Error("Empresa inválida para criar nó DICOM");
     const { data, error } = await supabase
-      .from("dicom_equipment")
+      .from("dicom_nodes")
       .insert({
-        ds_equipment: payload.name,
-        ds_aetitle: payload.aetitle,
-        ds_type: (payload.node_type as DicomModality) || "US",
-        ds_ip: payload.ip_address,
-        ds_port: payload.port || 104,
-        ds_observacao: payload.description,
-        lg_active: payload.active ?? true,
+        company_id: payload.company_id,
+        unit_id: payload.unit_id ?? null,
+        name: payload.name,
+        aetitle: payload.aetitle,
+        node_kind: payload.node_type,
+        dicom_host: payload.ip_address || null,
+        dicom_port: payload.port || 4242,
+        is_active: payload.active ?? true,
       })
       .select("id")
       .single();
@@ -813,27 +826,27 @@ export const nodesService = {
     return { id: String(data.id) };
   },
 
-  async update(id: string, payload: Partial<{
+  async update(id: string, companyId: string, payload: Partial<{
     name: string;
-    node_type: string;
+    node_type: DicomNodeType;
     aetitle: string;
     ip_address?: string;
     port?: number;
-    description?: string;
     active?: boolean;
   }>): Promise<void> {
     const updates: Record<string, unknown> = {};
-    if (payload.name !== undefined) updates.ds_equipment = payload.name;
-    if (payload.aetitle !== undefined) updates.ds_aetitle = payload.aetitle;
-    if (payload.node_type !== undefined) updates.ds_type = payload.node_type;
-    if (payload.ip_address !== undefined) updates.ds_ip = payload.ip_address;
-    if (payload.port !== undefined) updates.ds_port = payload.port;
-    if (payload.description !== undefined) updates.ds_observacao = payload.description;
-    if (payload.active !== undefined) updates.lg_active = payload.active;
+    if (!companyId.trim()) throw new Error("Empresa inválida para atualizar nó DICOM");
+    if (payload.name !== undefined) updates.name = payload.name;
+    if (payload.aetitle !== undefined) updates.aetitle = payload.aetitle;
+    if (payload.node_type !== undefined) updates.node_kind = payload.node_type;
+    if (payload.ip_address !== undefined) updates.dicom_host = payload.ip_address || null;
+    if (payload.port !== undefined) updates.dicom_port = payload.port;
+    if (payload.active !== undefined) updates.is_active = payload.active;
     const { error } = await supabase
-      .from("dicom_equipment")
+      .from("dicom_nodes")
       .update(updates)
-      .eq("id", Number(id));
+      .eq("company_id", companyId)
+      .eq("id", id);
     if (error) throw error;
   },
 };
@@ -841,7 +854,7 @@ export const nodesService = {
 // ── DICOM Modalities (worklist SCP) Service ────────────────────────
 // View derivada de dicom_equipment filtrada por lg_worklist=true.
 export const modalitiesService = {
-  async list(companyId?: string): Promise<Array<{
+  async list(companyId: string): Promise<Array<{
     id: string;
     name: string;
     modality_type: string;
@@ -855,11 +868,12 @@ export const modalitiesService = {
     room_name?: string;
     active: boolean;
   }>> {
-    let q = supabase
+    if (!companyId.trim()) throw new Error("Empresa inválida para consultar equipamentos DICOM");
+    const q = supabase
       .from("dicom_equipment")
       .select("*")
+      .eq("company_id", companyId)
       .order("ds_equipment");
-    if (companyId) q = q.eq("company_id", companyId);
     const { data, error } = await q;
     if (error) throw error;
     return (data || []).map((r: Record<string, unknown>) => ({
@@ -872,13 +886,15 @@ export const modalitiesService = {
       ip_address: r.ds_ip as string | undefined,
       port: r.ds_port as number | undefined,
       worklist_enabled: (r.lg_worklist as boolean) ?? false,
-      pacs_node_id: r.cd_pacs_node ? String(r.cd_pacs_node) : undefined,
+      pacs_node_id: r.pacs_node_id ? String(r.pacs_node_id) : undefined,
       room_name: r.ds_location as string | undefined,
       active: (r.lg_active as boolean) ?? true,
     }));
   },
 
   async create(payload: {
+    company_id: string;
+    unit_id?: number | null;
     name: string;
     modality_type: string;
     aetitle: string;
@@ -891,9 +907,12 @@ export const modalitiesService = {
     room_name?: string;
     active?: boolean;
   }): Promise<{ id: string }> {
+    if (!payload.company_id.trim()) throw new Error("Empresa inválida para criar equipamento DICOM");
     const { data, error } = await supabase
       .from("dicom_equipment")
       .insert({
+        company_id: payload.company_id,
+        unit_id: payload.unit_id ?? null,
         ds_equipment: payload.name,
         ds_aetitle: payload.aetitle,
         ds_type: (payload.modality_type as DicomModality) || "US",
@@ -903,7 +922,7 @@ export const modalitiesService = {
         ds_port: payload.port || 104,
         ds_location: payload.room_name,
         lg_worklist: payload.worklist_enabled ?? false,
-        cd_pacs_node: payload.pacs_node_id ? Number(payload.pacs_node_id) : null,
+        pacs_node_id: payload.pacs_node_id || null,
         lg_active: payload.active ?? true,
       })
       .select("id")
@@ -912,7 +931,7 @@ export const modalitiesService = {
     return { id: String(data.id) };
   },
 
-  async update(id: string, payload: Partial<{
+  async update(id: string, companyId: string, payload: Partial<{
     name: string;
     modality_type: string;
     aetitle: string;
@@ -935,11 +954,13 @@ export const modalitiesService = {
     if (payload.port !== undefined) updates.ds_port = payload.port;
     if (payload.room_name !== undefined) updates.ds_location = payload.room_name;
     if (payload.worklist_enabled !== undefined) updates.lg_worklist = payload.worklist_enabled;
-    if (payload.pacs_node_id !== undefined) updates.cd_pacs_node = payload.pacs_node_id ? Number(payload.pacs_node_id) : null;
+    if (!companyId.trim()) throw new Error("Empresa inválida para atualizar equipamento DICOM");
+    if (payload.pacs_node_id !== undefined) updates.pacs_node_id = payload.pacs_node_id || null;
     if (payload.active !== undefined) updates.lg_active = payload.active;
     const { error } = await supabase
       .from("dicom_equipment")
       .update(updates)
+      .eq("company_id", companyId)
       .eq("id", Number(id));
     if (error) throw error;
   },
@@ -1245,7 +1266,7 @@ export const radiologyReportsServiceReal = {
 // ── DICOM Dashboard Stats ──────────────────────────────────────────
 
 export const dicomDashboardServiceReal = {
-  async getStats(): Promise<{
+  async getStats(companyId: string): Promise<{
     activeModalities: number;
     worklistEnabled: number;
     worklistPending: number;
@@ -1255,12 +1276,15 @@ export const dicomDashboardServiceReal = {
     ordersInAcquisition: number;
     ordersSentPacs: number;
   }> {
+    if (!companyId.trim()) throw new Error("Empresa inválida para consultar painel DICOM");
     const [eqRes, wlRes, repRes, ordRes] = await Promise.all([
-      supabase.from("dicom_equipment").select("id, lg_worklist, lg_active", { count: "exact" }),
-      supabase.from("dicom_worklist_queue").select("status", { count: "exact" }),
-      supabase.from("radiology_reports").select("status", { count: "exact" }),
-      supabase.from("imaging_orders").select("status", { count: "exact" }),
+      supabase.from("dicom_equipment").select("id, lg_worklist, lg_active", { count: "exact" }).eq("company_id", companyId),
+      supabase.from("dicom_worklist_queue").select("status", { count: "exact" }).eq("company_id", companyId),
+      supabase.from("radiology_reports").select("status", { count: "exact" }).eq("company_id", companyId),
+      supabase.from("imaging_orders").select("status", { count: "exact" }).eq("company_id", companyId),
     ]);
+    const queryError = eqRes.error ?? wlRes.error ?? repRes.error ?? ordRes.error;
+    if (queryError) throw queryError;
 
     const eq = (eqRes.data || []) as Array<{ lg_worklist?: boolean; lg_active?: boolean }>;
     const wl = (wlRes.data || []) as Array<{ status?: string }>;
