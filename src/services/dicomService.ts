@@ -591,10 +591,11 @@ export const templateService = {
 // ── Reports (Laudos) Service ───────────────────────────────────────
 
 export interface DicomReport {
-  id: number;
-  cd_dicom_exam: number;
+  id: string;
+  cd_dicom_exam: string;
+  study_instance_uid?: string;
   cd_patient?: number;
-  cd_laudo?: number;
+  cd_laudo?: string;
   ds_content: string;
   ds_status: "DRAFT" | "PRELIMINARY" | "FINAL" | "AMENDED" | "CORRECTED";
   ds_signed_by?: string;
@@ -606,53 +607,81 @@ export interface DicomReport {
   updated_at: string;
 }
 
+function mapCanonicalReportStatus(status: unknown): DicomReport["ds_status"] {
+  switch (String(status || "").toLowerCase()) {
+    case "aguardando_laudo":
+    case "em_elaboracao":
+    case "draft":
+      return "DRAFT";
+    case "em_revisao":
+    case "aguardando_assinatura":
+    case "preliminary":
+      return "PRELIMINARY";
+    case "assinado":
+    case "liberado":
+    case "entregue":
+    case "final":
+      return "FINAL";
+    case "retificado":
+    case "amended":
+      return "AMENDED";
+    case "corrigido":
+    case "corrected":
+      return "CORRECTED";
+    default:
+      return "DRAFT";
+  }
+}
+
 export const reportService = {
   async saveReport(
-    examId: number,
+    examId: string,
     content: string,
     signedBy?: string
   ): Promise<DicomReport> {
-    // upsert por cd_dicom_exam: se ja existe, atualiza
-    const { data: existing } = await supabase
-      .from("radiology_reports")
+    const { data: existing, error: lookupError } = await supabase
+      .from("reports")
       .select("*")
-      .eq("imaging_order_item_id", examId) // legado: usar order_item como proxy
+      .eq("imaging_order_item_id", examId)
       .maybeSingle();
-    if (existing) {
-      const { data, error } = await supabase
-        .from("radiology_reports")
-        .update({
-          content,
-          radiologist_name: signedBy,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", existing.id)
-        .select()
-        .single();
-      if (error) throw error;
-      return this.mapRow(data);
+    if (lookupError) throw lookupError;
+    if (!existing) {
+      throw new Error("Laudo canônico não encontrado para o item de imagem");
     }
+
     const { data, error } = await supabase
-      .from("radiology_reports")
-      .insert({
-        imaging_order_item_id: examId,
-        content,
-        radiologist_name: signedBy,
-        status: "draft",
+      .from("reports")
+      .update({
+        findings: content,
+        executor_name: signedBy,
+        updated_at: new Date().toISOString(),
       })
+      .eq("id", existing.id)
       .select()
       .single();
     if (error) throw error;
     return this.mapRow(data);
   },
 
-  async getReport(examId: number): Promise<DicomReport | null> {
+  async getReport(examId: string): Promise<DicomReport | null> {
     const { data, error } = await supabase
-      .from("radiology_reports")
+      .from("reports")
       .select("*")
       .eq("imaging_order_item_id", examId)
       .order("updated_at", { ascending: false })
       .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? this.mapRow(data) : null;
+  },
+
+  async getByStudyInstanceUid(studyInstanceUid: string): Promise<DicomReport | null> {
+    if (!studyInstanceUid.trim()) throw new Error("StudyInstanceUID inválido");
+    const { data, error } = await supabase
+      .from("reports")
+      .select("*")
+      .eq("study_instance_uid", studyInstanceUid.trim())
+      .is("deleted_at", null)
       .maybeSingle();
     if (error) throw error;
     return data ? this.mapRow(data) : null;
@@ -663,7 +692,7 @@ export const reportService = {
    */
   async list(filters?: { company_id?: string; status?: string }): Promise<DicomReport[]> {
     let q = supabase
-      .from("radiology_reports")
+      .from("reports")
       .select("*")
       .order("updated_at", { ascending: false })
       .limit(200);
@@ -674,45 +703,44 @@ export const reportService = {
     return (data || []).map((r: Record<string, unknown>) => this.mapRow(r));
   },
 
-  /** Publica laudo no app do paciente (SIGH.LG_LIBERAR_APP_SITE) via RPC */
+  /** Publica o laudo canônico no app do paciente via RPC. */
   async publishReport(examId: number, publishToApp: boolean): Promise<{
     examId: number;
     status: string;
     publishedToApp: boolean;
     publishedAt: string;
   }> {
-    // Localizar o dicom_exam.id a partir do imaging_order_item_id legado
-    const { data: exam } = await supabase
-      .from("dicom_exams")
-      .select("id")
-      .eq("cd_laudo", examId)
-      .maybeSingle();
-    const targetId = exam?.id || examId;
+    if (!Number.isSafeInteger(examId) || examId <= 0) {
+      throw new Error("ID canônico do exame DICOM inválido");
+    }
     const { data, error } = await supabase.rpc("publish_dicom_report", {
-      p_exam_id: targetId,
+      p_exam_id: examId,
       p_publish_to_app: publishToApp,
     });
     if (error) throw error;
-    return data as {
-      examId: number;
-      status: string;
-      publishedToApp: boolean;
-      publishedAt: string;
+    const result = data as Record<string, unknown>;
+    return {
+      examId: Number(result.exam_id),
+      status: String(result.status || ""),
+      publishedToApp: result.published === true,
+      publishedAt: String(result.published_at || ""),
     };
   },
 
   mapRow(row: Record<string, unknown>): DicomReport {
     const r = row;
     return {
-      id: (r.id as number) ?? 0,
-      cd_dicom_exam: (r.imaging_order_item_id as number) ?? 0,
+      id: String(r.id || ""),
+      cd_dicom_exam: String(r.imaging_order_item_id || ""),
+      study_instance_uid: r.study_instance_uid as string | undefined,
       cd_patient: (r.patient_id as number) ?? undefined,
-      cd_laudo: (r.imaging_order_item_id as number) ?? undefined,
-      ds_content: (r.content as string) || "",
-      ds_status: ((r.status as string) || "draft").toUpperCase() as DicomReport["ds_status"],
-      ds_signed_by: r.radiologist_name as string | undefined,
+      cd_laudo: r.imaging_order_item_id as string | undefined,
+      ds_content: (r.findings as string) || "",
+      ds_status: mapCanonicalReportStatus(r.status),
+      ds_signed_by: (r.signed_by_name || r.executor_name) as string | undefined,
       dt_signed_at: r.signed_at as string | undefined,
-      lg_published_app: false,
+      lg_published_app: ["liberado", "entregue"].includes(String(r.status || "").toLowerCase()),
+      dt_published: (r.released_at || r.delivered_at) as string | undefined,
       cd_origem_sigh: r.cd_origem_sigh as number | undefined,
       created_at: (r.created_at as string) ?? "",
       updated_at: (r.updated_at as string) ?? "",
@@ -1211,18 +1239,47 @@ export const worklistServiceAlias = {
 
 import type { RadiologyReport } from "@/types/dicom";
 
+function mapLegacyReportStatus(status: string): string {
+  switch (status.toLowerCase()) {
+    case "draft": return "aguardando_laudo";
+    case "preliminary": return "em_revisao";
+    case "final": return "liberado";
+    case "amended": return "retificado";
+    case "cancelled": return "cancelado";
+    default: return status;
+  }
+}
+
+function mapCanonicalRadiologyStatus(status: unknown): RadiologyReport["status"] {
+  switch (String(status || "").toLowerCase()) {
+    case "em_revisao":
+    case "aguardando_assinatura":
+      return "preliminary";
+    case "assinado":
+    case "liberado":
+    case "entregue":
+      return "final";
+    case "retificado":
+      return "amended";
+    case "cancelado":
+      return "cancelled";
+    default:
+      return "draft";
+  }
+}
+
 export const radiologyReportsServiceReal = {
   async list(filters?: { status?: string; company_id?: string }): Promise<RadiologyReport[]> {
     let q = supabase
-      .from("radiology_reports")
+      .from("reports")
       .select("*")
       .order("updated_at", { ascending: false })
       .limit(200);
-    if (filters?.status) q = q.eq("status", filters.status);
+    if (filters?.status) q = q.eq("status", mapLegacyReportStatus(filters.status));
     if (filters?.company_id) q = q.eq("company_id", filters.company_id);
     const { data, error } = await q;
     if (error) throw error;
-    const rows = (data || []) as unknown as RadiologyReport[];
+    const rows = (data || []) as Array<Record<string, unknown>>;
     // Resolve nomes de pacientes numa 2a query (proxy REST local nao faz embedding)
     const patientIds = [...new Set(rows.map((r) => r.patient_id).filter(Boolean))];
     const nameById: Record<string, string> = {};
@@ -1235,30 +1292,54 @@ export const radiologyReportsServiceReal = {
         nameById[String(p.id)] = p.full_name;
       }
     }
-    return rows.map((r) => ({ ...r, patient_name: nameById[String(r.patient_id)] }));
+    return rows.map((r) => ({
+      id: String(r.id),
+      patient_id: String(r.patient_id),
+      imaging_order_item_id: r.imaging_order_item_id as string | undefined,
+      pacs_study_id: r.pacs_study_id as string | undefined,
+      study_instance_uid: r.study_instance_uid as string | undefined,
+      report_text: r.findings as string | undefined,
+      impression: r.conclusion as string | undefined,
+      radiologist_id: r.executor_professional_id
+        ? String(r.executor_professional_id)
+        : undefined,
+      radiologist_name: (r.signed_by_name || r.executor_name) as string | undefined,
+      signed_at: r.signed_at as string | undefined,
+      status: mapCanonicalRadiologyStatus(r.status),
+      company_id: r.company_id as string | undefined,
+      unit_id: r.unit_id ? String(r.unit_id) : undefined,
+      created_at: String(r.created_at || ""),
+      updated_at: String(r.updated_at || ""),
+      patient_name: nameById[String(r.patient_id)],
+    }));
   },
 
   async update(id: string, updates: Partial<RadiologyReport>): Promise<void> {
+    const canonicalUpdates: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (updates.report_text !== undefined) canonicalUpdates.findings = updates.report_text;
+    if (updates.impression !== undefined) canonicalUpdates.conclusion = updates.impression;
+    if (updates.radiologist_id !== undefined) {
+      canonicalUpdates.executor_professional_id = updates.radiologist_id;
+    }
+    if (updates.radiologist_name !== undefined) {
+      canonicalUpdates.executor_name = updates.radiologist_name;
+    }
+    if (updates.status !== undefined) canonicalUpdates.status = mapLegacyReportStatus(updates.status);
+
     const { error } = await supabase
-      .from("radiology_reports")
-      .update({
-        ...updates,
-        updated_at: new Date().toISOString(),
-      })
+      .from("reports")
+      .update(canonicalUpdates)
       .eq("id", id);
     if (error) throw error;
   },
 
   async sign(id: string, radiologistName: string): Promise<void> {
-    const { error } = await supabase
-      .from("radiology_reports")
-      .update({
-        radiologist_name: radiologistName,
-        status: "final",
-        signed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id);
+    if (!radiologistName.trim()) throw new Error("Nome do radiologista é obrigatório");
+    const { error } = await supabase.rpc("sign_and_release_radiology_report", {
+      p_report_id: id,
+    });
     if (error) throw error;
   },
 };
@@ -1280,7 +1361,7 @@ export const dicomDashboardServiceReal = {
     const [eqRes, wlRes, repRes, ordRes] = await Promise.all([
       supabase.from("dicom_equipment").select("id, lg_worklist, lg_active", { count: "exact" }).eq("company_id", companyId),
       supabase.from("dicom_worklist_queue").select("status", { count: "exact" }).eq("company_id", companyId),
-      supabase.from("radiology_reports").select("status", { count: "exact" }).eq("company_id", companyId),
+      supabase.from("reports").select("status", { count: "exact" }).eq("company_id", companyId),
       supabase.from("imaging_orders").select("status", { count: "exact" }).eq("company_id", companyId),
     ]);
     const queryError = eqRes.error ?? wlRes.error ?? repRes.error ?? ordRes.error;
@@ -1296,8 +1377,12 @@ export const dicomDashboardServiceReal = {
       worklistEnabled: eq.filter(e => e.lg_worklist === true).length,
       worklistPending: wl.filter(w => w.status === "pending").length,
       worklistExported: wl.filter(w => w.status === "exported").length,
-      pendingReports: rep.filter(r => r.status === "draft" || r.status === "preliminary").length,
-      completedReports: rep.filter(r => r.status === "final" || r.status === "amended").length,
+      pendingReports: rep.filter(r => [
+        "aguardando_laudo", "em_elaboracao", "em_revisao", "aguardando_assinatura",
+      ].includes(r.status || "")).length,
+      completedReports: rep.filter(r => [
+        "assinado", "liberado", "entregue", "retificado",
+      ].includes(r.status || "")).length,
       ordersInAcquisition: ord.filter(o => o.status === "em_aquisicao").length,
       ordersSentPacs: ord.filter(o => o.status === "enviado_pacs" || o.status === "recebido_pacs").length,
     };
