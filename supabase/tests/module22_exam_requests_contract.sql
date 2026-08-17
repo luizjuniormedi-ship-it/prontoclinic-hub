@@ -486,6 +486,10 @@ BEGIN
       'm22-contract-cross'
     );
   EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE <> 'P0001'
+       OR SQLERRM <> 'Usuário sem permissão para criar requisição de exames' THEN
+      RAISE;
+    END IF;
     v_blocked := TRUE;
   END;
   IF NOT v_blocked THEN
@@ -512,6 +516,10 @@ BEGIN
       'm22-contract-role'
     );
   EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE <> 'P0001'
+       OR SQLERRM <> 'Usuário sem permissão para criar requisição' THEN
+      RAISE;
+    END IF;
     v_blocked := TRUE;
   END;
   IF NOT v_blocked THEN
@@ -653,6 +661,10 @@ BEGIN
       'm22-contract-same-company-denied-create'
     );
   EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE <> 'P0001'
+       OR SQLERRM <> 'Usuário sem permissão para criar requisição de exames' THEN
+      RAISE;
+    END IF;
     v_blocked := TRUE;
   END;
   IF NOT v_blocked THEN
@@ -665,6 +677,10 @@ BEGIN
       '00000000-0000-4000-8000-000000002211'
     );
   EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE <> 'P0001'
+       OR SQLERRM <> 'Requisição não encontrada, sem acesso ou já assinada' THEN
+      RAISE;
+    END IF;
     v_blocked := TRUE;
   END;
   IF NOT v_blocked THEN
@@ -678,6 +694,10 @@ BEGIN
       'SPECIALTY', NULL, NULL, NULL, NULL, '{}'::JSONB
     );
   EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE <> 'P0001'
+       OR SQLERRM <> 'Requisição não assinada ou fora da unidade autorizada' THEN
+      RAISE;
+    END IF;
     v_blocked := TRUE;
   END;
   IF NOT v_blocked THEN
@@ -691,6 +711,10 @@ BEGIN
       'Denied cross-unit transition'
     );
   EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE <> 'P0001'
+       OR SQLERRM <> 'Requisição não permite transição' THEN
+      RAISE;
+    END IF;
     v_blocked := TRUE;
   END;
   IF NOT v_blocked THEN
@@ -704,6 +728,10 @@ BEGIN
       'Denied cross-unit cancellation'
     );
   EXCEPTION WHEN OTHERS THEN
+    IF SQLSTATE <> 'P0001'
+       OR SQLERRM <> 'Requisição não encontrada, sem acesso ou não cancelável' THEN
+      RAISE;
+    END IF;
     v_blocked := TRUE;
   END;
   IF NOT v_blocked THEN

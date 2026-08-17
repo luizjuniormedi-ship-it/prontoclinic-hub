@@ -1023,14 +1023,20 @@ export const worklistQueueServiceRaw = {
   },
 
   async cancel(id: string): Promise<void> {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("dicom_worklist_queue")
       .update({
         status: "cancelled" as WorklistQueueStatus,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("status", "pending")
+      .select("id")
+      .maybeSingle();
     if (error) throw error;
+    if (!data) {
+      throw new Error("Item da worklist não encontrado, sem permissão ou já processado");
+    }
   },
 
 };

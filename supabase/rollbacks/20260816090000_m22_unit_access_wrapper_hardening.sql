@@ -7,14 +7,14 @@ CREATE OR REPLACE FUNCTION public.m22_unit_access(
 RETURNS BOOLEAN
 LANGUAGE sql
 STABLE
-SECURITY INVOKER
+SECURITY DEFINER
 SET search_path = pg_catalog, private
 AS $fn$
   SELECT private.exam_unit_access_runtime(p_company_id, p_unit_id)
 $fn$;
 
 ALTER FUNCTION public.m22_unit_access(UUID, INTEGER)
-  OWNER TO app_prontomedic;
+  OWNER TO prontomedic_rpc_owner;
 REVOKE ALL ON FUNCTION public.m22_unit_access(UUID, INTEGER)
   FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.m22_unit_access(UUID, INTEGER)

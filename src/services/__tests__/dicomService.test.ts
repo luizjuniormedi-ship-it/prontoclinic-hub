@@ -66,6 +66,46 @@ describe("worklistQueueService.releaseAppointment", () => {
   });
 });
 
+describe("worklistQueueService.cancel", () => {
+  beforeEach(() => from.mockReset());
+
+  function createCancelQuery(result: unknown) {
+    const maybeSingle = vi.fn().mockResolvedValue(result);
+    const select = vi.fn().mockReturnValue({ maybeSingle });
+    const eq = vi.fn();
+    eq.mockReturnValue({ eq, select });
+    const update = vi.fn().mockReturnValue({ eq });
+    return { update, eq, select, maybeSingle };
+  }
+
+  it("confirma a linha cancelada antes de concluir", async () => {
+    const query = createCancelQuery({ data: { id: "queue-1" }, error: null });
+    from.mockReturnValue(query);
+
+    await expect(worklistQueueService.cancel("queue-1")).resolves.toBeUndefined();
+    expect(query.eq).toHaveBeenNthCalledWith(1, "id", "queue-1");
+    expect(query.eq).toHaveBeenNthCalledWith(2, "status", "pending");
+    expect(query.select).toHaveBeenCalledWith("id");
+  });
+
+  it("falha fechado quando RLS ou o identificador impedem a atualização", async () => {
+    const query = createCancelQuery({ data: null, error: null });
+    from.mockReturnValue(query);
+
+    await expect(worklistQueueService.cancel("queue-denied")).rejects.toThrow(
+      "não encontrado, sem permissão ou já processado",
+    );
+  });
+
+  it("propaga o erro retornado pelo banco", async () => {
+    const databaseError = new Error("database unavailable");
+    const query = createCancelQuery({ data: null, error: databaseError });
+    from.mockReturnValue(query);
+
+    await expect(worklistQueueService.cancel("queue-1")).rejects.toBe(databaseError);
+  });
+});
+
 describe("DICOM node and modality persistence contracts", () => {
   beforeEach(() => from.mockReset());
 

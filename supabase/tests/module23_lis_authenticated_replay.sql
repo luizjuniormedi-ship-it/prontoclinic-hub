@@ -1,5 +1,14 @@
 -- Module 23 authenticated behavioral replay.
 -- Disposable replay database only. Never run on production, VPS operational DB or DataSIGH.
+DO $guard$
+BEGIN
+  IF current_database() !~ '^prontomedic_reception_[a-z0-9_]+$' THEN
+    RAISE EXCEPTION
+      'Module 23 authenticated replay is restricted to disposable reception databases';
+  END IF;
+END;
+$guard$;
+
 BEGIN;
 
 INSERT INTO public.companies (id, name, cnpj, lg_ativo)
@@ -37,6 +46,61 @@ SET user_id = EXCLUDED.user_id,
     primary_unit_id = EXCLUDED.primary_unit_id,
     lg_ativo = TRUE;
 
+INSERT INTO public.memberships (id, user_id, company_id, status)
+VALUES
+  ('00000000-0000-4000-8000-000000002351', '00000000-0000-4000-8000-000000002301', '00000000-0000-4000-8000-000000000231', 'active'),
+  ('00000000-0000-4000-8000-000000002352', '00000000-0000-4000-8000-000000002302', '00000000-0000-4000-8000-000000000231', 'active'),
+  ('00000000-0000-4000-8000-000000002353', '00000000-0000-4000-8000-000000002303', '00000000-0000-4000-8000-000000000231', 'active'),
+  ('00000000-0000-4000-8000-000000002354', '00000000-0000-4000-8000-000000002304', '00000000-0000-4000-8000-000000000232', 'active');
+
+INSERT INTO public.membership_roles (membership_id, role_id)
+SELECT fixture.membership_id, role_record.id
+FROM (VALUES
+  ('00000000-0000-4000-8000-000000002351'::UUID, 'laboratorio'),
+  ('00000000-0000-4000-8000-000000002352'::UUID, 'laboratorio'),
+  ('00000000-0000-4000-8000-000000002353'::UUID, 'medico'),
+  ('00000000-0000-4000-8000-000000002354'::UUID, 'laboratorio')
+) AS fixture(membership_id, role_name)
+JOIN public.roles AS role_record ON role_record.name = fixture.role_name;
+
+INSERT INTO public.membership_units (membership_id, unit_id)
+VALUES
+  ('00000000-0000-4000-8000-000000002351', 23001),
+  ('00000000-0000-4000-8000-000000002352', 23001),
+  ('00000000-0000-4000-8000-000000002353', 23001),
+  ('00000000-0000-4000-8000-000000002354', 23002);
+
+INSERT INTO public.application_devices (
+  id, user_id, company_id, unit_id, client_device_id, display_name
+)
+VALUES
+  ('00000000-0000-4000-8000-000000002361', '00000000-0000-4000-8000-000000002301', '00000000-0000-4000-8000-000000000231', 23001, '00000000-0000-4000-8000-000000002371', 'M23 Recorder A device'),
+  ('00000000-0000-4000-8000-000000002362', '00000000-0000-4000-8000-000000002302', '00000000-0000-4000-8000-000000000231', 23001, '00000000-0000-4000-8000-000000002372', 'M23 Validator A device'),
+  ('00000000-0000-4000-8000-000000002363', '00000000-0000-4000-8000-000000002303', '00000000-0000-4000-8000-000000000231', 23001, '00000000-0000-4000-8000-000000002373', 'M23 Doctor A device'),
+  ('00000000-0000-4000-8000-000000002364', '00000000-0000-4000-8000-000000002304', '00000000-0000-4000-8000-000000000232', 23002, '00000000-0000-4000-8000-000000002374', 'M23 Lab B device');
+
+INSERT INTO public.application_sessions (
+  id, user_id, company_id, unit_id, device_id, gotrue_session_id,
+  idle_expires_at, absolute_expires_at
+)
+VALUES
+  ('00000000-0000-4000-8000-000000002371', '00000000-0000-4000-8000-000000002301', '00000000-0000-4000-8000-000000000231', 23001, '00000000-0000-4000-8000-000000002361', '00000000-0000-4000-8000-000000002371', NOW() + INTERVAL '30 minutes', NOW() + INTERVAL '12 hours'),
+  ('00000000-0000-4000-8000-000000002372', '00000000-0000-4000-8000-000000002302', '00000000-0000-4000-8000-000000000231', 23001, '00000000-0000-4000-8000-000000002362', '00000000-0000-4000-8000-000000002372', NOW() + INTERVAL '30 minutes', NOW() + INTERVAL '12 hours'),
+  ('00000000-0000-4000-8000-000000002373', '00000000-0000-4000-8000-000000002303', '00000000-0000-4000-8000-000000000231', 23001, '00000000-0000-4000-8000-000000002363', '00000000-0000-4000-8000-000000002373', NOW() + INTERVAL '30 minutes', NOW() + INTERVAL '12 hours'),
+  ('00000000-0000-4000-8000-000000002374', '00000000-0000-4000-8000-000000002304', '00000000-0000-4000-8000-000000000232', 23002, '00000000-0000-4000-8000-000000002364', '00000000-0000-4000-8000-000000002374', NOW() + INTERVAL '30 minutes', NOW() + INTERVAL '12 hours');
+
+INSERT INTO public.user_access_context (
+  user_id, session_id, membership_id, role_id, unit_id
+)
+SELECT fixture.user_id, fixture.session_id, fixture.membership_id, role_record.id, fixture.unit_id
+FROM (VALUES
+  ('00000000-0000-4000-8000-000000002301'::UUID, '00000000-0000-4000-8000-000000002371'::UUID, '00000000-0000-4000-8000-000000002351'::UUID, 'laboratorio', 23001),
+  ('00000000-0000-4000-8000-000000002302'::UUID, '00000000-0000-4000-8000-000000002372'::UUID, '00000000-0000-4000-8000-000000002352'::UUID, 'laboratorio', 23001),
+  ('00000000-0000-4000-8000-000000002303'::UUID, '00000000-0000-4000-8000-000000002373'::UUID, '00000000-0000-4000-8000-000000002353'::UUID, 'medico', 23001),
+  ('00000000-0000-4000-8000-000000002304'::UUID, '00000000-0000-4000-8000-000000002374'::UUID, '00000000-0000-4000-8000-000000002354'::UUID, 'laboratorio', 23002)
+) AS fixture(user_id, session_id, membership_id, role_name, unit_id)
+JOIN public.roles AS role_record ON role_record.name = fixture.role_name;
+
 INSERT INTO public.patients (id, company_id, full_name, cpf, lg_ativo)
 VALUES
   (23001, '00000000-0000-4000-8000-000000000231', 'M23 Patient A', '00000000231', TRUE),
@@ -53,8 +117,9 @@ SET LOCAL ROLE app_prontomedic;
 SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-8000-000000002301';
 SET LOCAL request.jwt.claim.role = 'authenticated';
 SET LOCAL request.jwt.claim.company_id = '00000000-0000-4000-8000-000000000231';
+SET LOCAL request.jwt.claim.unit_id = '23001';
 SET LOCAL request.jwt.claims =
-  '{"sub":"00000000-0000-4000-8000-000000002301","company_id":"00000000-0000-4000-8000-000000000231","role":"authenticated"}';
+  '{"sub":"00000000-0000-4000-8000-000000002301","company_id":"00000000-0000-4000-8000-000000000231","unit_id":23001,"session_id":"00000000-0000-4000-8000-000000002371","role":"authenticated","aal":"aal2"}';
 
 SELECT
   auth.uid() AS auth_user_id,
@@ -254,8 +319,9 @@ $same_actor_denial$;
 
 SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-8000-000000002304';
 SET LOCAL request.jwt.claim.company_id = '00000000-0000-4000-8000-000000000232';
+SET LOCAL request.jwt.claim.unit_id = '23002';
 SET LOCAL request.jwt.claims =
-  '{"sub":"00000000-0000-4000-8000-000000002304","company_id":"00000000-0000-4000-8000-000000000232","role":"authenticated"}';
+  '{"sub":"00000000-0000-4000-8000-000000002304","company_id":"00000000-0000-4000-8000-000000000232","unit_id":23002,"session_id":"00000000-0000-4000-8000-000000002374","role":"authenticated","aal":"aal2"}';
 
 DO $cross_tenant$
 DECLARE
@@ -288,8 +354,9 @@ $cross_tenant$;
 
 SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-8000-000000002302';
 SET LOCAL request.jwt.claim.company_id = '00000000-0000-4000-8000-000000000231';
+SET LOCAL request.jwt.claim.unit_id = '23001';
 SET LOCAL request.jwt.claims =
-  '{"sub":"00000000-0000-4000-8000-000000002302","company_id":"00000000-0000-4000-8000-000000000231","role":"authenticated"}';
+  '{"sub":"00000000-0000-4000-8000-000000002302","company_id":"00000000-0000-4000-8000-000000000231","unit_id":23001,"session_id":"00000000-0000-4000-8000-000000002372","role":"authenticated","aal":"aal2"}';
 
 SELECT public.m23_validate_result_secure(
   :'m23_order_item_id'::BIGINT,
@@ -304,8 +371,9 @@ SELECT public.m23_acknowledge_critical_alert_secure(
 
 SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-8000-000000002303';
 SET LOCAL request.jwt.claim.company_id = '00000000-0000-4000-8000-000000000231';
+SET LOCAL request.jwt.claim.unit_id = '23001';
 SET LOCAL request.jwt.claims =
-  '{"sub":"00000000-0000-4000-8000-000000002303","company_id":"00000000-0000-4000-8000-000000000231","role":"authenticated"}';
+  '{"sub":"00000000-0000-4000-8000-000000002303","company_id":"00000000-0000-4000-8000-000000000231","unit_id":23001,"session_id":"00000000-0000-4000-8000-000000002373","role":"authenticated","aal":"aal2"}';
 
 SELECT public.m23_validate_result_secure(
   :'m23_order_item_id'::BIGINT,
@@ -320,8 +388,9 @@ SELECT public.m23_validate_result_secure(
 
 SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-8000-000000002302';
 SET LOCAL request.jwt.claim.company_id = '00000000-0000-4000-8000-000000000231';
+SET LOCAL request.jwt.claim.unit_id = '23001';
 SET LOCAL request.jwt.claims =
-  '{"sub":"00000000-0000-4000-8000-000000002302","company_id":"00000000-0000-4000-8000-000000000231","role":"authenticated"}';
+  '{"sub":"00000000-0000-4000-8000-000000002302","company_id":"00000000-0000-4000-8000-000000000231","unit_id":23001,"session_id":"00000000-0000-4000-8000-000000002372","role":"authenticated","aal":"aal2"}';
 
 SELECT public.m23_deliver_order_secure(
   :'m23_order_id'::BIGINT,

@@ -28,6 +28,30 @@ BEGIN
 END;
 $assert_result_rpc_signature$;
 
+DO $assert_critical_alert_rpc_signature$
+DECLARE
+  v_defaults INTEGER;
+  v_owner TEXT;
+  v_security_definer BOOLEAN;
+BEGIN
+  SELECT procedure_row.pronargdefaults,
+         owner_role.rolname,
+         procedure_row.prosecdef
+    INTO v_defaults, v_owner, v_security_definer
+    FROM pg_proc AS procedure_row
+    JOIN pg_roles AS owner_role ON owner_role.oid = procedure_row.proowner
+   WHERE procedure_row.oid =
+     'public.m23_acknowledge_critical_alert_secure(bigint,text,text)'::REGPROCEDURE;
+
+  IF v_defaults <> 0
+     OR v_owner <> 'prontomedic_lis_rpc_owner'
+     OR NOT v_security_definer THEN
+    RAISE EXCEPTION
+      'M23 critical alert RPC remains ambiguous or lacks the protected owner';
+  END IF;
+END;
+$assert_critical_alert_rpc_signature$;
+
 CREATE TEMP TABLE lis_contract_state (
   key TEXT PRIMARY KEY,
   value JSONB NOT NULL
@@ -170,6 +194,61 @@ ON CONFLICT (id) DO UPDATE SET
   company_id = EXCLUDED.company_id,
   lg_ativo = TRUE;
 
+INSERT INTO public.memberships (id, user_id, company_id, status)
+VALUES
+  ('23000000-0000-4000-8000-000000000051', '23000000-0000-4000-8000-000000000011', '23000000-0000-4000-8000-000000000001', 'active'),
+  ('23000000-0000-4000-8000-000000000052', '23000000-0000-4000-8000-000000000012', '23000000-0000-4000-8000-000000000001', 'active'),
+  ('23000000-0000-4000-8000-000000000053', '23000000-0000-4000-8000-000000000013', '23000000-0000-4000-8000-000000000001', 'active'),
+  ('23000000-0000-4000-8000-000000000054', '23000000-0000-4000-8000-000000000021', '23000000-0000-4000-8000-000000000002', 'active');
+
+INSERT INTO public.membership_roles (membership_id, role_id)
+SELECT fixture.membership_id, role_record.id
+FROM (VALUES
+  ('23000000-0000-4000-8000-000000000051'::UUID, 'laboratorio'),
+  ('23000000-0000-4000-8000-000000000052'::UUID, 'laboratorio'),
+  ('23000000-0000-4000-8000-000000000053'::UUID, 'recepcao'),
+  ('23000000-0000-4000-8000-000000000054'::UUID, 'laboratorio')
+) AS fixture(membership_id, role_name)
+JOIN public.roles AS role_record ON role_record.name = fixture.role_name;
+
+INSERT INTO public.membership_units (membership_id, unit_id)
+VALUES
+  ('23000000-0000-4000-8000-000000000051', 230001),
+  ('23000000-0000-4000-8000-000000000052', 230001),
+  ('23000000-0000-4000-8000-000000000053', 230001),
+  ('23000000-0000-4000-8000-000000000054', 230002);
+
+INSERT INTO public.application_devices (
+  id, user_id, company_id, unit_id, client_device_id, display_name
+)
+VALUES
+  ('23000000-0000-4000-8000-000000000061', '23000000-0000-4000-8000-000000000011', '23000000-0000-4000-8000-000000000001', 230001, '23000000-0000-4000-8000-000000000071', 'M23 Lab A device'),
+  ('23000000-0000-4000-8000-000000000062', '23000000-0000-4000-8000-000000000012', '23000000-0000-4000-8000-000000000001', 230001, '23000000-0000-4000-8000-000000000072', 'M23 Lab Accent A device'),
+  ('23000000-0000-4000-8000-000000000063', '23000000-0000-4000-8000-000000000013', '23000000-0000-4000-8000-000000000001', 230001, '23000000-0000-4000-8000-000000000073', 'M23 Reception A device'),
+  ('23000000-0000-4000-8000-000000000064', '23000000-0000-4000-8000-000000000021', '23000000-0000-4000-8000-000000000002', 230002, '23000000-0000-4000-8000-000000000074', 'M23 Lab B device');
+
+INSERT INTO public.application_sessions (
+  id, user_id, company_id, unit_id, device_id, gotrue_session_id,
+  idle_expires_at, absolute_expires_at
+)
+VALUES
+  ('23000000-0000-4000-8000-000000000071', '23000000-0000-4000-8000-000000000011', '23000000-0000-4000-8000-000000000001', 230001, '23000000-0000-4000-8000-000000000061', '23000000-0000-4000-8000-000000000071', NOW() + INTERVAL '30 minutes', NOW() + INTERVAL '12 hours'),
+  ('23000000-0000-4000-8000-000000000072', '23000000-0000-4000-8000-000000000012', '23000000-0000-4000-8000-000000000001', 230001, '23000000-0000-4000-8000-000000000062', '23000000-0000-4000-8000-000000000072', NOW() + INTERVAL '30 minutes', NOW() + INTERVAL '12 hours'),
+  ('23000000-0000-4000-8000-000000000073', '23000000-0000-4000-8000-000000000013', '23000000-0000-4000-8000-000000000001', 230001, '23000000-0000-4000-8000-000000000063', '23000000-0000-4000-8000-000000000073', NOW() + INTERVAL '30 minutes', NOW() + INTERVAL '12 hours'),
+  ('23000000-0000-4000-8000-000000000074', '23000000-0000-4000-8000-000000000021', '23000000-0000-4000-8000-000000000002', 230002, '23000000-0000-4000-8000-000000000064', '23000000-0000-4000-8000-000000000074', NOW() + INTERVAL '30 minutes', NOW() + INTERVAL '12 hours');
+
+INSERT INTO public.user_access_context (
+  user_id, session_id, membership_id, role_id, unit_id
+)
+SELECT fixture.user_id, fixture.session_id, fixture.membership_id, role_record.id, fixture.unit_id
+FROM (VALUES
+  ('23000000-0000-4000-8000-000000000011'::UUID, '23000000-0000-4000-8000-000000000071'::UUID, '23000000-0000-4000-8000-000000000051'::UUID, 'laboratorio', 230001),
+  ('23000000-0000-4000-8000-000000000012'::UUID, '23000000-0000-4000-8000-000000000072'::UUID, '23000000-0000-4000-8000-000000000052'::UUID, 'laboratorio', 230001),
+  ('23000000-0000-4000-8000-000000000013'::UUID, '23000000-0000-4000-8000-000000000073'::UUID, '23000000-0000-4000-8000-000000000053'::UUID, 'recepcao', 230001),
+  ('23000000-0000-4000-8000-000000000021'::UUID, '23000000-0000-4000-8000-000000000074'::UUID, '23000000-0000-4000-8000-000000000054'::UUID, 'laboratorio', 230002)
+) AS fixture(user_id, session_id, membership_id, role_name, unit_id)
+JOIN public.roles AS role_record ON role_record.name = fixture.role_name;
+
 INSERT INTO public.patients (
   id,
   company_id,
@@ -230,7 +309,10 @@ SELECT set_config(
   jsonb_build_object(
     'sub', '23000000-0000-4000-8000-000000000011',
     'company_id', '23000000-0000-4000-8000-000000000001',
-    'role', 'authenticated'
+    'unit_id', 230001,
+    'session_id', '23000000-0000-4000-8000-000000000071',
+    'role', 'authenticated',
+    'aal', 'aal2'
   )::TEXT,
   TRUE
 );
@@ -291,7 +373,10 @@ SELECT set_config(
   jsonb_build_object(
     'sub', '23000000-0000-4000-8000-000000000012',
     'company_id', '23000000-0000-4000-8000-000000000001',
-    'role', 'authenticated'
+    'unit_id', 230001,
+    'session_id', '23000000-0000-4000-8000-000000000072',
+    'role', 'authenticated',
+    'aal', 'aal2'
   )::TEXT,
   TRUE
 );
@@ -342,7 +427,10 @@ SELECT set_config(
   jsonb_build_object(
     'sub', '23000000-0000-4000-8000-000000000021',
     'company_id', '23000000-0000-4000-8000-000000000002',
-    'role', 'authenticated'
+    'unit_id', 230002,
+    'session_id', '23000000-0000-4000-8000-000000000074',
+    'role', 'authenticated',
+    'aal', 'aal2'
   )::TEXT,
   TRUE
 );
@@ -376,7 +464,10 @@ SELECT set_config(
   jsonb_build_object(
     'sub', '23000000-0000-4000-8000-000000000011',
     'company_id', '23000000-0000-4000-8000-000000000001',
-    'role', 'authenticated'
+    'unit_id', 230001,
+    'session_id', '23000000-0000-4000-8000-000000000071',
+    'role', 'authenticated',
+    'aal', 'aal2'
   )::TEXT,
   TRUE
 );
@@ -1426,7 +1517,10 @@ SELECT set_config(
   jsonb_build_object(
     'sub', '23000000-0000-4000-8000-000000000013',
     'company_id', '23000000-0000-4000-8000-000000000001',
-    'role', 'authenticated'
+    'unit_id', 230001,
+    'session_id', '23000000-0000-4000-8000-000000000073',
+    'role', 'authenticated',
+    'aal', 'aal2'
   )::TEXT,
   TRUE
 );
@@ -1473,7 +1567,10 @@ SELECT set_config(
   jsonb_build_object(
     'sub', '23000000-0000-4000-8000-000000000011',
     'company_id', '23000000-0000-4000-8000-000000000001',
-    'role', 'authenticated'
+    'unit_id', 230001,
+    'session_id', '23000000-0000-4000-8000-000000000071',
+    'role', 'authenticated',
+    'aal', 'aal2'
   )::TEXT,
   TRUE
 );
