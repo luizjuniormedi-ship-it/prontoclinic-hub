@@ -1005,13 +1005,7 @@ export const worklistQueueServiceRaw = {
       .order("scheduled_datetime", { ascending: false });
     if (filters?.status) q = q.eq("status", filters.status);
     const { data, error } = await q;
-    if (error) {
-      // Se a tabela não existir (404), retorna array vazio silenciosamente
-      if ((error as { code?: string }).code === "PGRST116" || (error as { message?: string }).message?.includes("does not exist")) {
-        return [];
-      }
-      throw error;
-    }
+    if (error) throw error;
     return (data || []) as unknown as DicomWorklistItemAlias[];
   },
 

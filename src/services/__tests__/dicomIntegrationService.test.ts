@@ -257,6 +257,27 @@ describe("dicomIntegrationService — integração com worklist e PACS", () => {
     expect(supabase.from).not.toHaveBeenCalled();
   });
 
+  it("ignora notificação quando o accession number não pertence à worklist", async () => {
+    const worklistLookup = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+    };
+    (supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue(worklistLookup);
+
+    await expect(
+      dicomIntegrationService.handleStudyReceived({
+        ID: "orthanc-unknown",
+        Path: "/studies/orthanc-unknown",
+        PatientID: "p1",
+        StudyInstanceUID: "1.2.840.999",
+        AccessionNumber: "ACC-UNKNOWN",
+      }),
+    ).resolves.toBeNull();
+
+    expect(worklistLookup.eq).toHaveBeenCalledWith("accession_number", "ACC-UNKNOWN");
+  });
+
   it("cria estudo, atualiza item e worklist e abre laudo rascunho", async () => {
     const wlItem = {
       id: "wl1",

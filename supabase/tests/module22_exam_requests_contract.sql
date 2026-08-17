@@ -89,7 +89,11 @@ BEGIN
        ))
     )
     AND rp.can_view AND rp.can_create AND rp.can_edit
-    AND NOT rp.can_delete AND NOT rp.can_export;
+    AND (
+      (r.name = 'admin' AND rp.can_delete AND rp.can_export)
+      OR
+      (r.name <> 'admin' AND NOT rp.can_delete AND NOT rp.can_export)
+    );
   IF v_write_grant_count <> (
     SELECT count(*)
     FROM public.roles
@@ -106,16 +110,22 @@ BEGIN
     FROM public.role_permissions rp
     JOIN public.roles r ON r.id = rp.role_id
     WHERE (
-      (rp.module = 'solicitacoes_exames'
-       AND r.name NOT IN ('admin', 'medico', 'enfermagem'))
-      OR
-      (rp.module = 'execucao_exames'
-       AND r.name NOT IN (
-         'admin', 'medico', 'enfermagem', 'tecnico_enfermagem',
-         'laboratorio', 'diagnostico'
-       ))
-    )
+      (
+        (rp.module = 'solicitacoes_exames'
+         AND r.name NOT IN ('admin', 'medico', 'enfermagem'))
+        OR
+        (rp.module = 'execucao_exames'
+         AND r.name NOT IN (
+           'admin', 'medico', 'enfermagem', 'tecnico_enfermagem',
+           'laboratorio', 'diagnostico'
+         ))
+      )
       AND (rp.can_view OR rp.can_create OR rp.can_edit OR rp.can_delete OR rp.can_export)
+    ) OR (
+        rp.module IN ('solicitacoes_exames', 'execucao_exames')
+        AND r.name <> 'admin'
+        AND (rp.can_delete OR rp.can_export)
+      )
   ) THEN
     RAISE EXCEPTION 'M22 contract: role matrix is broader than request/execution surfaces';
   END IF;
@@ -260,7 +270,8 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.units (id, company_id, cd_codigo, ds_nome, lg_principal, lg_ativo)
 VALUES
   (22001, '00000000-0000-4000-8000-000000000221', 'M22A', 'M22 Unit A', TRUE, TRUE),
-  (22002, '00000000-0000-4000-8000-000000000222', 'M22B', 'M22 Unit B', TRUE, TRUE)
+  (22002, '00000000-0000-4000-8000-000000000222', 'M22B', 'M22 Unit B', TRUE, TRUE),
+  (22003, '00000000-0000-4000-8000-000000000221', 'M22A2', 'M22 Unit A2', FALSE, TRUE)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO auth.users (id, email, encrypted_password, email_confirmed_at)
@@ -284,6 +295,55 @@ SET user_id = EXCLUDED.user_id,
     primary_unit_id = EXCLUDED.primary_unit_id,
     lg_ativo = TRUE;
 
+INSERT INTO public.memberships (id, user_id, company_id, status)
+VALUES
+  ('00000000-0000-4000-8000-000000002251', '00000000-0000-4000-8000-000000002201', '00000000-0000-4000-8000-000000000221', 'active'),
+  ('00000000-0000-4000-8000-000000002252', '00000000-0000-4000-8000-000000002202', '00000000-0000-4000-8000-000000000222', 'active'),
+  ('00000000-0000-4000-8000-000000002253', '00000000-0000-4000-8000-000000002203', '00000000-0000-4000-8000-000000000221', 'active');
+
+INSERT INTO public.membership_roles (membership_id, role_id)
+SELECT fixture.membership_id, role_record.id
+FROM (VALUES
+  ('00000000-0000-4000-8000-000000002251'::UUID, 'admin'),
+  ('00000000-0000-4000-8000-000000002252'::UUID, 'admin'),
+  ('00000000-0000-4000-8000-000000002253'::UUID, 'recepcao')
+) AS fixture(membership_id, role_name)
+JOIN public.roles AS role_record ON role_record.name = fixture.role_name;
+
+INSERT INTO public.membership_units (membership_id, unit_id)
+VALUES
+  ('00000000-0000-4000-8000-000000002251', 22001),
+  ('00000000-0000-4000-8000-000000002252', 22002),
+  ('00000000-0000-4000-8000-000000002253', 22001);
+
+INSERT INTO public.application_devices (
+  id, user_id, company_id, unit_id, client_device_id, display_name
+)
+VALUES
+  ('00000000-0000-4000-8000-000000002261', '00000000-0000-4000-8000-000000002201', '00000000-0000-4000-8000-000000000221', 22001, '00000000-0000-4000-8000-000000002271', 'M22 Admin A device'),
+  ('00000000-0000-4000-8000-000000002262', '00000000-0000-4000-8000-000000002202', '00000000-0000-4000-8000-000000000222', 22002, '00000000-0000-4000-8000-000000002272', 'M22 Admin B device'),
+  ('00000000-0000-4000-8000-000000002263', '00000000-0000-4000-8000-000000002203', '00000000-0000-4000-8000-000000000221', 22001, '00000000-0000-4000-8000-000000002273', 'M22 Reception A device');
+
+INSERT INTO public.application_sessions (
+  id, user_id, company_id, unit_id, device_id, gotrue_session_id,
+  idle_expires_at, absolute_expires_at
+)
+VALUES
+  ('00000000-0000-4000-8000-000000002271', '00000000-0000-4000-8000-000000002201', '00000000-0000-4000-8000-000000000221', 22001, '00000000-0000-4000-8000-000000002261', '00000000-0000-4000-8000-000000002271', NOW() + INTERVAL '30 minutes', NOW() + INTERVAL '12 hours'),
+  ('00000000-0000-4000-8000-000000002272', '00000000-0000-4000-8000-000000002202', '00000000-0000-4000-8000-000000000222', 22002, '00000000-0000-4000-8000-000000002262', '00000000-0000-4000-8000-000000002272', NOW() + INTERVAL '30 minutes', NOW() + INTERVAL '12 hours'),
+  ('00000000-0000-4000-8000-000000002273', '00000000-0000-4000-8000-000000002203', '00000000-0000-4000-8000-000000000221', 22001, '00000000-0000-4000-8000-000000002263', '00000000-0000-4000-8000-000000002273', NOW() + INTERVAL '30 minutes', NOW() + INTERVAL '12 hours');
+
+INSERT INTO public.user_access_context (
+  user_id, session_id, membership_id, role_id, unit_id
+)
+SELECT fixture.user_id, fixture.session_id, fixture.membership_id, role_record.id, fixture.unit_id
+FROM (VALUES
+  ('00000000-0000-4000-8000-000000002201'::UUID, '00000000-0000-4000-8000-000000002271'::UUID, '00000000-0000-4000-8000-000000002251'::UUID, 'admin', 22001),
+  ('00000000-0000-4000-8000-000000002202'::UUID, '00000000-0000-4000-8000-000000002272'::UUID, '00000000-0000-4000-8000-000000002252'::UUID, 'admin', 22002),
+  ('00000000-0000-4000-8000-000000002203'::UUID, '00000000-0000-4000-8000-000000002273'::UUID, '00000000-0000-4000-8000-000000002253'::UUID, 'recepcao', 22001)
+) AS fixture(user_id, session_id, membership_id, role_name, unit_id)
+JOIN public.roles AS role_record ON role_record.name = fixture.role_name;
+
 INSERT INTO public.patients (id, company_id, full_name, cpf, lg_ativo)
 VALUES
   (22001, '00000000-0000-4000-8000-000000000221', 'M22 Patient A', '00000000221', TRUE),
@@ -296,12 +356,78 @@ VALUES
   (22002, '00000000-0000-4000-8000-000000000222', 'M22 Doctor B', 'Clinica', TRUE)
 ON CONFLICT (id) DO NOTHING;
 
+-- Same-company, different-unit fixtures are inserted by the test owner so the
+-- authenticated actor from Unit A can prove both RLS reads and RPC writes fail
+-- closed for Unit A2.
+INSERT INTO public.exam_requests (
+  id, company_id, unit_id, patient_id, requester_professional_id,
+  clinical_indication, priority, status, idempotency_key, created_by,
+  signed_by, signed_at
+)
+VALUES
+  (
+    '00000000-0000-4000-8000-000000002211',
+    '00000000-0000-4000-8000-000000000221', 22003, 22001, 22001,
+    'Same-company Unit A2 draft', 'ROUTINE', 'DRAFT',
+    'm22-contract-same-company-draft', '00000000-0000-4000-8000-000000002201',
+    NULL, NULL
+  ),
+  (
+    '00000000-0000-4000-8000-000000002212',
+    '00000000-0000-4000-8000-000000000221', 22003, 22001, 22001,
+    'Same-company Unit A2 signed', 'ROUTINE', 'SIGNED',
+    'm22-contract-same-company-signed', '00000000-0000-4000-8000-000000002201',
+    '00000000-0000-4000-8000-000000002201', NOW()
+  );
+
+INSERT INTO public.exam_request_items (
+  id, company_id, request_id, domain, description, status
+)
+VALUES
+  (
+    '00000000-0000-4000-8000-000000002221',
+    '00000000-0000-4000-8000-000000000221',
+    '00000000-0000-4000-8000-000000002211',
+    'LABORATORY', 'Unit A2 draft item', 'PENDING'
+  ),
+  (
+    '00000000-0000-4000-8000-000000002222',
+    '00000000-0000-4000-8000-000000000221',
+    '00000000-0000-4000-8000-000000002212',
+    'LABORATORY', 'Unit A2 signed item', 'READY'
+  );
+
+INSERT INTO public.exam_request_dispatches (
+  id, company_id, request_id, request_item_id, executor_kind,
+  status, attempt_number, actor_user_id
+)
+VALUES (
+  '00000000-0000-4000-8000-000000002231',
+  '00000000-0000-4000-8000-000000000221',
+  '00000000-0000-4000-8000-000000002212',
+  '00000000-0000-4000-8000-000000002222',
+  'SPECIALTY', 'QUEUED', 1, '00000000-0000-4000-8000-000000002201'
+);
+
+INSERT INTO public.exam_request_events (
+  id, company_id, request_id, request_item_id, event_type,
+  from_status, to_status, actor_user_id
+)
+VALUES (
+  '00000000-0000-4000-8000-000000002241',
+  '00000000-0000-4000-8000-000000000221',
+  '00000000-0000-4000-8000-000000002212',
+  '00000000-0000-4000-8000-000000002222',
+  'SIGNED', 'DRAFT', 'SIGNED', '00000000-0000-4000-8000-000000002201'
+);
+
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-8000-000000002201';
 SET LOCAL request.jwt.claim.role = 'authenticated';
 SET LOCAL request.jwt.claim.company_id = '00000000-0000-4000-8000-000000000221';
+SET LOCAL request.jwt.claim.unit_id = '22001';
 SET LOCAL request.jwt.claims =
-  '{"sub":"00000000-0000-4000-8000-000000002201","company_id":"00000000-0000-4000-8000-000000000221","role":"authenticated"}';
+  '{"sub":"00000000-0000-4000-8000-000000002201","company_id":"00000000-0000-4000-8000-000000000221","unit_id":22001,"session_id":"00000000-0000-4000-8000-000000002271","role":"authenticated","aal":"aal2"}';
 
 CREATE TEMP TABLE m22_created AS
 SELECT *
@@ -318,7 +444,8 @@ DECLARE
 BEGIN
   SELECT COUNT(*) INTO v_count
   FROM public.exam_requests
-  WHERE company_id = '00000000-0000-4000-8000-000000000221';
+  WHERE company_id = '00000000-0000-4000-8000-000000000221'
+    AND idempotency_key = 'm22-contract-tenant-a';
   IF v_count <> 1 THEN
     RAISE EXCEPTION 'M22 authenticated create/read failed: %', v_count;
   END IF;
@@ -335,8 +462,9 @@ $behavior$;
 
 SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-8000-000000002202';
 SET LOCAL request.jwt.claim.company_id = '00000000-0000-4000-8000-000000000222';
+SET LOCAL request.jwt.claim.unit_id = '22002';
 SET LOCAL request.jwt.claims =
-  '{"sub":"00000000-0000-4000-8000-000000002202","company_id":"00000000-0000-4000-8000-000000000222","role":"authenticated"}';
+  '{"sub":"00000000-0000-4000-8000-000000002202","company_id":"00000000-0000-4000-8000-000000000222","unit_id":22002,"session_id":"00000000-0000-4000-8000-000000002272","role":"authenticated","aal":"aal2"}';
 
 DO $cross_tenant$
 DECLARE
@@ -368,8 +496,9 @@ $cross_tenant$;
 
 SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-8000-000000002203';
 SET LOCAL request.jwt.claim.company_id = '00000000-0000-4000-8000-000000000221';
+SET LOCAL request.jwt.claim.unit_id = '22001';
 SET LOCAL request.jwt.claims =
-  '{"sub":"00000000-0000-4000-8000-000000002203","company_id":"00000000-0000-4000-8000-000000000221","role":"authenticated"}';
+  '{"sub":"00000000-0000-4000-8000-000000002203","company_id":"00000000-0000-4000-8000-000000000221","unit_id":22001,"session_id":"00000000-0000-4000-8000-000000002273","role":"authenticated","aal":"aal2"}';
 
 DO $role_denial$
 DECLARE
@@ -406,11 +535,25 @@ FROM public.permissions p
 WHERE p.module = 'solicitacoes_exames'
   AND p.action = 'create';
 
+INSERT INTO public.user_permissions (
+  user_id, company_id, permission_id, effect, reason
+)
+SELECT
+  '00000000-0000-4000-8000-000000002203',
+  '00000000-0000-4000-8000-000000000221',
+  p.id,
+  'grant',
+  'M22 synthetic same-company unit isolation'
+FROM public.permissions p
+WHERE (p.module = 'solicitacoes_exames' AND p.action = 'edit')
+   OR (p.module = 'execucao_exames' AND p.action IN ('create', 'edit'));
+
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-8000-000000002203';
 SET LOCAL request.jwt.claim.company_id = '00000000-0000-4000-8000-000000000221';
+SET LOCAL request.jwt.claim.unit_id = '22001';
 SET LOCAL request.jwt.claims =
-  '{"sub":"00000000-0000-4000-8000-000000002203","company_id":"00000000-0000-4000-8000-000000000221","role":"authenticated"}';
+  '{"sub":"00000000-0000-4000-8000-000000002203","company_id":"00000000-0000-4000-8000-000000000221","unit_id":22001,"session_id":"00000000-0000-4000-8000-000000002273","role":"authenticated","aal":"aal2"}';
 
 SELECT *
 FROM public.m22_create_exam_request_secure(
@@ -435,6 +578,141 @@ BEGIN
   END IF;
 END
 $override_grant$;
+
+SET LOCAL ROLE authenticated;
+
+DO $same_company_unit_isolation$
+DECLARE
+  v_count INTEGER;
+  v_blocked BOOLEAN;
+BEGIN
+  IF NOT public.m22_can_create_requests()
+     OR NOT public.m22_can_dispatch_requests() THEN
+    RAISE EXCEPTION
+      'M22 same-company isolation actor lacks required functional permissions';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'm22_unit_access'
+      AND p.prosecdef
+      AND pg_get_userbyid(p.proowner) = 'prontomedic_rpc_owner'
+  ) THEN
+    RAISE EXCEPTION 'M22 contract: unit access wrapper is not protected by the RPC owner';
+  END IF;
+
+  IF NOT public.m22_unit_access(
+       '00000000-0000-4000-8000-000000000221', 22001
+     ) OR public.m22_unit_access(
+       '00000000-0000-4000-8000-000000000221', 22003
+     ) THEN
+    RAISE EXCEPTION
+      'M22 same-company unit isolation precondition is invalid';
+  END IF;
+
+  SELECT COUNT(*) INTO v_count
+  FROM public.exam_requests
+  WHERE unit_id = 22003;
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'M22 same-company request from another unit is visible';
+  END IF;
+
+  SELECT COUNT(*) INTO v_count
+  FROM public.exam_request_items
+  WHERE request_id IN (
+    '00000000-0000-4000-8000-000000002211',
+    '00000000-0000-4000-8000-000000002212'
+  );
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'M22 same-company items from another unit are visible';
+  END IF;
+
+  SELECT COUNT(*) INTO v_count
+  FROM public.exam_request_dispatches
+  WHERE request_id = '00000000-0000-4000-8000-000000002212';
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'M22 same-company dispatch from another unit is visible';
+  END IF;
+
+  SELECT COUNT(*) INTO v_count
+  FROM public.exam_request_events
+  WHERE request_id = '00000000-0000-4000-8000-000000002212';
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'M22 same-company event from another unit is visible';
+  END IF;
+
+  v_blocked := FALSE;
+  BEGIN
+    PERFORM public.m22_create_exam_request_secure(
+      22003, 22001, NULL, NULL, 22001,
+      'Denied cross-unit create', NULL, 'ROUTINE',
+      '[{"domain":"LABORATORY","description":"Denied cross-unit create"}]'::JSONB,
+      'm22-contract-same-company-denied-create'
+    );
+  EXCEPTION WHEN OTHERS THEN
+    v_blocked := TRUE;
+  END;
+  IF NOT v_blocked THEN
+    RAISE EXCEPTION 'M22 same-company cross-unit creation was not denied';
+  END IF;
+
+  v_blocked := FALSE;
+  BEGIN
+    PERFORM public.m22_sign_exam_request_secure(
+      '00000000-0000-4000-8000-000000002211'
+    );
+  EXCEPTION WHEN OTHERS THEN
+    v_blocked := TRUE;
+  END;
+  IF NOT v_blocked THEN
+    RAISE EXCEPTION 'M22 same-company cross-unit signing was not denied';
+  END IF;
+
+  v_blocked := FALSE;
+  BEGIN
+    PERFORM public.m22_dispatch_exam_request_item_secure(
+      '00000000-0000-4000-8000-000000002222',
+      'SPECIALTY', NULL, NULL, NULL, NULL, '{}'::JSONB
+    );
+  EXCEPTION WHEN OTHERS THEN
+    v_blocked := TRUE;
+  END;
+  IF NOT v_blocked THEN
+    RAISE EXCEPTION 'M22 same-company cross-unit dispatch was not denied';
+  END IF;
+
+  v_blocked := FALSE;
+  BEGIN
+    PERFORM public.m22_transition_exam_request_item_secure(
+      '00000000-0000-4000-8000-000000002222', 'IN_PROGRESS',
+      'Denied cross-unit transition'
+    );
+  EXCEPTION WHEN OTHERS THEN
+    v_blocked := TRUE;
+  END;
+  IF NOT v_blocked THEN
+    RAISE EXCEPTION 'M22 same-company cross-unit transition was not denied';
+  END IF;
+
+  v_blocked := FALSE;
+  BEGIN
+    PERFORM public.m22_cancel_exam_request_secure(
+      '00000000-0000-4000-8000-000000002212',
+      'Denied cross-unit cancellation'
+    );
+  EXCEPTION WHEN OTHERS THEN
+    v_blocked := TRUE;
+  END;
+  IF NOT v_blocked THEN
+    RAISE EXCEPTION 'M22 same-company cross-unit cancellation was not denied';
+  END IF;
+END
+$same_company_unit_isolation$;
+
+RESET ROLE;
 
 SELECT 'M22_EXAM_REQUESTS_CONTRACT_PASS' AS result;
 
