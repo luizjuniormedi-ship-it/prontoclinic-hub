@@ -13,10 +13,14 @@ import { LoadingState, EmptyState } from "@/components/StateViews";
 import { dicomModalitiesService, dicomNodesService } from "@/services/dicomService";
 import type { DicomModality, DicomNode } from "@/types/dicom";
 import { toast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertTriangle } from "lucide-react";
 
-const MODALITY_TYPES = ['CR','CT','MR','US','DX','XA','MG','PT','NM','RF','OT'];
+const MODALITY_TYPES = ['CR','CT','MR','US','DX','XA','MG','PT','NM','ECG'];
 
 export default function DicomModalitiesPage() {
+  const { companyId, activeUnitId } = useAuth();
   const [modalities, setModalities] = useState<DicomModality[]>([]);
   const [nodes, setNodes] = useState<DicomNode[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,13 +31,19 @@ export default function DicomModalitiesPage() {
 
   const load = () => {
     setLoading(true);
-    Promise.all([dicomModalitiesService.list(), dicomNodesService.list()])
-      .then(([m, n]) => { setModalities(m as unknown as DicomModality[]); setNodes((n.filter(x => x.node_type === 'pacs')) as unknown as DicomNode[]); })
+    if (!companyId?.trim()) {
+      setModalities([]);
+      setNodes([]);
+      setLoading(false);
+      return;
+    }
+    Promise.all([dicomModalitiesService.list(companyId), dicomNodesService.list(companyId)])
+      .then(([m, n]) => { setModalities(m); setNodes(n.filter(x => x.node_type === 'pacs')); })
       .catch(() => toast({ title: "Erro ao carregar", variant: "destructive" }))
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
+  useEffect(load, [companyId]);
 
   const filtered = modalities.filter(m => !search || m.name.toLowerCase().includes(search.toLowerCase()) || m.aetitle.toLowerCase().includes(search.toLowerCase()));
 
@@ -44,8 +54,9 @@ export default function DicomModalitiesPage() {
     if (!form.name || !form.aetitle) { toast({ title: "Nome e AE Title obrigatórios", variant: "destructive" }); return; }
     try {
       const payload = { ...form, port: form.port ? parseInt(form.port, 10) : null, pacs_node_id: form.pacs_node_id || null };
-      if (editing) await dicomModalitiesService.update(editing.id, payload);
-      else await dicomModalitiesService.create(payload);
+      if (!companyId?.trim()) throw new Error("Contexto de empresa indisponível");
+      if (editing) await dicomModalitiesService.update(editing.id, companyId, payload);
+      else await dicomModalitiesService.create({ ...payload, company_id: companyId, unit_id: activeUnitId });
       toast({ title: editing ? "Equipamento atualizado" : "Equipamento criado" });
       setDialogOpen(false);
       load();
@@ -53,6 +64,14 @@ export default function DicomModalitiesPage() {
   };
 
   if (loading) return <LoadingState />;
+
+  if (!companyId?.trim()) return (
+    <Alert variant="destructive">
+      <AlertTriangle className="h-4 w-4" />
+      <AlertTitle>Contexto de acesso indisponível</AlertTitle>
+      <AlertDescription>Selecione uma empresa válida para configurar equipamentos DICOM.</AlertDescription>
+    </Alert>
+  );
 
   return (
     <div className="space-y-6 animate-fade-in">

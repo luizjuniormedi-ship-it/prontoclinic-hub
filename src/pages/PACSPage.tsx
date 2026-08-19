@@ -23,7 +23,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/PageHeader";
-import { LoadingState, EmptyState } from "@/components/StateViews";
+import { LoadingState, EmptyState, ErrorState } from "@/components/StateViews";
 import {
   examService,
   reportService,
@@ -31,7 +31,6 @@ import {
   type DicomReport,
   type DicomExamStatus,
 } from "@/services/dicomService";
-import type { DicomReportPublic } from "@/types/missing";
 import { toast } from "@/hooks/use-toast";
 import { formatDate } from "@/utils/formatters";
 
@@ -60,20 +59,25 @@ const STATUS_COLORS: Record<string, string> = {
 export default function PACSPage() {
   const [studies, setStudies] = useState<DicomExam[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<DicomExamStatus | "all">("all");
   const [selectedStudy, setSelectedStudy] = useState<DicomExam | null>(null);
-  const [report, setReport] = useState<DicomReportPublic | null>(null);
+  const [report, setReport] = useState<DicomReport | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
 
   const load = () => {
     setLoading(true);
+    setLoadError(null);
     examService
       .list({ status: statusFilter !== "all" ? statusFilter : undefined })
       .then((data) => setStudies(data as unknown as DicomExam[]))
-      .catch(() =>
-        toast({ title: "Erro ao carregar estudos PACS", variant: "destructive" }),
-      )
+      .catch((error: unknown) => {
+        setLoadError(error instanceof Error ? error.message : "Erro ao carregar estudos PACS");
+        toast({ title: "Erro ao carregar estudos PACS", variant: "destructive" });
+      })
       .finally(() => setLoading(false));
   };
 
@@ -85,21 +89,18 @@ export default function PACSPage() {
   const openDetail = async (study: DicomExam) => {
     setSelectedStudy(study);
     setReport(null);
-    if (study.id) {
+    setReportError(null);
+    setDetailOpen(true);
+    if (study.cd_dicom_exame) {
+      setReportLoading(true);
       try {
-        const reports = await reportService.list({
-          // Filtro genérico; em produção, queremos buscar pelo ID do exame (study)
-          company_id: study.company_id,
-        });
-        const linked = reports.find(
-          (r) => (r as unknown as { cd_dicom_exame?: number }).cd_dicom_exame === study.id,
-        );
-        setReport((linked || null) as unknown as DicomReportPublic | null);
-      } catch {
-        setReport(null);
+        setReport(await reportService.getByStudyInstanceUid(study.cd_dicom_exame));
+      } catch (error: unknown) {
+        setReportError(error instanceof Error ? error.message : "Erro ao consultar o laudo");
+      } finally {
+        setReportLoading(false);
       }
     }
-    setDetailOpen(true);
   };
 
   const filtered = studies.filter((s) => {
@@ -113,6 +114,7 @@ export default function PACSPage() {
   });
 
   if (loading) return <LoadingState />;
+  if (loadError) return <ErrorState message={loadError} onRetry={load} />;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -285,23 +287,21 @@ export default function PACSPage() {
                   <FileText className="h-4 w-4" />
                   Laudo
                 </h4>
-                {report ? (
+                {reportLoading ? (
+                  <LoadingState message="Carregando laudo..." />
+                ) : reportError ? (
+                  <ErrorState message={reportError} onRetry={() => selectedStudy && openDetail(selectedStudy)} />
+                ) : report ? (
                   <div className="space-y-2 text-sm">
                     <div>
                       <span className="text-muted-foreground">Status:</span>{" "}
                       <Badge variant="outline" className="text-[10px]">
-                        {(report as unknown as { ds_status?: string }).ds_status
-                          || (report as unknown as { tp_status?: string }).tp_status
-                          || "—"}
+                        {report.ds_status || "—"}
                       </Badge>
                     </div>
-                    {((report as unknown as { ds_content?: string }).ds_content
-                      || (report as unknown as { ds_laudo?: string }).ds_laudo
-                      || (report as unknown as { ds_conteudo?: string }).ds_conteudo) && (
+                    {report.ds_content && (
                       <div className="whitespace-pre-wrap text-xs bg-muted/50 rounded p-3 mt-2">
-                        {(report as unknown as { ds_content?: string }).ds_content
-                          || (report as unknown as { ds_laudo?: string }).ds_laudo
-                          || (report as unknown as { ds_conteudo?: string }).ds_conteudo}
+                        {report.ds_content}
                       </div>
                     )}
                   </div>

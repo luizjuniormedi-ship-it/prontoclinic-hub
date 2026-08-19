@@ -34,6 +34,36 @@ interface PatientFull {
   created_at: string | null;
 }
 
+interface VitalSigns {
+  bloodPressure?: string | number;
+  heartRate?: string | number;
+  temperature?: string | number;
+  weight?: string | number;
+}
+
+function isVitalSignValue(value: unknown): value is string | number | undefined {
+  return value === undefined || typeof value === "string" || typeof value === "number";
+}
+
+function asVitalSigns(value: unknown): VitalSigns | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  if (
+    !isVitalSignValue(row.bloodPressure)
+    || !isVitalSignValue(row.heartRate)
+    || !isVitalSignValue(row.temperature)
+    || !isVitalSignValue(row.weight)
+  ) {
+    return null;
+  }
+  return {
+    bloodPressure: row.bloodPressure,
+    heartRate: row.heartRate,
+    temperature: row.temperature,
+    weight: row.weight,
+  };
+}
+
 export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -55,7 +85,10 @@ export default function PatientDetailPage() {
       setRecords(recs);
       setProfessionals(profs);
       setLoading(false);
-    }).catch((err) => { setError(err.message); setLoading(false); });
+    }).catch((err: unknown) => {
+      setError(err instanceof Error ? err.message : "Erro ao carregar paciente.");
+      setLoading(false);
+    });
   }, [id]);
 
   if (loading) return <LoadingState />;
@@ -187,7 +220,7 @@ export default function PatientDetailPage() {
             <div className="space-y-3">
               {records.map((r) => {
                 const prof = professionals.find((p) => p.id === r.professional_id);
-                const vs = r.vital_signs as Record<string, any> | null;
+                const vs = asVitalSigns(r.vital_signs);
                 return (
                   <Card key={r.id}>
                     <CardHeader className="py-3">

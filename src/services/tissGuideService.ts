@@ -51,6 +51,55 @@ export interface TissAccountMaterialization {
   environment: "HOMOLOGACAO" | "PRODUCAO";
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function requiredString(value: unknown, field: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`Materializacao TISS retornou ${field} invalido`);
+  }
+  return value;
+}
+
+function positiveInteger(value: unknown, field: string): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`Materializacao TISS retornou ${field} invalido`);
+  }
+  return parsed;
+}
+
+function decodeAccountMaterialization(
+  value: unknown,
+  expectedBillingAccountId: string,
+  expectedAppointmentId: number,
+): TissAccountMaterialization {
+  if (!isRecord(value)) {
+    throw new Error("Materializacao TISS retornou resposta invalida");
+  }
+
+  const billingAccountId = requiredString(value.billing_account_id, "billing_account_id");
+  const appointmentId = positiveInteger(value.appointment_id, "appointment_id");
+  const environment = value.environment;
+  if (billingAccountId !== expectedBillingAccountId || appointmentId !== expectedAppointmentId) {
+    throw new Error("Materializacao TISS retornou conta ou agendamento divergente");
+  }
+  if (environment !== "HOMOLOGACAO" && environment !== "PRODUCAO") {
+    throw new Error("Materializacao TISS retornou environment invalido");
+  }
+
+  return {
+    billing_account_id: billingAccountId,
+    appointment_id: appointmentId,
+    unit_id: positiveInteger(value.unit_id, "unit_id"),
+    guide_id: requiredString(value.guide_id, "guide_id"),
+    guide_number: positiveInteger(value.guide_number, "guide_number"),
+    xml_id: positiveInteger(value.xml_id, "xml_id"),
+    environment,
+  };
+}
+
 const transitions: Record<TissGuideStatus, readonly TissGuideStatus[]> = {
   DRAFT: ["VALIDATED", "CANCELLED"],
   VALIDATED: ["SIGNED", "CANCELLED"],
@@ -86,11 +135,15 @@ export function assertSignedGuideImmutable(before: Pick<TissGuide, "status">, af
 export const tissGuideService = {
   async materializeAccount(input: {
     billingAccountId: string;
+    expectedAppointmentId: number;
     expectedAccountVersion: number;
     guideType?: "SP/SADT";
     environment?: "HOMOLOGACAO" | "PRODUCAO";
   }): Promise<TissAccountMaterialization> {
     if (!input.billingAccountId.trim()) throw new Error("Conta de faturamento obrigatoria");
+    if (!Number.isSafeInteger(input.expectedAppointmentId) || input.expectedAppointmentId <= 0) {
+      throw new Error("Agendamento da conta invalido");
+    }
     if (!Number.isSafeInteger(input.expectedAccountVersion) || input.expectedAccountVersion <= 0) {
       throw new Error("Versao da conta invalida");
     }
@@ -102,7 +155,7 @@ export const tissGuideService = {
       p_environment: input.environment ?? "HOMOLOGACAO",
     });
     if (error) throw new Error(error.message);
-    return data as TissAccountMaterialization;
+    return decodeAccountMaterialization(data, input.billingAccountId, input.expectedAppointmentId);
   },
 
   async list(companyId: string): Promise<TissGuide[]> {

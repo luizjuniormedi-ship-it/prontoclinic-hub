@@ -16,7 +16,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { financialService, DbFinancialTransaction } from "@/services/financialService";
 import { billingsService } from "@/services/financialService";
 import { professionalsLookup, DbProfessional } from "@/services/appointmentsService";
-import { Patient } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 
@@ -28,12 +27,26 @@ const statusColors: Record<string, string> = { pendente: "bg-warning/10 text-war
 const methodLabels: Record<string, string> = { dinheiro: "Dinheiro", pix: "PIX", cartao_debito: "Déb.", cartao_credito: "Créd.", transferencia: "Transf.", convenio: "Convênio" };
 const allMethods = ["dinheiro", "pix", "cartao_debito", "cartao_credito", "transferencia", "convenio"];
 
+interface PatientLookup {
+  id: string;
+  name: string;
+}
+
+function isPatientLookupRow(value: unknown): value is { id: string | number; full_name: string | null } {
+  if (typeof value !== "object" || value === null) return false;
+  const row = value as Record<string, unknown>;
+  return (
+    (typeof row.id === "string" || typeof row.id === "number")
+    && (typeof row.full_name === "string" || row.full_name === null)
+  );
+}
+
 export default function FinancialPage() {
   const [searchParams] = useSearchParams();
   const requestedTransactionId = searchParams.get("transaction");
   const requestedAppointmentId = searchParams.get("appointment");
   const [transactions, setTransactions] = useState<DbFinancialTransaction[]>([]);
-  const [patients, setPatients] = useState<Patient[]>([]);
+  const [patients, setPatients] = useState<PatientLookup[]>([]);
   const [professionals, setProfessionals] = useState<DbProfessional[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -84,10 +97,14 @@ export default function FinancialPage() {
           variant: "destructive",
         });
       }
-      setPatients(patientRows.map((p: any) => ({ id: String(p.id), name: p.full_name || "" } as Patient)));
+      setPatients(
+        (patientRows as unknown[])
+          .filter(isPatientLookupRow)
+          .map((patient) => ({ id: String(patient.id), name: patient.full_name || "" })),
+      );
       setProfessionals(profs);
     } catch (err) {
-      setError((err as Error).message);
+      setError(err instanceof Error ? err.message : "Erro ao carregar dados financeiros");
     } finally {
       setLoading(false);
     }

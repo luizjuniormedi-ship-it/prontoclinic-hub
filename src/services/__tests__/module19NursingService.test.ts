@@ -5,6 +5,12 @@ import {
   resolveModule19TriageRequest,
   type CompleteModule19TriageInput,
 } from "@/services/module19NursingService";
+import { medicalAttendanceService } from "@/services/medicalAttendanceService";
+import { supabase } from "@/lib/supabase";
+
+vi.mock("@/lib/supabase", () => ({
+  supabase: { rpc: vi.fn() },
+}));
 
 function validInput(): CompleteModule19TriageInput {
   return {
@@ -77,6 +83,38 @@ describe("resolveModule19TriageRequest", () => {
 });
 
 describe("module19NursingService", () => {
+  it("aceita handoff somente quando fila, paciente, agendamento e unidade estão correlacionados", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        queue: { id: 200, appointment_id: 100, cd_paciente: 42, unit_id: 7, tp_status: "AGUARDANDO" },
+        idempotent: false,
+      },
+      error: null,
+    });
+    const service = createModule19NursingService({ rpc, from: vi.fn() } as never);
+
+    await expect(service.prepareHandoff(100, 42, 7, "Dor abdominal")).resolves.toMatchObject({
+      queue: { id: 200, appointment_id: 100, cd_paciente: 42, unit_id: 7 },
+    });
+    expect(rpc).toHaveBeenCalledWith("m19_prepare_triage_handoff_secure", {
+      p_appointment_id: 100,
+      p_complaint: "Dor abdominal",
+    });
+  });
+
+  it("recusa handoff retornado com correlação divergente", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        queue: { id: 200, appointment_id: 100, cd_paciente: 99, unit_id: 7, tp_status: "AGUARDANDO" },
+        idempotent: false,
+      },
+      error: null,
+    });
+    const service = createModule19NursingService({ rpc, from: vi.fn() } as never);
+
+    await expect(service.prepareHandoff(100, 42, 7)).rejects.toThrow(/não corresponde/);
+  });
+
   it("conclui triagem exclusivamente pelo RPC atômico", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: {
@@ -120,6 +158,41 @@ describe("module19NursingService", () => {
     );
   });
 
+  it("retoma a mesma triagem de forma idempotente sem trocar appointment_id", async () => {
+    const first = {
+      triage: { id: 501, cd_appointment: 100, triagem_fila_id: 200 },
+      news2: null,
+      idempotent: false,
+    };
+    const resumed = { ...first, idempotent: true };
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: first, error: null })
+      .mockResolvedValueOnce({ data: resumed, error: null });
+    const from = vi.fn();
+    const service = createModule19NursingService({ rpc, from } as never);
+
+    const created = await service.completeTriage(validInput());
+    const retried = await service.completeTriage(validInput());
+
+    expect(created.idempotent).toBe(false);
+    expect(retried.idempotent).toBe(true);
+    expect(retried.triage).toMatchObject({
+      id: 501,
+      cd_appointment: 100,
+      triagem_fila_id: 200,
+    });
+    expect(rpc).toHaveBeenCalledTimes(2);
+    for (const [, params] of rpc.mock.calls) {
+      expect(params).toMatchObject({
+        p_appointment_id: 100,
+        p_queue_id: 200,
+        p_patient_id: 42,
+        p_unit_id: 7,
+      });
+    }
+    expect(from).not.toHaveBeenCalled();
+  });
+
   it("reclassifica com motivo e sem escrita direta", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: {
@@ -144,6 +217,63 @@ describe("module19NursingService", () => {
       p_reason: "Piora respiratória",
     });
     expect(from).not.toHaveBeenCalled();
+  });
+});
+
+describe("medicalAttendanceService", () => {
+  it("finaliza appointment e retorna encounter e conta pelo contrato canônico", async () => {
+    const response = {
+      encounter: {
+        id: "enc-1",
+        appointment_id: 100,
+        status: "finalizado",
+      },
+      billing: {
+        billing_id: 9,
+        billing_account_id: "account-100",
+        billing_type: "convenio",
+        gross_amount: 150,
+        price_found: true,
+        appointment_id: 100,
+      },
+    };
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: response, error: null } as never);
+
+    await expect(
+      medicalAttendanceService.finalizeAppointmentWithBilling(
+        100,
+        { chief_complaint: "Dor sintética" },
+      ),
+    ).resolves.toEqual(response);
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "m18_finalize_appointment_with_billing_secure",
+      {
+        p_appointment_id: 100,
+        p_payload: { chief_complaint: "Dor sintética" },
+        p_disposition: "FINALIZED",
+      },
+    );
+  });
+
+  it("recusa handoff financeiro de outro appointment", async () => {
+    vi.mocked(supabase.rpc).mockResolvedValue({
+      data: {
+        encounter: { id: "enc-1", appointment_id: 100, status: "finalizado" },
+        billing: {
+          billing_id: 9,
+          billing_account_id: "account-101",
+          billing_type: "convenio",
+          gross_amount: 150,
+          price_found: true,
+          appointment_id: 101,
+        },
+      },
+      error: null,
+    } as never);
+
+    await expect(
+      medicalAttendanceService.finalizeAppointmentWithBilling(100, {}),
+    ).rejects.toThrow(/outro agendamento/);
   });
 });
 

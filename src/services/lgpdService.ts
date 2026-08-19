@@ -516,7 +516,6 @@ export const lgpdService = {
     // 2) Verificar prazo legal
     const prazo = new Date(atual.dt_prazo).getTime();
     if (Date.now() > prazo) {
-      // eslint-disable-next-line no-console
       console.warn(
         `[LGPD] Solicitacao #${solicitacaoId} do tipo ${atual.tipo} venceu o prazo legal de 15 dias.`
       );

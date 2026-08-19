@@ -111,7 +111,7 @@ export function AssinaturaDigitalPanel() {
         variant: "destructive",
       });
     }
-  }, [toast, carregar]);
+  }, [toast, carregar, confirm]);
 
   if (loading) return <LoadingState message="Carregando certificados..." />;
   if (error) return <ErrorState message={error} onRetry={carregar} />;

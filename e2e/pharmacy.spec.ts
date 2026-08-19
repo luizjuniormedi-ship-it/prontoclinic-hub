@@ -19,9 +19,18 @@ test.describe("Farmácia — contrato de rota @readonly", () => {
 
   test("perfil de farmácia abre a superfície de dispensação", async ({ page }) => {
     const pharmacyRpcFailures: string[] = [];
+    const pharmacyReadFailures: string[] = [];
     page.on("console", (message) => {
       if (message.text().includes("calcular_valor_estoque falhou")) {
         pharmacyRpcFailures.push(message.text());
+      }
+    });
+    page.on("response", (response) => {
+      if (
+        response.url().includes("/rest/v1/medicamentos")
+        && response.status() >= 400
+      ) {
+        pharmacyReadFailures.push(`${response.status()} ${response.url()}`);
       }
     });
 
@@ -40,5 +49,6 @@ test.describe("Farmácia — contrato de rota @readonly", () => {
       .getByText(/^R\$/);
     await expect(stockValue).toBeVisible();
     expect(pharmacyRpcFailures).toEqual([]);
+    expect(pharmacyReadFailures).toEqual([]);
   });
 });

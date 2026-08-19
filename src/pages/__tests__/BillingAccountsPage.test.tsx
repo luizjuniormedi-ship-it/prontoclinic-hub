@@ -165,6 +165,19 @@ describe("BillingAccountsPage — contrato canônico de pré-contas", () => {
     expect(mocks.toast).not.toHaveBeenCalled();
   });
 
+  it("normaliza valores NUMERIC serializados pelo PostgreSQL", async () => {
+    vi.mocked(billingAccountsService.list).mockResolvedValue([{
+      ...account,
+      total_gross_amount: "150.50" as unknown as number,
+      total_net_amount: "149.25" as unknown as number,
+    }]);
+
+    await openAccountDetail();
+
+    expect(screen.getByText("R$ 150,50")).toBeInTheDocument();
+    expect(screen.getAllByText("R$ 149,25")).toHaveLength(2);
+  });
+
   it("substitui a produção legada pela mesma projeção canônica de contas", async () => {
     renderBillingAccountsPage("/billing-production");
 
@@ -203,9 +216,45 @@ describe("BillingAccountsPage — contrato canônico de pré-contas", () => {
 
     await waitFor(() => expect(tissGuideService.materializeAccount).toHaveBeenCalledWith({
       billingAccountId: readyAccount.id,
+      expectedAppointmentId: readyAccount.appointment_id,
       expectedAccountVersion: 4,
     }));
     expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Guia e XML TISS materializados",
+    }));
+  });
+
+  it("diferencia valor financeiro invalido de zero legitimo", async () => {
+    vi.mocked(billingAccountsService.list).mockResolvedValue([{
+      ...account,
+      total_gross_amount: "invalido" as unknown as number,
+      total_net_amount: 0,
+    }]);
+
+    await openAccountDetail();
+
+    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.getAllByText("R$ 0,00").length).toBeGreaterThan(0);
+  });
+
+  it("nao mostra sucesso quando a materializacao retorna correlacao divergente", async () => {
+    const readyAccount: BillingAccount = { ...account, status: "pronta_envio", version: 4 };
+    vi.mocked(billingAccountsService.list).mockResolvedValue([readyAccount]);
+    vi.mocked(tissGuideService.materializeAccount).mockResolvedValue({
+      billing_account_id: "outra-conta", appointment_id: 999, unit_id: 1,
+      guide_id: "guide-qa", guide_number: 2026081201, xml_id: 9001, environment: "HOMOLOGACAO",
+    });
+
+    renderBillingAccountsPage();
+    await screen.findByText("Paciente Faturamento QA");
+    fireEvent.click(screen.getByTitle("Conferir"));
+    fireEvent.click(await screen.findByRole("button", { name: "Gerar guia e XML TISS" }));
+
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Não foi possível materializar o TISS",
+      variant: "destructive",
+    })));
+    expect(mocks.toast).not.toHaveBeenCalledWith(expect.objectContaining({
       title: "Guia e XML TISS materializados",
     }));
   });

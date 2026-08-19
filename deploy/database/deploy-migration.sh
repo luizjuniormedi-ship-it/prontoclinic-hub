@@ -209,7 +209,26 @@ validate_bundle() {
 run_smoke() { psql_db "$1" -f "$2" >/dev/null; }
 
 database_fingerprint() {
-  psql_db "$database" -Atqc "SELECT pg_current_wal_lsn()::text"
+  local statements
+  statements="$(psql_db "$database" -Atqc "
+    SELECT format(
+      'SELECT %L || '':'' || count(*)::text || '':'' || COALESCE(sum(hashtextextended(xmin::text || '':'' || ctid::text, 0)::numeric), 0)::text FROM %I.%I;',
+      namespace.nspname || '.' || relation.relname,
+      namespace.nspname,
+      relation.relname
+    )
+      FROM pg_class relation
+      JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+     WHERE relation.relkind IN ('r','p')
+       AND namespace.nspname NOT IN ('pg_catalog','information_schema')
+       AND namespace.nspname NOT LIKE 'pg_toast%'
+       AND namespace.nspname NOT LIKE 'pg_temp%'
+     ORDER BY namespace.nspname, relation.relname")"
+  [[ -n "$statements" ]] || die 'nao foi possivel enumerar tabelas para o fingerprint'
+  printf '%s\n' "$statements" |
+    psql_db "$database" -Atq |
+    LC_ALL=C sort |
+    sha256sum | cut -d' ' -f1
 }
 
 verify_private_file() {
@@ -422,11 +441,15 @@ deploy() {
 
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
   backup="$backup_root/prontoclinic-deploy-${migration_version}-${sha}-${timestamp}.dump"
+  # Measure committed tuple writes in the target database across the backup
+  # window. Cluster WAL is unsuitable here because reads, hint bits and the
+  # restore rehearsal in another database can advance it without changing the
+  # target database.
+  run_smoke "$database" "$stage/release/smoke-before.sql"
+  deploy_fingerprint="$(database_fingerprint)"
   backup_and_rehearse "$stage/release" "$sha" "$backup"
   DATABASE_BACKUP="$backup"
   DATABASE_BACKUP_CHECKSUM="${backup}.sha256"
-  deploy_fingerprint="$(database_fingerprint)"
-  run_smoke "$database" "$stage/release/smoke-before.sql"
   [[ "$(database_fingerprint)" = "$deploy_fingerprint" ]] \
     || die 'banco mudou entre o backup sob lock e a migration; deploy recusado'
 

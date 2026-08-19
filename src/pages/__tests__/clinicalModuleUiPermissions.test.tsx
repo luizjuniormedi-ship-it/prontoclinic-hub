@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 import { ExamRequestWorkflow } from "@/components/exams/m22/ExamRequestWorkflow";
 import { clinicalPermissionsFor } from "@/config/clinicalModulePermissions";
@@ -7,8 +7,9 @@ import CareProtocolsPage from "@/pages/CareProtocolsPage";
 import ElectronicPrescriptionsPage from "@/pages/ElectronicPrescriptionsPage";
 import ExamRequestsPage from "@/pages/ExamRequestsPage";
 import type { ExamRequest } from "@/types/examRequests";
+import { examRequestService } from "@/services/examRequestService";
 
-const authState = vi.hoisted(() => ({ roleName: "admin" }));
+const authState = vi.hoisted(() => ({ roleName: "admin", companyId: "00000000-0000-4000-8000-000000000001", unitId: 7 }));
 
 vi.mock("@/hooks/useAuth", () => ({
   useAuth: () => ({
@@ -16,6 +17,8 @@ vi.mock("@/hooks/useAuth", () => ({
       id: "00000000-0000-4000-8000-000000000001",
       role_name: authState.roleName,
     },
+    companyId: authState.companyId,
+    activeUnitId: authState.unitId,
   }),
 }));
 
@@ -136,6 +139,16 @@ describe("matriz UI M19-M22", () => {
     authState.roleName = "Enfermagem";
     renderWithQueryClient(<ExamRequestsPage />);
     expect(screen.getByRole("heading", { name: "Nova requisição" })).toBeInTheDocument();
+  });
+
+  it("consulta requisições somente no contexto ativo", async () => {
+    authState.roleName = "Enfermagem";
+    renderWithQueryClient(<ExamRequestsPage />);
+
+    await waitFor(() => expect(examRequestService.list).toHaveBeenCalledWith({
+      unitId: 7,
+      status: undefined,
+    }));
   });
 
   it("mantém despacho para diagnóstico sem expor assinatura ou cancelamento", () => {

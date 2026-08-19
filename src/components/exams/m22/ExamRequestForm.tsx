@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,18 +43,21 @@ function numberOrNull(value: FormDataEntryValue | null): number | null {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
+function newIdempotencyKey(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `m22-${Date.now()}-${Math.random()}`;
+}
+
 export function ExamRequestForm({
+  unitId,
   isSubmitting,
   onSubmit,
 }: {
+  unitId: number;
   isSubmitting: boolean;
   onSubmit: (input: CreateExamRequestInput) => Promise<void> | void;
 }) {
   const [items, setItems] = useState<DraftItem[]>([newDraftItem()]);
-  const idempotencyKey = useMemo(
-    () => globalThis.crypto?.randomUUID?.() ?? `m22-${Date.now()}-${Math.random()}`,
-    [],
-  );
+  const [idempotencyKey, setIdempotencyKey] = useState(newIdempotencyKey);
 
   const updateItem = (key: string, patch: Partial<DraftItem>) => {
     setItems((current) => current.map((item) => (
@@ -62,35 +65,38 @@ export function ExamRequestForm({
     )));
   };
 
-  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const unitId = numberOrNull(form.get("unit_id"));
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const patientId = numberOrNull(form.get("patient_id"));
     const requesterProfessionalId = numberOrNull(form.get("requester_professional_id"));
-    if (!unitId || !patientId || !requesterProfessionalId) return;
+    if (!patientId || !requesterProfessionalId) return;
 
-    void onSubmit({
-      unitId,
-      patientId,
-      encounterId: String(form.get("encounter_id") || "").trim() || null,
-      appointmentId: numberOrNull(form.get("appointment_id")),
-      requesterProfessionalId,
-      clinicalIndication: String(form.get("clinical_indication") || ""),
-      diagnosisCode: String(form.get("diagnosis_code") || "").trim() || null,
-      priority: String(form.get("priority") || "ROUTINE") as ExamRequestPriority,
-      idempotencyKey,
-      items: items.map(({ key: _key, ...item }) => item),
-    });
+    try {
+      await onSubmit({
+        unitId,
+        patientId,
+        encounterId: String(form.get("encounter_id") || "").trim() || null,
+        appointmentId: numberOrNull(form.get("appointment_id")),
+        requesterProfessionalId,
+        clinicalIndication: String(form.get("clinical_indication") || ""),
+        diagnosisCode: String(form.get("diagnosis_code") || "").trim() || null,
+        priority: String(form.get("priority") || "ROUTINE") as ExamRequestPriority,
+        idempotencyKey,
+        items: items.map(({ key: _key, ...item }) => item),
+      });
+    } catch {
+      return;
+    }
+    formElement.reset();
+    setItems([newDraftItem()]);
+    setIdempotencyKey(newIdempotencyKey());
   };
 
   return (
     <form className="space-y-5" onSubmit={submit}>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <div className="space-y-1">
-          <Label htmlFor="m22-unit">Unidade ID</Label>
-          <Input id="m22-unit" name="unit_id" type="number" min="1" required />
-        </div>
         <div className="space-y-1">
           <Label htmlFor="m22-patient">Paciente ID</Label>
           <Input id="m22-patient" name="patient_id" type="number" min="1" required />

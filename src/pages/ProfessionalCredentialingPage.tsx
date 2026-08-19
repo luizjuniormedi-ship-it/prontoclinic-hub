@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -27,6 +27,19 @@ interface CredentialRow {
 
 const PAGE_SIZE = 50;
 
+function buildNameMap(rows: unknown, nameField: "full_name" | "name"): Record<string, string> {
+  if (!Array.isArray(rows)) return {};
+
+  return Object.fromEntries(rows.flatMap((row) => {
+    if (!row || typeof row !== "object") return [];
+    const record = row as Record<string, unknown>;
+    const id = record.id;
+    const name = record[nameField];
+    if ((typeof id !== "string" && typeof id !== "number") || typeof name !== "string") return [];
+    return [[String(id), name]];
+  }));
+}
+
 export default function ProfessionalCredentialingPage() {
   const [rows, setRows] = useState<CredentialRow[]>([]);
   const [professionalNames, setProfessionalNames] = useState<Record<string, string>>({});
@@ -39,9 +52,11 @@ export default function ProfessionalCredentialingPage() {
   const [editing, setEditing] = useState<CredentialRow | null>(null);
   const [form, setForm] = useState({ credenciado: true, ativo: true, inicio: "", fim: "", observacao: "" });
   const [saving, setSaving] = useState(false);
+  const loadRequestRef = useRef(0);
   const { toast } = useToast();
 
   const load = useCallback(async () => {
+    const requestId = ++loadRequestRef.current;
     setLoading(true);
     setError(null);
     try {
@@ -64,19 +79,20 @@ export default function ProfessionalCredentialingPage() {
       ]);
       if (professionalsError) throw professionalsError;
       if (insurancesError) throw insurancesError;
+      if (loadRequestRef.current !== requestId) return;
       setRows(result);
       setTotal(count || 0);
-      setProfessionalNames(Object.fromEntries((professionals || []).map((p: any) => [String(p.id), p.full_name])));
-      setInsuranceNames(Object.fromEntries((insurances || []).map((i: any) => [String(i.id), i.name])));
+      setProfessionalNames(buildNameMap(professionals, "full_name"));
+      setInsuranceNames(buildNameMap(insurances, "name"));
     } catch (caught) {
+      if (loadRequestRef.current !== requestId) return;
       setError((caught as Error).message || "Erro ao carregar credenciamentos");
     } finally {
-      setLoading(false);
+      if (loadRequestRef.current === requestId) setLoading(false);
     }
   }, [page, status]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(0); }, [status]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const summary = useMemo(() => `${total.toLocaleString("pt-BR")} vínculos encontrados`, [total]);
@@ -121,7 +137,7 @@ export default function ProfessionalCredentialingPage() {
     <div className="space-y-6 animate-fade-in">
       <PageHeader title="Credenciamento de Profissionais" description={summary} />
       <div className="flex items-center gap-2">
-        <Select value={status} onValueChange={setStatus}>
+        <Select value={status} onValueChange={(value) => { setPage(0); setStatus(value); }}>
           <SelectTrigger className="w-[210px]" aria-label="Filtrar credenciamentos"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>

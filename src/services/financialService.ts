@@ -11,34 +11,42 @@ function requiredBigIntParam(value: string, label: string): string {
   return value;
 }
 
-function normalizeFinancialTransaction(row: any): DbFinancialTransaction {
+function normalizeFinancialTransaction(row: Record<string, unknown>): DbFinancialTransaction {
   return {
-    ...row,
     id: String(row.id),
+    company_id: row.company_id == null ? null : String(row.company_id),
+    unit_id: row.unit_id == null ? null : Number(row.unit_id),
     patient_id: row.patient_id == null ? null : String(row.patient_id),
     billing_id: row.billing_id == null ? null : String(row.billing_id),
     professional_id: row.professional_id == null ? null : String(row.professional_id),
     appointment_id: row.appointment_id == null ? null : String(row.appointment_id),
     amount: Number(row.amount) || 0,
     discount: Number(row.discount) || 0,
+    payment_method: row.payment_method == null ? null : String(row.payment_method),
+    status: String(row.status ?? ""),
+    due_date: row.due_date == null ? null : String(row.due_date),
+    payment_date: row.payment_date == null ? null : String(row.payment_date),
+    notes: row.notes == null ? null : String(row.notes),
+    created_at: String(row.created_at ?? ""),
+    patient_name: row.patient_name == null ? null : String(row.patient_name),
   };
 }
 
-function normalizeBilling(row: any): DbBilling {
+function normalizeBilling(row: Record<string, unknown>): DbBilling {
   return {
     id: String(row.id),
-    company_id: row.company_id ?? null,
+    company_id: row.company_id == null ? null : String(row.company_id),
     unit_id: row.unit_id == null ? null : Number(row.unit_id),
     patient_id: row.patient_id == null ? null : String(row.patient_id),
     professional_id: row.professional_id == null ? null : String(row.professional_id),
     appointment_id: row.appointment_id == null ? null : String(row.appointment_id),
-    billing_type: row.billing_type || 'particular',
+    billing_type: row.billing_type == null ? 'particular' : String(row.billing_type),
     gross_amount: Number(row.amount ?? row.gross_amount) || 0,
     discount: Number(row.discount) || 0,
     net_amount: Number(row.total ?? row.net_amount) || 0,
-    status: row.status,
-    notes: row.notes || null,
-    created_at: row.created_at,
+    status: String(row.status ?? ""),
+    notes: row.notes == null ? null : String(row.notes),
+    created_at: String(row.created_at ?? ""),
   };
 }
 

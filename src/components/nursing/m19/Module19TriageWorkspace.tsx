@@ -18,6 +18,7 @@ interface Module19TriageWorkspaceProps {
   initialPatientId?: number | null;
   initialAppointmentId?: number | null;
   initialQueueId?: number | null;
+  onAttendanceReady?(appointmentId: number): void;
 }
 
 export function Module19TriageWorkspace({
@@ -25,7 +26,9 @@ export function Module19TriageWorkspace({
   initialPatientId,
   initialAppointmentId,
   initialQueueId,
+  onAttendanceReady,
 }: Module19TriageWorkspaceProps) {
+  const hasCompleteContext = Boolean(initialPatientId && initialAppointmentId && initialQueueId);
   const [classifications, setClassifications] = useState<Module19Classification[]>([]);
   const [triages, setTriages] = useState<Module19TriageRecord[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -69,6 +72,9 @@ export function Module19TriageWorkspace({
       ...current.filter((item) => item.id !== result.triage.id),
     ]);
     setSelectedId(result.triage.id);
+    if (result.attendanceReady && result.appointmentId && onAttendanceReady) {
+      onAttendanceReady(result.appointmentId);
+    }
   };
 
   const handleReclassified = (triage: Module19TriageRecord) => {
@@ -100,12 +106,14 @@ export function Module19TriageWorkspace({
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,0.8fr)]">
         <TriageAtomicForm
+          key={hasCompleteContext ? `${initialPatientId}:${initialAppointmentId}:${initialQueueId}` : "manual"}
           unitId={unitId}
           classifications={classifications}
           initialPatientId={initialPatientId}
           initialAppointmentId={initialAppointmentId}
           initialQueueId={initialQueueId}
           onCompleted={handleCompleted}
+          contextLocked={hasCompleteContext}
         />
         <ReclassificationPanel
           triage={selected}

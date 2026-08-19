@@ -18,8 +18,8 @@
  */
 
 import { supabase } from '@/lib/supabase';
-import type { DicomWorklistItem, ImagingOrderItem, ImagingOrder, ImagingOrderStatus, PacsStudy } from '@/types/dicom';
-import { imagingOrderItemsService, worklistQueueService } from './dicomService';
+import type { DicomWorklistItem, PacsStudy } from '@/types/dicom';
+import { imagingOrderItemsService } from './dicomService';
 
 // ── Orthanc REST API contract ──────────────────────────
 // These interfaces define the data contract for Orthanc integration.
@@ -79,6 +79,7 @@ export interface OrthancStudyNotification {
   StudyTime?: string;
   Modality?: string;
   StationName?: string;
+  ScheduledProcedureStepID?: string;
 }
 
 export interface DICOMwebStudy {
@@ -155,23 +156,6 @@ export const dicomIntegrationService = {
   },
 
   /**
-   * Batch export all pending worklist items formatted for Orthanc.
-   * Returns the formatted entries and marks them as exported.
-   */
-  async exportPendingWorklist(): Promise<{ exported: OrthancWorklistEntry[]; count: number }> {
-    const items = await worklistQueueService.list({ status: 'pending' });
-
-    const entries = items.map((item) => this.formatWorklistForOrthanc(item));
-
-    // Mark all as exported
-    for (const item of items) {
-      await worklistQueueService.markExported(item.id);
-    }
-
-    return { exported: entries, count: entries.length };
-  },
-
-  /**
    * Handle incoming study notification from Orthanc (or PACS webhook).
    * Links the received study to the imaging order via accession_number.
    * 
@@ -180,92 +164,28 @@ export const dicomIntegrationService = {
    *   2. Create pacs_studies record
    *   3. Update imaging_order_item status to recebido_pacs
    *   4. Update worklist_queue status to acquired
-   *   5. Create draft radiology_report
+   *   5. Create the draft in public.reports
    */
   async handleStudyReceived(notification: OrthancStudyNotification): Promise<PacsStudy | null> {
-    // 1. Find matching worklist item by accession
     const accession = notification.AccessionNumber;
     if (!accession) return null;
 
-    const { data: wlItems } = await supabase
-      .from('dicom_worklist_queue')
-      .select('*, imaging_order_items(*, imaging_orders(*))')
-      .eq('accession_number', accession)
-      .limit(1);
-
-    const wlItem = wlItems?.[0];
-    if (!wlItem) return null;
-
-    // 2. Create pacs_study
-    const { data: study, error } = await supabase
-      .from('pacs_studies')
-      .insert({
-        patient_id: wlItem.patient_id,
-        imaging_order_item_id: wlItem.imaging_order_item_id,
-        study_instance_uid: notification.StudyInstanceUID,
-        accession_number: accession,
-        study_date: parseDicomDate(notification.StudyDate || ''),
-        study_time: notification.StudyTime,
-        modality_type: notification.Modality || wlItem.modality_type,
-        station_aetitle: notification.StationName,
-        pacs_status: 'received',
-        received_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    // 3. Update item status
-    await imagingOrderItemsService.updateStatus(wlItem.imaging_order_item_id, 'recebido_pacs' as ImagingOrderStatus);
-
-    // 4. Update worklist queue
-    await supabase
-      .from('dicom_worklist_queue')
-      .update({ status: 'acquired', updated_at: new Date().toISOString() })
-      .eq('id', wlItem.id);
-
-    // 5. Create draft report
-    await supabase.from('radiology_reports').insert({
-      patient_id: wlItem.patient_id,
-      imaging_order_item_id: wlItem.imaging_order_item_id,
-      pacs_study_id: study.id,
-      study_instance_uid: notification.StudyInstanceUID,
-      status: 'draft',
+    const { data, error } = await supabase.rpc('m24_receive_pacs_study_secure', {
+      p_accession_number: accession,
+      p_study_instance_uid: notification.StudyInstanceUID,
+      p_study_date: parseDicomDate(notification.StudyDate || '') ?? null,
+      p_study_time: notification.StudyTime ?? null,
+      p_modality_type: notification.Modality ?? null,
+      p_station_aetitle: notification.StationName ?? null,
+      p_scheduled_procedure_step_id: notification.ScheduledProcedureStepID ?? null,
     });
 
-    return study as PacsStudy;
-  },
-
-  /**
-   * Cancel an imaging order and cascade to all related items.
-   * Removes items from worklist and marks everything as cancelled.
-   */
-  async cancelOrder(orderId: string): Promise<void> {
-    // Get all items
-    const items = await imagingOrderItemsService.listByOrder(orderId);
-
-    for (const item of items) {
-      // Cancel worklist entries
-      const { data: wlItems } = await supabase
-        .from('dicom_worklist_queue')
-        .select('id')
-        .eq('imaging_order_item_id', item.id)
-        .neq('status', 'cancelled');
-
-      for (const wl of wlItems || []) {
-        await worklistQueueService.cancel(wl.id);
-      }
-
-      // Cancel item
-      await imagingOrderItemsService.updateStatus(item.id, 'cancelado' as ImagingOrderStatus);
+    if (error) {
+      throw new Error(`Erro ao receber estudo PACS: ${error.message}`);
     }
 
-    // Cancel order
-    await supabase
-      .from('imaging_orders')
-      .update({ status: 'cancelado', updated_at: new Date().toISOString() })
-      .eq('id', orderId);
+    const study = Array.isArray(data) ? data[0] : data;
+    return study ? study as PacsStudy : null;
   },
 
   /**

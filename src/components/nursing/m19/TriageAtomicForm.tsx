@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +24,7 @@ interface TriageAtomicFormProps {
   initialPatientId?: number | null;
   initialAppointmentId?: number | null;
   initialQueueId?: number | null;
+  contextLocked?: boolean;
   onCompleted(result: Module19CompleteResult): void;
 }
 
@@ -50,12 +51,21 @@ function optionalNumber(value: string): number | null {
   return normalized ? Number(normalized) : null;
 }
 
+function contextValues(patientId?: number | null, appointmentId?: number | null, queueId?: number | null) {
+  return {
+    patientId: patientId ? String(patientId) : "",
+    appointmentId: appointmentId ? String(appointmentId) : "",
+    queueId: queueId ? String(queueId) : "",
+  };
+}
+
 export function TriageAtomicForm({
   unitId,
   classifications,
   initialPatientId,
   initialAppointmentId,
   initialQueueId,
+  contextLocked = false,
   onCompleted,
 }: TriageAtomicFormProps) {
   const [form, setForm] = useState<FormState>({
@@ -77,6 +87,12 @@ export function TriageAtomicForm({
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const next = contextValues(initialPatientId, initialAppointmentId, initialQueueId);
+    setForm((current) => ({ ...current, ...next }));
+    setError(null);
+  }, [initialAppointmentId, initialPatientId, initialQueueId]);
 
   const selectedClassification = useMemo(
     () => classifications.find((item) => String(item.id) === form.classificationId),
@@ -144,6 +160,7 @@ export function TriageAtomicForm({
                 type="number"
                 value={form.patientId}
                 onChange={(event) => update("patientId", event.target.value)}
+                readOnly={contextLocked}
                 required
               />
             </div>
@@ -156,6 +173,7 @@ export function TriageAtomicForm({
                 type="number"
                 value={form.appointmentId}
                 onChange={(event) => update("appointmentId", event.target.value)}
+                readOnly={contextLocked}
               />
             </div>
             <div className="space-y-1.5">
@@ -167,6 +185,7 @@ export function TriageAtomicForm({
                 type="number"
                 value={form.queueId}
                 onChange={(event) => update("queueId", event.target.value)}
+                readOnly={contextLocked}
               />
             </div>
           </div>

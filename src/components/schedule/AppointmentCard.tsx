@@ -27,7 +27,7 @@ const statusBorderColors: Record<string, string> = {
 };
 
 export interface AppointmentCardProps {
-  appointment: Appointment;
+  appointment: Appointment & { insuranceName?: string };
   patient: Patient | undefined;
   allAppointments: Appointment[];
   onQuickAction: (action: string, a: Appointment) => void;
@@ -42,7 +42,7 @@ function AppointmentCardImpl({
   rowIndex,
 }: AppointmentCardProps) {
   const age = patient?.birthDate ? calculateAge(patient.birthDate) : null;
-  const insurance = patient?.healthInsurance || (a as any).insuranceName || "Particular";
+  const insurance = patient?.healthInsurance || a.insuranceName || "Particular";
   const allergies = patient?.allergies;
 
   return (

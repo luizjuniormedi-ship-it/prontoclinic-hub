@@ -6,6 +6,101 @@ import {
   type CheckinResult,
   type ReceptionPrecheckinContext,
 } from "@/services/receptionService";
+import type { InsuranceCompany, InsurancePlan } from "@/services/insuranceService";
+
+export interface ReceptionPatientPayerSource {
+  insurance_plan_id: string | null;
+}
+
+export interface ReceptionBillingQuote {
+  billingType: "particular" | "convenio";
+  insuranceId: number | null;
+  totalGrossAmount: number;
+}
+
+export function resolveReceptionPayer(
+  patient: ReceptionPatientPayerSource | undefined,
+  insurancePlans: InsurancePlan[],
+  insuranceCompanies: InsuranceCompany[],
+  insuranceCatalogReady: boolean,
+) {
+  if (!patient) throw new Error("Cadastro do paciente indisponível. O check-in foi bloqueado.");
+  if (!patient.insurance_plan_id) return { plan: null, insurer: null, billingType: "particular" as const };
+  if (!insuranceCatalogReady) throw new Error("Não foi possível carregar convênios e planos. O pagador não pode ser definido com segurança.");
+  const plan = insurancePlans.find((item) => String(item.id) === String(patient.insurance_plan_id));
+  if (!plan) throw new Error("Plano do paciente não foi encontrado. O check-in foi bloqueado.");
+  const insurer = insuranceCompanies.find((item) => item.id === plan.insurance_company_id);
+  if (!insurer) throw new Error("Convênio do paciente não foi encontrado. O check-in foi bloqueado.");
+  return { plan, insurer, billingType: "convenio" as const };
+}
+
+export function assertReceptionPriceFound(found: boolean): void {
+  if (!found) throw new Error("Preço não cadastrado para este atendimento. A pré-conta não pode ser aberta com valor presumido.");
+}
+
+export function assertReceptionBillingIntegrity(quote: ReceptionBillingQuote | null, submitted: ReceptionBillingQuote): void {
+  if (!quote) throw new Error("Cotação da pré-conta indisponível. Reabra o check-in.");
+  if (quote.billingType !== submitted.billingType || quote.insuranceId !== submitted.insuranceId || Math.abs(quote.totalGrossAmount - submitted.totalGrossAmount) > 0.001) {
+    throw new Error("Pagador ou valor da pré-conta divergiu da cotação validada. Reabra o check-in.");
+  }
+}
+
+export function assertReceptionReceivableIntegrity(
+  billingType: "particular" | "convenio",
+  totalGrossAmount: number,
+  receivableType: "copayment" | "private",
+  receivableAmount: number,
+): void {
+  if (receivableAmount <= 0 || receivableAmount > totalGrossAmount) throw new Error("Valor do recebível deve ser positivo e não pode exceder a pré-conta.");
+  if ((billingType === "particular" && receivableType !== "private") || (billingType === "convenio" && receivableType !== "copayment")) {
+    throw new Error("Tipo do recebível incompatível com a fonte pagadora.");
+  }
+}
+
+export function assertReceptionReceivableRequired(billingType: "particular" | "convenio", createReceivable: boolean): void {
+  if (billingType === "particular" && !createReceivable) throw new Error("Atendimento particular exige título financeiro pendente antes do check-in.");
+}
+
+function workflowStorageKey(companyId: string | null, unitId: number | null, appointmentId: string): string {
+  return `prontomedic:reception-workflow:${companyId || "company"}:${unitId || "unit"}:${appointmentId}`;
+}
+
+function walkinStorageKey(companyId: string | null, unitId: number | null): string {
+  return `prontomedic:reception-walkin:${companyId || "company"}:${unitId || "unit"}`;
+}
+
+function createOperationKey(prefix: string): string {
+  const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}:${suffix}`.slice(0, 120);
+}
+
+export function getOrCreateWalkinKey(companyId: string | null, unitId: number | null): string {
+  const storageKey = walkinStorageKey(companyId, unitId);
+  const existing = typeof sessionStorage !== "undefined" ? sessionStorage.getItem(storageKey) : null;
+  if (existing) return existing;
+  const value = createOperationKey("walkin");
+  if (typeof sessionStorage !== "undefined") sessionStorage.setItem(storageKey, value);
+  return value;
+}
+
+export function clearWalkinKey(companyId: string | null, unitId: number | null): void {
+  if (typeof sessionStorage !== "undefined") sessionStorage.removeItem(walkinStorageKey(companyId, unitId));
+}
+
+export function getOrCreateWorkflowKey(appointmentId: string, companyId: string | null, unitId: number | null): string {
+  const storageKey = workflowStorageKey(companyId, unitId, appointmentId);
+  const existing = typeof sessionStorage !== "undefined" ? sessionStorage.getItem(storageKey) : null;
+  if (existing) return existing;
+  const value = createOperationKey(`reception:${appointmentId}`);
+  if (typeof sessionStorage !== "undefined") sessionStorage.setItem(storageKey, value);
+  return value;
+}
+
+export function clearWorkflowKey(appointmentId: string, companyId: string | null, unitId: number | null): void {
+  if (typeof sessionStorage !== "undefined") sessionStorage.removeItem(workflowStorageKey(companyId, unitId, appointmentId));
+}
 
 export type ReceptionWorkflowStatus = "in_progress" | "blocked" | "failed" | "completed";
 export type ReceptionWorkflowStep =
@@ -198,7 +293,7 @@ function assertWorkflowResponse(
   if (!UUID_PATTERN.test(String(record.id ?? ""))) {
     throw new Error(`${label}: workflow sem UUID válido`);
   }
-  if (!Number.isSafeInteger(Number(record.version)) || Number(record.version) < 0) {
+  if (typeof record.version !== "number" || !Number.isSafeInteger(record.version) || record.version < 0) {
     throw new Error(`${label}: versão do workflow inválida`);
   }
   if (!WORKFLOW_STATUSES.includes(record.status as ReceptionWorkflowStatus)) {
@@ -207,7 +302,52 @@ function assertWorkflowResponse(
   if (!WORKFLOW_STEPS.includes(record.current_step as ReceptionWorkflowStep)) {
     throw new Error(`${label}: etapa do workflow inválida`);
   }
+  if (!UUID_PATTERN.test(String(record.company_id ?? ""))) {
+    throw new Error(`${label}: empresa do workflow inválida`);
+  }
+  for (const [field, fieldLabel] of [
+    ["unit_id", "unidade"],
+    ["appointment_id", "agendamento"],
+    ["patient_id", "paciente"],
+  ] as const) {
+    if (
+      typeof record[field] !== "number"
+      || !Number.isSafeInteger(record[field])
+      || record[field] <= 0
+    ) {
+      throw new Error(`${label}: ${fieldLabel} do workflow inválido`);
+    }
+  }
+  if (record.operation !== "reception_checkin") {
+    throw new Error(`${label}: operação do workflow inválida`);
+  }
+  if (!IDEMPOTENCY_KEY_PATTERN.test(String(record.idempotency_key ?? ""))) {
+    throw new Error(`${label}: chave de idempotência do workflow inválida`);
+  }
   return value as ReceptionCheckinWorkflow;
+}
+
+function assertWorkflowIdentity(
+  value: ReceptionCheckinWorkflow,
+  expected: Pick<
+    ReceptionCheckinWorkflow,
+    "company_id" | "unit_id" | "appointment_id" | "patient_id" | "operation" | "idempotency_key"
+  >,
+  label: string,
+): ReceptionCheckinWorkflow {
+  const workflow = assertWorkflowResponse(value, label);
+  const fields = [
+    "company_id",
+    "unit_id",
+    "appointment_id",
+    "patient_id",
+    "operation",
+    "idempotency_key",
+  ] as const;
+  if (fields.some((field) => workflow[field] !== expected[field])) {
+    throw new Error(`${label}: identidade do workflow divergiu da operação iniciada`);
+  }
+  return workflow;
 }
 
 function assertInput(input: ReceptionWorkflowInput): void {
@@ -484,11 +624,25 @@ export function createReceptionWorkflowService(
 
   async function run(input: ReceptionWorkflowInput): Promise<ReceptionWorkflowRunResult> {
     assertInput(input);
-    let workflow = await dependencies.start(
-      input.appointmentId,
-      input.idempotencyKey,
-      buildRequestPayload(input),
+    let workflow = assertWorkflowResponse(
+      await dependencies.start(
+        input.appointmentId,
+        input.idempotencyKey,
+        buildRequestPayload(input),
+      ),
+      "Erro ao iniciar workflow de check-in",
     );
+    if (
+      workflow.appointment_id !== input.appointmentId
+      || workflow.idempotency_key !== input.idempotencyKey
+    ) {
+      throw new Error("Workflow retornado não corresponde ao agendamento solicitado");
+    }
+    const workflowIdentity = workflow;
+    const validateTransition = (
+      value: ReceptionCheckinWorkflow,
+      label: string,
+    ) => assertWorkflowIdentity(value, workflowIdentity, label);
     let checkinResult: CheckinResult | undefined;
 
     if (workflow.status === "completed") {
@@ -508,7 +662,7 @@ export function createReceptionWorkflowService(
             ]);
             const blockingIssues = collectBlockingIssues(readiness, context);
             if (blockingIssues.length > 0 && !input.exceptionReason?.trim()) {
-              const persisted = await dependencies.advance({
+              const persisted = validateTransition(await dependencies.advance({
                 workflowId: workflow.id,
                 expectedVersion: workflow.version,
                 nextStep: "precheck",
@@ -516,13 +670,13 @@ export function createReceptionWorkflowService(
                 errorCode: "PRECHECK_BLOCKED",
                 errorMessage: blockingIssues.map((issue) => issue.description).join("; "),
                 resultPayload: { blocking_issue_count: blockingIssues.length },
-              });
+              }), "Erro ao persistir bloqueio de pré-check-in");
               throw new ReceptionWorkflowBlockedError(
                 "Pré-check-in possui pendências bloqueantes",
                 persisted,
               );
             }
-            workflow = await dependencies.advance({
+            workflow = validateTransition(await dependencies.advance({
               workflowId: workflow.id,
               expectedVersion: workflow.version,
               nextStep: "billing",
@@ -531,30 +685,30 @@ export function createReceptionWorkflowService(
                 precheck_ready: blockingIssues.length === 0,
                 exception_authorized: blockingIssues.length > 0,
               },
-            });
+            }), "Erro ao avançar pré-check-in");
             break;
           }
           case "billing": {
             const account = await dependencies.ensureBilling(workflow.id, input.billing);
             const nextStep = input.receivable ? "financial" : "checkin";
-            workflow = await dependencies.advance({
+            workflow = validateTransition(await dependencies.advance({
               workflowId: workflow.id,
               expectedVersion: workflow.version,
               nextStep,
               status: "in_progress",
               billingAccountId: String(account.id),
               resultPayload: { billing_preaccount_ready: true },
-            });
+            }), "Erro ao avançar pré-conta");
             break;
           }
           case "tiss": {
-            workflow = await dependencies.advance({
+            workflow = validateTransition(await dependencies.advance({
               workflowId: workflow.id,
               expectedVersion: workflow.version,
               nextStep: input.receivable ? "financial" : "checkin",
               status: "in_progress",
               resultPayload: { legacy_tiss_step_skipped: true },
-            });
+            }), "Erro ao ignorar etapa TISS legada");
             break;
           }
           case "financial": {
@@ -569,7 +723,7 @@ export function createReceptionWorkflowService(
               receivable.id,
               "Identificador do título financeiro",
             );
-            workflow = await dependencies.advance({
+            workflow = validateTransition(await dependencies.advance({
               workflowId: workflow.id,
               expectedVersion: workflow.version,
               nextStep: "checkin",
@@ -579,13 +733,13 @@ export function createReceptionWorkflowService(
                 receivable_pending: true,
                 payment_confirmed: false,
               },
-            });
+            }), "Erro ao avançar etapa financeira");
             break;
           }
           case "checkin": {
             checkinResult = await dependencies.performCheckin(workflow.id, input);
             const worklist = await dependencies.ensureWorklist(workflow.id);
-            workflow = await dependencies.advance({
+            workflow = validateTransition(await dependencies.advance({
               workflowId: workflow.id,
               expectedVersion: workflow.version,
               nextStep: "completed",
@@ -599,7 +753,7 @@ export function createReceptionWorkflowService(
                 worklist_released: worklist.released,
                 worklist_item_count: worklist.item_count,
               },
-            });
+            }), "Erro ao concluir check-in");
             break;
           }
           case "completed":

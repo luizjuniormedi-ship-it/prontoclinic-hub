@@ -88,15 +88,6 @@ const quickCreateRoles: Record<QuickCreateAction, RoleName[]> = {
 };
 
 const waveItems: NavigationItem[] = [
-  ...(isWaveModuleEnabled(19)
-    ? [{
-        title: "Plano de enfermagem",
-        url: "/nursing/clinical",
-        icon: HeartPulse,
-        area: "Assistência clínica" as const,
-        description: "Plano assistencial e evolução de enfermagem.",
-      }]
-    : []),
   ...(isWaveModuleEnabled(20)
     ? [{
         title: "Prescrição eletrônica",
@@ -152,7 +143,7 @@ export const navigationItems: NavigationItem[] = [
   },
   {
     title: "Triagem e risco",
-    url: "/nursing/triage",
+    url: "/nursing/clinical",
     icon: HeartPulse,
     area: "Assistência clínica",
     description: "Registrar sinais vitais, risco e prioridade.",
@@ -633,10 +624,9 @@ const primaryRoutesByRole: Record<RoleName, string[]> = {
   ],
   [ROLES.ENFERMAGEM]: [
     "/",
-    "/nursing/triage",
+    "/nursing/clinical",
     "/nursing/queue",
     "/nursing/care",
-    "/nursing/clinical",
     "/care-protocols",
     "/exam-requests",
   ],

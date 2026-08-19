@@ -5,12 +5,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LabOrdersManager } from "@/components/lis/LabOrdersManager";
 
 const serviceMocks = vi.hoisted(() => ({
+  communicateAlert: vi.fn(),
   collectSpecimen: vi.fn(),
   createCatalogo: vi.fn(),
   getCatalogo: vi.fn(),
   getOrderDetail: vi.fn(),
   listAlerts: vi.fn(),
   listOrders: vi.fn(),
+  toast: vi.fn(),
+  updateOrderStatus: vi.fn(),
 }));
 
 vi.mock("@/services/lisService", () => ({
@@ -18,7 +21,7 @@ vi.mock("@/services/lisService", () => ({
   LAB_MATERIAIS: ["SANGUE"],
   LAB_STATUS_OPTIONS: ["PENDENTE"],
   alerta: {
-    comunicar: vi.fn(),
+    comunicar: serviceMocks.communicateAlert,
     listarPendentes: serviceMocks.listAlerts,
   },
   catalogo: {
@@ -27,7 +30,7 @@ vi.mock("@/services/lisService", () => ({
     update: vi.fn(),
   },
   pedido: {
-    atualizarStatus: vi.fn(),
+    atualizarStatus: serviceMocks.updateOrderStatus,
     getById: serviceMocks.getOrderDetail,
     listar: serviceMocks.listOrders,
     marcarColetado: serviceMocks.collectSpecimen,
@@ -42,7 +45,7 @@ vi.mock("@/hooks/useAuth", () => ({
 }));
 
 vi.mock("@/components/ui/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
+  useToast: () => ({ toast: serviceMocks.toast }),
 }));
 
 vi.mock("@/components/lis/CriticalAlertsBanner", () => ({
@@ -134,12 +137,15 @@ function renderManager() {
 
 describe("LabOrdersManager", () => {
   beforeEach(() => {
+    serviceMocks.communicateAlert.mockReset();
     serviceMocks.collectSpecimen.mockReset();
     serviceMocks.createCatalogo.mockReset();
     serviceMocks.getCatalogo.mockReset();
     serviceMocks.getOrderDetail.mockReset();
     serviceMocks.listAlerts.mockReset();
     serviceMocks.listOrders.mockReset();
+    serviceMocks.toast.mockReset();
+    serviceMocks.updateOrderStatus.mockReset();
     serviceMocks.listAlerts.mockResolvedValue([]);
     serviceMocks.listOrders.mockResolvedValue([]);
     serviceMocks.collectSpecimen.mockResolvedValue(undefined);
@@ -199,7 +205,7 @@ describe("LabOrdersManager", () => {
     expect(await screen.findByText("Nenhum exame no catálogo")).toBeInTheDocument();
   });
 
-  it("carrega os itens reais do pedido antes de abrir o formulário de resultado", async () => {
+  it("preserva o registro de resultado canônico sem oferecer COLETADO → EM_ANALISE", async () => {
     serviceMocks.getCatalogo.mockResolvedValue([]);
     serviceMocks.listOrders.mockResolvedValue([{
       id: 44,
@@ -209,7 +215,7 @@ describe("LabOrdersManager", () => {
       dt_pedido: "2026-07-26T12:00:00.000Z",
       cd_tipo_atendimento: "AMBULATORIAL",
       tp_prioridade: "ROTINA",
-      tp_status: "EM_ANALISE",
+      tp_status: "COLETADO",
       created_at: "2026-07-26T12:00:00.000Z",
       paciente_nome: "Paciente QA",
       medico_nome: "Médico QA",
@@ -221,7 +227,7 @@ describe("LabOrdersManager", () => {
         id: 77,
         cd_pedido: 44,
         cd_exame: 9,
-        tp_status: "EM_ANALISE",
+        tp_status: "COLETADO",
         created_at: "2026-07-26T12:00:00.000Z",
         exame_nome: "Hemograma completo",
         exame_sigla: "HEM",
@@ -230,6 +236,8 @@ describe("LabOrdersManager", () => {
     });
 
     renderManager();
+    expect(await screen.findByText("Paciente QA")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /analisar/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: /resultados/i }));
     fireEvent.click(await screen.findByRole("button", { name: /ver itens/i }));
 
@@ -238,6 +246,69 @@ describe("LabOrdersManager", () => {
 
     expect(await screen.findByText("resultado-77-9")).toBeInTheDocument();
     expect(serviceMocks.getOrderDetail).toHaveBeenCalledWith(44);
+  });
+
+  it("informa falha operacional ao cancelar um pedido", async () => {
+    serviceMocks.getCatalogo.mockResolvedValue([]);
+    serviceMocks.updateOrderStatus.mockRejectedValue(
+      new Error("Falha controlada ao cancelar"),
+    );
+    serviceMocks.listOrders.mockResolvedValue([{
+      id: 46,
+      company_id: "company-1",
+      cd_paciente: 10,
+      cd_medico: 20,
+      dt_pedido: "2026-07-26T12:00:00.000Z",
+      cd_tipo_atendimento: "AMBULATORIAL",
+      tp_prioridade: "ROTINA",
+      tp_status: "PENDENTE",
+      created_at: "2026-07-26T12:00:00.000Z",
+      paciente_nome: "Paciente Cancelamento QA",
+      medico_nome: "Médico QA",
+      itens_count: 1,
+    }]);
+
+    renderManager();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /cancelar pedido 46/i }),
+    );
+
+    await waitFor(() =>
+      expect(serviceMocks.toast).toHaveBeenCalledWith({
+        title: "Erro ao cancelar pedido",
+        description: "Falha controlada ao cancelar",
+        variant: "destructive",
+      }),
+    );
+  });
+
+  it("informa falha operacional ao comunicar um alerta crítico", async () => {
+    serviceMocks.getCatalogo.mockResolvedValue([]);
+    serviceMocks.communicateAlert.mockRejectedValue(
+      new Error("Falha controlada na comunicação"),
+    );
+    serviceMocks.listAlerts.mockResolvedValue([{
+      id: 91,
+      cd_resultado: 1,
+      tp_alerta: "CRITICO_ALTO",
+      ds_parametro: "Potássio",
+      vl_resultado: 7.2,
+      vl_referencia: "3,5 a 5,1",
+      dt_alerta: "2026-07-26T12:00:00.000Z",
+      paciente_nome: "Paciente Alerta QA",
+    }]);
+
+    renderManager();
+    fireEvent.click(screen.getByRole("tab", { name: /alertas/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /comunicar/i }));
+
+    await waitFor(() =>
+      expect(serviceMocks.toast).toHaveBeenCalledWith({
+        title: "Erro ao comunicar alerta",
+        description: "Falha controlada na comunicação",
+        variant: "destructive",
+      }),
+    );
   });
 
   it("registra a coleta por item somente depois de identificar a amostra", async () => {

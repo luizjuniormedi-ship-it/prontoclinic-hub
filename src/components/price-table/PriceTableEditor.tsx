@@ -19,68 +19,138 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Search, Calculator } from "lucide-react";
-import { priceTableService, type PriceTable } from "@/services/priceTableService";
+import { priceTableService, type PriceLookup, type PriceTable } from "@/services/priceTableService";
 import { insuranceCompanyService } from "@/services/insuranceService";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
+import { ErrorState } from "@/components/StateViews";
 
 export function PriceTableEditor() {
   const [search, setSearch] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [testServiceId, setTestServiceId] = useState<number | null>(null);
   const [testPlanId, setTestPlanId] = useState<number | null>(null);
-  const [lookupResult, setLookupResult] = useState<any>(null);
+  const [lookupResult, setLookupResult] = useState<PriceLookup | null>(null);
   const queryClient = useQueryClient();
+  const { companyId } = useAuth();
+  const { toast } = useToast();
 
   const { data: prices, isLoading, isError, error } = useQuery({
-    queryKey: ["price-tables"],
+    queryKey: ["price-tables", companyId],
     queryFn: () => priceTableService.getAll(),
+    enabled: Boolean(companyId),
   });
 
-  const { data: insurances } = useQuery({
-    queryKey: ["insurance-companies"],
+  const {
+    data: insurances,
+    error: insurancesError,
+    isError: insurancesIsError,
+    isLoading: insurancesIsLoading,
+    refetch: refetchInsurances,
+  } = useQuery({
+    queryKey: ["insurance-companies", companyId],
     queryFn: () => insuranceCompanyService.getAll(),
+    enabled: Boolean(companyId),
   });
 
-  const { data: services } = useQuery({
-    queryKey: ["services-catalog"],
+  const {
+    data: services,
+    error: servicesError,
+    isError: servicesIsError,
+    isLoading: servicesIsLoading,
+    refetch: refetchServices,
+  } = useQuery({
+    queryKey: ["services-catalog", companyId],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error: queryError } = await supabase
         .from("services_catalog")
         .select("id, name, price")
         .order("name")
         .limit(200);
+      if (queryError) throw new Error(`Erro ao carregar serviços: ${queryError.message}`);
       return data || [];
     },
+    enabled: Boolean(companyId),
   });
 
-  const { data: appointmentTypes } = useQuery({
-    queryKey: ["appointment-types"],
+  const {
+    data: appointmentTypes,
+    error: appointmentTypesError,
+    isError: appointmentTypesIsError,
+    isLoading: appointmentTypesIsLoading,
+    refetch: refetchAppointmentTypes,
+  } = useQuery({
+    queryKey: ["appointment-types", companyId],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error: queryError } = await supabase
         .from("appointment_types")
         .select("id, name")
         .order("name");
+      if (queryError) {
+        throw new Error(`Erro ao carregar tipos de atendimento: ${queryError.message}`);
+      }
       return data || [];
     },
+    enabled: Boolean(companyId),
   });
 
   const createPrice = useMutation({
     mutationFn: priceTableService.create,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["price-tables"] });
+      queryClient.invalidateQueries({ queryKey: ["price-tables", companyId] });
       setIsCreateOpen(false);
+    },
+    onError: (mutationError: Error) => {
+      toast({
+        title: "Não foi possível salvar a regra de preço",
+        description: mutationError.message,
+        variant: "destructive",
+      });
     },
   });
 
   const testLookup = async () => {
     if (!testServiceId || !appointmentTypes?.[0]?.id) return;
-    const result = await priceTableService.findPrice(
-      testServiceId,
-      appointmentTypes[0].id,
-      testPlanId
-    );
-    setLookupResult(result);
+    try {
+      const result = await priceTableService.findPrice(
+        testServiceId,
+        Number(appointmentTypes[0].id),
+        testPlanId,
+        companyId,
+      );
+      setLookupResult(result);
+    } catch (lookupError) {
+      setLookupResult(null);
+      toast({
+        title: "Não foi possível consultar o preço",
+        description: lookupError instanceof Error ? lookupError.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    }
   };
+
+  if (!companyId) {
+    return <ErrorState message="Contexto empresarial indisponível. Selecione uma empresa válida para administrar preços." />;
+  }
+
+  const auxiliaryError = servicesError || appointmentTypesError || insurancesError;
+  if (servicesIsError || appointmentTypesIsError || insurancesIsError) {
+    return (
+      <ErrorState
+        message={auxiliaryError instanceof Error ? auxiliaryError.message : "Não foi possível carregar os catálogos auxiliares."}
+        onRetry={() => {
+          void Promise.all([
+            refetchServices(),
+            refetchAppointmentTypes(),
+            refetchInsurances(),
+          ]);
+        }}
+      />
+    );
+  }
+
+  const auxiliaryIsLoading = servicesIsLoading || appointmentTypesIsLoading || insurancesIsLoading;
 
   const filtered = (prices || []).filter(
     (p) =>
@@ -111,6 +181,7 @@ export function PriceTableEditor() {
                 const f = new FormData(e.currentTarget);
                 const planId = f.get("insurance_plan_id") as string;
                 createPrice.mutate({
+                  company_id: companyId,
                   service_id: Number(f.get("service_id")),
                   appointment_type_id: Number(f.get("appointment_type_id")),
                   insurance_plan_id: planId === "particular" ? null : Number(planId),
@@ -171,7 +242,7 @@ export function PriceTableEditor() {
               </div>
               <DialogFooter className="mt-4">
                 <Button type="button" variant="ghost" onClick={() => setIsCreateOpen(false)}>Cancelar</Button>
-                <Button type="submit" disabled={createPrice.isPending}>
+                <Button type="submit" disabled={createPrice.isPending || auxiliaryIsLoading}>
                   {createPrice.isPending ? "Salvando..." : "Salvar"}
                 </Button>
               </DialogFooter>
@@ -212,7 +283,7 @@ export function PriceTableEditor() {
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={testLookup}>Buscar</Button>
+            <Button onClick={testLookup} disabled={auxiliaryIsLoading}>Buscar</Button>
           </div>
           {lookupResult && (
             <pre className="mt-4 p-4 bg-muted rounded text-sm">

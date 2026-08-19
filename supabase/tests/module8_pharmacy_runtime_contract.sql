@@ -63,6 +63,28 @@ BEGIN
     RAISE EXCEPTION 'M8 contract: direct dispensing writes remain granted';
   END IF;
 
+  FOREACH v_table IN ARRAY ARRAY[
+    'medicamentos', 'materiais', 'almoxarifados', 'lotes',
+    'receitas_controladas'
+  ]
+  LOOP
+    IF NOT has_table_privilege('authenticated', 'public.' || v_table, 'SELECT') THEN
+      RAISE EXCEPTION 'M8 contract: authenticated catalog read missing on public.%', v_table;
+    END IF;
+    IF has_table_privilege('anon', 'public.' || v_table, 'SELECT') THEN
+      RAISE EXCEPTION 'M8 contract: anonymous catalog read open on public.%', v_table;
+    END IF;
+  END LOOP;
+
+  IF to_regclass('private.pharmacy_catalog_acl_rollback_state') IS NULL
+     OR (
+       SELECT COUNT(*)
+       FROM private.pharmacy_catalog_acl_rollback_state
+     ) <> 5
+  THEN
+    RAISE EXCEPTION 'M8 contract: pharmacy catalog ACL rollback snapshot is incomplete';
+  END IF;
+
   IF NOT has_function_privilege('prontomedic_rpc_owner', 'public.get_my_company_id()', 'EXECUTE')
      OR NOT has_function_privilege('prontomedic_rpc_owner', 'public.active_unit_id()', 'EXECUTE')
      OR NOT has_function_privilege(

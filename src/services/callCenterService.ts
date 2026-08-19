@@ -68,6 +68,111 @@ export interface ConfirmationQueueItem {
   patient_phone?: string;
 }
 
+const CALL_CENTER_CHANNELS: readonly CallCenterChannel[] = ["telefone", "whatsapp", "email", "portal", "presencial", "campanha", "instagram", "google", "site", "convenio", "indicacao"];
+const CALL_CENTER_DIRECTIONS: readonly CallCenterDirection[] = ["inbound", "outbound"];
+const CALL_CENTER_RESULTS: readonly CallCenterResult[] = ["agendado", "confirmado", "cancelado", "remarcado", "nao_atendeu", "recado", "sem_interesse", "numero_invalido", "retornar_depois"];
+const TASK_STATUSES: readonly CallCenterTaskStatus[] = ["pending", "in_progress", "done", "cancelled"];
+const TASK_PRIORITIES: readonly CallCenterTaskPriority[] = ["low", "normal", "high", "urgent"];
+const CONFIRMATION_STATUSES: readonly ConfirmationQueueItem["status"][] = ["pending", "contacting", "confirmed", "cancelled", "no_response", "expired"];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function requiredStringValue(value: unknown, field: string): string {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`Contrato do Call Center inválido em ${field}.`);
+  return value;
+}
+
+function nullableStringValue(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string") throw new Error("Contrato do Call Center contém texto inválido.");
+  return value;
+}
+
+function positiveInteger(value: unknown, field: string): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error(`Contrato do Call Center inválido em ${field}.`);
+  return parsed;
+}
+
+function nullablePositiveInteger(value: unknown, field: string): number | null {
+  return value === null || value === undefined ? null : positiveInteger(value, field);
+}
+
+function nonNegativeInteger(value: unknown, field: string): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error(`Contrato do Call Center inválido em ${field}.`);
+  return parsed;
+}
+
+function enumValue<T extends string>(value: unknown, allowed: readonly T[], field: string): T {
+  if (typeof value !== "string" || !allowed.includes(value as T)) throw new Error(`Contrato do Call Center inválido em ${field}.`);
+  return value as T;
+}
+
+function decodePatient(value: unknown): { id: number; full_name: string | null; phone: string | null } {
+  if (!isRecord(value)) throw new Error("Contrato do Call Center inválido em patients.");
+  return {
+    id: positiveInteger(value.id, "patients.id"),
+    full_name: nullableStringValue(value.full_name),
+    phone: nullableStringValue(value.phone),
+  };
+}
+
+function decodeConfirmation(value: unknown): ConfirmationQueueItem {
+  if (!isRecord(value)) throw new Error("Contrato da fila de confirmação inválido.");
+  return {
+    id: positiveInteger(value.id, "confirmation.id"),
+    appointment_id: positiveInteger(value.appointment_id, "confirmation.appointment_id"),
+    patient_id: nullablePositiveInteger(value.patient_id, "confirmation.patient_id"),
+    due_at: requiredStringValue(value.due_at, "confirmation.due_at"),
+    status: enumValue(value.status, CONFIRMATION_STATUSES, "confirmation.status"),
+    attempt_count: nonNegativeInteger(value.attempt_count, "confirmation.attempt_count"),
+    last_attempt_at: nullableStringValue(value.last_attempt_at),
+  };
+}
+
+function decodeContact(value: unknown): CallCenterContactLog {
+  if (!isRecord(value)) throw new Error("Contrato de contato do Call Center inválido.");
+  if (value.patients !== null && value.patients !== undefined && !isRecord(value.patients)) {
+    throw new Error("Contrato do Call Center inválido em contact.patients.");
+  }
+  const patientRelation = isRecord(value.patients) ? value.patients : null;
+  return {
+    id: positiveInteger(value.id, "contact.id"),
+    company_id: nullableStringValue(value.company_id),
+    patient_id: nullablePositiveInteger(value.patient_id, "contact.patient_id"),
+    appointment_id: nullablePositiveInteger(value.appointment_id, "contact.appointment_id"),
+    operator_id: nullableStringValue(value.operator_id),
+    channel: enumValue(value.channel, CALL_CENTER_CHANNELS, "contact.channel"),
+    direction: enumValue(value.direction, CALL_CENTER_DIRECTIONS, "contact.direction"),
+    contact_reason: requiredStringValue(value.contact_reason, "contact.contact_reason"),
+    result: enumValue(value.result, CALL_CENTER_RESULTS, "contact.result"),
+    notes: nullableStringValue(value.notes),
+    next_action: nullableStringValue(value.next_action),
+    next_action_at: nullableStringValue(value.next_action_at),
+    created_at: requiredStringValue(value.created_at, "contact.created_at"),
+    updated_at: requiredStringValue(value.updated_at, "contact.updated_at"),
+    patient_name: nullableStringValue(patientRelation?.full_name),
+    patient_cpf: nullableStringValue(patientRelation?.cpf),
+    patient_phone: nullableStringValue(patientRelation?.phone),
+  };
+}
+
+function decodeTask(value: unknown): CallCenterTask {
+  if (!isRecord(value)) throw new Error("Contrato de tarefa do Call Center inválido.");
+  return {
+    id: positiveInteger(value.id, "task.id"), company_id: nullableStringValue(value.company_id),
+    patient_id: nullablePositiveInteger(value.patient_id, "task.patient_id"), appointment_id: nullablePositiveInteger(value.appointment_id, "task.appointment_id"),
+    contact_log_id: nullablePositiveInteger(value.contact_log_id, "task.contact_log_id"), assigned_to: nullableStringValue(value.assigned_to),
+    task_type: requiredStringValue(value.task_type, "task.task_type"), priority: enumValue(value.priority, TASK_PRIORITIES, "task.priority"),
+    status: enumValue(value.status, TASK_STATUSES, "task.status"), due_at: nullableStringValue(value.due_at),
+    description: requiredStringValue(value.description, "task.description"), completed_at: nullableStringValue(value.completed_at),
+    created_at: requiredStringValue(value.created_at, "task.created_at"), updated_at: requiredStringValue(value.updated_at, "task.updated_at"),
+  };
+}
+
 function nullableNumber(value: string | number | null | undefined, field: string): number | null {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
@@ -85,16 +190,25 @@ export const callCenterService = {
   async materializeConfirmationQueue(daysAhead = 3): Promise<number> {
     const { data, error } = await supabase.rpc("refresh_confirmation_queue_secure", { p_days_ahead: daysAhead });
     if (error) throw new Error(`Erro ao atualizar fila de confirmação: ${error.message}`);
-    return Number(data || 0);
+    const affectedRows = typeof data === "number" ? data : Number(data);
+    if (!Number.isSafeInteger(affectedRows) || affectedRows < 0) {
+      throw new Error("Fila de confirmação retornou quantidade inválida.");
+    }
+    return affectedRows;
   },
 
   async listConfirmationQueue(): Promise<ConfirmationQueueItem[]> {
     const { data, error } = await supabase.from("scheduling_confirmation_queue").select("*").in("status", ["pending", "contacting", "no_response"]).order("due_at").limit(300);
     if (error) throw new Error(`Erro ao listar confirmações: ${error.message}`);
-    const rows = (data || []) as ConfirmationQueueItem[];
+    if (!Array.isArray(data)) throw new Error("Fila de confirmação retornou resposta inválida.");
+    const rows = data.map(decodeConfirmation);
     const ids = [...new Set(rows.map((row) => row.patient_id).filter(Boolean))] as number[];
-    const patients = ids.length ? await supabase.from("patients").select("id, full_name, phone").in("id", ids) : { data: [] as any[] };
-    const map = new Map((patients.data || []).map((row: any) => [Number(row.id), row]));
+    const patientsResult = ids.length
+      ? await supabase.from("patients").select("id, full_name, phone").in("id", ids)
+      : { data: [], error: null };
+    if (patientsResult.error) throw new Error(`Erro ao carregar pacientes da fila de confirmação: ${patientsResult.error.message}`);
+    if (!Array.isArray(patientsResult.data)) throw new Error("Consulta de pacientes retornou resposta inválida.");
+    const map = new Map(patientsResult.data.map(decodePatient).map((row) => [row.id, row]));
     return rows.map((row) => ({ ...row, patient_name: row.patient_id ? map.get(Number(row.patient_id))?.full_name : undefined, patient_phone: row.patient_id ? map.get(Number(row.patient_id))?.phone : undefined }));
   },
 
@@ -112,12 +226,8 @@ export const callCenterService = {
 
     if (error) throw new Error(`Erro ao listar contatos do call center: ${error.message}`);
 
-    return (data || []).map((row: any) => ({
-      ...row,
-      patient_name: row.patients?.full_name ?? null,
-      patient_cpf: row.patients?.cpf ?? null,
-      patient_phone: row.patients?.phone ?? null,
-    }));
+    if (!Array.isArray(data)) throw new Error("Lista de contatos retornou resposta inválida.");
+    return data.map(decodeContact);
   },
 
   async listTasks(status?: CallCenterTaskStatus): Promise<CallCenterTask[]> {
@@ -131,7 +241,8 @@ export const callCenterService = {
 
     const { data, error } = await query;
     if (error) throw new Error(`Erro ao listar tarefas do call center: ${error.message}`);
-    return (data || []) as CallCenterTask[];
+    if (!Array.isArray(data)) throw new Error("Lista de tarefas retornou resposta inválida.");
+    return data.map(decodeTask);
   },
 
   async createContact(input: CreateContactLogInput): Promise<CallCenterContactLog> {
@@ -155,7 +266,7 @@ export const callCenterService = {
     });
 
     if (error) throw new Error(`Erro ao registrar contato do call center: ${error.message}`);
-    return data as CallCenterContactLog;
+    return decodeContact(data);
   },
 
   async completeTask(id: string | number): Promise<void> {

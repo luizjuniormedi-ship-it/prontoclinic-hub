@@ -131,6 +131,15 @@ jobs:
               -f supabase/tests/module39_billing_account_operational_closure_contract.sql >/dev/null
             psql -v ON_ERROR_STOP=1 \
               -h localhost -p 54322 -U postgres -d "$database" \
+              -f supabase/tests/module8_pharmacy_runtime_contract.sql >/dev/null
+            psql -v ON_ERROR_STOP=1 \
+              -h localhost -p 54322 -U postgres -d "$database" \
+              -f supabase/tests/module22_exam_requests_contract.sql >/dev/null
+            psql -v ON_ERROR_STOP=1 \
+              -h localhost -p 54322 -U postgres -d "$database" \
+              -f supabase/tests/financial_appointment_future_uniqueness_contract.sql >/dev/null
+            psql -v ON_ERROR_STOP=1 \
+              -h localhost -p 54322 -U postgres -d "$database" \
               -f supabase/tests/module11_reception_precheck_dependency_acl_contract.sql >/dev/null
             psql -v ON_ERROR_STOP=1 \
               -h localhost -p 54322 -U postgres -d "$database" \
@@ -151,6 +160,70 @@ jobs:
                 -h localhost -p 54322 -U postgres -d "$database" \
                 -f supabase/tests/schedule_rpc_signature_parity.sql >/dev/null
             done
+
+          cleanup_m23_replay() {
+            dropdb --if-exists -h localhost -p 54322 -U postgres \
+              prontomedic_reception_m23_ci >/dev/null 2>&1 || true
+          }
+          trap cleanup_m23_replay EXIT
+          cleanup_m23_replay
+          createdb -h localhost -p 54322 -U postgres \
+            -T migrations_second prontomedic_reception_m23_ci
+          psql -v ON_ERROR_STOP=1 \
+            -h localhost -p 54322 -U postgres \
+            -d prontomedic_reception_m23_ci \
+            -f supabase/tests/module23_lis_contract.sql >/dev/null
+          psql -v ON_ERROR_STOP=1 \
+            -h localhost -p 54322 -U postgres \
+            -d prontomedic_reception_m23_ci \
+            -f supabase/tests/module23_lis_runtime_contract.sql >/dev/null
+          psql -v ON_ERROR_STOP=1 \
+            -h localhost -p 54322 -U postgres \
+            -d prontomedic_reception_m23_ci \
+            -f supabase/tests/module23_lis_authenticated_replay.sql >/dev/null
+          cleanup_m23_replay
+          trap - EXIT
+
+          cleanup_m24_replay() {
+            dropdb --if-exists -h localhost -p 54322 -U postgres \
+              prontomedic_reception_m24_ci >/dev/null 2>&1 || true
+          }
+          trap cleanup_m24_replay EXIT
+          cleanup_m24_replay
+          createdb -h localhost -p 54322 -U postgres \
+            -T migrations_second prontomedic_reception_m24_ci
+          psql -v ON_ERROR_STOP=1 \
+            -h localhost -p 54322 -U postgres \
+            -d prontomedic_reception_m24_ci \
+            -f supabase/tests/module24_imaging_ris_contract.sql >/dev/null
+          psql -v ON_ERROR_STOP=1 \
+            -h localhost -p 54322 -U postgres \
+            -d prontomedic_reception_m24_ci \
+            -f supabase/tests/module24_imaging_ris_runtime_contract.sql >/dev/null
+          psql -v ON_ERROR_STOP=1 \
+            -h localhost -p 54322 -U postgres \
+            -d prontomedic_reception_m24_ci \
+            -f supabase/rollbacks/20260817090000_m24_imaging_ris_runtime_hardening.sql >/dev/null
+          psql -v ON_ERROR_STOP=1 \
+            -h localhost -p 54322 -U postgres \
+            -d prontomedic_reception_m24_ci \
+            -f supabase/tests/module24_imaging_ris_rollback_contract.sql >/dev/null
+          psql -v ON_ERROR_STOP=1 \
+            -h localhost -p 54322 -U postgres \
+            -d prontomedic_reception_m24_ci \
+            -f supabase/migrations/20260817090000_m24_imaging_ris_runtime_hardening.sql >/dev/null
+          psql -v ON_ERROR_STOP=1 \
+            -h localhost -p 54322 -U postgres \
+            -d prontomedic_reception_m24_ci \
+            -f supabase/tests/module24_imaging_ris_contract.sql >/dev/null
+          psql -v ON_ERROR_STOP=1 \
+            -h localhost -p 54322 -U postgres \
+            -d prontomedic_reception_m24_ci \
+            -f supabase/tests/module24_imaging_ris_runtime_contract.sql >/dev/null
+          bash supabase/tests/module24_imaging_ris_concurrency.sh \
+            localhost 54322 postgres prontomedic_reception_m24_ci
+          cleanup_m24_replay
+          trap - EXIT
 
           # Retry das migrations críticas no mesmo banco: qualquer aplicação
           # parcial precisa convergir sem objetos duplicados.

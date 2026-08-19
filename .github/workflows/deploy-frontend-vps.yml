@@ -70,6 +70,16 @@ jobs:
           test -s .env.production.local
           chmod 600 .env.production.local
 
+      - name: Validate production frontend environment
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          while IFS='=' read -r name _; do
+            [[ "$name" == VITE_* ]] && unset "$name"
+          done < <(env)
+          node scripts/validate-production-frontend-env.mjs \
+            'https://prontomedic.191-252-196-6.sslip.io'
+
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -77,6 +87,9 @@ jobs:
 
       - name: Build immutable frontend
         run: |
+          while IFS='=' read -r name _; do
+            [[ "$name" == VITE_* ]] && unset "$name"
+          done < <(env)
           npm ci
           npm run build
           test -f dist/index.html

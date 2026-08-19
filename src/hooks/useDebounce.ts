@@ -18,19 +18,19 @@ export function useDebounce<T>(value: T, delay: number = 300): T {
 /**
  * Custom hook for debouncing a callback function.
  */
-export function useDebouncedCallback<T extends (...args: any[]) => any>(
-  callback: T,
+export function useDebouncedCallback<Args extends unknown[]>(
+  callback: (...args: Args) => unknown,
   delay: number = 300
-): T {
+): (...args: Args) => void {
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
   const debouncedFn = useCallback(
-    (...args: Parameters<T>) => {
+    (...args: Args) => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(() => callback(...args), delay);
     },
     [callback, delay]
-  ) as T;
+  );
 
   useEffect(() => {
     return () => {

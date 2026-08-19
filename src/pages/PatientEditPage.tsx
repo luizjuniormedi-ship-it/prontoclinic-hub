@@ -62,7 +62,7 @@ export default function PatientEditPage() {
 
     setSaving(true);
     try {
-      const row: Record<string, any> = {
+      const row: Record<string, unknown> = {
         full_name: data.full_name.trim(),
         cpf: cleanCpf,
         birth_date: data.birth_date,
@@ -88,7 +88,11 @@ export default function PatientEditPage() {
       toast({ title: "Paciente atualizado com sucesso!" });
       navigate(`/patients/${id}`);
     } catch (err) {
-      toast({ title: "Erro ao atualizar", description: (err as Error).message, variant: "destructive" });
+      toast({
+        title: "Erro ao atualizar",
+        description: err instanceof Error ? err.message : "Erro desconhecido",
+        variant: "destructive",
+      });
     } finally { setSaving(false); }
   };
 

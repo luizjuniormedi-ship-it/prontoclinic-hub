@@ -28,6 +28,15 @@ interface PatientRow {
   status: string | null;
 }
 
+function isInsuranceCompanyRow(value: unknown): value is { id: string | number; name: string } {
+  if (typeof value !== "object" || value === null) return false;
+  const row = value as Record<string, unknown>;
+  return (
+    (typeof row.id === "string" || typeof row.id === "number")
+    && typeof row.name === "string"
+  );
+}
+
 const PAGE_SIZE = 20;
 
 export default function PatientsPage() {
@@ -46,7 +55,9 @@ export default function PatientsPage() {
     supabase.from("insurance_companies").select("id, name").limit(2000).then(({ data }) => {
       if (data) {
         const map: Record<string, string> = {};
-        data.forEach((i: any) => { map[String(i.id)] = i.name; });
+        (data as unknown[]).filter(isInsuranceCompanyRow).forEach((insurance) => {
+          map[String(insurance.id)] = insurance.name;
+        });
         setInsuranceNames(map);
       }
     });

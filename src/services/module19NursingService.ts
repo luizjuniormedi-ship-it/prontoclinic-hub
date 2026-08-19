@@ -105,6 +105,19 @@ export interface Module19CompleteResult {
   triage: Module19TriageRecord;
   news2: Module19News2Record | null;
   idempotent: boolean;
+  appointmentId: number | null;
+  attendanceReady: boolean;
+}
+
+export interface Module19PreparedHandoff {
+  queue: {
+    id: number;
+    appointment_id: number;
+    cd_paciente: number;
+    unit_id: number;
+    tp_status: string;
+  };
+  idempotent: boolean;
 }
 
 export interface Module19ReclassificationResult {
@@ -274,7 +287,32 @@ function assertCompleteResult(data: unknown): Module19CompleteResult {
   if (!result.triage || typeof result.triage.id !== "number") {
     throw new Error("Resposta de triagem sem registro persistido.");
   }
-  return result as Module19CompleteResult;
+  const appointmentId = result.triage.cd_appointment ?? null;
+  return {
+    ...(result as Module19CompleteResult),
+    appointmentId,
+    attendanceReady: appointmentId != null
+      && ["TRIADO", "ENCAMINHADO", "FINALIZADO"].includes(result.triage.tp_status),
+  };
+}
+
+function assertPreparedHandoff(
+  data: unknown,
+  expected: { appointmentId: number; patientId: number; unitId: number },
+): Module19PreparedHandoff {
+  if (!data || typeof data !== "object") throw new Error("Resposta inválida ao preparar a triagem.");
+  const result = data as Partial<Module19PreparedHandoff>;
+  if (!result.queue || !Number.isInteger(result.queue.id) || result.queue.id <= 0) {
+    throw new Error("A preparação da triagem não retornou uma fila válida.");
+  }
+  if (
+    result.queue.appointment_id !== expected.appointmentId
+    || result.queue.cd_paciente !== expected.patientId
+    || result.queue.unit_id !== expected.unitId
+  ) {
+    throw new Error("Fila retornada não corresponde ao agendamento, paciente e unidade ativos.");
+  }
+  return result as Module19PreparedHandoff;
 }
 
 function assertReclassificationResult(data: unknown): Module19ReclassificationResult {
@@ -297,6 +335,27 @@ export function createModule19NursingService(
   client: Module19DataClient = supabase as unknown as Module19DataClient,
 ) {
   return {
+    async prepareHandoff(
+      appointmentId: number,
+      patientId: number,
+      unitId: number,
+      complaint?: string,
+    ): Promise<Module19PreparedHandoff> {
+      const resolvedAppointmentId = requirePositiveInteger(appointmentId, "Agendamento");
+      const resolvedPatientId = requirePositiveInteger(patientId, "Paciente");
+      const resolvedUnitId = requirePositiveInteger(unitId, "Unidade");
+      const { data, error } = await client.rpc("m19_prepare_triage_handoff_secure", {
+        p_appointment_id: resolvedAppointmentId,
+        p_complaint: complaint?.trim() || null,
+      });
+      if (error) throw new Error(`Erro ao preparar triagem: ${error.message}`);
+      return assertPreparedHandoff(data, {
+        appointmentId: resolvedAppointmentId,
+        patientId: resolvedPatientId,
+        unitId: resolvedUnitId,
+      });
+    },
+
     async completeTriage(input: CompleteModule19TriageInput): Promise<Module19CompleteResult> {
       const resolved = resolveModule19TriageRequest(input);
       const { data, error } = await client.rpc("m19_complete_triage_secure", {

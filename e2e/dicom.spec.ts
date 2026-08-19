@@ -68,8 +68,9 @@ test.describe('DICOM / PACS - superfícies canônicas locais', () => {
   test('worklist DICOM expõe filtros e atualização canônicos', async ({ page }) => {
     await page.goto('/worklist');
 
+    await expect(page).toHaveURL(/\/dicom\/worklist$/);
     await expect(
-      page.getByRole('heading', { name: 'Worklist', exact: true }),
+      page.getByRole('heading', { name: 'DICOM Worklist Queue', exact: true }),
     ).toBeVisible();
     await expect(page.getByText(/Nenhum item na worklist|Paciente|Agendamento/).first()).toBeVisible();
     await expect(page.getByText('Erro ao carregar worklist')).toHaveCount(0);

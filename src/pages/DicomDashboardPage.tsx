@@ -10,27 +10,47 @@ import { StatsCard } from "@/components/StatsCard";
 import { dicomDashboardService, dicomModalitiesService, dicomNodesService } from "@/services/dicomService";
 import type { DicomModality, DicomNode } from "@/types/dicom";
 import { toast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+
+type DicomDashboardStats = Awaited<ReturnType<typeof dicomDashboardService.getStats>>;
 
 export default function DicomDashboardPage() {
-  const [stats, setStats] = useState<any>(null);
+  const { companyId } = useAuth();
+  const [stats, setStats] = useState<DicomDashboardStats | null>(null);
   const [modalities, setModalities] = useState<DicomModality[]>([]);
   const [nodes, setNodes] = useState<DicomNode[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = () => {
     setLoading(true);
+    if (!companyId?.trim()) {
+      setStats(null);
+      setModalities([]);
+      setNodes([]);
+      setLoading(false);
+      return;
+    }
     Promise.all([
-      dicomDashboardService.getStats(),
-      dicomModalitiesService.list(),
-      dicomNodesService.list(),
-    ]).then(([s, m, n]) => { setStats(s); setModalities(m as unknown as DicomModality[]); setNodes(n as unknown as DicomNode[]); })
+      dicomDashboardService.getStats(companyId),
+      dicomModalitiesService.list(companyId),
+      dicomNodesService.list(companyId),
+    ]).then(([s, m, n]) => { setStats(s); setModalities(m); setNodes(n); })
       .catch(() => toast({ title: "Erro ao carregar dashboard", variant: "destructive" }))
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
+  useEffect(load, [companyId]);
 
-  if (loading || !stats) return <LoadingState />;
+  if (loading) return <LoadingState />;
+
+  if (!companyId?.trim() || !stats) return (
+    <Alert variant="destructive">
+      <AlertCircle className="h-4 w-4" />
+      <AlertTitle>Contexto de acesso indisponível</AlertTitle>
+      <AlertDescription>Selecione uma empresa válida para consultar o painel DICOM.</AlertDescription>
+    </Alert>
+  );
 
   return (
     <div className="space-y-6 animate-fade-in">

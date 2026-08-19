@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, User, AlertTriangle, Save, Loader2, Stethoscope } from "lucide-react";
+import { ArrowLeft, User, AlertTriangle, Save, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,22 +11,64 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState, ErrorState } from "@/components/StateViews";
 import { supabase } from "@/lib/supabase";
-import { medicalRecordsService } from "@/services/medicalRecordsService";
+import { medicalAttendanceService, type MedicalEncounter } from "@/services/medicalAttendanceService";
+import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { calculateAge } from "@/utils/formatters";
 
 interface PatientInfo { id: string; full_name: string; birth_date: string | null; sex: string | null; allergies: string | null; clinical_alerts: string | null; insurance_plan_id: string | null; }
 interface AppointmentInfo { id: string; patient_id: string; professional_id: string; specialty_id: string | null; unit_id: string | null; company_id: string | null; appointment_type_id: string | null; status: string; }
 
+function textValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function arrayText(value: unknown, key: string): string {
+  if (!Array.isArray(value) || value.length === 0) return "";
+  const first = value[0];
+  return first && typeof first === "object" ? textValue((first as Record<string, unknown>)[key]) : "";
+}
+
+function updateFirstRecord(
+  existing: unknown[],
+  values: Record<string, string | undefined>,
+): unknown[] {
+  const normalized = Object.fromEntries(
+    Object.entries(values).filter(([, value]) => Boolean(value)),
+  );
+  if (Object.keys(normalized).length === 0) return existing;
+  const current = existing[0] && typeof existing[0] === "object"
+    ? existing[0] as Record<string, unknown>
+    : {};
+  return [{ ...current, ...normalized }, ...existing.slice(1)];
+}
+
+function parseAnamnesis(value: string | null) {
+  const source = value || "";
+  const section = (label: string) => {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = source.match(new RegExp(`\\*\\*${escaped}:\\*\\*\\s*([\\s\\S]*?)(?=\\n\\n\\*\\*|$)`, "i"));
+    return match?.[1]?.trim() || "";
+  };
+  const hda = section("HDA");
+  const personalHistory = section("Antecedentes Pessoais");
+  const familyHistory = section("Antecedentes Familiares");
+  const medications = section("Medicamentos em Uso");
+  const structured = hda || personalHistory || familyHistory || medications;
+  return { hda: structured ? hda : source, personalHistory, familyHistory, medications };
+}
+
 export default function AttendancePage() {
   const { appointmentId } = useParams<{ appointmentId: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { activeUnitId } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [patient, setPatient] = useState<PatientInfo | null>(null);
   const [appointment, setAppointment] = useState<AppointmentInfo | null>(null);
+  const [encounter, setEncounter] = useState<MedicalEncounter | null>(null);
 
   // Form fields
   const [chiefComplaint, setChiefComplaint] = useState("");
@@ -43,25 +85,75 @@ export default function AttendancePage() {
   const [returnNotes, setReturnNotes] = useState("");
   const [vitalSigns, setVitalSigns] = useState({ bloodPressure: "", heartRate: "", temperature: "", weight: "", height: "", oxygenSaturation: "" });
 
-  useEffect(() => {
-    if (!appointmentId) return;
-    (async () => {
-      try {
-        const { data: appt, error: ae } = await supabase.from("appointments").select("*").eq("id", appointmentId).maybeSingle();
-        if (ae || !appt) { setError("Atendimento não encontrado."); setLoading(false); return; }
-        setAppointment(appt);
+  const loadAttendance = useCallback(async () => {
+    const parsedAppointmentId = Number(appointmentId);
+    if (!Number.isSafeInteger(parsedAppointmentId) || parsedAppointmentId <= 0) {
+      setError("Agendamento inválido.");
+      setLoading(false);
+      return;
+    }
+    if (!activeUnitId) {
+      setError("Selecione a unidade ativa do atendimento.");
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const opened = await medicalAttendanceService.open(parsedAppointmentId, activeUnitId);
+      setEncounter(opened);
+      const anamnesis = parseAnamnesis(opened.anamnesis);
+      setChiefComplaint(opened.chief_complaint || "");
+      setHda(anamnesis.hda);
+      setPersonalHistory(anamnesis.personalHistory);
+      setFamilyHistory(anamnesis.familyHistory);
+      setMedications(anamnesis.medications);
+      setPhysicalExam(opened.physical_exam || "");
+      setDiagnosis(arrayText(opened.diagnoses, "description"));
+      setCid(arrayText(opened.diagnoses, "code"));
+      setConduct(opened.conduct || "");
+      setPrescription(arrayText(opened.prescriptions, "text"));
+      setExamRequests(arrayText(opened.exams, "text"));
+      setReturnNotes(opened.return_plan || "");
+      const vitals = opened.vital_signs || {};
+      setVitalSigns({
+        bloodPressure: textValue(vitals.bloodPressure),
+        heartRate: vitals.heartRate == null ? "" : String(vitals.heartRate),
+        temperature: vitals.temperature == null ? "" : String(vitals.temperature),
+        weight: vitals.weight == null ? "" : String(vitals.weight),
+        height: vitals.height == null ? "" : String(vitals.height),
+        oxygenSaturation: vitals.oxygenSaturation == null ? "" : String(vitals.oxygenSaturation),
+      });
+      const { data: appt, error: appointmentError } = await supabase
+        .from("appointments")
+        .select("id, patient_id, professional_id, specialty_id, unit_id, company_id, appointment_type_id, status")
+        .eq("id", parsedAppointmentId)
+        .maybeSingle();
+      if (appointmentError || !appt) throw new Error("Atendimento não encontrado.");
+      setAppointment(appt as AppointmentInfo);
+      const { data: pat, error: patientError } = await supabase
+        .from("patients")
+        .select("id, full_name, birth_date, sex, allergies, clinical_alerts, insurance_plan_id")
+        .eq("id", opened.patient_id)
+        .maybeSingle();
+      if (patientError || !pat) throw new Error("Paciente do atendimento não encontrado.");
+      setPatient(pat as PatientInfo);
+    } catch (cause) {
+      setEncounter(null);
+      setAppointment(null);
+      setPatient(null);
+      setError(cause instanceof Error ? cause.message : "Não foi possível abrir o atendimento.");
+    } finally {
+      setLoading(false);
+    }
+  }, [activeUnitId, appointmentId]);
 
-        if (appt.patient_id) {
-          const { data: pat } = await supabase.from("patients").select("id, full_name, birth_date, sex, allergies, clinical_alerts, insurance_plan_id").eq("id", appt.patient_id).maybeSingle();
-          setPatient(pat);
-        }
-        setLoading(false);
-      } catch (err) { setError((err as Error).message); setLoading(false); }
-    })();
-  }, [appointmentId]);
+  useEffect(() => {
+    void loadAttendance();
+  }, [loadAttendance]);
 
   const handleSave = async () => {
-    if (!patient || !appointment) return;
+    if (!patient || !appointment || !encounter) return;
     if (!chiefComplaint.trim() && !hda.trim() && !physicalExam.trim()) {
       toast({ title: "Preencha pelo menos a queixa principal, HDA ou exame físico", variant: "destructive" });
       return;
@@ -69,7 +161,7 @@ export default function AttendancePage() {
 
     setSaving(true);
     try {
-      const vs: Record<string, any> = {};
+      const vs: Record<string, unknown> = {};
       if (vitalSigns.bloodPressure) vs.bloodPressure = vitalSigns.bloodPressure;
       if (vitalSigns.heartRate) vs.heartRate = Number(vitalSigns.heartRate);
       if (vitalSigns.temperature) vs.temperature = Number(vitalSigns.temperature);
@@ -77,28 +169,48 @@ export default function AttendancePage() {
       if (vitalSigns.height) vs.height = Number(vitalSigns.height);
       if (vitalSigns.oxygenSaturation) vs.oxygenSaturation = Number(vitalSigns.oxygenSaturation);
 
-      const anamnesis = [
+      const composedAnamnesis = [
         hda && `**HDA:** ${hda}`,
         personalHistory && `**Antecedentes Pessoais:** ${personalHistory}`,
         familyHistory && `**Antecedentes Familiares:** ${familyHistory}`,
         medications && `**Medicamentos em Uso:** ${medications}`,
       ].filter(Boolean).join("\n\n");
+      const initialAnamnesis = parseAnamnesis(encounter.anamnesis);
+      const anamnesisUnchanged = hda === initialAnamnesis.hda
+        && personalHistory === initialAnamnesis.personalHistory
+        && familyHistory === initialAnamnesis.familyHistory
+        && medications === initialAnamnesis.medications;
+      const mergedVitals = { ...encounter.vital_signs, ...vs };
 
-      await medicalRecordsService.finalizeAttendance({
-        appointment_id: String(appointment.id),
-        chief_complaint: chiefComplaint || undefined,
-        anamnesis: anamnesis || undefined,
-        physical_exam: physicalExam || undefined,
-        vital_signs: Object.keys(vs).length > 0 ? vs : undefined,
-        diagnoses: diagnosis || cid ? [{ description: diagnosis || undefined, code: cid || undefined }] : undefined,
-        conduct: conduct || undefined,
-        prescriptions: prescription ? [{ text: prescription }] : undefined,
-        exams: examRequests ? [{ text: examRequests }] : undefined,
-        return_plan: returnNotes || undefined,
+      const result = await medicalAttendanceService.finalizeAppointmentWithBilling(
+        Number(appointment.id),
+        {
+        chief_complaint: chiefComplaint,
+        anamnesis: anamnesisUnchanged ? encounter.anamnesis || "" : composedAnamnesis,
+        physical_exam: physicalExam,
+        vital_signs: mergedVitals,
+        diagnoses: updateFirstRecord(encounter.diagnoses, {
+          description: diagnosis || undefined,
+          code: cid || undefined,
+        }),
+        conduct,
+        procedures: encounter.procedures,
+        prescriptions: updateFirstRecord(encounter.prescriptions, { text: prescription || undefined }),
+        exams: updateFirstRecord(encounter.exams, { text: examRequests || undefined }),
+        certificate: encounter.certificate,
+        referral: encounter.referral,
+        return_plan: returnNotes,
+        discharge_summary: encounter.discharge_summary || "",
+        admission_plan: encounter.admission_plan || "",
+        },
+      );
+
+      toast({ title: "Atendimento concluído e conta encaminhada ao faturamento!" });
+      const params = new URLSearchParams({
+        account: result.billing.billing_account_id,
+        appointment: appointment.id,
       });
-
-      toast({ title: "Atendimento salvo e finalizado!" });
-      navigate("/reception");
+      navigate(`/billing-accounts?${params.toString()}`);
     } catch (err) {
       toast({ title: "Erro ao salvar", description: (err as Error).message, variant: "destructive" });
     } finally {
@@ -107,8 +219,8 @@ export default function AttendancePage() {
   };
 
   if (loading) return <LoadingState />;
-  if (error) return <ErrorState message={error} onRetry={() => navigate("/reception")} />;
-  if (!patient || !appointment) return <ErrorState message="Dados não encontrados" />;
+  if (error) return <ErrorState message={error} onRetry={() => void loadAttendance()} />;
+  if (!patient || !appointment || !encounter) return <ErrorState message="Dados não encontrados" />;
 
   return (
     <div className="space-y-4 animate-fade-in">

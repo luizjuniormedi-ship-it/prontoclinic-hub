@@ -50,25 +50,21 @@ export interface PriceLookup {
   found: boolean;
 }
 
-const EMPTY_PRICE_LOOKUP: PriceLookup = {
-  vl_particular: 0,
-  vl_convenio: 0,
-  vl_material: 0,
-  vl_medicamento: 0,
-  vl_taxa: 0,
-  vl_diaria: 0,
-  vl_gases: 0,
-  found: false,
-};
-
-function normalizeMoney(value: unknown): number {
+function normalizeLookupMoney(value: unknown, field: string): number {
   const normalized = typeof value === "string"
     ? value.trim().replace(",", ".")
     : value;
   const parsed = Number(normalized);
-  return Number.isFinite(parsed) && parsed >= 0
-    ? Math.round(parsed * 100) / 100
-    : 0;
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`Resposta inválida de find_price: ${field}`);
+  }
+  return Math.round(parsed * 100) / 100;
+}
+
+function normalizeLookupFound(value: unknown): boolean {
+  if (value === true || value === 1 || value === "true" || value === "t") return true;
+  if (value === false || value === 0 || value === "false" || value === "f") return false;
+  throw new Error("Resposta inválida de find_price: found");
 }
 
 function normalizePriceLookup(value: unknown): PriceLookup {
@@ -78,29 +74,31 @@ function normalizePriceLookup(value: unknown): PriceLookup {
       const fields = record.slice(1, -1).split(",");
       if (fields.length === 8) {
         return {
-          vl_particular: normalizeMoney(fields[0]),
-          vl_convenio: normalizeMoney(fields[1]),
-          vl_material: normalizeMoney(fields[2]),
-          vl_medicamento: normalizeMoney(fields[3]),
-          vl_taxa: normalizeMoney(fields[4]),
-          vl_diaria: normalizeMoney(fields[5]),
-          vl_gases: normalizeMoney(fields[6]),
-          found: fields[7] === "t" || fields[7] === "true",
+          vl_particular: normalizeLookupMoney(fields[0], "vl_particular"),
+          vl_convenio: normalizeLookupMoney(fields[1], "vl_convenio"),
+          vl_material: normalizeLookupMoney(fields[2], "vl_material"),
+          vl_medicamento: normalizeLookupMoney(fields[3], "vl_medicamento"),
+          vl_taxa: normalizeLookupMoney(fields[4], "vl_taxa"),
+          vl_diaria: normalizeLookupMoney(fields[5], "vl_diaria"),
+          vl_gases: normalizeLookupMoney(fields[6], "vl_gases"),
+          found: normalizeLookupFound(fields[7]),
         };
       }
     }
   }
-  if (!value || typeof value !== "object") return { ...EMPTY_PRICE_LOOKUP };
+  if (!value || typeof value !== "object") {
+    throw new Error("Resposta inválida de find_price");
+  }
   const row = value as Record<string, unknown>;
   return {
-    vl_particular: normalizeMoney(row.vl_particular),
-    vl_convenio: normalizeMoney(row.vl_convenio),
-    vl_material: normalizeMoney(row.vl_material),
-    vl_medicamento: normalizeMoney(row.vl_medicamento),
-    vl_taxa: normalizeMoney(row.vl_taxa),
-    vl_diaria: normalizeMoney(row.vl_diaria),
-    vl_gases: normalizeMoney(row.vl_gases),
-    found: row.found === true || row.found === 1 || row.found === "true",
+    vl_particular: normalizeLookupMoney(row.vl_particular, "vl_particular"),
+    vl_convenio: normalizeLookupMoney(row.vl_convenio, "vl_convenio"),
+    vl_material: normalizeLookupMoney(row.vl_material, "vl_material"),
+    vl_medicamento: normalizeLookupMoney(row.vl_medicamento, "vl_medicamento"),
+    vl_taxa: normalizeLookupMoney(row.vl_taxa, "vl_taxa"),
+    vl_diaria: normalizeLookupMoney(row.vl_diaria, "vl_diaria"),
+    vl_gases: normalizeLookupMoney(row.vl_gases, "vl_gases"),
+    found: normalizeLookupFound(row.found),
   };
 }
 
@@ -179,8 +177,7 @@ export const priceTableService = {
       p_insurance_plan_id: insurancePlanId,
     });
     if (error) {
-      console.warn("find_price RPC falhou, retornando 0:", error);
-      return { ...EMPTY_PRICE_LOOKUP };
+      throw new Error(`Erro ao consultar preço: ${error.message}`);
     }
     return normalizePriceLookup(Array.isArray(data) ? data[0] : data);
   },

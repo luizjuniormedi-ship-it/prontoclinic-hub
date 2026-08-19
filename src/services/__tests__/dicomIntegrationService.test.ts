@@ -6,20 +6,20 @@
  * - formatDicomName (LAST^FIRST^MIDDLE order)
  * - generateUID (válido)
  * - formatWorklistForOrthanc (estrutura correta)
- * - cancelOrder / syncOrderStatus (cascata)
+ * - syncOrderStatus (propagação de estado)
  *
  * Os métodos `format*` são privados; testamos indiretamente via formatWorklistForOrthanc.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { dicomIntegrationService } from "@/services/dicomIntegrationService";
-import type { DicomWorklistItem, ImagingOrderItem } from "@/types/dicom";
+import type { DicomWorklistItem } from "@/types/dicom";
 
 vi.mock("@/lib/supabase", () => {
-  return { supabase: { from: vi.fn() } };
+  return { supabase: { from: vi.fn(), rpc: vi.fn() } };
 });
 
-// Mock do dicomService (worklistQueueService etc)
+// Mock do serviço de itens usado pela sincronização agregada.
 vi.mock("@/services/dicomService", () => ({
   imagingOrderItemsService: {
     listByOrder: vi.fn(),
@@ -27,18 +27,9 @@ vi.mock("@/services/dicomService", () => ({
   } as unknown as typeof import("@/services/dicomService").imagingOrderItemsService & {
     listByOrder: ReturnType<typeof vi.fn>;
   },
-  worklistQueueService: {
-    list: vi.fn(),
-    markExported: vi.fn(),
-    cancel: vi.fn(),
-  } as unknown as typeof import("@/services/dicomService").worklistQueueService & {
-    list: ReturnType<typeof vi.fn>;
-    markExported: ReturnType<typeof vi.fn>;
-    cancel: ReturnType<typeof vi.fn>;
-  },
 }));
 
-import { imagingOrderItemsService, worklistQueueService } from "@/services/dicomService";
+import { imagingOrderItemsService } from "@/services/dicomService";
 import { supabase } from "@/lib/supabase";
 
 const mockWorklistItem: DicomWorklistItem = {
@@ -138,50 +129,6 @@ describe("dicomIntegrationService — getOrthancConfigTemplate", () => {
   });
 });
 
-describe("dicomIntegrationService — cancelOrder", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("cancela todos os itens e marca order como cancelado", async () => {
-    const mockItems: Partial<ImagingOrderItem>[] = [
-      { id: "i1", status: "agendado" },
-      { id: "i2", status: "liberado_worklist" },
-    ];
-
-    (imagingOrderItemsService.listByOrder as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(mockItems);
-    (imagingOrderItemsService.updateStatus as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
-
-    // Mock supabase.from('dicom_worklist_queue') — chamado 2x (um por item)
-    const wlChain = {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      neq: vi.fn().mockResolvedValue({ data: [{ id: "wl1" }] }),
-    };
-    // Mock supabase.from('imaging_orders')
-    const orderChain = {
-      update: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockResolvedValue({ error: null }),
-    };
-
-    (supabase.from as unknown as ReturnType<typeof vi.fn>)
-      .mockReturnValueOnce(wlChain) // primeiro item: worklist
-      .mockReturnValueOnce(wlChain) // segundo item: worklist
-      .mockReturnValueOnce(orderChain); // depois: orders
-
-    (worklistQueueService.cancel as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
-
-    await dicomIntegrationService.cancelOrder("o1");
-
-    expect(imagingOrderItemsService.listByOrder).toHaveBeenCalledWith("o1");
-    expect(imagingOrderItemsService.updateStatus).toHaveBeenCalledWith("i1", "cancelado");
-    expect(imagingOrderItemsService.updateStatus).toHaveBeenCalledWith("i2", "cancelado");
-    expect(orderChain.update).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "cancelado" }),
-    );
-  });
-});
-
 describe("dicomIntegrationService — syncOrderStatus", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -245,29 +192,6 @@ describe("dicomIntegrationService — integração com worklist e PACS", () => {
     vi.clearAllMocks();
   });
 
-  it("exporta todos os itens pendentes e os marca como exportados", async () => {
-    const segundoItem = {
-      ...mockWorklistItem,
-      id: "wl2",
-      accession_number: "ACC002",
-      patient_identifier: undefined,
-      patient_name: "Madonna",
-    };
-    (worklistQueueService.list as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([
-      mockWorklistItem,
-      segundoItem,
-    ]);
-    (worklistQueueService.markExported as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
-
-    const result = await dicomIntegrationService.exportPendingWorklist();
-
-    expect(worklistQueueService.list).toHaveBeenCalledWith({ status: "pending" });
-    expect(worklistQueueService.markExported).toHaveBeenNthCalledWith(1, "wl1");
-    expect(worklistQueueService.markExported).toHaveBeenNthCalledWith(2, "wl2");
-    expect(result.count).toBe(2);
-    expect(result.exported[1]["0010,0020"]).toBe("p1");
-  });
-
   it("ignora notificação sem accession number", async () => {
     await expect(
       dicomIntegrationService.handleStudyReceived({
@@ -278,38 +202,35 @@ describe("dicomIntegrationService — integração com worklist e PACS", () => {
       }),
     ).resolves.toBeNull();
     expect(supabase.from).not.toHaveBeenCalled();
+    expect(supabase.rpc).not.toHaveBeenCalled();
   });
 
-  it("cria estudo, atualiza item e worklist e abre laudo rascunho", async () => {
-    const wlItem = {
-      id: "wl1",
-      patient_id: "p1",
-      imaging_order_item_id: "i1",
-      modality_type: "CT",
-    };
-    const study = { id: "study1", study_instance_uid: "1.2.840.1" };
+  it("retorna nulo quando a RPC não encontra o accession no escopo ativo", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: null,
+      error: null,
+    });
 
-    const worklistLookup: any = {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockResolvedValue({ data: [wlItem], error: null }),
-    };
-    const studyInsert: any = {
-      insert: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: study, error: null }),
-    };
-    const worklistUpdate: any = {
-      update: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockResolvedValue({ error: null }),
-    };
-    const reportInsert = vi.fn().mockResolvedValue({ error: null });
-    (supabase.from as unknown as ReturnType<typeof vi.fn>)
-      .mockReturnValueOnce(worklistLookup)
-      .mockReturnValueOnce(studyInsert)
-      .mockReturnValueOnce(worklistUpdate)
-      .mockReturnValueOnce({ insert: reportInsert });
-    (imagingOrderItemsService.updateStatus as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    await expect(
+      dicomIntegrationService.handleStudyReceived({
+        ID: "orthanc-unknown",
+        Path: "/studies/orthanc-unknown",
+        PatientID: "p1",
+        StudyInstanceUID: "1.2.840.999",
+        AccessionNumber: "ACC-UNKNOWN",
+      }),
+    ).resolves.toBeNull();
+
+    expect(supabase.rpc).toHaveBeenCalledTimes(1);
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it("delega o recebimento inteiro a uma única RPC canônica", async () => {
+    const study = { id: "study1", study_instance_uid: "1.2.840.1" };
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: [study],
+      error: null,
+    });
 
     const result = await dicomIntegrationService.handleStudyReceived({
       ID: "orthanc-1",
@@ -319,20 +240,41 @@ describe("dicomIntegrationService — integração com worklist e PACS", () => {
       AccessionNumber: "ACC001",
       StudyDate: "20260717",
       StudyTime: "101500",
+      Modality: "CT",
       StationName: "CT_SALA1",
+      ScheduledProcedureStepID: "SPS-001",
     });
 
     expect(result).toEqual(study);
-    expect(studyInsert.insert).toHaveBeenCalledWith(expect.objectContaining({
-      accession_number: "ACC001",
-      study_date: "2026-07-17",
-      modality_type: "CT",
-    }));
-    expect(imagingOrderItemsService.updateStatus).toHaveBeenCalledWith("i1", "recebido_pacs");
-    expect(worklistUpdate.update).toHaveBeenCalledWith(expect.objectContaining({ status: "acquired" }));
-    expect(reportInsert).toHaveBeenCalledWith(expect.objectContaining({
-      pacs_study_id: "study1",
-      status: "draft",
-    }));
+    expect(supabase.rpc).toHaveBeenCalledTimes(1);
+    expect(supabase.rpc).toHaveBeenCalledWith("m24_receive_pacs_study_secure", {
+      p_accession_number: "ACC001",
+      p_study_instance_uid: "1.2.840.1",
+      p_study_date: "2026-07-17",
+      p_study_time: "101500",
+      p_modality_type: "CT",
+      p_station_aetitle: "CT_SALA1",
+      p_scheduled_procedure_step_id: "SPS-001",
+    });
+    expect(supabase.from).not.toHaveBeenCalled();
+    expect(imagingOrderItemsService.updateStatus).not.toHaveBeenCalled();
+  });
+
+  it("propaga erro contextualizado da RPC sem tentar mutações diretas", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: null,
+      error: { message: "study already linked" },
+    });
+
+    await expect(dicomIntegrationService.handleStudyReceived({
+      ID: "orthanc-1",
+      Path: "/studies/orthanc-1",
+      PatientID: "p1",
+      StudyInstanceUID: "1.2.840.1",
+      AccessionNumber: "ACC001",
+    })).rejects.toThrow("Erro ao receber estudo PACS: study already linked");
+
+    expect(supabase.rpc).toHaveBeenCalledTimes(1);
+    expect(supabase.from).not.toHaveBeenCalled();
   });
 });

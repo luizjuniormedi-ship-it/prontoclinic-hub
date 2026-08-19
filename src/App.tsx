@@ -4,7 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConfirmProvider } from "@/hooks/useConfirm";
-import { AuthProvider } from "@/hooks/useAuth";
+import { AuthProvider } from "@/hooks/AuthProvider";
 import { AppLayout } from "@/components/AppLayout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { isWaveModuleEnabled } from "@/config/moduleRollout";
@@ -39,7 +39,6 @@ const AttendancePage = lazy(() => import("@/pages/AttendancePage"));
 const CallCenterPage = lazy(() => import("@/pages/CallCenterPage"));
 
 // Imaging / PACS / DICOM
-const WorklistPage = lazy(() => import("@/pages/WorklistPage"));
 const PACSPage = lazy(() => import("@/pages/PACSPage"));
 const BillingAccountsPage = lazy(() => import("@/pages/BillingAccountsPage"));
 const ProfessionalPaymentPage = lazy(() => import("@/pages/ProfessionalPaymentPage"));
@@ -210,7 +209,9 @@ const App = () => (
             <Route path="/attendance/:appointmentId" element={<AppLayout><ProtectedRoute path="/attendance"><LazyRoute><AttendancePage /></LazyRoute></ProtectedRoute></AppLayout>} />
 
             {/* Imaging / PACS / DICOM */}
-            <Route path="/worklist" element={<AppLayout><ProtectedRoute path="/worklist"><LazyRoute><WorklistPage /></LazyRoute></ProtectedRoute></AppLayout>} />
+            {isWaveModuleEnabled(24) && (
+              <Route path="/worklist" element={<Navigate to="/dicom/worklist" replace />} />
+            )}
             <Route path="/pacs" element={<AppLayout><ProtectedRoute path="/pacs"><LazyRoute><PACSPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/dicom/nodes" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomNodesPage /></LazyRoute></ProtectedRoute></AppLayout>} />
             <Route path="/dicom/modalities" element={<AppLayout><ProtectedRoute path="/dicom"><LazyRoute><DicomModalitiesPage /></LazyRoute></ProtectedRoute></AppLayout>} />

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   assertReceptionBillingIntegrity,
@@ -9,8 +11,8 @@ import {
   getOrCreateWalkinKey,
   getOrCreateWorkflowKey,
   resolveReceptionPayer,
-  type PatientRow,
-} from "@/pages/ReceptionPage";
+} from "@/services/receptionWorkflowService";
+import type { PatientRow } from "@/pages/ReceptionPage";
 import type { InsuranceCompany, InsurancePlan } from "@/services/insuranceService";
 
 const patient: PatientRow = {
@@ -165,5 +167,25 @@ describe("ReceptionPage — decisão segura do pagador", () => {
     expect(() =>
       assertReceptionReceivableRequired("convenio", false),
     ).not.toThrow();
+  });
+});
+
+describe("ReceptionPage — concorrência do check-in", () => {
+  const source = readFileSync(
+    resolve(process.cwd(), "src/pages/ReceptionPage.tsx"),
+    "utf8",
+  );
+
+  it("aceita somente o resultado da tentativa de check-in mais recente", () => {
+    expect(source).toContain("const sequence = ++checkinValidationSequence.current");
+    expect(source.match(/sequence !== checkinValidationSequence\.current/g)).toHaveLength(3);
+    expect(source).toContain("if (sequence === checkinValidationSequence.current) setCheckingIn(false)");
+    expect(source).toContain("setPrecheckContext(checkinReadiness.precheck)");
+  });
+
+  it("mantém as ações de abertura bloqueadas durante a validação", () => {
+    expect(source).toMatch(
+      /disabled=\{checkingIn\}[^>]*onClick=\{\(\) => void openCheckin\(a\)\}/,
+    );
   });
 });

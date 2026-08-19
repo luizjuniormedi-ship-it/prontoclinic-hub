@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/PageHeader";
-import { LoadingState, EmptyState } from "@/components/StateViews";
+import { LoadingState, EmptyState, ErrorState } from "@/components/StateViews";
 import { worklistQueueService } from "@/services/dicomService";
 import type { DicomWorklistItem } from "@/types/dicom";
 import { toast } from "@/hooks/use-toast";
@@ -18,26 +18,24 @@ const statusColors: Record<string, string> = { pending: 'bg-warning/10 text-warn
 export default function DicomWorklistPage() {
   const [items, setItems] = useState<DicomWorklistItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
   const load = () => {
     setLoading(true);
+    setLoadError(false);
     worklistQueueService.list({ status: statusFilter !== 'all' ? statusFilter : undefined })
       .then(setItems)
-      .catch(() => toast({ title: "Erro ao carregar worklist", variant: "destructive" }))
+      .catch(() => {
+        setItems([]);
+        setLoadError(true);
+        toast({ title: "Erro ao carregar worklist", variant: "destructive" });
+      })
       .finally(() => setLoading(false));
   };
 
   useEffect(load, [statusFilter]);
-
-  const markExported = async (id: string) => {
-    try {
-      await worklistQueueService.markExported(id);
-      toast({ title: "Marcado como exportado" });
-      load();
-    } catch { toast({ title: "Erro", variant: "destructive" }); }
-  };
 
   const cancel = async (id: string) => {
     try {
@@ -54,6 +52,7 @@ export default function DicomWorklistPage() {
   });
 
   if (loading) return <LoadingState />;
+  if (loadError) return <ErrorState message="Erro ao carregar worklist" onRetry={load} />;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -95,10 +94,7 @@ export default function DicomWorklistPage() {
                   <TableCell>
                     <div className="flex gap-1">
                       {i.status === 'pending' && (
-                        <>
-                          <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => markExported(i.id)}>Exportar</Button>
-                          <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-destructive" onClick={() => cancel(i.id)}>Cancelar</Button>
-                        </>
+                        <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-destructive" onClick={() => cancel(i.id)}>Cancelar</Button>
                       )}
                     </div>
                   </TableCell>

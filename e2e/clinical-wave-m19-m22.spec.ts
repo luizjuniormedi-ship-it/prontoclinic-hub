@@ -17,10 +17,14 @@ const routes = [
 ] as const;
 
 async function requireAccount(role: UserRole) {
-  test.skip(
-    !credentialsForOrNull(role),
-    `Conta ${role} não foi preprovisionada nas variáveis E2E.`,
-  );
+  if (waveReady && !credentialsForOrNull(role)) {
+    throw new Error(`Conta ${role} é obrigatória quando E2E_CLINICAL_WAVE_READY=true.`);
+  }
+}
+
+function requireFixture(value: string | undefined, name: string): string {
+  if (!value?.trim()) throw new Error(`${name} é obrigatório quando E2E_CLINICAL_WAVE_READY=true.`);
+  return value.trim();
 }
 
 test.describe("M19-M22 — segurança de rota @readonly", () => {
@@ -106,15 +110,14 @@ test.describe("M19-M22 — matriz UI autenticada @readonly", () => {
 
   test("empresa B não lista prescrições do paciente sintético da empresa A", async ({ page }) => {
     await requireAccount("doctorB");
-    const companyAPatientId = process.env.E2E_COMPANY_A_M20_PATIENT_ID?.trim();
-    test.skip(
-      !companyAPatientId,
-      "E2E_COMPANY_A_M20_PATIENT_ID deve apontar para fixture sintético com prescrição na Empresa A.",
+    const companyAPatientId = requireFixture(
+      process.env.E2E_COMPANY_A_M20_PATIENT_ID,
+      "E2E_COMPANY_A_M20_PATIENT_ID",
     );
 
     await loginAsRole(page, "doctorB");
     await page.goto("/prescriptions");
-    await page.getByLabel("Identificador do paciente").fill(companyAPatientId!);
+    await page.getByLabel("Identificador do paciente").fill(companyAPatientId);
     await page.getByRole("button", { name: "Consultar" }).click();
     await expect(page.getByText("Nenhuma prescrição carregada.")).toBeVisible();
   });
@@ -124,5 +127,48 @@ test.describe("M19-M22 — matriz UI autenticada @readonly", () => {
     await loginAsRole(page, "nurseB");
     await page.goto("/nursing/clinical");
     await expect(page.getByRole("heading", { name: "Enfermagem e triagem" })).toBeVisible();
+  });
+
+  test("rota legada preserva appointment, paciente e fila ao encaminhar para M19", async ({ page }) => {
+    await requireAccount("nurseA");
+    await loginAsRole(page, "nurseA");
+    await page.goto(
+      "/nursing/triage?patientId=91001&appointmentId=91001&queueId=91001&origin=reception",
+    );
+
+    await expect(page).toHaveURL(
+      /\/nursing\/clinical\?patientId=91001&appointmentId=91001&queueId=91001&origin=reception$/,
+    );
+    await expect(page.getByRole("heading", { name: "Enfermagem e triagem" })).toBeVisible();
+  });
+
+  test("M19 mantém o contexto canônico em viewport móvel", async ({ page }) => {
+    await requireAccount("nurseA");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await loginAsRole(page, "nurseA");
+    await page.goto(
+      "/nursing/clinical?patientId=91001&appointmentId=91001&queueId=91001&origin=reception",
+    );
+
+    await expect(page.getByRole("heading", { name: "Enfermagem e triagem" })).toBeVisible();
+    await expect(page.getByLabel("Paciente")).toHaveValue("91001");
+    await expect(page.getByLabel("Agendamento")).toHaveValue("91001");
+    await expect(page.getByLabel("Senha da fila")).toHaveValue("91001");
+    await expect(page.getByLabel("Paciente")).toHaveAttribute("readonly");
+    await expect(page.getByLabel("Agendamento")).toHaveAttribute("readonly");
+    await expect(page.getByLabel("Senha da fila")).toHaveAttribute("readonly");
+    await expect.poll(() => page.evaluate(() => ({
+      viewport: window.innerWidth,
+      content: document.documentElement.scrollWidth,
+    }))).toEqual({ viewport: 390, content: 390 });
+    const classification = page.getByRole("combobox", { name: "Classificação de risco" });
+    await classification.scrollIntoViewIfNeeded();
+    await classification.click();
+    await expect(page.getByRole("option").first()).toBeVisible();
+    await page.keyboard.press("Escape");
+    const completeButton = page.getByRole("button", { name: "Concluir triagem" });
+    await completeButton.scrollIntoViewIfNeeded();
+    await expect(completeButton).toBeInViewport();
+    await expect(completeButton).toBeDisabled();
   });
 });

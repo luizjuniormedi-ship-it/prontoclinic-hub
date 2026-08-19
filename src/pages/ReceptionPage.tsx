@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Check, Clock, UserCheck, Play, AlertTriangle, Search, Stethoscope, PhoneCall, RotateCcw, ArrowRightLeft, Volume2, Receipt, UserPlus } from "lucide-react";
+import { Check, Clock, UserCheck, AlertTriangle, Search, Stethoscope, PhoneCall, RotateCcw, ArrowRightLeft, Volume2, Receipt, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +16,7 @@ import { AppointmentStatusBadge, AppointmentTypeBadge } from "@/components/Statu
 import { appointmentsService, professionalsLookup, specialtiesLookup, appointmentTypesLookup, servicesCatalogLookup, DbAppointment, DbProfessional, DbSpecialty, DbAppointmentType, DbServiceCatalog } from "@/services/appointmentsService";
 import { unitsService } from "@/services/catalogService";
 import { supabase } from "@/lib/supabase";
-import { Appointment, AppointmentStatus, Patient, Unit } from "@/types";
+import { Appointment, Patient, Unit, type AppointmentStatus } from "@/types";
 import type { AppointmentTypeLiteral, AppointmentStatusForBadge } from "@/types/missing";
 import { useToast } from "@/hooks/use-toast";
 import { calculateAge, localDateKey } from "@/utils/formatters";
@@ -24,7 +24,20 @@ import { friendlyError } from "@/utils/friendlyError";
 import { useDebounce } from "@/hooks/useDebounce";
 import { CheckinReadiness, formatReceptionQueueTicketLabel, ReceptionPendingItem, ReceptionPrecheckinContext, ReceptionQueueTicket, receptionService } from "@/services/receptionService";
 import { insuranceCompanyService, insurancePlanService, type InsuranceCompany, type InsurancePlan } from "@/services/insuranceService";
-import { receptionWorkflowService, type ReceptionWorkflowInput } from "@/services/receptionWorkflowService";
+import {
+  assertReceptionBillingIntegrity,
+  assertReceptionPriceFound,
+  assertReceptionReceivableIntegrity,
+  assertReceptionReceivableRequired,
+  clearWalkinKey,
+  clearWorkflowKey,
+  getOrCreateWalkinKey,
+  getOrCreateWorkflowKey,
+  receptionWorkflowService,
+  resolveReceptionPayer,
+  type ReceptionBillingQuote,
+  type ReceptionWorkflowInput,
+} from "@/services/receptionWorkflowService";
 import { priceTableService } from "@/services/priceTableService";
 import { usePermissionGate } from "@/hooks/usePermissionGate";
 import { useAuth } from "@/hooks/useAuth";
@@ -36,6 +49,7 @@ import { ELIGIBILITY_STATUSES, type EligibilityStatus } from "@/services/insuran
 import { withTimeout } from "@/utils/asyncTimeout";
 import { patientsService } from "@/services/patientsService";
 import { receptionCompletionService } from "@/services/receptionCompletionService";
+import { module19NursingService } from "@/services/module19NursingService";
 
 export interface PatientRow { id: string; full_name: string; cpf: string | null; birth_date: string | null; phone: string | null; allergies: string | null; clinical_alerts?: string | null; insurance_plan_id: string | null; }
 
@@ -46,12 +60,6 @@ interface CheckinHandoffReceipt {
   billingAccountId: string;
   financialTransactionId: number | null;
   ticket?: string;
-  totalGrossAmount: number;
-}
-
-export interface ReceptionBillingQuote {
-  billingType: "particular" | "convenio";
-  insuranceId: number | null;
   totalGrossAmount: number;
 }
 
@@ -68,158 +76,6 @@ function parseCatalogAmount(value: unknown, label: string): number {
     throw new Error(`Tabela de preços inválida: ${label}`);
   }
   return parsed;
-}
-
-export function resolveReceptionPayer(
-  patient: PatientRow | undefined,
-  insurancePlans: InsurancePlan[],
-  insuranceCompanies: InsuranceCompany[],
-  insuranceCatalogReady: boolean,
-): {
-  plan: InsurancePlan | null;
-  insurer: InsuranceCompany | null;
-  billingType: "particular" | "convenio";
-} {
-  if (!patient) {
-    throw new Error("Cadastro do paciente indisponível. O check-in foi bloqueado.");
-  }
-  if (!patient.insurance_plan_id) {
-    return { plan: null, insurer: null, billingType: "particular" };
-  }
-  if (!insuranceCatalogReady) {
-    throw new Error(
-      "Não foi possível carregar convênios e planos. O pagador não pode ser definido com segurança.",
-    );
-  }
-  const plan = insurancePlans.find(
-    (item) => String(item.id) === String(patient.insurance_plan_id),
-  );
-  if (!plan) {
-    throw new Error("Plano do paciente não foi encontrado. O check-in foi bloqueado.");
-  }
-  const insurer = insuranceCompanies.find(
-    (item) => item.id === plan.insurance_company_id,
-  );
-  if (!insurer) {
-    throw new Error("Convênio do paciente não foi encontrado. O check-in foi bloqueado.");
-  }
-  return { plan, insurer, billingType: "convenio" };
-}
-
-export function assertReceptionPriceFound(found: boolean): void {
-  if (!found) {
-    throw new Error(
-      "Preço não cadastrado para este atendimento. A pré-conta não pode ser aberta com valor presumido.",
-    );
-  }
-}
-
-export function assertReceptionBillingIntegrity(
-  quote: ReceptionBillingQuote | null,
-  submitted: ReceptionBillingQuote,
-): void {
-  if (!quote) {
-    throw new Error("Cotação da pré-conta indisponível. Reabra o check-in.");
-  }
-  if (
-    quote.billingType !== submitted.billingType
-    || quote.insuranceId !== submitted.insuranceId
-    || Math.abs(quote.totalGrossAmount - submitted.totalGrossAmount) > 0.001
-  ) {
-    throw new Error(
-      "Pagador ou valor da pré-conta divergiu da cotação validada. Reabra o check-in.",
-    );
-  }
-}
-
-export function assertReceptionReceivableIntegrity(
-  billingType: "particular" | "convenio",
-  totalGrossAmount: number,
-  receivableType: "copayment" | "private",
-  receivableAmount: number,
-): void {
-  if (receivableAmount <= 0 || receivableAmount > totalGrossAmount) {
-    throw new Error("Valor do recebível deve ser positivo e não pode exceder a pré-conta.");
-  }
-  if (
-    (billingType === "particular" && receivableType !== "private")
-    || (billingType === "convenio" && receivableType !== "copayment")
-  ) {
-    throw new Error("Tipo do recebível incompatível com a fonte pagadora.");
-  }
-}
-
-export function assertReceptionReceivableRequired(
-  billingType: "particular" | "convenio",
-  createReceivable: boolean,
-): void {
-  if (billingType === "particular" && !createReceivable) {
-    throw new Error(
-      "Atendimento particular exige título financeiro pendente antes do check-in.",
-    );
-  }
-}
-
-function workflowStorageKey(companyId: string | null, unitId: number | null, appointmentId: string): string {
-  return `prontomedic:reception-workflow:${companyId || "company"}:${unitId || "unit"}:${appointmentId}`;
-}
-
-function walkinStorageKey(companyId: string | null, unitId: number | null): string {
-  return `prontomedic:reception-walkin:${companyId || "company"}:${unitId || "unit"}`;
-}
-
-export function getOrCreateWalkinKey(
-  companyId: string | null,
-  unitId: number | null,
-): string {
-  const storageKey = walkinStorageKey(companyId, unitId);
-  const existing = typeof sessionStorage !== "undefined"
-    ? sessionStorage.getItem(storageKey)
-    : null;
-  if (existing) return existing;
-  const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const value = `walkin:${suffix}`.slice(0, 120);
-  if (typeof sessionStorage !== "undefined") sessionStorage.setItem(storageKey, value);
-  return value;
-}
-
-export function clearWalkinKey(
-  companyId: string | null,
-  unitId: number | null,
-): void {
-  if (typeof sessionStorage !== "undefined") {
-    sessionStorage.removeItem(walkinStorageKey(companyId, unitId));
-  }
-}
-
-export function getOrCreateWorkflowKey(
-  appointmentId: string,
-  companyId: string | null,
-  unitId: number | null,
-): string {
-  const storageKey = workflowStorageKey(companyId, unitId, appointmentId);
-  const existing = typeof sessionStorage !== "undefined"
-    ? sessionStorage.getItem(storageKey)
-    : null;
-  if (existing) return existing;
-  const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const value = `reception:${appointmentId}:${suffix}`.slice(0, 120);
-  if (typeof sessionStorage !== "undefined") sessionStorage.setItem(storageKey, value);
-  return value;
-}
-
-export function clearWorkflowKey(
-  appointmentId: string,
-  companyId: string | null,
-  unitId: number | null,
-): void {
-  if (typeof sessionStorage !== "undefined") {
-    sessionStorage.removeItem(workflowStorageKey(companyId, unitId, appointmentId));
-  }
 }
 
 function settledValue<T>(
@@ -316,7 +172,7 @@ export default function ReceptionPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const today = localDateKey();
-  const { allowed: canOpenAttendance } = usePermissionGate("/attendance");
+  const { allowed: canOpenClinicalTriage } = usePermissionGate("/nursing/clinical");
   const { allowed: canOpenBilling } = usePermissionGate("/billing-accounts");
   const { allowed: canOpenFinancial } = usePermissionGate("/financial");
   const { activeCompanyId, activeUnitId } = useAuth();
@@ -324,6 +180,7 @@ export default function ReceptionPage() {
     ? Number(activeUnitId)
     : null;
   const loadSequence = useRef(0);
+  const checkinValidationSequence = useRef(0);
   const exceptionReasonLength = receptionExceptionReasonLength(exceptionReason);
 
   const loadAll = useCallback(async () => {
@@ -408,40 +265,57 @@ export default function ReceptionPage() {
     overdue: queueItems.filter((ticket) => ["waiting", "called", "transferred"].includes(ticket.status) && new Date(ticket.sla_due_at).getTime() < Date.now()).length,
   }), [queueItems]);
 
-  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+  const [preparingTriageId, setPreparingTriageId] = useState<string | null>(null);
 
-  const handleStatusChange = async (id: string, newStatus: AppointmentStatus): Promise<boolean> => {
-    if (updatingStatusId) return false;
+  const openClinicalTriage = useCallback(async (appointment: Appointment) => {
+    if (preparingTriageId) return;
+    setPreparingTriageId(appointment.id);
     try {
-      setUpdatingStatusId(id);
-      await appointmentsService.updateStatus(id, newStatus);
-      await loadAll();
-      const labels: Record<string, string> = { waiting: "Check-in realizado!", in_progress: "Atendimento iniciado!", completed: "Finalizado!" };
-      toast({ title: labels[newStatus] || "Atualizado" });
-      return true;
-    } catch (err) {
-      toast({ title: "Erro ao atualizar atendimento", description: friendlyError(err, "Atualizar atendimento"), variant: "destructive" });
-      return false;
+      if (!activeUnitId) throw new Error("Selecione a unidade ativa antes de encaminhar.");
+      const handoff = await module19NursingService.prepareHandoff(
+        Number(appointment.id),
+        Number(appointment.patientId),
+        Number(activeUnitId),
+        appointment.notes,
+      );
+      const params = new URLSearchParams({
+        patientId: appointment.patientId,
+        appointmentId: appointment.id,
+        queueId: String(handoff.queue.id),
+      });
+      navigate(`/nursing/clinical?${params.toString()}`);
+    } catch (cause) {
+      toast({
+        title: "Não foi possível encaminhar para a triagem",
+        description: friendlyError(cause, "Preparar triagem"),
+        variant: "destructive",
+      });
     } finally {
-      setUpdatingStatusId(null);
+      setPreparingTriageId(null);
     }
-  };
+  }, [activeUnitId, navigate, preparingTriageId, toast]);
 
-  const fetchCheckinReadiness = useCallback(async (appointmentId: string): Promise<CheckinReadiness> => {
+  const fetchCheckinReadiness = useCallback(async (appointmentId: string): Promise<{
+    readiness: CheckinReadiness;
+    precheck: ReceptionPrecheckinContext;
+  }> => {
     const [baseReadiness, precheck] = await Promise.all([
       receptionService.getReadiness(appointmentId),
       receptionService.getPrecheckinContext(appointmentId),
     ]);
-    setPrecheckContext(precheck);
     return {
-      ...baseReadiness,
-      ready: baseReadiness.ready && precheck.ready,
-      issues: [...baseReadiness.issues, ...precheck.issues],
-      has_document_pending: precheck.has_document_pending,
+      precheck,
+      readiness: {
+        ...baseReadiness,
+        ready: baseReadiness.ready && precheck.ready,
+        issues: [...baseReadiness.issues, ...precheck.issues],
+        has_document_pending: precheck.has_document_pending,
+      },
     };
   }, []);
 
   const openCheckin = async (appointment: Appointment) => {
+    const sequence = ++checkinValidationSequence.current;
     try {
       setCheckingIn(true); setCheckinTarget(appointment); setReadiness(null); setPrecheckContext(null); setCanReleaseByException(false); setExceptionReason(""); setPriority("normal");
       const patient = patients.find((item) => item.id === appointment.patientId);
@@ -476,6 +350,7 @@ export default function ReceptionPage() {
         plan?.id ? Number(plan.id) : null,
         sourceAppointment?.company_id || activeCompanyId,
       );
+      if (sequence !== checkinValidationSequence.current) return;
       assertReceptionPriceFound(priceLookup.found);
       const estimatedAmount = Math.max(
         0,
@@ -505,14 +380,20 @@ export default function ReceptionPage() {
           : "",
       );
       setReceivableDueDate(today);
-      const [nextReadiness, exceptionCapability] = await Promise.all([
+      const [checkinReadiness, exceptionCapability] = await Promise.all([
         fetchCheckinReadiness(appointment.id),
         receptionService.getExceptionCapability(appointment.id),
       ]);
-      setReadiness(nextReadiness);
+      if (sequence !== checkinValidationSequence.current) return;
+      setPrecheckContext(checkinReadiness.precheck);
+      setReadiness(checkinReadiness.readiness);
       setCanReleaseByException(exceptionCapability);
-    } catch (err) { setCheckinTarget(null); setPrecheckContext(null); setCanReleaseByException(false); toast({ title: "Erro ao validar check-in", description: (err as Error).message, variant: "destructive" }); }
-    finally { setCheckingIn(false); }
+    } catch (err) {
+      if (sequence !== checkinValidationSequence.current) return;
+      setCheckinTarget(null); setPrecheckContext(null); setCanReleaseByException(false); toast({ title: "Erro ao validar check-in", description: (err as Error).message, variant: "destructive" });
+    } finally {
+      if (sequence === checkinValidationSequence.current) setCheckingIn(false);
+    }
   };
   const openCheckinRef = useRef(openCheckin);
   openCheckinRef.current = openCheckin;
@@ -951,9 +832,9 @@ export default function ReceptionPage() {
           ) : (
             [...scheduled, ...waiting].map((a) => renderCard(a,
               a.status === "scheduled" || a.status === "confirmed" ? (
-                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => void openCheckin(a)}><Check className="mr-1 h-3 w-3" />Check-in</Button>
-              ) : a.status === "waiting" && canOpenAttendance ? (
-                <Button size="sm" className="h-7 text-xs" disabled={updatingStatusId === a.id} onClick={async () => { if (await handleStatusChange(a.id, "in_progress") && canOpenAttendance) navigate(`/attendance/${a.id}`); }}><Play className="mr-1 h-3 w-3" />{updatingStatusId === a.id ? "Abrindo..." : "Iniciar"}</Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs" disabled={checkingIn} onClick={() => void openCheckin(a)}><Check className="mr-1 h-3 w-3" />Check-in</Button>
+              ) : a.status === "waiting" && canOpenClinicalTriage ? (
+                <Button size="sm" className="h-7 text-xs" disabled={Boolean(preparingTriageId)} onClick={() => void openClinicalTriage(a)}><Stethoscope className="mr-1 h-3 w-3" />{preparingTriageId === a.id ? "Encaminhando..." : "Encaminhar à triagem"}</Button>
               ) : null
             ))
           )}
@@ -962,8 +843,8 @@ export default function ReceptionPage() {
         <TabsContent value="attending" className="mt-3 space-y-2">
           {inProgress.length === 0 ? <EmptyState icon={Stethoscope} title="Nenhum atendimento em andamento" /> :
             inProgress.map((a) => renderCard(a,
-              canOpenAttendance ? <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => navigate(`/attendance/${a.id}`)}>
-                <Stethoscope className="mr-1 h-3 w-3" />Abrir
+              canOpenClinicalTriage ? <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => navigate(`/attendance/${a.id}`)}>
+                <Stethoscope className="mr-1 h-3 w-3" />Retomar atendimento
               </Button> : null
             ))
           }
@@ -1098,7 +979,9 @@ export default function ReceptionPage() {
                 mode="checkin"
                 documentIssues={readiness.issues.filter((issue) => issue.type === "document")}
                 onOperationCompleted={async () => {
-                  setReadiness(await fetchCheckinReadiness(checkinTarget.id));
+                  const refreshed = await fetchCheckinReadiness(checkinTarget.id);
+                  setPrecheckContext(refreshed.precheck);
+                  setReadiness(refreshed.readiness);
                 }}
               />
             )}
