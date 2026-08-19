@@ -3,7 +3,10 @@
   "module": 19,
   "baseCommit": "281b24fc262a46890f19f42204cd132e7cdf7bd9",
   "paths": [
+    ".github/workflows/deploy-frontend-vps.yml",
     ".github/workflows/ci.yml",
+    "package-lock.json",
+    "package.json",
     "e2e/clinical-wave-m19-m22.spec.ts",
     "e2e/dicom.spec.ts",
     "e2e/gate-phase01.spec.ts",
@@ -32,6 +35,7 @@
     "src/components/ui/toggle.tsx",
     "src/config/navigation.ts",
     "src/lib/env.ts",
+    "vite.config.ts",
     "src/hooks/AuthProvider.tsx",
     "src/hooks/useConfirm.tsx",
     "src/hooks/useDebounce.ts",
