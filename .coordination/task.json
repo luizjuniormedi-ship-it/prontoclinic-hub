@@ -4,6 +4,7 @@
   "baseCommit": "281b24fc262a46890f19f42204cd132e7cdf7bd9",
   "paths": [
     ".github/workflows/deploy-frontend-vps.yml",
+    ".github/workflows/deploy.yml",
     ".github/workflows/ci.yml",
     "package-lock.json",
     "package.json",
@@ -35,6 +36,7 @@
     "src/components/ui/toggle.tsx",
     "src/config/navigation.ts",
     "src/lib/env.ts",
+    "scripts/validate-production-frontend-env.mjs",
     "vite.config.ts",
     "src/hooks/AuthProvider.tsx",
     "src/hooks/useConfirm.tsx",

@@ -74,19 +74,11 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          expected_origin='https://prontomedic.191-252-196-6.sslip.io'
-          supabase_url="$(sed -n 's/^VITE_SUPABASE_URL=//p' .env.production.local | tail -n 1 | tr -d '\r\"')"
-          app_url="$(sed -n 's/^VITE_APP_URL=//p' .env.production.local | tail -n 1 | tr -d '\r\"')"
-          test "$supabase_url" = "$expected_origin" || {
-            echo "::error::VITE_SUPABASE_URL must equal the public HTTPS origin"
-            exit 1
-          }
-          if test -n "$app_url"; then
-            test "$app_url" = "$expected_origin" || {
-              echo "::error::VITE_APP_URL must equal the public HTTPS origin"
-              exit 1
-            }
-          fi
+          while IFS='=' read -r name _; do
+            [[ "$name" == VITE_* ]] && unset "$name"
+          done < <(env)
+          node scripts/validate-production-frontend-env.mjs \
+            'https://prontomedic.191-252-196-6.sslip.io'
 
       - uses: actions/setup-node@v4
         with:
@@ -95,18 +87,13 @@ jobs:
 
       - name: Build immutable frontend
         run: |
+          while IFS='=' read -r name _; do
+            [[ "$name" == VITE_* ]] && unset "$name"
+          done < <(env)
           npm ci
           npm run build
           test -f dist/index.html
           test -d dist/assets
-          ! grep -R -Fq 'http://191.252.196.6' dist || {
-            echo '::error::Production bundle contains the insecure VPS origin'
-            exit 1
-          }
-          grep -R -Fq 'https://prontomedic.191-252-196-6.sslip.io' dist || {
-            echo '::error::Production bundle does not contain the canonical HTTPS origin'
-            exit 1
-          }
           printf '%s\n' "${{ inputs.commit_sha }}" > dist/COMMIT_SHA
           tar -czf "frontend-${{ inputs.commit_sha }}.tgz" -C dist .
           sha256sum "frontend-${{ inputs.commit_sha }}.tgz" > "frontend-${{ inputs.commit_sha }}.tgz.sha256"

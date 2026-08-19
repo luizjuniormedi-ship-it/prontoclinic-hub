@@ -66,6 +66,9 @@ jobs:
           echo "Actor:  ${{ github.actor }}"
           echo "Supabase URL configured: $([ -n "$VITE_SUPABASE_URL" ] && echo yes || echo NO)"
 
+      - name: Validate production frontend environment
+        run: node scripts/validate-production-frontend-env.mjs
+
       - name: Install dependencies
         run: npm ci
 
