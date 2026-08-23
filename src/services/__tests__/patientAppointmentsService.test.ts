@@ -73,7 +73,7 @@ describe("patientAppointmentsService", () => {
   it("monta a visão rápida com hoje, três próximos e três históricos", async () => {
     vi.mocked(supabase.rpc)
       .mockResolvedValueOnce({ data: response("today", "1"), error: null } as never)
-      .mockResolvedValueOnce({ data: response("upcoming", "2"), error: null } as never)
+      .mockResolvedValueOnce({ data: response("upcoming", "1"), error: null } as never)
       .mockResolvedValueOnce({ data: response("history", "3"), error: null } as never);
 
     const result = await patientAppointmentsService.getQuickView("10");
@@ -86,9 +86,9 @@ describe("patientAppointmentsService", () => {
     ]);
     expect(result.groups.map((group) => group.section)).toEqual([
       "today",
-      "upcoming",
       "history",
     ]);
+    expect(result.pagination.total).toBe(2);
   });
 
   it("falha fechado quando a RPC retorna erro", async () => {
