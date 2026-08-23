@@ -50,6 +50,7 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:chromium": "playwright test --project=chromium",
+    "validate:origin-baseline": "node scripts/validate-origin-main-baseline.mjs",
     "test:all": "npm run test:unit && npm run test:e2e",
     "auth:local": "node local-auth-server.mjs",
     "local:start": "powershell -ExecutionPolicy Bypass -File scripts/start-local.ps1",
