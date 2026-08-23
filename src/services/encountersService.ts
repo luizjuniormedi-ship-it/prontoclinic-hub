@@ -151,16 +151,23 @@ export const encountersService = {
     return (data || []) as unknown as Array<{ code: string; name: string; category: string }>;
   },
   async calcImc(peso: number, alturaCm: number): Promise<{ imc: number; classificacao: string } | null> {
-    const { data, error } = await supabase.rpc("calc_imc", { p_peso: peso, p_altura_cm: alturaCm });
-    if (error) throw new Error(error.message);
-    const raw = data as unknown;
-    if (Array.isArray(raw) && raw.length > 0) {
-      const x = raw[0];
-      if (typeof x === "object" && x !== null) return x as { imc: number; classificacao: string };
-      const s = String(x).replace(/^\(|\)$/g, "").split(",");
-      return { imc: parseFloat(s[0]), classificacao: (s[1] || "").replace(/^"|"$/g, "") };
-    }
-    return null;
+    if (!Number.isFinite(peso) || !Number.isFinite(alturaCm) || peso <= 0 || alturaCm <= 0) return null;
+
+    const alturaMetros = alturaCm / 100;
+    const imc = Number((peso / (alturaMetros * alturaMetros)).toFixed(2));
+    const classificacao = imc < 18.5
+      ? "Baixo peso"
+      : imc < 25
+        ? "Peso normal"
+        : imc < 30
+          ? "Sobrepeso"
+          : imc < 35
+            ? "Obesidade grau I"
+            : imc < 40
+              ? "Obesidade grau II"
+              : "Obesidade grau III";
+
+    return { imc, classificacao };
   },
   async saveScoreResult(r: { patient_id: number; encounter_id?: string; score_code: string; inputs: Record<string, unknown>; result: number; classification: string }): Promise<void> {
     const { error } = await supabase.from("clinical_score_results").insert(r);
