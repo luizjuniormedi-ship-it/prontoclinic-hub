@@ -50,17 +50,35 @@ function collectMigrations() {
 
 function collectSqlContracts(files) {
   const functions = new Set();
-  const policies = [];
+  const policyStates = new Map();
+  const historicalUsingTrue = [];
   for (const { file } of files) {
     const sql = readText(file);
     for (const match of sql.matchAll(/create\s+(?:or\s+replace\s+)?function\s+(?:[\w$]+\.)?([\w$]+)/gi)) {
       functions.add(match[1].toLowerCase());
     }
-    for (const match of sql.matchAll(/create\s+policy\s+([\w$-]+)[\s\S]{0,800}?using\s*\(\s*true\s*\)/gi)) {
-      policies.push({ name: match[1], file: relative(file) });
+    for (const match of sql.matchAll(/drop\s+policy\s+if\s+exists\s+(?:"([^"]+)"|([\w$-]+))\s+on\s+(?:[\w$-]+\.)?(?:"([^"]+)"|([\w$-]+))/gi)) {
+      const name = (match[1] || match[2]).toLowerCase();
+      const table = (match[3] || match[4]).toLowerCase();
+      policyStates.set(`${table}.${name}`, { dropped: true, file: relative(file), table, name });
+    }
+    for (const match of sql.matchAll(/create\s+policy\s+(?:"([^"]+)"|([\w$-]+))\s+on\s+(?:[\w$-]+\.)?(?:"([^"]+)"|([\w$-]+))([\s\S]*?);/gi)) {
+      const name = (match[1] || match[2]).toLowerCase();
+      const table = (match[3] || match[4]).toLowerCase();
+      const body = match[5];
+      const state = {
+        dropped: false,
+        usingTrue: /using\s*\(\s*true\s*\)/i.test(body),
+        file: relative(file),
+        table,
+        name,
+      };
+      policyStates.set(`${table}.${name}`, state);
+      if (state.usingTrue) historicalUsingTrue.push(state);
     }
   }
-  return { functions: [...functions].sort(), policies };
+  const policies = [...policyStates.values()].filter((policy) => !policy.dropped && policy.usingTrue);
+  return { functions: [...functions].sort(), policies, historicalUsingTrue };
 }
 
 function collectRpcCalls() {
@@ -82,7 +100,7 @@ function collectRpcCalls() {
 }
 
 const { files, duplicateTimestamps } = collectMigrations();
-const { functions, policies } = collectSqlContracts(files);
+const { functions, policies, historicalUsingTrue } = collectSqlContracts(files);
 const calls = collectRpcCalls();
 const functionSet = new Set(functions);
 const unresolvedRpcCalls = calls.filter((call) => !functionSet.has(call.name));
@@ -95,9 +113,10 @@ const result = {
   frontend_rpc_call_count: calls.length,
   unresolved_rpc_calls: unresolvedRpcCalls,
   using_true_policies: policies,
+  historical_using_true_policies: historicalUsingTrue,
   notes: [
     "Ausência de uma função SQL exige reconciliação de contrato; este script não cria migrations automaticamente.",
-    "USING(true) é inventariado para revisão; este script não classifica nem altera policies.",
+    "USING(true) histórico é preservado; o gate considera o último estado estático de cada policy e não altera SQL.",
     "Replay PostgreSQL, grants efetivos e isolamento multiempresa exigem banco descartável ou ambiente autorizado.",
   ],
 };

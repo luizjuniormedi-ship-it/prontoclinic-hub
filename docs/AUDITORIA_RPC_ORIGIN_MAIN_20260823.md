@@ -5,8 +5,8 @@ Base: `origin/main` em `281b24fc262a46890f19f42204cd132e7cdf7bd9`
 
 ## Resultado
 
-O inventário estático reconhece 224 migrations, 405 funções SQL e 136 chamadas
-RPC no código de aplicação. O gate strict permanece bloqueado porque sete nomes
+O inventário estático reconhece 224 migrations, 405 funções SQL e 134 chamadas
+RPC no código de aplicação. O gate strict permanece bloqueado porque cinco nomes
 chamados pelo frontend não possuem definição SQL rastreável nesta base.
 
 Isso não autoriza criar aliases ou migrations copiadas da branch antiga. Cada
@@ -20,8 +20,6 @@ grants e teste de runtime comprovados.
 | `m9_get_patient_appointments_timeline_secure` | `src/services/patientAppointmentsService.ts` | Definir contrato canônico de linha do tempo |
 | `m9_check_patient_appointment_conflicts_secure` | `src/services/patientAppointmentsService.ts` | Não substituir silenciosamente por `assert_appointment_slot_available` |
 | `resolve_insurance_rule` | `src/services/insuranceContractService.ts` | Avaliar `validate_insurance_operation` somente com contexto obrigatório completo |
-| `upsert_professional_schedule_grid_secure` | `src/services/scheduleGridsService.ts` | Migrar para o modelo canônico `professional_schedule_grades` |
-| `set_professional_schedule_grid_status_secure` | `src/services/scheduleGridsService.ts` | Migrar para o contrato canônico de grades/publicação |
 
 ## Critério de fechamento
 
@@ -36,8 +34,17 @@ Uma RPC só pode sair da lista após comprovar no mesmo baseline:
 
 As três ausências diretas restantes encontradas por um inventário restrito a chamadas
 `.rpc()` (`bedside_check`, `check_prescription_safety` e
-`resolve_insurance_rule`) não anulam as outras quatro: elas aparecem em wrappers
+`resolve_insurance_rule`) não anulam as outras duas: elas aparecem em wrappers
 e superfícies de serviço e devem ser classificadas, não ignoradas.
+
+O adaptador `scheduleGridsService` já foi convergido para as tabelas e RPCs M9
+canônicas; não há mais chamada para `professional_schedule_grids`.
+
+O validator agora separa policies históricas das efetivas. A policy histórica
+`module_role_permissions_select` é substituída pela versão com
+`active_company_id()` na migration final; ela não é mais tratada como exposição
+efetiva. Policies `USING(true)` restantes pertencem a catálogos globais ou a
+operações restritas por role e continuam listadas para revisão de domínio.
 
 ## Gates fora do checkout
 

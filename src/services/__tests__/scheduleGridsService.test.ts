@@ -29,7 +29,35 @@ describe("scheduleGridsService", () => {
 
   it("salva grade somente pela RPC segura", async () => {
     (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-      data: { id: 41, status: "draft" },
+      data: {
+        grade: {
+          id: 41,
+          company_id: "company-1",
+          unit_id: 5,
+          professional_id: 11,
+          specialty_id: null,
+          valid_from: "2026-08-03",
+          valid_until: null,
+          status: "draft",
+          default_duration_minutes: 30,
+          default_capacity: 1,
+          created_at: "2026-07-26T00:00:00Z",
+          updated_at: "2026-07-26T00:00:00Z",
+        },
+        rules: [{
+          id: 7,
+          grade_id: 41,
+          day_of_week: 1,
+          starts_at: "08:00:00",
+          ends_at: "12:00:00",
+          service_id: null,
+          duration_minutes: 30,
+          capacity: 1,
+          room_id: null,
+          equipment_id: null,
+          status: "active",
+        }],
+      },
       error: null,
     });
 
@@ -46,12 +74,16 @@ describe("scheduleGridsService", () => {
 
     expect(result).toMatchObject({ id: 41, status: "draft" });
     expect(supabase.rpc).toHaveBeenCalledWith(
-      "upsert_professional_schedule_grid_secure",
+      "m9_save_professional_schedule_grade_secure",
       expect.objectContaining({
-        p_professional_id: 11,
-        p_unit_id: 5,
-        p_day_of_week: 1,
-        p_slot_duration_minutes: 30,
+        p_grade: expect.objectContaining({
+          professionalId: 11,
+          unitId: 5,
+          validFrom: "2026-08-03",
+          defaultDurationMinutes: 30,
+        }),
+        p_rules: [expect.objectContaining({ dayOfWeek: 1, durationMinutes: 30 })],
+        p_idempotency_key: expect.any(String),
       }),
     );
   });
@@ -92,18 +124,47 @@ describe("scheduleGridsService", () => {
 
   it("publica e suspende somente pela RPC de transição", async () => {
     (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-      data: { id: 41, status: "published" },
+      data: {
+        grade: {
+          id: 41,
+          company_id: "company-1",
+          unit_id: 5,
+          professional_id: 11,
+          specialty_id: null,
+          valid_from: "2026-08-03",
+          valid_until: null,
+          status: "published",
+          default_duration_minutes: 30,
+          default_capacity: 1,
+          created_at: "2026-07-26T00:00:00Z",
+          updated_at: "2026-07-26T00:00:00Z",
+        },
+        rules: [{
+          id: 7,
+          grade_id: 41,
+          day_of_week: 1,
+          starts_at: "08:00:00",
+          ends_at: "12:00:00",
+          service_id: null,
+          duration_minutes: 30,
+          capacity: 1,
+          room_id: null,
+          equipment_id: null,
+          status: "active",
+        }],
+      },
       error: null,
     });
 
     await scheduleGridsService.setStatus(41, "published");
 
     expect(supabase.rpc).toHaveBeenCalledWith(
-      "set_professional_schedule_grid_status_secure",
+      "m9_publish_schedule_grade_secure",
       {
-        p_grid_id: 41,
-        p_status: "published",
+        p_grade_id: 41,
+        p_action: "publish",
         p_reason: null,
+        p_idempotency_key: expect.any(String),
       },
     );
   });

@@ -2,6 +2,20 @@ import { supabase } from "@/lib/supabase";
 
 export type ScheduleGridStatus = "draft" | "published" | "suspended";
 
+type CanonicalScheduleRule = {
+  id: number;
+  grade_id: number;
+  day_of_week: number;
+  starts_at: string;
+  ends_at: string;
+  service_id: number | null;
+  duration_minutes: number | null;
+  capacity: number | null;
+  room_id: number | null;
+  equipment_id: number | null;
+  status: "active" | "inactive";
+};
+
 export interface ProfessionalScheduleGrid {
   id: number;
   company_id: string;
@@ -80,17 +94,68 @@ export function normalizeProfessionalScheduleGrid(
   };
 }
 
+function bundleToGrid(bundle: unknown): ProfessionalScheduleGrid {
+  if (!bundle || typeof bundle !== "object") {
+    throw new Error("Resposta inválida da grade canônica.");
+  }
+  const value = bundle as { grade?: Record<string, unknown>; rules?: CanonicalScheduleRule[] };
+  const grade = value.grade;
+  const rule = value.rules?.[0];
+  if (!grade || !rule) throw new Error("A grade precisa conter ao menos uma regra de horário.");
+
+  return normalizeProfessionalScheduleGrid({
+    id: grade.id as number,
+    company_id: grade.company_id as string,
+    unit_id: grade.unit_id as number,
+    professional_id: grade.professional_id as number,
+    specialty_id: (grade.specialty_id as number | null) ?? null,
+    service_id: rule.service_id,
+    room_id: rule.room_id,
+    equipment_id: rule.equipment_id,
+    day_of_week: rule.day_of_week,
+    start_time: rule.starts_at,
+    end_time: rule.ends_at,
+    slot_duration_minutes: rule.duration_minutes ?? (grade.default_duration_minutes as number),
+    valid_from: grade.valid_from as string,
+    valid_until: (grade.valid_until as string | null) ?? null,
+    status: grade.status as ScheduleGridStatus,
+    max_concurrent: rule.capacity ?? (grade.default_capacity as number),
+    notes: null,
+    created_at: grade.created_at as string,
+    updated_at: grade.updated_at as string,
+  });
+}
+
+function idempotencyKey(input: ScheduleGridInput): string {
+  return `schedule-grid-${input.id ?? "new"}-${input.professionalId}-${input.unitId}-${input.validFrom}`;
+}
+
 export const scheduleGridsService = {
   async list(): Promise<ProfessionalScheduleGrid[]> {
-    const { data, error } = await supabase
-      .from("professional_schedule_grids")
-      .select("*")
-      .order("professional_id")
-      .order("day_of_week")
-      .order("start_time");
-    if (error) throw new Error(`Erro ao carregar grades: ${error.message}`);
-    return ((data || []) as ProfessionalScheduleGrid[]).map(
-      normalizeProfessionalScheduleGrid,
+    const [gradesResult, rulesResult] = await Promise.all([
+      supabase
+        .from("professional_schedule_grades")
+        .select("*")
+        .order("professional_id")
+        .order("valid_from"),
+      supabase
+        .from("professional_schedule_rules")
+        .select("*")
+        .eq("status", "active")
+        .order("day_of_week")
+        .order("starts_at"),
+    ]);
+    if (gradesResult.error) throw new Error(`Erro ao carregar grades: ${gradesResult.error.message}`);
+    if (rulesResult.error) throw new Error(`Erro ao carregar horários: ${rulesResult.error.message}`);
+
+    const rulesByGrade = new Map<number, CanonicalScheduleRule[]>();
+    for (const rule of (rulesResult.data || []) as CanonicalScheduleRule[]) {
+      const current = rulesByGrade.get(Number(rule.grade_id)) || [];
+      current.push(rule);
+      rulesByGrade.set(Number(rule.grade_id), current);
+    }
+    return ((gradesResult.data || []) as Record<string, unknown>[]).flatMap((grade) =>
+      (rulesByGrade.get(Number(grade.id)) || []).map((rule) => bundleToGrid({ grade, rules: [rule] })),
     );
   },
 
@@ -107,27 +172,41 @@ export const scheduleGridsService = {
 
   async save(input: ScheduleGridInput): Promise<ProfessionalScheduleGrid> {
     const { data, error } = await supabase.rpc(
-      "upsert_professional_schedule_grid_secure",
+      "m9_save_professional_schedule_grade_secure",
       {
-        p_grid_id: input.id || null,
-        p_professional_id: requiredNumber(input.professionalId, "Profissional"),
-        p_unit_id: requiredNumber(input.unitId, "Unidade"),
-        p_day_of_week: input.dayOfWeek,
-        p_start_time: input.startTime,
-        p_end_time: input.endTime,
-        p_slot_duration_minutes: input.durationMinutes,
-        p_valid_from: input.validFrom,
-        p_valid_until: input.validUntil || null,
-        p_specialty_id: optionalNumber(input.specialtyId),
-        p_service_id: optionalNumber(input.serviceId),
-        p_room_id: optionalNumber(input.roomId),
-        p_equipment_id: optionalNumber(input.equipmentId),
-        p_max_concurrent: input.maxConcurrent,
-        p_notes: input.notes?.trim() || null,
+        p_grade: {
+          id: input.id || null,
+          professionalId: requiredNumber(input.professionalId, "Profissional"),
+          unitId: requiredNumber(input.unitId, "Unidade"),
+          specialtyId: optionalNumber(input.specialtyId),
+          name: `Grade profissional ${input.professionalId}`,
+          modality: "in_person",
+          validFrom: input.validFrom,
+          validUntil: input.validUntil || null,
+          status: "draft",
+          defaultDurationMinutes: input.durationMinutes,
+          defaultCapacity: input.maxConcurrent,
+          defaultRoomId: optionalNumber(input.roomId),
+          defaultEquipmentId: optionalNumber(input.equipmentId),
+        },
+        p_rules: [{
+          dayOfWeek: input.dayOfWeek,
+          startsAt: input.startTime,
+          endsAt: input.endTime,
+          serviceId: optionalNumber(input.serviceId),
+          durationMinutes: input.durationMinutes,
+          capacity: input.maxConcurrent,
+          roomId: optionalNumber(input.roomId),
+          equipmentId: optionalNumber(input.equipmentId),
+          allowReturn: true,
+          allowWalkin: false,
+          status: "active",
+        }],
+        p_idempotency_key: idempotencyKey(input),
       },
     );
     if (error) throw new Error(`Erro ao salvar grade: ${error.message}`);
-    return normalizeProfessionalScheduleGrid(data as ProfessionalScheduleGrid);
+    return bundleToGrid(data);
   },
 
   async setStatus(
@@ -135,15 +214,17 @@ export const scheduleGridsService = {
     status: ScheduleGridStatus,
     reason?: string,
   ): Promise<ProfessionalScheduleGrid> {
+    const action = status === "published" ? "publish" : status === "suspended" ? "suspend" : "cancel";
     const { data, error } = await supabase.rpc(
-      "set_professional_schedule_grid_status_secure",
+      "m9_publish_schedule_grade_secure",
       {
-        p_grid_id: id,
-        p_status: status,
-        p_reason: reason?.trim() || null,
+        p_grade_id: id,
+        p_action: action,
+        p_reason: reason?.trim() || (action === "cancel" ? "Cancelamento solicitado pelo operador" : null),
+        p_idempotency_key: `schedule-transition-${id}-${action}-${Date.now()}`,
       },
     );
     if (error) throw new Error(`Erro ao alterar status da grade: ${error.message}`);
-    return normalizeProfessionalScheduleGrid(data as ProfessionalScheduleGrid);
+    return bundleToGrid(data);
   },
 };
