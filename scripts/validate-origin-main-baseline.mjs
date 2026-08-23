@@ -81,6 +81,41 @@ function collectSqlContracts(files) {
   return { functions: [...functions].sort(), policies, historicalUsingTrue };
 }
 
+const classifiedUsingTruePolicies = new Map([
+  ["mnct_classificacao_risco.authenticated can read nursing classifications", {
+    classification: "global_clinical_catalog",
+    reason: "Catalogo clinico de referencia; leitura autenticada, escrita permanece restrita por policy administrativa.",
+  }],
+  ["mnct_classificacao_risco.authenticated can read mnct_classificacao_risco", {
+    classification: "global_clinical_catalog",
+    reason: "Catalogo clinico de referencia; leitura autenticada, escrita permanece restrita por policy administrativa.",
+  }],
+  ["mnct_fluxograma.authenticated can read flowcharts", {
+    classification: "global_clinical_catalog",
+    reason: "Fluxograma clinico de referencia; leitura autenticada, escrita permanece restrita por policy administrativa.",
+  }],
+  ["mnct_fluxograma.authenticated can read mnct_fluxograma", {
+    classification: "global_clinical_catalog",
+    reason: "Fluxograma clinico de referencia; leitura autenticada, escrita permanece restrita por policy administrativa.",
+  }],
+  ["exames_lab_catalogo.authenticated can read lab catalog", {
+    classification: "global_lab_catalog",
+    reason: "Catalogo laboratorial compartilhado; leitura autenticada, escrita permanece restrita por role administrativa/laboratorio.",
+  }],
+  ["exames_lab_valor_referencia.authenticated can read lab ref values", {
+    classification: "global_lab_reference",
+    reason: "Valores de referencia laboratoriais; leitura autenticada, escrita permanece restrita por role de laboratorio.",
+  }],
+  ["password_resets.service role can update password_resets", {
+    classification: "service_role_only",
+    reason: "Operacao de ciclo de vida do reset; a policy e exclusiva de service_role, nao de authenticated/anon.",
+  }],
+  ["permissions.module_permissions_select", {
+    classification: "global_permission_catalog",
+    reason: "Catalogo global de permissoes; somente SELECT autenticado, sem dados de usuario ou empresa.",
+  }],
+]);
+
 function collectRpcCalls() {
   const calls = new Map();
   for (const dir of sourceDirs) {
@@ -101,18 +136,24 @@ function collectRpcCalls() {
 
 const { files, duplicateTimestamps } = collectMigrations();
 const { functions, policies, historicalUsingTrue } = collectSqlContracts(files);
+const classifiedPolicies = policies.map((policy) => ({
+  ...policy,
+  ...(classifiedUsingTruePolicies.get(`${policy.table}.${policy.name}`) ?? {}),
+}));
+const unclassifiedUsingTruePolicies = classifiedPolicies.filter((policy) => !policy.classification);
 const calls = collectRpcCalls();
 const functionSet = new Set(functions);
 const unresolvedRpcCalls = calls.filter((call) => !functionSet.has(call.name));
 const result = {
-  status: strict && (duplicateTimestamps.length > 0 || unresolvedRpcCalls.length > 0) ? "BLOCKED" : "REVIEW",
+  status: strict && (duplicateTimestamps.length > 0 || unresolvedRpcCalls.length > 0 || unclassifiedUsingTruePolicies.length > 0) ? "BLOCKED" : "REVIEW",
   root,
   migration_count: files.length,
   duplicate_migration_timestamps: duplicateTimestamps,
   sql_function_count: functions.length,
   frontend_rpc_call_count: calls.length,
   unresolved_rpc_calls: unresolvedRpcCalls,
-  using_true_policies: policies,
+  using_true_policies: classifiedPolicies,
+  unclassified_using_true_policies: unclassifiedUsingTruePolicies,
   historical_using_true_policies: historicalUsingTrue,
   notes: [
     "Ausência de uma função SQL exige reconciliação de contrato; este script não cria migrations automaticamente.",
@@ -130,7 +171,8 @@ if (jsonOutput) {
   console.log(`frontend RPC calls: ${result.frontend_rpc_call_count}`);
   console.log(`unresolved RPC calls: ${result.unresolved_rpc_calls.length}`);
   for (const call of result.unresolved_rpc_calls) console.log(`  - ${call.name}: ${call.callers.join(", ")}`);
-  console.log(`USING(true) policies for review: ${result.using_true_policies.length}`);
+  console.log(`USING(true) policies classified: ${result.using_true_policies.length}`);
+  console.log(`USING(true) policies without classification: ${result.unclassified_using_true_policies.length}`);
 }
 
 if (strict && result.status === "BLOCKED") process.exitCode = 2;

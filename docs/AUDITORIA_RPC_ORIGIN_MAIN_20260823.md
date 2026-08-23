@@ -40,11 +40,13 @@ e superfícies de serviço e devem ser classificadas, não ignoradas.
 O adaptador `scheduleGridsService` já foi convergido para as tabelas e RPCs M9
 canônicas; não há mais chamada para `professional_schedule_grids`.
 
-O validator agora separa policies históricas das efetivas. A policy histórica
-`module_role_permissions_select` é substituída pela versão com
-`active_company_id()` na migration final; ela não é mais tratada como exposição
-efetiva. Policies `USING(true)` restantes pertencem a catálogos globais ou a
-operações restritas por role e continuam listadas para revisão de domínio.
+O validator agora separa policies históricas das efetivas e exige classificação
+explícita para cada policy efetiva. As oito policies efetivas `USING(true)` foram
+classificadas como catálogos globais de leitura, reset exclusivo de
+`service_role` ou catálogo global de permissões; nenhuma policy efetiva ficou sem
+classificação. A policy histórica `module_role_permissions_select` é substituída
+pela versão com `active_company_id()` na migration final e não é tratada como
+exposição efetiva.
 
 ## Gates fora do checkout
 
