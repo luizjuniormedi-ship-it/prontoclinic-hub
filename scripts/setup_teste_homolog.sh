@@ -152,7 +152,8 @@ step_seed_data() {
     warn "$seed_file nao encontrado, pulando seed"
     return 0
   fi
-  PGPASSWORD=<DEFINIR_FORA_DO_GIT>
+  : "${HOMOLOG_DB_PASSWORD:?Defina HOMOLOG_DB_PASSWORD fora do Git}"
+  PGPASSWORD="$HOMOLOG_DB_PASSWORD" \
     psql -h "db.${HOMOLOG_SUPABASE_PROJECT_REF}.supabase.co" \
          -p 5432 \
          -U postgres \

@@ -90,7 +90,7 @@ export const nursingCareService = {
     return data as unknown as MedAdmin;
   },
   async bedsideCheck(adminId: number, patientId: number): Promise<Array<{ certo: string; ok: boolean }>> {
-    const { data, error } = await supabase.rpc("bedside_check", { p_admin_id: adminId, p_patient_confirmado: patientId });
+    const { data, error } = await supabase.rpc("nursing_bedside_check_secure", { p_admin_id: adminId, p_patient_confirmado: patientId });
     if (error) throw new Error(error.message);
     const raw = data as unknown;
     if (!Array.isArray(raw)) return [];
@@ -100,15 +100,18 @@ export const nursingCareService = {
       return { certo: s[0], ok: s[1] === "t" || s[1] === "true" };
     });
   },
-  async administer(adminId: number): Promise<void> {
-    const actor = await currentNursingActor();
-    const { error } = await supabase.from("nursing_medication_administrations").update({
-      status: "administrado", bedside_check_ok: true, administered_at: new Date().toISOString(), administered_by: actor.professionalId,
-    }).eq("id", adminId);
+  async administer(adminId: number, patientId: number): Promise<void> {
+    const { error } = await supabase.rpc("nursing_administer_medication_secure", {
+      p_admin_id: adminId,
+      p_patient_confirmado: patientId,
+    });
     if (error) throw new Error(error.message);
   },
   async refuse(adminId: number, reason: string): Promise<void> {
-    const { error } = await supabase.from("nursing_medication_administrations").update({ status: "recusado", refusal_reason: reason }).eq("id", adminId);
+    const { error } = await supabase.rpc("nursing_refuse_medication_secure", {
+      p_admin_id: adminId,
+      p_reason: reason,
+    });
     if (error) throw new Error(error.message);
   },
 

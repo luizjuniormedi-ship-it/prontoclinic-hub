@@ -16,6 +16,9 @@ name: Deploy ProntoClinic Hub to Vercel
 on:
   workflow_dispatch:
     inputs:
+      commit_sha:
+        description: "Full commit SHA already integrated into main"
+        required: true
       environment:
         description: "Vercel environment (production | preview)"
         required: false
@@ -52,6 +55,29 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 0
+
+      - name: Validate immutable main commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit_sha='${{ inputs.commit_sha }}'
+          [[ "$commit_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::commit_sha must contain exactly 40 lowercase hexadecimal characters"
+            exit 1
+          }
+          test "$(git rev-parse 'HEAD^{commit}')" = "$commit_sha" || {
+            echo "::error::Checked out commit does not match commit_sha"
+            exit 1
+          }
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$commit_sha" origin/main || {
+            echo "::error::commit_sha is not integrated into origin/main"
+            exit 1
+          }
+          echo "commit_sha=$commit_sha" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -62,7 +88,7 @@ jobs:
       - name: Show environment
         run: |
           echo "Branch: ${{ github.ref_name }}"
-          echo "Commit: ${{ github.sha }}"
+          echo "Commit: $commit_sha"
           echo "Actor:  ${{ github.actor }}"
           echo "Supabase URL configured: $([ -n "$VITE_SUPABASE_URL" ] && echo yes || echo NO)"
 

@@ -3,12 +3,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { execFileSync } from "node:child_process";
 
 const args = new Set(process.argv.slice(2));
 const jsonOutput = args.has("--json");
 const strict = args.has("--strict");
 const rootArg = process.argv.find((value) => value.startsWith("--root="));
+const expectedShaArg = process.argv.find((value) => value.startsWith("--expected-sha="));
 const root = path.resolve(rootArg ? rootArg.slice("--root=".length) : process.cwd());
+const expectedSha = expectedShaArg?.slice("--expected-sha=".length) ?? null;
 const migrationsDir = path.join(root, "supabase", "migrations");
 const sourceDirs = [path.join(root, "src"), path.join(root, "supabase", "functions")];
 
@@ -27,6 +30,35 @@ function readText(file) {
 
 function relative(file) {
   return path.relative(root, file).replaceAll(path.sep, "/");
+}
+
+function git(...args) {
+  return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+}
+
+function collectProvenance() {
+  try {
+    const commitSha = git("rev-parse", "HEAD^{commit}");
+    const treeSha = git("rev-parse", "HEAD^{tree}");
+    const dirty = git("status", "--porcelain").length > 0;
+    return {
+      commitSha,
+      treeSha,
+      dirty,
+      expectedSha,
+      expectedShaMatches: expectedSha === null || commitSha === expectedSha,
+      error: null,
+    };
+  } catch (error) {
+    return {
+      commitSha: null,
+      treeSha: null,
+      dirty: null,
+      expectedSha,
+      expectedShaMatches: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 function collectMigrations() {
@@ -144,9 +176,14 @@ const unclassifiedUsingTruePolicies = classifiedPolicies.filter((policy) => !pol
 const calls = collectRpcCalls();
 const functionSet = new Set(functions);
 const unresolvedRpcCalls = calls.filter((call) => !functionSet.has(call.name));
+const provenance = collectProvenance();
+const provenanceBlocked = provenance.error !== null
+  || provenance.dirty === true
+  || !provenance.expectedShaMatches;
 const result = {
-  status: strict && (duplicateTimestamps.length > 0 || unresolvedRpcCalls.length > 0 || unclassifiedUsingTruePolicies.length > 0) ? "BLOCKED" : "REVIEW",
+  status: strict && (duplicateTimestamps.length > 0 || unresolvedRpcCalls.length > 0 || unclassifiedUsingTruePolicies.length > 0 || provenanceBlocked) ? "BLOCKED" : "REVIEW",
   root,
+  provenance,
   migration_count: files.length,
   duplicate_migration_timestamps: duplicateTimestamps,
   sql_function_count: functions.length,
@@ -166,6 +203,12 @@ if (jsonOutput) {
   console.log(JSON.stringify(result, null, 2));
 } else {
   console.log(`origin-main baseline: ${result.status}`);
+  console.log(`commit: ${result.provenance.commitSha ?? "unavailable"}`);
+  console.log(`tree: ${result.provenance.treeSha ?? "unavailable"}`);
+  console.log(`dirty: ${String(result.provenance.dirty)}`);
+  if (result.provenance.expectedSha !== null) {
+    console.log(`expected commit: ${result.provenance.expectedSha}`);
+  }
   console.log(`migrations: ${result.migration_count}`);
   console.log(`SQL functions: ${result.sql_function_count}`);
   console.log(`frontend RPC calls: ${result.frontend_rpc_call_count}`);

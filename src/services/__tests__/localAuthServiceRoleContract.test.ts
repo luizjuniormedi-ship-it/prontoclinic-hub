@@ -47,7 +47,7 @@ describe("local auth privileged contract", () => {
   it("keeps password-flow sessions restricted and makes global logout immediate", () => {
     expect(source).toContain("password_update_required");
     expect(source).toContain("password_updated_at IS NULL");
-    expect(source).toContain("rt.session_jti = $2");
+    expect(source).toContain("rt.session_id = $2");
     expect(source).toContain("rt.revoked = false");
   });
 });

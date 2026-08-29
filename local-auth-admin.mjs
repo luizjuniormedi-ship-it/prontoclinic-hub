@@ -385,7 +385,12 @@ export function createLocalAuthAdmin({
         app_metadata: user.raw_app_meta_data ?? {}, user_metadata: user.raw_user_meta_data ?? {},
       });
       await client.query(
-        'INSERT INTO auth.refresh_tokens (token, user_id, session_jti) VALUES ($1, $2, $3)',
+        `INSERT INTO auth.sessions (id, user_id, created_at, updated_at)
+         VALUES ($1, $2, NOW(), NOW())`,
+        [sessionId, user.id],
+      );
+      await client.query(
+        'INSERT INTO auth.refresh_tokens (token, user_id, session_id) VALUES ($1, $2, $3)',
         [refreshToken, user.id, sessionId],
       );
       await client.query('COMMIT');
