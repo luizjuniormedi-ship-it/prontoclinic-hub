@@ -12,8 +12,15 @@ BEGIN
    WHERE procedure_record.oid =
      'public.nursing_administer_medication_secure(bigint,bigint)'::REGPROCEDURE;
 
-  IF v_owner <> 'prontomedic_rpc_owner' THEN
+  IF v_owner <> 'prontomedic_nursing_rpc_owner' THEN
     RAISE EXCEPTION 'Unexpected nursing administer owner: %', v_owner;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_roles
+     WHERE rolname = v_owner
+       AND (rolcanlogin OR rolinherit OR rolbypassrls OR rolsuper)
+  ) THEN
+    RAISE EXCEPTION 'Nursing administer owner is privileged: %', v_owner;
   END IF;
   IF v_definition NOT ILIKE '%scheduled_at IS NULL%'
      OR v_definition NOT ILIKE '%scheduled_at NOT BETWEEN%' THEN

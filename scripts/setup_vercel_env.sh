@@ -61,7 +61,7 @@ VITE_APP_ENV=production
 
 # ---------- TISS ----------
 VITE_TISS_AMBIENTE=HOMOLOGACAO
-VITE_TISS_VERSION=3.05.00
+VITE_TISS_VERSION=4.03.00
 
 # ---------- DICOM / PACS ----------
 VITE_DICOM_BUCKET=dicom
@@ -98,7 +98,7 @@ EOF
   printf "  %-30s %s\n" "VITE_APP_NAME"               "${VITE_APP_NAME:-ProntoClinic Hub}"
   printf "  %-30s %s\n" "VITE_APP_ENV"                "${VITE_APP_ENV:-production}"
   printf "  %-30s %s\n" "VITE_TISS_AMBIENTE"          "${VITE_TISS_AMBIENTE:-HOMOLOGACAO}"
-  printf "  %-30s %s\n" "VITE_TISS_VERSION"           "${VITE_TISS_VERSION:-3.05.00}"
+  printf "  %-30s %s\n" "VITE_TISS_VERSION"           "${VITE_TISS_VERSION:-4.03.00}"
   printf "  %-30s %s\n" "VITE_DICOM_BUCKET"           "${VITE_DICOM_BUCKET:-dicom}"
   printf "  %-30s %s\n" "VITE_ENABLE_TELEMEDICINE"    "${VITE_ENABLE_TELEMEDICINE:-false}"
   printf "  %-30s %s\n" "VITE_ENABLE_WHATSAPP"        "${VITE_ENABLE_WHATSAPP:-false}"
@@ -145,7 +145,7 @@ apply_all() {
   add_env "VITE_APP_NAME"            "${VITE_APP_NAME:-ProntoClinic Hub}"
   add_env "VITE_APP_ENV"             "${VITE_APP_ENV:-production}"
   add_env "VITE_TISS_AMBIENTE"       "${VITE_TISS_AMBIENTE:-HOMOLOGACAO}"
-  add_env "VITE_TISS_VERSION"        "${VITE_TISS_VERSION:-3.05.00}"
+  add_env "VITE_TISS_VERSION"        "${VITE_TISS_VERSION:-4.03.00}"
   add_env "VITE_DICOM_BUCKET"        "${VITE_DICOM_BUCKET:-dicom}"
   add_env "VITE_ENABLE_TELEMEDICINE" "${VITE_ENABLE_TELEMEDICINE:-false}"
   add_env "VITE_ENABLE_WHATSAPP"     "${VITE_ENABLE_WHATSAPP:-false}"

@@ -164,6 +164,21 @@ jobs:
                 -f supabase/tests/canonical_runtime_rpc_contracts.sql >/dev/null
             done
 
+          mkdir -p artifacts/replay/schema
+          for database in migrations_first migrations_second; do
+            pg_dump --schema-only --no-owner --no-privileges \
+              -h localhost -p 54322 -U postgres "$database" \
+              | grep -Ev '^\\(un)?restrict[[:space:]]' \
+              > "artifacts/replay/schema/${database}.sql"
+            sha256sum "artifacts/replay/schema/${database}.sql" \
+              > "artifacts/replay/schema/${database}.sha256"
+          done
+          cmp artifacts/replay/schema/migrations_first.sql \
+              artifacts/replay/schema/migrations_second.sql || {
+            echo 'Replays limpos produziram schemas divergentes' >&2
+            exit 1
+          }
+
           # Retry das migrations críticas no mesmo banco: qualquer aplicação
           # parcial precisa convergir sem objetos duplicados.
           for migration in \
@@ -248,6 +263,15 @@ jobs:
 
       - name: Type check
         run: npm run type-check
+
+      - name: Preserve database replay evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-replay-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: artifacts/replay
 
       - name: Lint
         run: npm run lint

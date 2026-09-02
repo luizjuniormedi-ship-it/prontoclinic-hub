@@ -191,7 +191,7 @@ step_set_env_vercel() {
       "VITE_APP_NAME=ProntoClinic Hub (HOMOLOG)" \
       "VITE_APP_ENV=staging" \
       "VITE_TISS_AMBIENTE=HOMOLOGACAO" \
-      "VITE_TISS_VERSION=3.05.00" \
+      "VITE_TISS_VERSION=4.03.00" \
       "VITE_DICOM_BUCKET=dicom-homolog" \
       "VITE_ENABLE_TELEMEDICINE=false" \
       "VITE_ENABLE_WHATSAPP=false"; do
