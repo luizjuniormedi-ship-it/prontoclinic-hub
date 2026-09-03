@@ -14,6 +14,17 @@ function appointmentCardFor(
   return expectedTime ? card.filter({ hasText: expectedTime }).first() : card.first();
 }
 
+function ticketForAppointment(
+  page: import('@playwright/test').Page,
+  ticketLabel: string,
+  appointmentId: number,
+) {
+  const escapedTicketLabel = ticketLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return page.getByText(
+    new RegExp(`^${escapedTicketLabel} · Paciente #${appointmentId}$`),
+  );
+}
+
 async function waitForReceptionReady(page: import('@playwright/test').Page) {
   await expect(page.getByRole('heading', { name: /entrada do paciente/i })).toBeVisible({
     timeout: 20_000,
@@ -165,18 +176,16 @@ authed.describe.serial('Recepção — operação básica', () => {
     await expect(page.getByRole('heading', { name: /entrada do paciente/i })).toBeVisible();
 
     const persistedAppointmentCard = appointmentCardFor(page, patientName);
-    const persistedTicket = page.getByText(
-      new RegExp(`^${ticketLabel} · Paciente #91001$`),
-    );
+    const persistedTicket = ticketForAppointment(page, ticketLabel!, 91001);
 
     await expect(persistedTicket).toHaveCount(1);
     await expect(persistedTicket).toBeVisible();
     await expect(
-      page.getByText(new RegExp(`^${ticketLabel} · Paciente #91001$`)),
+      ticketForAppointment(page, ticketLabel!, 91001),
     ).toHaveCount(1);
 
     await page.reload();
-    await expect(page.getByText(new RegExp(`^${ticketLabel} · Paciente #91001$`))).toHaveCount(1);
+    await expect(ticketForAppointment(page, ticketLabel!, 91001)).toHaveCount(1);
 
     const preBillingClient = new Client({ connectionString: databaseUrl });
     await preBillingClient.connect();
@@ -431,14 +440,13 @@ authed.describe.serial('Recepção — alçada do supervisor', () => {
     await page.reload();
     await waitForReceptionReady(page);
     await expect(
-      page.getByText(new RegExp(`^${ticketLabel} · Paciente #91001$`)),
+      ticketForAppointment(page, ticketLabel!, 91003),
     ).toHaveCount(1);
     await expect(page.getByText('16:00', { exact: true }).locator(
       'xpath=ancestor::div[contains(@class, "rounded-lg")][1]',
     )).toContainText('Aguardando');
 
-    const queueRow = page
-      .getByText(new RegExp(`^${ticketLabel} · Paciente #91001$`))
+    const queueRow = ticketForAppointment(page, ticketLabel!, 91003)
       .locator('..')
       .locator('..');
     await queueRow.getByRole('button', {
@@ -447,8 +455,7 @@ authed.describe.serial('Recepção — alçada do supervisor', () => {
     await expect(queueRow).toContainText('called');
     await page.reload();
     await waitForReceptionReady(page);
-    const persistedQueueRow = page
-      .getByText(new RegExp(`^${ticketLabel} · Paciente #91001$`))
+    const persistedQueueRow = ticketForAppointment(page, ticketLabel!, 91003)
       .locator('..')
       .locator('..');
     await expect(persistedQueueRow).toContainText('called');

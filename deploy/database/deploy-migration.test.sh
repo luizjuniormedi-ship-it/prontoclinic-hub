@@ -16,6 +16,7 @@ runtime_rpc_rollback="${BASH_SOURCE[0]%/*}/../../supabase/rollbacks/202608290129
 catalog_rollback="${BASH_SOURCE[0]%/*}/../../supabase/rollbacks/20260829013235_close_global_catalog_write_policies.sql"
 auth_session_rollback="${BASH_SOURCE[0]%/*}/../../supabase/rollbacks/20260829014500_auth_native_session_contract.sql"
 nursing_owner_rollback="${BASH_SOURCE[0]%/*}/../../supabase/rollbacks/20260902022540_nursing_rpc_owner_rls_closure.sql"
+appointment_series_rollback="${BASH_SOURCE[0]%/*}/../../supabase/rollbacks/20260902055133_appointment_series_requirements_contract.sql"
 
 bash -n "$helper"
 test -f "$workflow"
@@ -32,6 +33,7 @@ test -f "$runtime_rpc_rollback"
 test -f "$catalog_rollback"
 test -f "$auth_session_rollback"
 test -f "$nursing_owner_rollback"
+test -f "$appointment_series_rollback"
 grep -Fq 'PRONTOMEDIC_GLOBAL_DEPLOY_LOCK' "$helper"
 grep -Fq 'exec 9>"$global_lock"' "$helper"
 test "$(grep -Fc 'group: prontomedic-production-deploy' "$workflow")" = 1
@@ -63,6 +65,7 @@ grep -Fq '20260829012947:canonical_runtime_rpc_contracts:20260813001000:preserve
 grep -Fq '20260829013235:close_global_catalog_write_policies:20260829012947:forward_only' "$helper"
 grep -Fq '20260829014500:auth_native_session_contract:20260829013235:forward_only' "$helper"
 grep -Fq '20260902022540:nursing_rpc_owner_rls_closure:20260829014500:preserve_schema' "$helper"
+grep -Fq '20260902055133:appointment_series_requirements_contract:20260902022540:preserve_schema' "$helper"
 grep -Fq 'migration_version:' "$workflow"
 grep -Fq '20260804143000) name=rbac_active_context_aal2' "$workflow"
 grep -Fq '20260805123000) name=auth_admin_suspension_invariants' "$workflow"
@@ -75,6 +78,7 @@ grep -Fq '20260829012947) name=canonical_runtime_rpc_contracts' "$workflow"
 grep -Fq '20260829013235) name=close_global_catalog_write_policies' "$workflow"
 grep -Fq '20260829014500) name=auth_native_session_contract' "$workflow"
 grep -Fq '20260902022540) name=nursing_rpc_owner_rls_closure' "$workflow"
+grep -Fq '20260902055133) name=appointment_series_requirements_contract' "$workflow"
 grep -Fq 'predecessorVersion' "$workflow"
 grep -Fq 'rollbackMode' "$workflow"
 grep -Fq 'ensure_history "$restore_db"' "$helper"
@@ -109,11 +113,14 @@ for prefix in worklist-handoff dicom-hardening pharmacy medical-attendance clini
     test -f "${BASH_SOURCE[0]%/*}/${prefix}-${phase}.sql"
   done
 done
-for prefix in canonical-runtime-rpc global-catalog-write auth-native-session nursing-rpc-owner; do
+for prefix in canonical-runtime-rpc global-catalog-write auth-native-session nursing-rpc-owner appointment-series; do
   for phase in before applied rollback; do
     test -f "${BASH_SOURCE[0]%/*}/${prefix}-${phase}.sql"
   done
 done
+grep -Eq '^[[:space:]]*BEGIN;' "$appointment_series_rollback"
+grep -Eq '^[[:space:]]*COMMIT;' "$appointment_series_rollback"
+grep -Fq 'create_appointment_series_with_requirements_secure' "$appointment_series_rollback"
 grep -Eq '^[[:space:]]*BEGIN;' "$nursing_owner_rollback"
 grep -Eq '^[[:space:]]*COMMIT;' "$nursing_owner_rollback"
 grep -Fq 'nursing_administer_medication_secure' "$nursing_owner_rollback"

@@ -312,6 +312,60 @@ describe("appointmentsService — create", () => {
   });
 });
 
+describe("appointmentsService — createSeries", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("preserva plano, carteirinha e autorização no comando atômico", async () => {
+    (supabase.rpc as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: [makeAppointment(), makeAppointment({ id: "appt-2" })],
+      error: null,
+    });
+
+    const result = await appointmentsService.createSeries({
+      series_id: "11111111-1111-4111-8111-111111111111",
+      patient_id: "1",
+      professional_id: "42",
+      unit_id: "7",
+      appointment_date: "2026-09-07",
+      start_time: "09:00",
+      insurance_id: "20",
+      insurance_plan_id: "21",
+      card_number: "CARTEIRA-1",
+      authorization_number: "AUTH-1",
+      occurrences: 2,
+      interval_days: 7,
+    });
+
+    expect(result).toHaveLength(2);
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "create_appointment_series_with_requirements_secure",
+      expect.objectContaining({
+        p_series_id: "11111111-1111-4111-8111-111111111111",
+        p_insurance_id: 20,
+        p_insurance_plan_id: 21,
+        p_card_number: "CARTEIRA-1",
+        p_authorization_number: "AUTH-1",
+        p_occurrences: 2,
+        p_interval_days: 7,
+      }),
+    );
+  });
+
+  it("rejeita quantidade inválida antes de chamar o banco", async () => {
+    await expect(appointmentsService.createSeries({
+      series_id: "11111111-1111-4111-8111-111111111111",
+      patient_id: "1",
+      professional_id: "42",
+      unit_id: "7",
+      appointment_date: "2026-09-07",
+      start_time: "09:00",
+      occurrences: 53,
+      interval_days: 7,
+    })).rejects.toThrow(/entre 1 e 52/);
+    expect(supabase.rpc).not.toHaveBeenCalled();
+  });
+});
+
 describe("appointmentsService — update", () => {
   beforeEach(() => vi.clearAllMocks());
 

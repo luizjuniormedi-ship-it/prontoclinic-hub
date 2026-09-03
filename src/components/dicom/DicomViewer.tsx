@@ -123,6 +123,7 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
   // Carregar Cornerstone + imagem
   useEffect(() => {
     let mounted = true;
+    const element = elementRef.current;
     const cs = window.cornerstone;
     const cst = window.cornerstoneTools;
     (async () => {
@@ -135,12 +136,11 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
           return;
         }
         if (!mounted) return;
-        const el = elementRef.current;
-        if (!el) return;
-        cs.enable(el);
+        if (!element) return;
+        cs.enable(element);
         if (cst) cst.init();
 
-        const imageId = buildImageId(displayImage);
+        const imageId = buildImageId(displayImage.bl_dicom_url);
         if (!imageId) {
           setStatus("fallback");
           return;
@@ -148,7 +148,7 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
         await cs.loadAndCacheImage(imageId);
         if (!mounted) return;
         const img = await cs.loadImage(imageId);
-        cs.displayImage(el, img);
+        cs.displayImage(element, img);
 
         // Ativar tool padrao
         if (cst) {
@@ -164,10 +164,10 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
     return () => {
       mounted = false;
       try {
-        if (elementRef.current && cs) cs.disable(elementRef.current);
+        if (element && cs) cs.disable(element);
       } catch { /* noop */ }
     };
-  }, [displayImage.id, exam.id]);
+  }, [displayImage.id, displayImage.bl_dicom_url, exam.id]);
 
   // Ajustar window/level em tempo real
   useEffect(() => {
@@ -352,8 +352,8 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
   );
 }
 
-function buildImageId(image: DicomExamImage): string | null {
-  return image.bl_dicom_url ? `wadouri:${image.bl_dicom_url}` : null;
+function buildImageId(signedUrl?: string): string | null {
+  return signedUrl ? `wadouri:${signedUrl}` : null;
 }
 
 function FallbackViewer({ image, studyUID }: { image: DicomExamImage; studyUID?: string }) {

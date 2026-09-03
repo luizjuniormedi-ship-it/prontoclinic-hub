@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import { DbProfessional, DbSpecialty, DbAppointmentType, DbServiceCatalog, SchedulingRequirements, appointmentsService } from "@/services/appointmentsService";
 import { patientsService } from "@/services/patientsService";
 import { validateAppointmentFields, checkOverlap, checkReturnRule, handleServiceError } from "@/services/validationService";
@@ -22,6 +23,7 @@ interface NewAppointmentDialogProps {
   appointmentTypes: DbAppointmentType[];
   services: DbServiceCatalog[];
   insurances: Array<{ id: string; name: string }>;
+  insurancePlans?: Array<{ id: string; insuranceCompanyId: string; name: string }>;
   units: Array<{ id: string; name: string }>;
   patients: Patient[];
   selectedDate: string;
@@ -61,7 +63,7 @@ function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
   });
 }
 
-export function NewAppointmentDialog({ open, onOpenChange, professionals, specialties, appointmentTypes, services, insurances, units, patients, selectedDate, defaultUnitId = "", onCreated }: NewAppointmentDialogProps) {
+export function NewAppointmentDialog({ open, onOpenChange, professionals, specialties, appointmentTypes, services, insurances, insurancePlans = [], units, patients, selectedDate, defaultUnitId = "", onCreated }: NewAppointmentDialogProps) {
   const { toast } = useToast();
   const [patientId, setPatientId] = useState("");
   const [professionalId, setProfessionalId] = useState("");
@@ -75,9 +77,13 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
   const [serviceId, setServiceId] = useState("none");
   const [serviceSearch, setServiceSearch] = useState("");
   const [insuranceId, setInsuranceId] = useState("private");
+  const [insurancePlanId, setInsurancePlanId] = useState("none");
   const [unitId, setUnitId] = useState(defaultUnitId);
   const [cardNumber, setCardNumber] = useState("");
   const [authorizationNumber, setAuthorizationNumber] = useState("");
+  const [recurring, setRecurring] = useState(false);
+  const [occurrences, setOccurrences] = useState(2);
+  const seriesIdRef = useRef(crypto.randomUUID());
   const [requirements, setRequirements] = useState<SchedulingRequirements | null>(null);
   const [saving, setSaving] = useState(false);
   const [patientSearch, setPatientSearch] = useState("");
@@ -177,8 +183,9 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
     setPatientId(""); setProfessionalId(""); setSpecialtyId("");
     setAppointmentTypeId(""); setDate(selectedDate); setStartTime("");
     setEndTime(""); setIsReturn(false); setNotes(""); setSaving(false);
-    setServiceId("none"); setServiceSearch(""); setInsuranceId("private"); setUnitId(defaultUnitId); setCardNumber("");
+    setServiceId("none"); setServiceSearch(""); setInsuranceId("private"); setInsurancePlanId("none"); setUnitId(defaultUnitId); setCardNumber("");
     setAuthorizationNumber(""); setRequirements(null);
+    setRecurring(false); setOccurrences(2); seriesIdRef.current = crypto.randomUUID();
     patientSearchRequestRef.current += 1;
     setPatientSearch(""); setPatientResults([]); setPatientSearchLoading(false);
     setPatientSearchError(null);
@@ -362,6 +369,12 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
     if (!unitId) {
       errors.push({ field: "unit_id", message: "Unidade é obrigatória.", type: "error" });
     }
+    if (insuranceId !== "private" && insurancePlanId === "none") {
+      errors.push({ field: "insurance_plan_id", message: "Plano do convênio é obrigatório.", type: "error" });
+    }
+    if (recurring && (!Number.isInteger(occurrences) || occurrences < 2 || occurrences > 52)) {
+      errors.push({ field: "occurrences", message: "Informe entre 2 e 52 ocorrências.", type: "error" });
+    }
 
     if (errors.length > 0) {
       setValidationErrors(errors.map((e) => e.message));
@@ -394,7 +407,10 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
       setSaving(true);
       setValidationErrors([]);
 
-      await appointmentsService.create({
+      await appointmentsService.createSeries({
+        series_id: seriesIdRef.current,
+        occurrences: recurring ? occurrences : 1,
+        interval_days: 7,
         patient_id: patientId,
         professional_id: professionalId,
         unit_id: unitId,
@@ -402,6 +418,7 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
         appointment_type_id: appointmentTypeId || undefined,
         service_id: serviceId === "none" ? undefined : serviceId,
         insurance_id: insuranceId === "private" ? undefined : insuranceId,
+        insurance_plan_id: insurancePlanId === "none" ? undefined : insurancePlanId,
         card_number: cardNumber || undefined,
         authorization_number: authorizationNumber || undefined,
         appointment_date: submittedDate,
@@ -414,7 +431,7 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
         status: "scheduled",
       });
 
-      toast({ title: "✓ Agendamento criado com sucesso!" });
+      toast({ title: recurring ? `Série com ${occurrences} agendamentos criada` : "Agendamento criado com sucesso" });
       handleClose();
       onCreated();
     } catch (err) {
@@ -601,14 +618,29 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
             </div>
             <div className="space-y-2">
               <Label>Convênio</Label>
-              <Select value={insuranceId} onValueChange={setInsuranceId}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Select value={insuranceId} onValueChange={(value) => { setInsuranceId(value); setInsurancePlanId("none"); }}>
+                <SelectTrigger aria-label="Selecionar convênio"><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="private">Particular</SelectItem>{normalizedInsurances.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
           </div>
 
-          {insuranceId !== "private" && <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><div className="space-y-2"><Label>Carteirinha/matrícula</Label><Input value={cardNumber} onChange={(e) => setCardNumber(e.target.value)} /></div><div className="space-y-2"><Label>Autorização</Label><Input value={authorizationNumber} onChange={(e) => setAuthorizationNumber(e.target.value)} placeholder={requirements?.requires_authorization ? "Obrigatória ou ficará pendente" : "Não obrigatória"} /></div></div>}
+          {insuranceId !== "private" && (
+            <div className="space-y-2">
+              <Label>Plano do convênio *</Label>
+              <Select value={insurancePlanId} onValueChange={setInsurancePlanId}>
+                <SelectTrigger aria-label="Selecionar plano do convênio"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Selecione o plano</SelectItem>
+                  {insurancePlans.filter((plan) => plan.insuranceCompanyId === insuranceId).map((plan) => (
+                    <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {insuranceId !== "private" && <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><div className="space-y-2"><Label htmlFor="insurance-card-number">Carteirinha/matrícula</Label><Input id="insurance-card-number" value={cardNumber} onChange={(e) => setCardNumber(e.target.value)} /></div><div className="space-y-2"><Label htmlFor="insurance-authorization-number">Autorização</Label><Input id="insurance-authorization-number" value={authorizationNumber} onChange={(e) => setAuthorizationNumber(e.target.value)} placeholder={requirements?.requires_authorization ? "Obrigatória ou ficará pendente" : "Não obrigatória"} /></div></div>}
 
           {requirements && (requirements.preparation || requirements.requires_authorization || requirements.requires_eligibility || requirements.errors.length > 0) && <Card className={requirements.errors.length ? "border-destructive/40" : "border-warning/30"}><CardContent className="p-3 space-y-1"><p className="text-sm font-medium">Requisitos do agendamento</p>{requirements.requires_authorization && <p className="text-xs">Autorização do convênio necessária.</p>}{requirements.requires_eligibility && <p className="text-xs">Elegibilidade da carteirinha ficará pendente de validação.</p>}{requirements.preparation && <p className="text-xs"><strong>Preparo:</strong> {requirements.preparation}</p>}{requirements.errors.map((error) => <p key={error} className="text-xs text-destructive">{error}</p>)}</CardContent></Card>}
 
@@ -631,6 +663,27 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
             <Label htmlFor="appointment-notes">Observações</Label>
             <Textarea id="appointment-notes" placeholder="Notas adicionais..." value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} maxLength={500} />
           </div>
+
+          <div className="flex items-center justify-between gap-4 border-t pt-4">
+            <div>
+              <Label htmlFor="appointment-recurring">Repetir semanalmente</Label>
+              <p className="text-xs text-muted-foreground">A série é criada de forma atômica.</p>
+            </div>
+            <Switch id="appointment-recurring" checked={recurring} onCheckedChange={setRecurring} />
+          </div>
+          {recurring && (
+            <div className="space-y-2">
+              <Label htmlFor="appointment-occurrences">Quantidade de ocorrências</Label>
+              <Input
+                id="appointment-occurrences"
+                type="number"
+                min={2}
+                max={52}
+                value={occurrences}
+                onChange={(event) => setOccurrences(Number(event.target.value))}
+              />
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={handleClose}>Cancelar</Button>
