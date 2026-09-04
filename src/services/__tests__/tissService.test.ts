@@ -24,6 +24,13 @@ const tiss403Required = {
   regimeAtendimento: "01" as const,
 };
 
+const tissAuthorizationRequired = {
+  authorizationNumber: "AUTH-TESTE-001",
+  authorizationDate: "2026-07-14",
+  authorizationPassword: "SENHA<&>001",
+  authorizationValidUntil: "2026-08-14",
+};
+
 const transportXml = `<ans:mensagemTISS xmlns:ans="http://www.ans.gov.br/padroes/tiss/schemas">
   <ans:cabecalho><ans:Padrao>4.03.00</ans:Padrao></ans:cabecalho>
   <ans:prestadorParaOperadora><ans:loteGuias><ans:numeroLote>1</ans:numeroLote></ans:loteGuias></ans:prestadorParaOperadora>
@@ -61,6 +68,7 @@ describe("buildTissXml", () => {
       providerCnpj: "00.000.000/0001-00",
       registroAns: "999999",
       ...tiss403Required,
+      ...tissAuthorizationRequired,
       procedimentos: [
         {
           cd_tuss: "10101012",
@@ -81,6 +89,15 @@ describe("buildTissXml", () => {
     expect(result.xml).toContain("ATD-TESTE-001");
     expect(result.xml).not.toContain("Paciente &lt;Teste&gt; &amp; Homologacao");
     expect(result.xml).toContain("Consulta &lt;sintetica&gt;");
+    expect(result.xml).toContain("<ans:numeroGuiaOperadora>AUTH-TESTE-001</ans:numeroGuiaOperadora>");
+    expect(result.xml).toContain("<ans:dataAutorizacao>2026-07-14</ans:dataAutorizacao>");
+    expect(result.xml).toContain("<ans:senha>SENHA&lt;&amp;&gt;001</ans:senha>");
+    expect(result.xml).toContain("<ans:dataValidadeSenha>2026-08-14</ans:dataValidadeSenha>");
+    expect(result.xml.indexOf("<ans:cabecalhoGuia>")).toBeLessThan(result.xml.indexOf("<ans:dadosAutorizacao>"));
+    expect(result.xml.indexOf("<ans:dadosAutorizacao>")).toBeLessThan(result.xml.indexOf("<ans:dadosBeneficiario>"));
+    expect(result.xml.indexOf("<ans:numeroGuiaOperadora>")).toBeLessThan(result.xml.indexOf("<ans:dataAutorizacao>"));
+    expect(result.xml.indexOf("<ans:dataAutorizacao>")).toBeLessThan(result.xml.indexOf("<ans:senha>"));
+    expect(result.xml.indexOf("<ans:senha>")).toBeLessThan(result.xml.indexOf("<ans:dataValidadeSenha>"));
     expect(result.xml).toContain("<ans:valorTotalGeral>150.00</ans:valorTotalGeral>");
     expect(result.hash).toMatch(/^[A-F0-9]{32}$/);
     expect(result.hash).not.toBe("00000000000000000000000000000000");
@@ -107,6 +124,7 @@ describe("buildTissXml", () => {
         professionalLicense: "123",
         providerCnpj: "00000000000100",
         registroAns: "999999",
+        ...tissAuthorizationRequired,
         procedimentos: [{ cd_tuss: "10101012", ds_procedimento: "Teste", qt: 1, vl_unitario: 1 }],
       })
     ).toThrow(/Dados obrigatórios TISS 04\.03\.00 ausentes/);
@@ -123,6 +141,7 @@ describe("buildTissXml", () => {
       providerCnpj: "00000000000100",
       registroAns: "999999",
       ...tiss403Required,
+      ...tissAuthorizationRequired,
       procedimentos: [{ cd_tuss: "10101012", ds_procedimento: "Teste", qt: 1, vl_unitario: 1 }],
     };
 
@@ -149,6 +168,7 @@ describe("buildTissXml", () => {
         providerCnpj: "00000000000100",
         registroAns: "999999",
         ...tiss403Required,
+        ...tissAuthorizationRequired,
         procedimentos: [{ cd_tuss: "10101012", ds_procedimento: "Procedimento teste", qt: 1, vl_unitario: 150 }],
         agora: new Date("2026-07-15T12:00:00.000Z"),
       });
@@ -181,6 +201,26 @@ describe("buildTissXml", () => {
       expect(validation.status, validation.stderr).toBe(0);
     }
   );
+
+  it("falha fechado sem número ou data da autorização", () => {
+    const baseInput = {
+      appointmentId: 1,
+      tipoGuia: "SP/SADT" as const,
+      nr_carteira: "CARTEIRA-1",
+      pacienteNome: "Paciente",
+      profissionalNome: "Medico",
+      professionalLicense: "123456",
+      providerCnpj: "00000000000100",
+      registroAns: "999999",
+      ...tiss403Required,
+      procedimentos: [{ cd_tuss: "10101012", ds_procedimento: "Teste", qt: 1, vl_unitario: 1 }],
+    };
+
+    expect(() => buildTissXml({ ...baseInput, authorizationNumber: "", authorizationDate: "2026-07-14" }))
+      .toThrow(/authorizationNumber/);
+    expect(() => buildTissXml({ ...baseInput, authorizationNumber: "AUTH-1", authorizationDate: "" }))
+      .toThrow(/authorizationDate/);
+  });
 });
 
 describe("tissService numeric boundary", () => {

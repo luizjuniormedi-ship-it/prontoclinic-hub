@@ -50,6 +50,8 @@ GRANT EXECUTE ON FUNCTION auth.uid() TO prontomedic_schedule_rpc_owner;
 GRANT EXECUTE ON FUNCTION public.active_company_id() TO prontomedic_schedule_rpc_owner;
 GRANT EXECUTE ON FUNCTION public.active_unit_id() TO prontomedic_schedule_rpc_owner;
 GRANT EXECUTE ON FUNCTION public.can_access(TEXT, TEXT) TO prontomedic_schedule_rpc_owner;
+GRANT EXECUTE ON FUNCTION public.org_can_access_unit(UUID, INTEGER)
+  TO prontomedic_schedule_rpc_owner;
 GRANT EXECUTE ON FUNCTION public.get_scheduling_requirements(BIGINT, BIGINT, BIGINT, INTEGER, TEXT)
   TO prontomedic_schedule_rpc_owner;
 GRANT EXECUTE ON FUNCTION public.create_appointment_with_requirements_secure(
@@ -255,14 +257,23 @@ BEGIN
     RAISE EXCEPTION 'Plano, carteirinha ou autorização exigem convênio';
   END IF;
 
+  -- Serialize idempotent retries before any canonical insurance side effect.
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_series_id::TEXT, 0));
+
   IF p_insurance_plan_id IS NOT NULL THEN
+    -- Different series for the same patient/plan must not create competing
+    -- active insurance links. This lock is independent from the series key.
+    PERFORM pg_advisory_xact_lock(hashtextextended(
+      v_company_id::TEXT || ':' || p_patient_id::TEXT || ':' || p_insurance_plan_id::TEXT,
+      0
+    ));
+
     SELECT plan.insurance_company_id
       INTO v_plan_company_id
       FROM public.insurance_plans plan
      WHERE plan.id = p_insurance_plan_id
        AND plan.company_id = v_company_id
-       AND plan.lg_ativo = TRUE
-     FOR KEY SHARE;
+       AND plan.lg_ativo = TRUE;
     IF NOT FOUND OR p_insurance_id IS NULL
        OR v_plan_company_id IS DISTINCT FROM p_insurance_id THEN
       RAISE EXCEPTION 'Plano não pertence ao convênio e empresa ativos';
@@ -279,8 +290,7 @@ BEGIN
      ORDER BY patient_insurance.is_primary DESC,
               patient_insurance.updated_at DESC,
               patient_insurance.id DESC
-     LIMIT 1
-     FOR UPDATE;
+     LIMIT 1;
 
     IF FOUND THEN
       IF v_card_number IS NULL THEN
@@ -324,8 +334,6 @@ BEGIN
     'occurrences', p_occurrences,
     'interval_days', p_interval_days
   )::TEXT);
-
-  PERFORM pg_advisory_xact_lock(hashtextextended(p_series_id::TEXT, 0));
 
   SELECT request_fingerprint
     INTO v_existing_fingerprint

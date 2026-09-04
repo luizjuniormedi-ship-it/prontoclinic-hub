@@ -46,6 +46,7 @@ contracts=(
   '20260829014500|auth_native_session_contract|20260829013235|forward_only|auth-native-session'
   '20260902022540|nursing_rpc_owner_rls_closure|20260829014500|preserve_schema|nursing-rpc-owner'
   '20260902055133|appointment_series_requirements_contract|20260902022540|preserve_schema|appointment-series'
+  '20260904183653|tiss_authorization_serialization|20260902055133|preserve_schema|tiss-authorization'
 )
 
 cleanup() {
@@ -121,7 +122,8 @@ NODE
 done
 
 bash deploy/database/deploy-migration.sh rollback
-test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260902055133'" -d "$database")" = 0
+test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260904183653'" -d "$database")" = 0
+test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260902055133'" -d "$database")" = 1
 test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260902022540'" -d "$database")" = 1
 test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260829014500'" -d "$database")" = 1
 test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260829013235'" -d "$database")" = 1
@@ -134,12 +136,12 @@ test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migration
 test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260811210000'" -d "$database")" = 1
 # shellcheck disable=SC1090
 . "$root/state/last-deploy.env"
-test "$MIGRATION_VERSION" = 20260902022540
-latest_backup="$(find "$root/20260902055133/backups" -maxdepth 1 -name '*.dump' -type f | sort | tail -n 1)"
+test "$MIGRATION_VERSION" = 20260902055133
+latest_backup="$(find "$root/20260904183653/backups" -maxdepth 1 -name '*.dump' -type f | sort | tail -n 1)"
 test -n "$latest_backup"
 PRONTOMEDIC_DB_RESTORE_CONFIRM="RESTORE:${database}" \
   bash deploy/database/deploy-migration.sh restore "$latest_backup" "${latest_backup}.sha256"
-test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260902055133'" -d "$database")" = 0
-test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260902022540'" -d "$database")" = 1
+test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260904183653'" -d "$database")" = 0
+test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260902055133'" -d "$database")" = 1
 bash deploy/database/deploy-migration.test.sh
 echo "DATABASE_DEPLOY_INTEGRATION_PASS"

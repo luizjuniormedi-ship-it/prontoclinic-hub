@@ -577,6 +577,7 @@ const RPC_PERMISSIONS = {
   get_professional_available_slots: { module: 'agenda', action: 'can_view' },
   get_scheduling_requirements: { module: 'agenda', action: 'can_view' },
   create_appointment_with_requirements_secure: { module: 'agenda', action: 'can_create' },
+  create_appointment_series_with_requirements_secure: { module: 'agenda', action: 'can_create' },
   refresh_confirmation_queue_secure: { module: 'agenda', action: 'can_edit' },
   record_confirmation_attempt_secure: { module: 'agenda', action: 'can_edit' },
   mark_overdue_appointments_no_show_secure: { module: 'agenda', action: 'can_edit' },

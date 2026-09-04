@@ -612,7 +612,7 @@ export function NewAppointmentDialog({ open, onOpenChange, professionals, specia
               <Label>Serviço/procedimento</Label>
               <Input value={serviceSearch} onChange={(e) => setServiceSearch(e.target.value)} placeholder="Filtrar serviço" />
               <Select value={serviceId} onValueChange={setServiceId}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label="Selecionar serviço ou procedimento"><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="none">Não informado</SelectItem>{normalizedServices.filter((s) => s.lg_ativo !== false && (!serviceSearch.trim() || s.name.toLowerCase().includes(serviceSearch.trim().toLowerCase()) || (s.code || "").toLowerCase().includes(serviceSearch.trim().toLowerCase()))).slice(0, 100).map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>

@@ -1130,6 +1130,46 @@ ON CONFLICT (id) DO UPDATE SET
   insurance_company_id = EXCLUDED.insurance_company_id,
   insurance_plan_id = EXCLUDED.insurance_plan_id;
 
+INSERT INTO public.insurance_authorizations (
+  id, company_id, unit_id, patient_id, appointment_id,
+  insurance_id, insurance_plan_id, procedure_id, status,
+  authorization_number, password_number, authorized_at, valid_until,
+  quantity_requested, quantity_authorized, quantity_used
+)
+VALUES
+  (
+    '16000000-0000-4000-8000-000000000321',
+    '16000000-0000-4000-8000-000000000001',
+    16001, 160001, 160001, 160001, 160011, 160001,
+    'autorizada', 'AUTH-A', 'SENHA-A', CURRENT_DATE, CURRENT_DATE + 30,
+    1, 1, 0
+  ),
+  (
+    '16000000-0000-4000-8000-000000000322',
+    '16000000-0000-4000-8000-000000000002',
+    16002, 160002, 160002, 160002, 160012, 160002,
+    'autorizada', 'AUTH-B', 'SENHA-B', CURRENT_DATE, CURRENT_DATE + 30,
+    1, 1, 0
+  ),
+  (
+    '16000000-0000-4000-8000-000000000323',
+    '16000000-0000-4000-8000-000000000001',
+    16001, 160001, 160003, 160001, 160011, 160001,
+    'autorizada', 'AUTH-C', 'SENHA-C', CURRENT_DATE, CURRENT_DATE + 30,
+    1, 1, 0
+  )
+ON CONFLICT (id) DO UPDATE SET
+  authorization_number = EXCLUDED.authorization_number,
+  password_number = EXCLUDED.password_number,
+  authorized_at = EXCLUDED.authorized_at,
+  valid_until = EXCLUDED.valid_until,
+  status = EXCLUDED.status;
+
+-- This fixture isolates the TISS materializer. Authorization assignment itself
+-- is covered by the canonical reception/billing handoff contract.
+ALTER TABLE public.billing_accounts
+  DISABLE TRIGGER trg_m11_assign_billing_authorization;
+
 INSERT INTO public.billing_accounts (
   id, company_id, unit_id, appointment_id, insurance_id,
   patient_id, billing_type, status, total_gross_amount, total_net_amount,
@@ -1164,6 +1204,9 @@ ON CONFLICT (id) DO UPDATE SET
   authorization_number = EXCLUDED.authorization_number,
   has_pending_issues = EXCLUDED.has_pending_issues,
   version = EXCLUDED.version;
+
+ALTER TABLE public.billing_accounts
+  ENABLE TRIGGER trg_m11_assign_billing_authorization;
 
 -- A database application role with tenant claims but no canonical session
 -- must never regain the former claim-only bypass.
@@ -1422,6 +1465,8 @@ DECLARE
   v_guide_count INTEGER;
   v_xml_count INTEGER;
   v_version INTEGER;
+  v_document JSONB;
+  v_xml TEXT;
 BEGIN
   SELECT value INTO STRICT v_first FROM tiss_contract_state WHERE key = 'materialized_a';
   v_retry := public.m16_materialize_account_tiss_secure(
@@ -1443,6 +1488,16 @@ BEGIN
   IF v_guide_count <> 1 OR v_xml_count <> 1 OR v_version <> 2 THEN
     RAISE EXCEPTION 'Materialization is not atomic/idempotent: guides %, XML %, version %',
       v_guide_count, v_xml_count, v_version;
+  END IF;
+  v_document := public.m16_get_xml_document_secure((v_first->>'xml_id')::BIGINT);
+  v_xml := v_document->>'bl_xml_enviado';
+  IF v_xml NOT LIKE '%<ans:numeroGuiaOperadora>AUTH-A</ans:numeroGuiaOperadora>%'
+     OR v_xml NOT LIKE '%<ans:dataAutorizacao>%'
+     OR v_xml NOT LIKE '%<ans:senha>SENHA-A</ans:senha>%'
+     OR v_xml NOT LIKE '%<ans:dataValidadeSenha>%'
+     OR position('</ans:cabecalhoGuia>' IN v_xml) >= position('<ans:dadosAutorizacao>' IN v_xml)
+     OR position('<ans:dadosAutorizacao>' IN v_xml) >= position('<ans:dadosBeneficiario>' IN v_xml) THEN
+    RAISE EXCEPTION 'Materialized XML did not preserve the canonical authorization in XSD order';
   END IF;
 END
 $assert_materialization_retry$;

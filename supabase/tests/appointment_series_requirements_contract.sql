@@ -19,6 +19,12 @@ BEGIN
      OR v_definition NOT ILIKE '%RETURN NEXT v_row%' THEN
     RAISE EXCEPTION 'Appointment series lost atomicity or insurance contract';
   END IF;
+  IF v_definition NOT ILIKE '%v_company_id::TEXT || '':'' || p_patient_id::TEXT || '':'' || p_insurance_plan_id::TEXT%'
+     OR position('pg_advisory_xact_lock' IN lower(v_definition)) > position('insert into public.patient_insurances' IN lower(v_definition))
+     OR v_definition ILIKE '%FOR UPDATE%'
+     OR v_definition ILIKE '%FOR KEY SHARE%' THEN
+    RAISE EXCEPTION 'Patient insurance must be serialized before side effects without elevated row-lock grants';
+  END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_class
      WHERE oid = 'public.appointment_series'::regclass
@@ -50,6 +56,13 @@ BEGIN
     'EXECUTE'
   ) THEN
     RAISE EXCEPTION 'Series owner lacks the minimum insurance requirements privileges';
+  END IF;
+  IF NOT has_function_privilege(
+    'prontomedic_schedule_rpc_owner',
+    'public.org_can_access_unit(uuid,integer)',
+    'EXECUTE'
+  ) THEN
+    RAISE EXCEPTION 'Series owner cannot validate tenant-scoped unit access';
   END IF;
   IF NOT has_table_privilege(
     'prontomedic_schedule_rpc_owner', 'public.units', 'SELECT'

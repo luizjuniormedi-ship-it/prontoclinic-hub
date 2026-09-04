@@ -184,7 +184,8 @@ load_manifest_contract() {
     20260829013235:close_global_catalog_write_policies:20260829012947:forward_only|\
     20260829014500:auth_native_session_contract:20260829013235:forward_only|\
     20260902022540:nursing_rpc_owner_rls_closure:20260829014500:preserve_schema|\
-    20260902055133:appointment_series_requirements_contract:20260902022540:preserve_schema) ;;
+    20260902055133:appointment_series_requirements_contract:20260902022540:preserve_schema|\
+    20260904183653:tiss_authorization_serialization:20260902055133:preserve_schema) ;;
     *) die 'migration fora da allowlist do coordenador' ;;
   esac
 }

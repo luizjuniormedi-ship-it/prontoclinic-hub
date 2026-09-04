@@ -309,6 +309,10 @@ export interface TissXmlBuildInput {
   appointmentId: number;
   tipoGuia: TissTipoGuia;
   nr_carteira: string;
+  authorizationNumber: string;
+  authorizationDate: string;
+  authorizationPassword?: string;
+  authorizationValidUntil?: string;
   cd_atendimento?: string;
   pacienteNome: string;
   profissionalNome: string;
@@ -433,6 +437,8 @@ function requireTiss403SadtFields(input: TissXmlBuildInput): void {
   }
   const required: Array<[string, unknown]> = [
     ["nr_carteira", input.nr_carteira],
+    ["authorizationNumber", input.authorizationNumber],
+    ["authorizationDate", input.authorizationDate],
     ["professionalLicense", onlyDigits(input.professionalLicense)],
     ["providerCnpj", onlyDigits(input.providerCnpj)],
     ["registroAns", onlyDigits(input.registroAns)],
@@ -455,6 +461,17 @@ function requireTiss403SadtFields(input: TissXmlBuildInput): void {
   }
   if (!/^\d{6}$/.test(onlyDigits(input.registroAns))) {
     throw new Error("Registro ANS deve conter 6 dígitos para TISS 04.03.00.");
+  }
+  if (input.authorizationNumber.length > 20 || (input.authorizationPassword?.length ?? 0) > 20) {
+    throw new Error("Número ou senha da autorização excede o limite TISS de 20 caracteres.");
+  }
+  for (const [field, value] of [
+    ["authorizationDate", input.authorizationDate],
+    ["authorizationValidUntil", input.authorizationValidUntil],
+  ] as const) {
+    if (value && !/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(value)) {
+      throw new Error(`Data TISS inválida em ${field}.`);
+    }
   }
   if (!input.procedimentos.length) {
     throw new Error("A guia SP/SADT deve conter ao menos um procedimento executado.");
@@ -527,6 +544,14 @@ export function buildTissXml(input: TissXmlBuildInput): { xml: string; vlTotal: 
     .join("");
   const transactionId = String(agora.getTime()).slice(-12);
   const guideNumber = xmlEscape(input.cd_atendimento || String(input.appointmentId));
+  const authorizationPassword = input.authorizationPassword?.trim();
+  const authorizationValidUntil = input.authorizationValidUntil?.trim();
+  const authorizationXml = `<ans:dadosAutorizacao>
+            <ans:numeroGuiaOperadora>${xmlEscape(input.authorizationNumber.trim())}</ans:numeroGuiaOperadora>
+            <ans:dataAutorizacao>${isoToTissDate(input.authorizationDate)}</ans:dataAutorizacao>${authorizationPassword ? `
+            <ans:senha>${xmlEscape(authorizationPassword)}</ans:senha>` : ""}${authorizationValidUntil ? `
+            <ans:dataValidadeSenha>${isoToTissDate(authorizationValidUntil)}</ans:dataValidadeSenha>` : ""}
+          </ans:dadosAutorizacao>`;
   const transactionXml = `<?xml version="1.0" encoding="ISO-8859-1"?>
 <ans:mensagemTISS xmlns:ans="http://www.ans.gov.br/padroes/tiss/schemas">
   <ans:cabecalho>
@@ -553,6 +578,7 @@ export function buildTissXml(input: TissXmlBuildInput): { xml: string; vlTotal: 
             <ans:registroANS>${registroAns}</ans:registroANS>
             <ans:numeroGuiaPrestador>${guideNumber}</ans:numeroGuiaPrestador>
           </ans:cabecalhoGuia>
+          ${authorizationXml}
           <ans:dadosBeneficiario>
             <ans:numeroCarteira>${xmlEscape(input.nr_carteira)}</ans:numeroCarteira>
             <ans:atendimentoRN>${input.atendimentoRN}</ans:atendimentoRN>
