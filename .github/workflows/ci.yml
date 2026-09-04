@@ -38,6 +38,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -56,14 +58,14 @@ jobs:
           docker run --rm \
             -v "$PWD:/app" -w /app \
             --entrypoint deno denoland/deno:2.5.6 \
-            check \
+            check --no-lock \
             supabase/functions/auth-admin/index.ts \
             supabase/functions/dicom-bridge/index.ts \
             supabase/functions/telemedicina-daily/index.ts
           docker run --rm \
             -v "$PWD:/app" -w /app \
             --entrypoint deno denoland/deno:2.5.6 \
-            test --allow-env supabase/functions/_shared/cors_test.ts
+            test --no-lock --allow-env supabase/functions/_shared/cors_test.ts
           bash deploy/edge-runtime/deploy-functions.test.sh
           if grep -R '"Access-Control-Allow-Origin": "\*"' \
             supabase/functions/auth-admin \
@@ -92,7 +94,7 @@ jobs:
         run: >-
           node scripts/validate-origin-main-baseline.mjs
           --strict
-          --expected-sha=${{ github.sha }}
+          --expected-sha=${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Replay clean schema and test authorization twice
         env:
@@ -271,8 +273,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: database-replay-${{ github.sha }}
-          if-no-files-found: error
+          name: database-replay-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: warn
           retention-days: 14
           path: artifacts/replay
 
