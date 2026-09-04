@@ -2,6 +2,8 @@
 -- the existing secure appointment command; it does not create a second
 -- scheduling path or bypass the established requirements ledger.
 
+BEGIN;
+
 DO $role$
 BEGIN
   IF to_regrole('prontomedic_schedule_rpc_owner') IS NULL THEN
@@ -56,6 +58,10 @@ GRANT EXECUTE ON FUNCTION public.create_appointment_with_requirements_secure(
 ) TO prontomedic_schedule_rpc_owner;
 GRANT SELECT, UPDATE ON public.appointments TO prontomedic_schedule_rpc_owner;
 GRANT SELECT ON public.insurance_plans TO prontomedic_schedule_rpc_owner;
+GRANT SELECT ON public.units TO prontomedic_schedule_rpc_owner;
+GRANT SELECT, INSERT ON public.patient_insurances TO prontomedic_schedule_rpc_owner;
+GRANT USAGE, SELECT ON SEQUENCE public.patient_insurances_id_seq
+  TO prontomedic_schedule_rpc_owner;
 GRANT SELECT, INSERT, UPDATE ON public.insurance_eligibility_checks
   TO prontomedic_schedule_rpc_owner;
 GRANT SELECT, INSERT, UPDATE ON public.insurance_authorizations
@@ -127,7 +133,32 @@ CREATE POLICY insurance_plans_series_owner_select
   ON public.insurance_plans FOR SELECT TO prontomedic_schedule_rpc_owner
   USING (
     company_id = public.active_company_id()
-    AND is_active = TRUE
+    AND lg_ativo = TRUE
+    AND public.can_access('agenda', 'create')
+  );
+
+DROP POLICY IF EXISTS units_series_owner_select ON public.units;
+CREATE POLICY units_series_owner_select
+  ON public.units FOR SELECT TO prontomedic_schedule_rpc_owner
+  USING (
+    company_id = public.active_company_id()
+    AND id = public.active_unit_id()
+    AND lg_ativo = TRUE
+    AND public.can_access('agenda', 'create')
+  );
+
+DROP POLICY IF EXISTS patient_insurances_series_owner_select ON public.patient_insurances;
+CREATE POLICY patient_insurances_series_owner_select
+  ON public.patient_insurances FOR SELECT TO prontomedic_schedule_rpc_owner
+  USING (
+    company_id = public.active_company_id()
+    AND public.can_access('agenda', 'create')
+  );
+DROP POLICY IF EXISTS patient_insurances_series_owner_insert ON public.patient_insurances;
+CREATE POLICY patient_insurances_series_owner_insert
+  ON public.patient_insurances FOR INSERT TO prontomedic_schedule_rpc_owner
+  WITH CHECK (
+    company_id = public.active_company_id()
     AND public.can_access('agenda', 'create')
   );
 
@@ -192,10 +223,14 @@ DECLARE
   v_fingerprint TEXT;
   v_existing_fingerprint TEXT;
   v_plan_company_id INTEGER;
+  v_patient_insurance_id BIGINT;
+  v_existing_card_number TEXT;
   v_requirements JSONB;
   v_row public.appointments%ROWTYPE;
   v_occurrence INTEGER;
   v_authorization TEXT := NULLIF(trim(COALESCE(p_authorization_number, '')), '');
+  v_card_number TEXT := NULLIF(trim(COALESCE(p_card_number, '')), '');
+  v_notes TEXT := NULLIF(trim(COALESCE(p_notes, '')), '');
 BEGIN
   IF p_series_id IS NULL
      OR v_company_id IS NULL
@@ -212,16 +247,60 @@ BEGIN
     RAISE EXCEPTION 'Série deve ter entre 1 e 52 ocorrências e intervalo válido';
   END IF;
 
+  IF p_insurance_id IS NULL AND (
+    p_insurance_plan_id IS NOT NULL
+    OR v_card_number IS NOT NULL
+    OR v_authorization IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'Plano, carteirinha ou autorização exigem convênio';
+  END IF;
+
   IF p_insurance_plan_id IS NOT NULL THEN
     SELECT plan.insurance_company_id
       INTO v_plan_company_id
       FROM public.insurance_plans plan
      WHERE plan.id = p_insurance_plan_id
        AND plan.company_id = v_company_id
-       AND plan.lg_ativo = TRUE;
+       AND plan.lg_ativo = TRUE
+     FOR KEY SHARE;
     IF NOT FOUND OR p_insurance_id IS NULL
        OR v_plan_company_id IS DISTINCT FROM p_insurance_id THEN
       RAISE EXCEPTION 'Plano não pertence ao convênio e empresa ativos';
+    END IF;
+
+    SELECT patient_insurance.id,
+           NULLIF(trim(COALESCE(patient_insurance.card_number, '')), '')
+      INTO v_patient_insurance_id, v_existing_card_number
+      FROM public.patient_insurances patient_insurance
+     WHERE patient_insurance.company_id = v_company_id
+       AND patient_insurance.patient_id = p_patient_id
+       AND patient_insurance.insurance_plan_id = p_insurance_plan_id
+       AND patient_insurance.status = 'active'
+     ORDER BY patient_insurance.is_primary DESC,
+              patient_insurance.updated_at DESC,
+              patient_insurance.id DESC
+     LIMIT 1
+     FOR UPDATE;
+
+    IF FOUND THEN
+      IF v_card_number IS NULL THEN
+        v_card_number := v_existing_card_number;
+      ELSIF v_existing_card_number IS DISTINCT FROM v_card_number THEN
+        RAISE EXCEPTION 'Carteirinha diverge do vínculo ativo do paciente';
+      END IF;
+    ELSIF v_card_number IS NOT NULL THEN
+      INSERT INTO public.patient_insurances(
+        company_id, patient_id, insurance_plan_id, card_number,
+        is_primary, status, created_by
+      ) VALUES (
+        v_company_id, p_patient_id, p_insurance_plan_id, v_card_number,
+        FALSE, 'active', auth.uid()
+      )
+      RETURNING id INTO v_patient_insurance_id;
+    END IF;
+
+    IF v_card_number IS NULL THEN
+      RAISE EXCEPTION 'Carteirinha ativa é obrigatória para o plano informado';
     END IF;
   END IF;
 
@@ -231,16 +310,16 @@ BEGIN
     'date', p_appointment_date,
     'start', p_start_time,
     'end', p_end_time,
-    'company', p_company_id,
-    'unit', p_unit_id,
+    'company', v_company_id,
+    'unit', v_unit_id,
     'specialty', p_specialty_id,
     'service', p_service_id,
     'appointment_type', p_appointment_type_id,
     'is_return', p_is_return,
-    'notes', p_notes,
+    'notes', v_notes,
     'insurance', p_insurance_id,
     'plan', p_insurance_plan_id,
-    'card', p_card_number,
+    'card', v_card_number,
     'authorization', v_authorization,
     'occurrences', p_occurrences,
     'interval_days', p_interval_days
@@ -275,7 +354,7 @@ BEGIN
   );
 
   v_requirements := public.get_scheduling_requirements(
-    p_patient_id, p_professional_id, p_service_id, p_insurance_id, p_card_number
+    p_patient_id, p_professional_id, p_service_id, p_insurance_id, v_card_number
   );
 
   FOR v_occurrence IN 1..p_occurrences LOOP
@@ -294,9 +373,9 @@ BEGIN
         'scheduled',
         p_is_return,
         FALSE,
-        p_notes,
+        v_notes,
         p_insurance_id,
-        p_card_number,
+        v_card_number,
         v_authorization
       );
 
@@ -368,3 +447,5 @@ GRANT EXECUTE ON FUNCTION public.create_appointment_series_with_requirements_sec
   UUID, BIGINT, BIGINT, DATE, TIME, TIME, UUID, INTEGER, INTEGER,
   BIGINT, BIGINT, BOOLEAN, TEXT, INTEGER, INTEGER, TEXT, TEXT, INTEGER, INTEGER
 ) TO authenticated, app_prontomedic;
+
+COMMIT;

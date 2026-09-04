@@ -51,6 +51,30 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'Series owner lacks the minimum insurance requirements privileges';
   END IF;
+  IF NOT has_table_privilege(
+    'prontomedic_schedule_rpc_owner', 'public.units', 'SELECT'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_policies
+     WHERE schemaname = 'public'
+       AND tablename = 'units'
+       AND policyname = 'units_series_owner_select'
+       AND roles @> ARRAY['prontomedic_schedule_rpc_owner']::name[]
+  ) THEN
+    RAISE EXCEPTION 'Series owner cannot validate the active unit in insurance triggers';
+  END IF;
+  IF NOT has_table_privilege(
+    'prontomedic_schedule_rpc_owner', 'public.patient_insurances', 'SELECT,INSERT'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_policies
+     WHERE schemaname = 'public' AND tablename = 'patient_insurances'
+       AND policyname = 'patient_insurances_series_owner_select'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_policies
+     WHERE schemaname = 'public' AND tablename = 'patient_insurances'
+       AND policyname = 'patient_insurances_series_owner_insert'
+  ) THEN
+    RAISE EXCEPTION 'Series cannot preserve the canonical patient insurance card';
+  END IF;
 END;
 $contract$;
 ROLLBACK;

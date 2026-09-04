@@ -1,9 +1,20 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-database="${PRONTOMEDIC_DATABASE:-prontoclinic_dbdeploy}"
+database="${PRONTOMEDIC_DATABASE:-prontoclinic_dbdeploy_${PPID}_$$}"
 root="${PRONTOMEDIC_DB_INTEGRATION_ROOT:-/tmp/prontomedic-dbdeploy}"
 sha="${PRONTOMEDIC_TEST_COMMIT_SHA:-$(git rev-parse HEAD)}"
+database_created=0
+
+[[ "$sha" =~ ^[0-9a-f]{40}$ ]] || {
+  echo 'SHA de integração deve conter 40 caracteres hexadecimais' >&2
+  exit 1
+}
+
+[[ "$database" = prontoclinic_dbdeploy_* ]] || {
+  echo 'banco de integração fora do prefixo descartável permitido' >&2
+  exit 1
+}
 
 [[ "$root" = /tmp/prontomedic-dbdeploy* ]] || {
   echo 'diretorio de integracao fora do prefixo descartavel permitido' >&2
@@ -38,15 +49,19 @@ contracts=(
 )
 
 cleanup() {
-  if [[ "${PRONTOMEDIC_KEEP_TEST_DATABASE:-0}" != "1" ]]; then
+  if [[ "$database_created" = 1 && "${PRONTOMEDIC_KEEP_TEST_DATABASE:-0}" != "1" ]]; then
     dropdb --if-exists "$database" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
 
 rm -rf "$root"
-dropdb --if-exists "$database"
+if psql -XAt -d postgres -c 'SELECT datname FROM pg_database' | grep -Fxq "$database"; then
+  echo 'banco descartável já existe; recusando exclusão automática' >&2
+  exit 1
+fi
 createdb "$database"
+database_created=1
 REPLAY_STOP_BEFORE=20260804033225_secure_companies_units_admin_contract.sql \
   scripts/replay-migrations.sh "$database"
 

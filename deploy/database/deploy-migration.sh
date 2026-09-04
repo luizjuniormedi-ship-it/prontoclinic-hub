@@ -214,10 +214,8 @@ validate_bundle() {
 run_smoke() { psql_db "$1" -f "$2" >/dev/null; }
 
 database_fingerprint() {
-  psql_db "$database" -Atqc "
-    SELECT concat_ws(':', tup_inserted, tup_updated, tup_deleted)
-      FROM pg_stat_database
-     WHERE datname = current_database()"
+  psql_db "$database" -Atqc \
+    'SELECT txid_snapshot_xmax(txid_current_snapshot())'
 }
 
 verify_private_file() {
