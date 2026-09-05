@@ -154,6 +154,11 @@ jobs:
     timeout-minutes: 15
     environment: Production
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 0
+
       - uses: actions/download-artifact@v4
         with:
           name: auth-admin-release-${{ inputs.commit_sha }}
@@ -178,11 +183,6 @@ jobs:
           test -s "release/migration-${COMMIT_SHA}.sql"
           test -s release/bootstrap-root/deploy/auth-service/deploy-atomic.sh
           test -s release/bootstrap-root/deploy/edge-runtime/deploy-functions.sh
-
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.commit_sha }}
-          fetch-depth: 0
 
       - name: Revalidate current main and CI after production approval
         env:

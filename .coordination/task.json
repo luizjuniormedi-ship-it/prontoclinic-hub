@@ -1,7 +1,7 @@
 {
-  "taskId": "edge-artifact-normalization-20260905",
+  "taskId": "edge-checkout-order-20260905",
   "module": "edge-deployment",
-  "baseCommit": "66bebac3a17cd84a08500e5cd04ab833043b90c5",
+  "baseCommit": "62fcb837d35e6e074e9b7c4b42aef9648e80b415",
   "paths": [".github/workflows/deploy-edge-functions.yml"],
   "sharedPaths": [],
   "status": "active"
