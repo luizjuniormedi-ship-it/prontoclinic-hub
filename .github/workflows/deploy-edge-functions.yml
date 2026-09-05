@@ -159,6 +159,48 @@ jobs:
           name: auth-admin-release-${{ inputs.commit_sha }}
           path: release
 
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 0
+
+      - name: Revalidate current main and CI after production approval
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          git fetch --no-tags origin main
+          test "$(git rev-parse HEAD)" = "$COMMIT_SHA"
+          test "$(git rev-parse origin/main)" = "$COMMIT_SHA" || {
+            echo '::error::main advanced while production approval was pending'
+            exit 1
+          }
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+          curl --fail-with-body --silent --show-error \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            --output "$response_file" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${COMMIT_SHA}&branch=main&per_page=100"
+          node - "$COMMIT_SHA" "$response_file" <<'NODE'
+          const fs = require('node:fs');
+          const expectedSha = process.argv[2];
+          const payload = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+          const runs = (payload.workflow_runs || [])
+            .filter((run) => run.head_sha === expectedSha && run.head_branch === 'main')
+            .sort((left, right) =>
+              Number(right.run_number) - Number(left.run_number) ||
+              Number(right.run_attempt) - Number(left.run_attempt));
+          const latest = runs[0];
+          if (!latest || latest.status !== 'completed' || latest.conclusion !== 'success') {
+            console.error(`::error::Latest CI for SHA is not green: ${latest?.html_url || 'not found'}`);
+            process.exit(1);
+          }
+          console.log(`CI_GATE_REVALIDATED run_id=${latest.id} sha=${latest.head_sha}`);
+          NODE
+
       - name: Validate transport secrets
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
