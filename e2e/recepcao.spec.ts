@@ -72,7 +72,7 @@ authed.describe.serial('Recepção — operação básica', () => {
     await expect(page.getByRole('tab', { name: /fila/i })).toHaveAttribute('data-state', 'active');
   });
 
-  authed('conclui a cadeia 91001 da Recepção até guia e XML TISS sem duplicar artefatos', async ({ loginAs, page }, testInfo) => {
+  authed('reutiliza o appointment_id da Agenda até Recepção, conta, guia e XML TISS', async ({ loginAs, page }, testInfo) => {
     authed.slow();
     authed.skip(
       testInfo.project.name !== 'chromium',
@@ -82,60 +82,62 @@ authed.describe.serial('Recepção — operação básica', () => {
     const databaseUrl = process.env.E2E_PATIENT_FIXTURE_DATABASE_URL
       || `postgresql://${process.env.PGUSER}:${process.env.PGPASSWORD}@${process.env.PGHOST}:${process.env.PGPORT}/${process.env.PGDATABASE}`;
     expect(databaseUrl, 'Banco descartável obrigatório para correlacionar a jornada').toBeTruthy();
+    const marker = `E2E_RECEPTION_TISS_${Date.now()}`;
+    const appointmentDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    const authorizationNumber = `AUTH-${Date.now()}`.slice(0, 20);
+
+    await clearBrowserAuth(page);
+    await loginAs('admin');
+    await page.goto('/schedule');
+    await page.getByRole('button', { name: /criar novo agendamento/i }).click();
+    const scheduleDialog = page.getByRole('dialog', { name: /novo agendamento/i });
+    await scheduleDialog.getByRole('textbox', { name: /buscar paciente para agendamento/i }).fill('Paciente E2E A');
+    await scheduleDialog.getByRole('combobox', { name: /selecionar paciente/i }).click();
+    await page.getByRole('option', { name: /Paciente E2E A/ }).click();
+    await scheduleDialog.getByRole('combobox', { name: /selecionar profissional/i }).click();
+    await page.getByRole('option', { name: /Médico E2E/ }).click();
+    await scheduleDialog.getByRole('combobox', { name: /selecionar serviço ou procedimento/i }).click();
+    await page.getByRole('option', { name: /Ultrassonografia SADT E2E/i }).click();
+    await scheduleDialog.getByRole('combobox', { name: /selecionar convênio/i }).click();
+    await page.getByRole('option', { name: /Convênio Sintético E2E/i }).click();
+    await scheduleDialog.getByRole('combobox', { name: /selecionar plano do convênio/i }).click();
+    await page.getByRole('option', { name: /Plano SADT Sintético E2E/i }).click();
+    await scheduleDialog.getByLabel(/Carteirinha\/matrícula/i).fill('E2E-CARD-RECEPTION');
+    await scheduleDialog.getByLabel('Autorização').fill(authorizationNumber);
+    await scheduleDialog.getByLabel('Data *').fill(appointmentDate);
+    await scheduleDialog.getByLabel('Início *').fill('14:00');
+    await scheduleDialog.getByLabel(/observações/i).fill(marker);
+    await scheduleDialog.getByRole('button', { name: /^agendar$/i }).click();
+    await expect(page.getByText('✓ Agendamento criado com sucesso!', { exact: true })).toBeVisible();
+
     const fixtureClient = new Client({ connectionString: databaseUrl });
     await fixtureClient.connect();
+    let appointmentId = 0;
     try {
-      await fixtureClient.query(
-        `DELETE FROM public.reception_checkin_workflows WHERE appointment_id = 91001;
-         DELETE FROM public.dicom_worklist_queue WHERE appointment_id = 91001;
-         DELETE FROM public.tiss_xml WHERE appointment_id = 91001;
-         DELETE FROM public.billings WHERE appointment_id = 91001;
-         DELETE FROM public.tiss_guides WHERE appointment_id = 91001;
-         DELETE FROM public.reception_payments WHERE appointment_id = 91001;
-         DELETE FROM public.financial_transactions WHERE appointment_id = 91001;
-         DELETE FROM public.billing_accounts WHERE appointment_id = 91001;
-         DELETE FROM public.reception_checkin_status_history
-          WHERE checkin_id IN (
-            SELECT id FROM public.reception_checkins WHERE appointment_id = 91001
-          );
-         DELETE FROM public.reception_queue_tickets WHERE appointment_id = 91001;
-         DELETE FROM public.reception_checkins WHERE appointment_id = 91001;
-         UPDATE public.appointments
-            SET status = 'scheduled', tp_status = 'agendado', lg_checkin = FALSE
-          WHERE id = 91001;
-
-         UPDATE public.insurance_companies
-            SET lg_guia_obrigatoria = TRUE
-          WHERE id = 91001
-            AND company_id = 'eeeeeeee-1000-4000-8000-000000000001';
-
-         INSERT INTO public.insurance_authorizations (
-           id, company_id, unit_id, patient_id, appointment_id,
-           insurance_id, insurance_plan_id, procedure_id, procedure_desc,
-           requester_professional_id, status, protocol_number,
-           authorization_number, valid_until, quantity_requested,
-           quantity_authorized, created_by, authorized_at
-         ) VALUES (
-           'eeeeeeee-9104-4000-8000-000000000001',
-           'eeeeeeee-1000-4000-8000-000000000001',
-           91001, 91001, 91001, 91001, 91001, 91001,
-           'Exame SADT E2E', 91001, 'autorizada', 'PROTO-E2E-91001',
-           'AUTH-E2E-91001', CURRENT_DATE + 30, 1, 1,
-           'eeeeeeee-0000-4000-8000-000000000001', NOW()
-         )
-         ON CONFLICT (id) DO UPDATE SET
-           status = 'autorizada',
-           protocol_number = EXCLUDED.protocol_number,
-           authorization_number = EXCLUDED.authorization_number,
-           valid_until = EXCLUDED.valid_until,
-           quantity_authorized = 1,
-           authorized_at = NOW(),
-           updated_at = NOW()`,
+      const created = await fixtureClient.query<{ id: string }>(
+        `SELECT id::text
+           FROM public.appointments
+          WHERE notes = $1
+          ORDER BY id DESC
+          LIMIT 1`,
+        [marker],
       );
+      expect(created.rows).toHaveLength(1);
+      appointmentId = Number(created.rows[0].id);
+      expect(Number.isSafeInteger(appointmentId)).toBe(true);
     } finally {
       await fixtureClient.end();
     }
-    await page.reload();
+
+    await clearBrowserAuth(page);
+    await loginAs('reception');
+    await page.goto('/reception');
+    await waitForReceptionReady(page);
 
     const patientName = 'Paciente E2E A';
     const appointmentCard = appointmentCardFor(page, patientName, '14:00');
@@ -164,7 +166,7 @@ authed.describe.serial('Recepção — operação básica', () => {
       name: 'Entrada concluída e conta aberta',
     });
     await expect(receiptDialog).toBeVisible({ timeout: 20_000 });
-    await expect(receiptDialog).toContainText(`${patientName} · Atendimento #91001`);
+    await expect(receiptDialog).toContainText(`${patientName} · Atendimento #${appointmentId}`);
 
     const ticket = receiptDialog.getByText(/^Senha \S+$/);
     await expect(ticket).toBeVisible();
@@ -176,16 +178,16 @@ authed.describe.serial('Recepção — operação básica', () => {
     await expect(page.getByRole('heading', { name: /entrada do paciente/i })).toBeVisible();
 
     const persistedAppointmentCard = appointmentCardFor(page, patientName);
-    const persistedTicket = ticketForAppointment(page, ticketLabel!, 91001);
+    const persistedTicket = ticketForAppointment(page, ticketLabel!, appointmentId);
 
     await expect(persistedTicket).toHaveCount(1);
     await expect(persistedTicket).toBeVisible();
     await expect(
-      ticketForAppointment(page, ticketLabel!, 91001),
+      ticketForAppointment(page, ticketLabel!, appointmentId),
     ).toHaveCount(1);
 
     await page.reload();
-    await expect(ticketForAppointment(page, ticketLabel!, 91001)).toHaveCount(1);
+    await expect(ticketForAppointment(page, ticketLabel!, appointmentId)).toHaveCount(1);
 
     const preBillingClient = new Client({ connectionString: databaseUrl });
     await preBillingClient.connect();
@@ -245,19 +247,19 @@ authed.describe.serial('Recepção — operação básica', () => {
             AND imaging_item.unit_id = imaging_order.unit_id
            LEFT JOIN public.tiss_xml xml
              ON xml.appointment_id = appointment.id
-          WHERE appointment.id = 91001
+           WHERE appointment.id = ${appointmentId}
           GROUP BY appointment.id`,
       );
 
       expect(preBilling.rows).toEqual([{
-        appointment_id: '91001',
+        appointment_id: String(appointmentId),
         checkin_count: '1',
         workflow_count: '1',
         billing_account_id: expect.any(String),
         billing_count: '1',
         billing_type: 'convenio',
         billing_status: 'aberta',
-        authorization_number: 'AUTH-E2E-91001',
+        authorization_number: authorizationNumber,
         guide_count: '0',
         xml_count: '0',
         worklist_count: '1',
@@ -271,11 +273,11 @@ authed.describe.serial('Recepção — operação básica', () => {
 
     await clearBrowserAuth(page);
     await loginAs('admin');
-    const focusedBillingUrl = `/billing-accounts?account=${billingAccountId}&appointment=91001`;
+    const focusedBillingUrl = `/billing-accounts?account=${billingAccountId}&appointment=${appointmentId}`;
     await page.goto(focusedBillingUrl);
     const accountDialog = page.getByRole('dialog', { name: 'Conferência da Conta' });
     await expect(accountDialog).toBeVisible();
-    await expect(accountDialog).toContainText('AUTH-E2E-91001');
+    await expect(accountDialog).toContainText(authorizationNumber);
     await accountDialog.getByRole('button', { name: 'Revisar pendências' }).click();
     await expect(page.getByText('Conta revisada sem bloqueios', { exact: true })).toBeVisible();
     await accountDialog.getByRole('button', { name: 'Fechar' }).click();
@@ -293,7 +295,7 @@ authed.describe.serial('Recepção — operação básica', () => {
       'Conta sintética conferida e apta para materialização TISS em homologação.',
     );
     await decisionDialog.getByLabel('Evidência verificada').fill(
-      'Carteirinha, autorização, procedimento, valor e vínculo ao agendamento 91001 conferidos.',
+      `Carteirinha, autorização, procedimento, valor e vínculo ao agendamento ${appointmentId} conferidos.`,
     );
     await decisionDialog.getByRole('button', { name: 'Aprovar' }).click();
     await expect(page.getByText('Conta aprovada para envio', { exact: true })).toBeVisible();
@@ -350,12 +352,12 @@ authed.describe.serial('Recepção — operação básica', () => {
            JOIN public.billing_accounts billing ON billing.appointment_id = appointment.id
            LEFT JOIN public.tiss_guides guide ON guide.appointment_id = appointment.id
            LEFT JOIN public.tiss_xml xml ON xml.appointment_id = appointment.id
-          WHERE appointment.id = 91001
+           WHERE appointment.id = ${appointmentId}
           GROUP BY appointment.id`,
       );
 
       expect(finalChain.rows).toEqual([{
-        appointment_id: '91001',
+        appointment_id: String(appointmentId),
         billing_account_id: billingAccountId,
         billing_status: 'pronta_envio',
         billing_count: '1',

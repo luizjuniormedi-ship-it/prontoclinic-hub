@@ -1441,6 +1441,66 @@ BEGIN
 END
 $assert_direct_access_blocked$;
 
+DO $assert_authorization_materialization_guards$
+DECLARE
+  v_rejected BOOLEAN;
+BEGIN
+  UPDATE public.insurance_authorizations
+     SET valid_until = CURRENT_DATE - 1
+   WHERE id = '16000000-0000-4000-8000-000000000321';
+  v_rejected := FALSE;
+  BEGIN
+    PERFORM public.m16_materialize_account_tiss_secure(
+      '16000000-0000-4000-8000-000000000411',
+      '16000000-0000-4000-8000-000000000301', 1, 'SP/SADT', 'HOMOLOGACAO'
+    );
+  EXCEPTION WHEN check_violation THEN
+    v_rejected := TRUE;
+  END;
+  IF NOT v_rejected THEN
+    RAISE EXCEPTION 'Expired authorization generated TISS XML';
+  END IF;
+
+  UPDATE public.insurance_authorizations
+     SET valid_until = CURRENT_DATE + 30,
+         quantity_used = quantity_authorized
+   WHERE id = '16000000-0000-4000-8000-000000000321';
+  v_rejected := FALSE;
+  BEGIN
+    PERFORM public.m16_materialize_account_tiss_secure(
+      '16000000-0000-4000-8000-000000000412',
+      '16000000-0000-4000-8000-000000000301', 1, 'SP/SADT', 'HOMOLOGACAO'
+    );
+  EXCEPTION WHEN check_violation THEN
+    v_rejected := TRUE;
+  END;
+  IF NOT v_rejected THEN
+    RAISE EXCEPTION 'Exhausted authorization generated TISS XML';
+  END IF;
+
+  UPDATE public.insurance_authorizations
+     SET quantity_used = 0,
+         status = 'cancelada'
+   WHERE id = '16000000-0000-4000-8000-000000000321';
+  v_rejected := FALSE;
+  BEGIN
+    PERFORM public.m16_materialize_account_tiss_secure(
+      '16000000-0000-4000-8000-000000000413',
+      '16000000-0000-4000-8000-000000000301', 1, 'SP/SADT', 'HOMOLOGACAO'
+    );
+  EXCEPTION WHEN check_violation THEN
+    v_rejected := TRUE;
+  END;
+  IF NOT v_rejected THEN
+    RAISE EXCEPTION 'Cancelled authorization generated TISS XML';
+  END IF;
+
+  UPDATE public.insurance_authorizations
+     SET status = 'autorizada'
+   WHERE id = '16000000-0000-4000-8000-000000000321';
+END
+$assert_authorization_materialization_guards$;
+
 WITH materialized AS (
   SELECT public.m16_materialize_account_tiss_secure(
     '16000000-0000-4000-8000-000000000401',

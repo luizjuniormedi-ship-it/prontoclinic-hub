@@ -14,8 +14,9 @@ REVOKE ALL PRIVILEGES ON public.insurance_authorizations
 GRANT SELECT (
   id, company_id, unit_id, patient_id, appointment_id, insurance_id,
   insurance_plan_id, status, authorization_number, password_number,
-  authorized_at, valid_until, updated_at
+  authorized_at, valid_until, quantity_authorized, quantity_used, updated_at
 ) ON public.insurance_authorizations TO prontomedic_tiss_rpc_owner;
+GRANT UPDATE (id) ON public.insurance_authorizations TO prontomedic_tiss_rpc_owner;
 
 DROP POLICY IF EXISTS m16_materialization_authorizations_read
   ON public.insurance_authorizations;
@@ -23,6 +24,20 @@ CREATE POLICY m16_materialization_authorizations_read
   ON public.insurance_authorizations
   FOR SELECT TO prontomedic_tiss_rpc_owner
   USING (
+    company_id = public.active_company_id()
+    AND unit_id = public.active_unit_id()
+  );
+
+DROP POLICY IF EXISTS m16_materialization_authorizations_lock
+  ON public.insurance_authorizations;
+CREATE POLICY m16_materialization_authorizations_lock
+  ON public.insurance_authorizations
+  FOR UPDATE TO prontomedic_tiss_rpc_owner
+  USING (
+    company_id = public.active_company_id()
+    AND unit_id = public.active_unit_id()
+  )
+  WITH CHECK (
     company_id = public.active_company_id()
     AND unit_id = public.active_unit_id()
   );
@@ -59,6 +74,8 @@ DECLARE
   v_xml_id BIGINT;
   v_card TEXT;
   v_authorization RECORD;
+  v_materializable_authorization_statuses CONSTANT TEXT[] :=
+    ARRAY['autorizada', 'parcialmente_autorizada'];
   v_authorization_xml TEXT;
   v_provider_cnpj TEXT;
   v_ans TEXT;
@@ -188,7 +205,9 @@ BEGIN
          authz.authorization_number,
          authz.password_number,
          authz.authorized_at,
-         authz.valid_until
+         authz.valid_until,
+         authz.quantity_authorized,
+         authz.quantity_used
     INTO v_authorization
     FROM public.insurance_authorizations authz
    WHERE authz.company_id = v_company
@@ -198,14 +217,18 @@ BEGIN
      AND authz.insurance_id = v_account.insurance_id
      AND authz.insurance_plan_id = v_plan.id
      AND authz.authorization_number = v_account.authorization_number
-     AND authz.status IN ('autorizada', 'parcialmente_autorizada')
+     AND authz.status = ANY (v_materializable_authorization_statuses)
+     AND (authz.valid_until IS NULL OR authz.valid_until >= CURRENT_DATE)
+     AND authz.quantity_authorized IS NOT NULL
+     AND authz.quantity_authorized > COALESCE(authz.quantity_used, 0)
    ORDER BY authz.authorized_at DESC NULLS LAST,
             authz.updated_at DESC,
             authz.id DESC
-   LIMIT 1;
+   LIMIT 1
+   FOR UPDATE OF authz;
 
   IF v_authorization.id IS NULL OR v_authorization.authorized_at IS NULL THEN
-    RAISE EXCEPTION 'Canonical TISS authorization is missing or has no authorization date'
+    RAISE EXCEPTION 'Canonical TISS authorization is missing, expired, exhausted or has no authorization date'
       USING ERRCODE = '23514';
   END IF;
   IF length(v_authorization.authorization_number) > 20

@@ -68,6 +68,7 @@
     "supabase/tests/auth_native_session_contract.sql",
     "supabase/tests/canonical_runtime_rpc_contracts.sql",
     "supabase/tests/appointment_series_requirements_contract.sql",
+    "supabase/tests/module16_tiss_account_materialization_contract.sql",
     "supabase/tests/module16_tiss_runtime_contract.sql",
     "supabase/tests/tiss_authorization_serialization_contract.sql",
     "tests/database/supabase_auth_compatibility.sql"
