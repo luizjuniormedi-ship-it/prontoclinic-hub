@@ -8,6 +8,7 @@
     "local-auth-admin.mjs",
     "local-auth-server.mjs",
     "e2e/agendamento.spec.ts",
+    "e2e/gate-phase01.spec.ts",
     "e2e/recepcao.spec.ts",
     "package-lock.json",
     "package.json",
