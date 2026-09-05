@@ -30,6 +30,7 @@
     "src/services/__tests__",
     "src/services/__tests__/nursingRpcOwnerRlsClosure.test.ts",
     "supabase/config.toml",
+    "supabase/migrations/20260716240000_operational_rls_closure.sql",
     "supabase/migrations/20260829012947_canonical_runtime_rpc_contracts.sql",
     "supabase/migrations/20260829013235_close_global_catalog_write_policies.sql",
     "supabase/migrations/20260829014500_auth_native_session_contract.sql",
