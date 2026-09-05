@@ -40,6 +40,38 @@ authed.describe('Agendamento', () => {
   });
 
   authed('persiste agendamento sintetico e permite cancelamento pela agenda', async ({ page }) => {
+    const databaseUrl = process.env.E2E_PATIENT_FIXTURE_DATABASE_URL
+      || `postgresql://${process.env.PGUSER}:${process.env.PGPASSWORD}@${process.env.PGHOST}:${process.env.PGPORT}/${process.env.PGDATABASE}`;
+    expect(databaseUrl, 'Banco descartável obrigatório para selecionar uma vaga livre').toBeTruthy();
+    const appointmentDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    const candidateTimes = Array.from({ length: 20 }, (_, index) => {
+      const minutes = (8 * 60) + (index * 30);
+      return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+    });
+    const availabilityClient = new Client({ connectionString: databaseUrl });
+    await availabilityClient.connect();
+    let appointmentTime = '';
+    try {
+      const occupied = await availabilityClient.query<{ start_time: string }>(
+        `SELECT to_char(start_time, 'HH24:MI') AS start_time
+           FROM public.appointments
+          WHERE professional_id = 91001
+            AND appointment_date = $1::date
+            AND status NOT IN ('cancelled', 'canceled')`,
+        [appointmentDate],
+      );
+      const occupiedTimes = new Set(occupied.rows.map((row) => row.start_time));
+      appointmentTime = candidateTimes.find((time) => !occupiedTimes.has(time)) || '';
+    } finally {
+      await availabilityClient.end();
+    }
+    expect(appointmentTime, 'A Agenda deve oferecer ao menos um horário livre no dia').not.toBe('');
+
     await page.goto('/schedule');
     await page.getByRole('button', { name: /criar novo agendamento/i }).click();
 
@@ -48,18 +80,20 @@ authed.describe('Agendamento', () => {
     await page.getByRole('option').first().click();
 
     await page.getByRole('combobox', { name: /selecionar profissional/i }).click();
-    await page.getByRole('option').first().click();
+    await page.getByRole('option', { name: /Médico E2E/ }).click();
 
-    await page.getByLabel('Início *').fill('22:45');
+    await page.getByLabel('Início *').fill(appointmentTime);
     await page.getByLabel(/observações/i).fill('E2E_AGENDA_PERSISTENCIA');
 
     await expect(page.getByLabel('Fim')).toHaveValue(/.+/);
     await page.getByRole('button', { name: /^agendar$/i }).click();
     await expect(page.getByRole('dialog', { name: /novo agendamento/i })).toHaveCount(0);
-    await expect(page.getByText('✓ Agendamento criado com sucesso!', { exact: true })).toBeVisible();
+    await expect(page.getByText('Agendamento criado com sucesso', { exact: true })).toBeVisible();
 
     await page.getByRole('textbox', { name: /buscar agendamento/i }).fill('PACIENTE');
-    const createdRow = page.getByRole('gridcell', { name: /22:45, PACIENTE/i }).first();
+    const createdRow = page.getByRole('gridcell', {
+      name: new RegExp(`${appointmentTime}, PACIENTE`, 'i'),
+    }).first();
     await expect(createdRow).toBeVisible();
     await createdRow.getByRole('button', { name: /mais ações para/i }).click();
     await page.getByRole('menuitem', { name: /cancelar/i }).click();
