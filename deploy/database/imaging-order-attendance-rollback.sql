@@ -82,5 +82,13 @@ BEGIN
   THEN
     RAISE EXCEPTION 'Rollback manteve privilegios introduzidos pela migration';
   END IF;
+
+  IF EXISTS (
+    SELECT 1
+      FROM supabase_migrations.schema_migrations
+     WHERE version = '20260905030000'
+  ) THEN
+    RAISE EXCEPTION 'Rollback manteve a migration registrada no ledger';
+  END IF;
 END;
 $smoke$;

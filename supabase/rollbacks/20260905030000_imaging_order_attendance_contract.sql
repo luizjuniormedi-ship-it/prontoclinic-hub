@@ -80,4 +80,7 @@ GRANT EXECUTE ON FUNCTION public.create_imaging_order_from_attendance(
   BIGINT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ
 ) TO authenticated, app_prontomedic;
 
+DELETE FROM supabase_migrations.schema_migrations
+WHERE version = '20260905030000';
+
 COMMIT;

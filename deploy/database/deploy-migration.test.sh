@@ -20,6 +20,7 @@ appointment_series_rollback="${BASH_SOURCE[0]%/*}/../../supabase/rollbacks/20260
 appointment_series_migration="${BASH_SOURCE[0]%/*}/../../supabase/migrations/20260902055133_appointment_series_requirements_contract.sql"
 tiss_authorization_rollback="${BASH_SOURCE[0]%/*}/../../supabase/rollbacks/20260904183653_tiss_authorization_serialization.sql"
 tiss_authorization_migration="${BASH_SOURCE[0]%/*}/../../supabase/migrations/20260904183653_tiss_authorization_serialization.sql"
+imaging_order_attendance_rollback="${BASH_SOURCE[0]%/*}/../../supabase/rollbacks/20260905030000_imaging_order_attendance_contract.sql"
 
 bash -n "$helper"
 test -f "$workflow"
@@ -40,6 +41,7 @@ test -f "$appointment_series_rollback"
 test -f "$appointment_series_migration"
 test -f "$tiss_authorization_rollback"
 test -f "$tiss_authorization_migration"
+test -f "$imaging_order_attendance_rollback"
 grep -Fq 'PRONTOMEDIC_GLOBAL_DEPLOY_LOCK' "$helper"
 grep -Fq 'exec 9>"$global_lock"' "$helper"
 test "$(grep -Fc 'group: prontomedic-production-deploy' "$workflow")" = 1
@@ -75,6 +77,7 @@ grep -Fq '20260902022540:nursing_rpc_owner_rls_closure:20260829014500:preserve_s
 grep -Fq '20260902055133:appointment_series_requirements_contract:20260902022540:preserve_schema' "$helper"
 grep -Fq '20260904183653:tiss_authorization_serialization:20260902055133:preserve_schema' "$helper"
 grep -Fq '20260905030000:imaging_order_attendance_contract:20260904183653:inverse' "$helper"
+grep -Fq "WHERE version = '20260905030000'" "$imaging_order_attendance_rollback"
 grep -Fq 'migration_version:' "$workflow"
 grep -Fq '20260804143000) name=rbac_active_context_aal2' "$workflow"
 grep -Fq '20260805123000) name=auth_admin_suspension_invariants' "$workflow"
