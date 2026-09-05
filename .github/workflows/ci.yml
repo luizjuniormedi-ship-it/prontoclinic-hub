@@ -255,7 +255,7 @@ jobs:
             -c 'CREATE POLICY legacy_allow_all ON public.professional_schedules FOR SELECT TO authenticated USING (true);'
           if psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
             -d migrations_upgrade_guard --single-transaction \
-            -f supabase/migrations/20260716240000_operational_rls_closure.sql >/dev/null 2>&1; then
+            -f supabase/tests/operational_rls_policy_classification.sql >/dev/null 2>&1; then
             echo 'Operational RLS closure accepted an unknown legacy policy' >&2
             exit 1
           fi
@@ -264,7 +264,7 @@ jobs:
             -c 'DROP POLICY legacy_allow_all ON public.professional_schedules;'
           psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
             -d migrations_upgrade_guard --single-transaction \
-            -f supabase/migrations/20260716240000_operational_rls_closure.sql >/dev/null
+            -f supabase/tests/operational_rls_policy_classification.sql >/dev/null
 
       - name: Type check
         run: npm run type-check

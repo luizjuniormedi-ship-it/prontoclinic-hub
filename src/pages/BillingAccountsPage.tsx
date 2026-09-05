@@ -374,7 +374,10 @@ export default function BillingAccountsPage() {
                 </TableHeader>
                 <TableBody>
                   {auditQueue.map((item) => (
-                    <TableRow key={item.account_id}>
+                    <TableRow
+                      key={item.account_id}
+                      data-testid={`billing-audit-${item.account_id}`}
+                    >
                       <TableCell className="font-medium">{item.patient_name || "—"}</TableCell>
                       <TableCell className="text-xs font-mono">{item.guide_number || "—"}</TableCell>
                       <TableCell>

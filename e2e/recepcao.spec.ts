@@ -14,14 +14,14 @@ function appointmentCardFor(
   return expectedTime ? card.filter({ hasText: expectedTime }).first() : card.first();
 }
 
-function ticketForAppointment(
+function ticketForPatient(
   page: import('@playwright/test').Page,
   ticketLabel: string,
-  appointmentId: number,
+  patientId: number,
 ) {
   const escapedTicketLabel = ticketLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return page.getByText(
-    new RegExp(`^${escapedTicketLabel} · Paciente #${appointmentId}$`),
+    new RegExp(`^${escapedTicketLabel} · Paciente #${patientId}$`),
   );
 }
 
@@ -90,6 +90,28 @@ authed.describe.serial('Recepção — operação básica', () => {
       day: '2-digit',
     }).format(new Date());
     const authorizationNumber = `AUTH-${Date.now()}`.slice(0, 20);
+    const candidateTimes = Array.from({ length: 20 }, (_, index) => {
+      const minutes = (8 * 60) + (index * 30);
+      return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+    });
+    const availabilityClient = new Client({ connectionString: databaseUrl });
+    await availabilityClient.connect();
+    let appointmentTime = '';
+    try {
+      const occupied = await availabilityClient.query<{ start_time: string }>(
+        `SELECT to_char(start_time, 'HH24:MI') AS start_time
+           FROM public.appointments
+          WHERE professional_id = 91001
+            AND appointment_date = $1::date
+            AND status NOT IN ('cancelled', 'canceled')`,
+        [appointmentDate],
+      );
+      const occupiedTimes = new Set(occupied.rows.map((row) => row.start_time));
+      appointmentTime = candidateTimes.find((time) => !occupiedTimes.has(time)) || '';
+    } finally {
+      await availabilityClient.end();
+    }
+    expect(appointmentTime, 'A Agenda deve oferecer ao menos um horário livre no dia').not.toBe('');
 
     await clearBrowserAuth(page);
     await loginAs('admin');
@@ -99,6 +121,8 @@ authed.describe.serial('Recepção — operação básica', () => {
     await scheduleDialog.getByRole('textbox', { name: /buscar paciente para agendamento/i }).fill('Paciente E2E A');
     await scheduleDialog.getByRole('combobox', { name: /selecionar paciente/i }).click();
     await page.getByRole('option', { name: /Paciente E2E A/ }).click();
+    await scheduleDialog.getByRole('combobox', { name: /selecionar tipo de atendimento/i }).click();
+    await page.getByRole('option', { name: /Exame SADT E2E/i }).click();
     await scheduleDialog.getByRole('combobox', { name: /selecionar profissional/i }).click();
     await page.getByRole('option', { name: /Médico E2E/ }).click();
     await scheduleDialog.getByRole('combobox', { name: /selecionar serviço ou procedimento/i }).click();
@@ -107,13 +131,16 @@ authed.describe.serial('Recepção — operação básica', () => {
     await page.getByRole('option', { name: /Convênio Sintético E2E/i }).click();
     await scheduleDialog.getByRole('combobox', { name: /selecionar plano do convênio/i }).click();
     await page.getByRole('option', { name: /Plano SADT Sintético E2E/i }).click();
-    await scheduleDialog.getByLabel(/Carteirinha\/matrícula/i).fill('E2E-CARD-RECEPTION');
+    const insuranceCardNumber = 'E2E-CARD-91001';
+    await scheduleDialog.getByLabel(/Carteirinha\/matrícula/i).fill(insuranceCardNumber);
     await scheduleDialog.getByLabel('Autorização').fill(authorizationNumber);
     await scheduleDialog.getByLabel('Data *').fill(appointmentDate);
-    await scheduleDialog.getByLabel('Início *').fill('14:00');
     await scheduleDialog.getByLabel(/observações/i).fill(marker);
-    await scheduleDialog.getByRole('button', { name: /^agendar$/i }).click();
-    await expect(page.getByText('✓ Agendamento criado com sucesso!', { exact: true })).toBeVisible();
+    const submitAppointment = scheduleDialog.getByRole('button', { name: /^agendar$/i });
+    await scheduleDialog.getByLabel('Início *').fill(appointmentTime);
+    await expect(submitAppointment).toBeEnabled({ timeout: 5_000 });
+    await submitAppointment.click();
+    await expect(page.getByText('Agendamento criado com sucesso', { exact: true })).toBeVisible();
 
     const fixtureClient = new Client({ connectionString: databaseUrl });
     await fixtureClient.connect();
@@ -130,6 +157,34 @@ authed.describe.serial('Recepção — operação básica', () => {
       expect(created.rows).toHaveLength(1);
       appointmentId = Number(created.rows[0].id);
       expect(Number.isSafeInteger(appointmentId)).toBe(true);
+      await fixtureClient.query(
+        `WITH imaging_order AS (
+           INSERT INTO public.imaging_orders (
+             company_id, unit_id, appointment_id, patient_id,
+             requesting_physician_id, referring_physician_name,
+             clinical_indication, priority, accession_number, status, created_by
+           ) VALUES (
+             'eeeeeeee-1000-4000-8000-000000000001', 91001, $1, 91001,
+             91001, 'Médico E2E',
+             'Solicitação sintética para homologar Recepcao -> Worklist',
+             'normal', $2, 'agendado',
+             'eeeeeeee-0000-4000-8000-000000000001'
+           )
+           RETURNING id
+         )
+         INSERT INTO public.imaging_order_items (
+           company_id, unit_id, imaging_order_id, service_id,
+           exam_code, exam_name, modality_type, body_part, laterality,
+           contrast_required, station_aetitle, scheduled_datetime,
+           requested_procedure_id, scheduled_procedure_step_id, status
+         )
+         SELECT 'eeeeeeee-1000-4000-8000-000000000001', 91001, imaging_order.id, 91001,
+                'E2E-USG', 'Ultrassonografia sintética E2E', 'US', 'ABDOME', 'na',
+                FALSE, 'PRONTOMEDIC', ($3::date + $4::time),
+                'E2E-RP-' || $1::text, 'E2E-SPS-' || $1::text, 'agendado'
+           FROM imaging_order`,
+        [appointmentId, `PME2E${appointmentId}`, appointmentDate, appointmentTime],
+      );
     } finally {
       await fixtureClient.end();
     }
@@ -140,7 +195,7 @@ authed.describe.serial('Recepção — operação básica', () => {
     await waitForReceptionReady(page);
 
     const patientName = 'Paciente E2E A';
-    const appointmentCard = appointmentCardFor(page, patientName, '14:00');
+    const appointmentCard = appointmentCardFor(page, patientName, appointmentTime);
     const patientHistoryButton = appointmentCard.getByRole('button', {
       name: `Ver agendamentos de ${patientName}`,
     });
@@ -178,16 +233,16 @@ authed.describe.serial('Recepção — operação básica', () => {
     await expect(page.getByRole('heading', { name: /entrada do paciente/i })).toBeVisible();
 
     const persistedAppointmentCard = appointmentCardFor(page, patientName);
-    const persistedTicket = ticketForAppointment(page, ticketLabel!, appointmentId);
+    const persistedTicket = ticketForPatient(page, ticketLabel!, 91001);
 
     await expect(persistedTicket).toHaveCount(1);
     await expect(persistedTicket).toBeVisible();
     await expect(
-      ticketForAppointment(page, ticketLabel!, appointmentId),
+      ticketForPatient(page, ticketLabel!, 91001),
     ).toHaveCount(1);
 
     await page.reload();
-    await expect(ticketForAppointment(page, ticketLabel!, appointmentId)).toHaveCount(1);
+    await expect(ticketForPatient(page, ticketLabel!, 91001)).toHaveCount(1);
 
     const preBillingClient = new Client({ connectionString: databaseUrl });
     await preBillingClient.connect();
@@ -283,7 +338,7 @@ authed.describe.serial('Recepção — operação básica', () => {
     await accountDialog.getByRole('button', { name: 'Fechar' }).click();
 
     await page.getByRole('tab', { name: 'Auditoria' }).click();
-    const auditRow = page.getByRole('row').filter({ hasText: patientName });
+    const auditRow = page.getByTestId(`billing-audit-${billingAccountId}`);
     await expect(auditRow).toBeVisible();
     await auditRow.getByRole('button', { name: 'Assumir' }).click();
     await expect(page.getByText('Conta assumida para auditoria', { exact: true })).toBeVisible();
@@ -326,6 +381,7 @@ authed.describe.serial('Recepção — operação básica', () => {
         linked_xml_count: string;
         xml_statuses: string;
         sent_xml_count: string;
+        xml_has_insurance_card: boolean;
       }>(
         `SELECT appointment.id::text AS appointment_id,
                 min(billing.id::text) AS billing_account_id,
@@ -347,13 +403,16 @@ authed.describe.serial('Recepção — operação básica', () => {
                 string_agg(DISTINCT xml.status, ',' ORDER BY xml.status) AS xml_statuses,
                 count(DISTINCT xml.id) FILTER (
                   WHERE lower(COALESCE(xml.status, '')) IN ('enviado', 'transmitido', 'sent')
-                )::text AS sent_xml_count
+                )::text AS sent_xml_count,
+                bool_and(position($1 IN COALESCE(xml.bl_xml_enviado, '')) > 0)
+                  AS xml_has_insurance_card
            FROM public.appointments appointment
            JOIN public.billing_accounts billing ON billing.appointment_id = appointment.id
            LEFT JOIN public.tiss_guides guide ON guide.appointment_id = appointment.id
            LEFT JOIN public.tiss_xml xml ON xml.appointment_id = appointment.id
            WHERE appointment.id = ${appointmentId}
           GROUP BY appointment.id`,
+        [insuranceCardNumber],
       );
 
       expect(finalChain.rows).toEqual([{
@@ -367,6 +426,7 @@ authed.describe.serial('Recepção — operação básica', () => {
         linked_xml_count: '1',
         xml_statuses: 'PENDENTE',
         sent_xml_count: '0',
+        xml_has_insurance_card: true,
       }]);
     } finally {
       await finalClient.end();
@@ -442,13 +502,13 @@ authed.describe.serial('Recepção — alçada do supervisor', () => {
     await page.reload();
     await waitForReceptionReady(page);
     await expect(
-      ticketForAppointment(page, ticketLabel!, 91003),
+      ticketForPatient(page, ticketLabel!, 91001),
     ).toHaveCount(1);
     await expect(page.getByText('16:00', { exact: true }).locator(
       'xpath=ancestor::div[contains(@class, "rounded-lg")][1]',
     )).toContainText('Aguardando');
 
-    const queueRow = ticketForAppointment(page, ticketLabel!, 91003)
+    const queueRow = ticketForPatient(page, ticketLabel!, 91001)
       .locator('..')
       .locator('..');
     await queueRow.getByRole('button', {
@@ -457,7 +517,7 @@ authed.describe.serial('Recepção — alçada do supervisor', () => {
     await expect(queueRow).toContainText('called');
     await page.reload();
     await waitForReceptionReady(page);
-    const persistedQueueRow = ticketForAppointment(page, ticketLabel!, 91003)
+    const persistedQueueRow = ticketForPatient(page, ticketLabel!, 91001)
       .locator('..')
       .locator('..');
     await expect(persistedQueueRow).toContainText('called');
