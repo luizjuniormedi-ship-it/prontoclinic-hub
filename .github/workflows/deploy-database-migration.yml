@@ -33,6 +33,7 @@ on:
           - "20260902022540"
           - "20260902055133"
           - "20260904183653"
+          - "20260905030000"
       full_restore:
         description: Recuperacao integral pelo dump (acao separada do rollback logico)
         required: true
@@ -147,6 +148,7 @@ jobs:
             20260902022540) name=nursing_rpc_owner_rls_closure; predecessor=20260829014500; rollback_mode=preserve_schema ;;
             20260902055133) name=appointment_series_requirements_contract; predecessor=20260902022540; rollback_mode=preserve_schema ;;
             20260904183653) name=tiss_authorization_serialization; predecessor=20260902055133; rollback_mode=preserve_schema ;;
+            20260905030000) name=imaging_order_attendance_contract; predecessor=20260904183653; rollback_mode=inverse ;;
             *) echo '::error::migration nao autorizada'; exit 1 ;;
           esac
           stage="release/stage"
@@ -169,6 +171,7 @@ jobs:
             20260902022540) smoke_prefix=deploy/database/nursing-rpc-owner ;;
             20260902055133) smoke_prefix=deploy/database/appointment-series ;;
             20260904183653) smoke_prefix=deploy/database/tiss-authorization ;;
+            20260905030000) smoke_prefix=deploy/database/imaging-order-attendance ;;
             *) smoke_prefix=deploy/database/smoke ;;
           esac
           cp "${smoke_prefix}-before.sql" "$stage/smoke-before.sql"

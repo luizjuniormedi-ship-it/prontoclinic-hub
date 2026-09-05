@@ -47,6 +47,7 @@ contracts=(
   '20260902022540|nursing_rpc_owner_rls_closure|20260829014500|preserve_schema|nursing-rpc-owner'
   '20260902055133|appointment_series_requirements_contract|20260902022540|preserve_schema|appointment-series'
   '20260904183653|tiss_authorization_serialization|20260902055133|preserve_schema|tiss-authorization'
+  '20260905030000|imaging_order_attendance_contract|20260904183653|inverse|imaging-order-attendance'
 )
 
 cleanup() {
