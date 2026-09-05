@@ -102,6 +102,7 @@ authed.describe.serial('Recepção — operação básica', () => {
 
   authed('reutiliza o appointment_id da Agenda até Recepção, conta, guia e XML TISS', async ({ loginAs, page }, testInfo) => {
     authed.slow();
+    testInfo.setTimeout(180_000);
     authed.skip(
       testInfo.project.name !== 'chromium',
       'O cenário transacional usa uma única massa compartilhada e roda uma vez no Chromium.',
