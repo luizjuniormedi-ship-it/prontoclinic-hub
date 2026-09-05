@@ -1,7 +1,7 @@
 {
-  "taskId": "edge-artifact-layout-20260905",
+  "taskId": "edge-artifact-normalization-20260905",
   "module": "edge-deployment",
-  "baseCommit": "da25e9675ad23cdc74bfb3a39e881fec45a5a735",
+  "baseCommit": "66bebac3a17cd84a08500e5cd04ab833043b90c5",
   "paths": [".github/workflows/deploy-edge-functions.yml"],
   "sharedPaths": [],
   "status": "active"

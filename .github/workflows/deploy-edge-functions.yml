@@ -157,7 +157,27 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: auth-admin-release-${{ inputs.commit_sha }}
-          path: release
+          path: downloaded-release
+
+      - name: Normalize downloaded release layout
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          mapfile -t bootstrap_roots < <(find downloaded-release -type d -name bootstrap-root -print)
+          test "${#bootstrap_roots[@]}" -eq 1 || {
+            echo "::error::Artefato deve conter exatamente um bootstrap-root; encontrados: ${#bootstrap_roots[@]}"
+            exit 1
+          }
+          artifact_root="$(dirname "${bootstrap_roots[0]}")"
+          install -d release
+          cp -a "${artifact_root}/." release/
+          test -s "release/auth-${COMMIT_SHA}.tgz"
+          test -s "release/auth-${COMMIT_SHA}.tgz.sha256"
+          test -s "release/edge-${COMMIT_SHA}.tgz"
+          test -s "release/edge-${COMMIT_SHA}.tgz.sha256"
+          test -s "release/migration-${COMMIT_SHA}.sql"
+          test -s release/bootstrap-root/deploy/auth-service/deploy-atomic.sh
+          test -s release/bootstrap-root/deploy/edge-runtime/deploy-functions.sh
 
       - uses: actions/checkout@v4
         with:
