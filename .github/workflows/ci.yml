@@ -208,7 +208,7 @@ jobs:
           PGPORT: 54322
           PGUSER: postgres
           PGPASSWORD: postgres
-          PRONTOMEDIC_DATABASE: prontoclinic_dbdeploy
+          PRONTOMEDIC_DATABASE: prontoclinic_dbdeploy_ci
           PRONTOMEDIC_DB_TEST_MODE: "1"
           PRONTOMEDIC_DB_DIRECT_POSTGRES: "1"
           PRONTOMEDIC_DB_BACKUP_ROOT: /tmp/prontomedic-dbdeploy/backups
