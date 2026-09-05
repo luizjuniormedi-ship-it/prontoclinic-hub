@@ -61,7 +61,7 @@ export default function NursingCarePage() {
   const confirmAdminister = async () => {
     if (!checkMed) return;
     setBusy(true);
-    try { await nursingCareService.administer(checkMed.id); toast({ title: "Medicamento administrado", description: "Checagem beira-leito confirmada" }); setCheckMed(null); load(); }
+    try { await nursingCareService.administer(checkMed.id, checkMed.patient_id); toast({ title: "Medicamento administrado", description: "Checagem beira-leito confirmada" }); setCheckMed(null); load(); }
     catch (e) { toast({ title: "Erro", description: String(e), variant: "destructive" }); }
     finally { setBusy(false); }
   };

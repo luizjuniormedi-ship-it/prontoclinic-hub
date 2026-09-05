@@ -49,13 +49,36 @@ CREATE TABLE IF NOT EXISTS auth.refresh_tokens (
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   parent UUID,
   session_jti UUID,
+  session_id UUID,
   revoked BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS auth.sessions (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE auth.refresh_tokens ADD COLUMN IF NOT EXISTS parent UUID;
 ALTER TABLE auth.refresh_tokens ADD COLUMN IF NOT EXISTS session_jti UUID;
+ALTER TABLE auth.refresh_tokens ADD COLUMN IF NOT EXISTS session_id UUID;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'auth.refresh_tokens'::regclass
+       AND conname = 'refresh_tokens_session_id_fkey'
+  ) THEN
+    ALTER TABLE auth.refresh_tokens
+      ADD CONSTRAINT refresh_tokens_session_id_fkey
+      FOREIGN KEY (session_id) REFERENCES auth.sessions(id) ON DELETE CASCADE;
+  END IF;
+END
+$$;
 
 CREATE INDEX IF NOT EXISTS idx_auth_refresh_tokens_user
   ON auth.refresh_tokens(user_id, revoked);

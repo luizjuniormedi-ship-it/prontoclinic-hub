@@ -50,16 +50,26 @@ export const patientAppointmentsService = {
       load("upcoming", 3),
       load("history", 3),
     ]);
+    const seenAppointmentIds = new Set<string>();
+    const groups = [today, upcoming, history].flatMap((response) =>
+      response.groups
+        .map((group) => ({
+          ...group,
+          appointments: group.appointments.filter((appointment) => {
+            if (seenAppointmentIds.has(appointment.id)) return false;
+            seenAppointmentIds.add(appointment.id);
+            return true;
+          }),
+        }))
+        .filter((group) => group.appointments.length > 0),
+    );
     return {
       ...today,
-      groups: [...today.groups, ...upcoming.groups, ...history.groups],
+      groups,
       pagination: {
         page: 1,
         pageSize: 26,
-        total:
-          today.pagination.total +
-          upcoming.pagination.total +
-          history.pagination.total,
+        total: seenAppointmentIds.size,
         totalPages: 1,
       },
     };

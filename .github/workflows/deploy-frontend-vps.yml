@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: prontomedic-production-deploy
@@ -30,14 +31,56 @@ jobs:
           ref: ${{ inputs.commit_sha }}
           fetch-depth: 0
 
-      - name: Require immutable commit integrated in main
+      - name: Require immutable commit at current main HEAD
         env:
           COMMIT_SHA: ${{ inputs.commit_sha }}
         run: |
+          set -Eeuo pipefail
+          test '${{ inputs.bootstrap_helper }}' = 'true' || {
+            echo '::error::The canonical helper must be bootstrapped so public-smoke rollback is available'
+            exit 1
+          }
+          [[ "$COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo '::error::commit_sha must contain 40 lowercase hexadecimal characters'
+            exit 1
+          }
+          git fetch --no-tags origin main
           test "$(git rev-parse HEAD)" = "$COMMIT_SHA"
-          test "$(git rev-parse --verify "$COMMIT_SHA^{commit}")" = "$COMMIT_SHA"
-          git fetch origin main --depth=1
-          git merge-base --is-ancestor "$COMMIT_SHA" origin/main
+          test "$(git rev-parse origin/main)" = "$COMMIT_SHA" || {
+            echo '::error::commit_sha must be exactly the current origin/main HEAD'
+            exit 1
+          }
+
+      - name: Require successful CI for the same commit
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+          curl --fail-with-body --silent --show-error \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            --output "$response_file" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${COMMIT_SHA}&branch=main&per_page=100"
+          node - "$COMMIT_SHA" "$response_file" <<'NODE'
+          const fs = require('node:fs');
+          const expectedSha = process.argv[2];
+          const payload = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+          const runs = (payload.workflow_runs || [])
+            .filter((run) => run.head_sha === expectedSha && run.head_branch === 'main')
+            .sort((left, right) =>
+              Number(right.run_number) - Number(left.run_number) ||
+              Number(right.run_attempt) - Number(left.run_attempt));
+          const latest = runs[0];
+          if (!latest || latest.status !== 'completed' || latest.conclusion !== 'success') {
+            console.error(`::error::Latest CI for SHA is not green: ${latest?.html_url || 'not found'}`);
+            process.exit(1);
+          }
+          console.log(`CI_GATE_PASS run_id=${latest.id} attempt=${latest.run_attempt} sha=${latest.head_sha}`);
+          NODE
 
       - name: Validate SSH transport secrets
         env:
@@ -118,6 +161,7 @@ jobs:
           EOF
 
       - name: Upload and deploy atomically
+        id: deploy
         env:
           COMMIT_SHA: ${{ inputs.commit_sha }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -139,8 +183,9 @@ jobs:
           mkdir "$stage"
           tar --no-same-owner --no-same-permissions -xzf "$bundle" -C "$stage"
           test "$(cat "$stage/COMMIT_SHA")" = "$COMMIT_SHA"
-          sudo /usr/local/sbin/prontomedic-frontend-deploy "$stage" "$RELEASE_ID"
+          sudo /usr/local/sbin/prontomedic-frontend-deploy deploy "$stage" "$RELEASE_ID"
           EOF
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
 
       - name: Public smoke
         run: |
@@ -148,3 +193,13 @@ jobs:
           curl --fail --silent --show-error --max-time 15 https://prontomedic.191-252-196-6.sslip.io/login >/dev/null
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 https://prontomedic.191-252-196-6.sslip.io/rest/v1/)" = 400
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 https://prontomedic.191-252-196-6.sslip.io/functions/v1/auth-admin)" = 401
+
+      - name: Roll back frontend after failed public smoke
+        if: ${{ failure() && steps.deploy.outputs.release_id != '' }}
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          RELEASE_ID: ${{ steps.deploy.outputs.release_id }}
+        run: |
+          ssh "${VPS_USER}@${VPS_HOST}" \
+            "sudo /usr/local/sbin/prontomedic-frontend-deploy rollback '$RELEASE_ID'"

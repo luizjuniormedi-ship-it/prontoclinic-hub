@@ -32,6 +32,10 @@ BEGIN
      OR v_definition NOT LIKE '%private.m16_claim_operation%'
      OR v_definition NOT LIKE '%private.m16_finish_operation%'
      OR v_definition NOT LIKE '%private.m16_xml_unescape(match[1])%'
+     OR v_definition NOT LIKE '%authz.status = ANY (v_materializable_authorization_statuses)%'
+     OR v_definition NOT LIKE '%authz.valid_until IS NULL OR authz.valid_until >= CURRENT_DATE%'
+     OR v_definition NOT LIKE '%authz.quantity_authorized > COALESCE(authz.quantity_used, 0)%'
+     OR v_definition NOT LIKE '%FOR UPDATE OF authz%'
      OR v_definition LIKE '%p_payload JSONB%'
      OR v_definition LIKE '%p_xml TEXT%' THEN
     RAISE EXCEPTION 'M16 materialization invariants or minimal payload contract are missing';

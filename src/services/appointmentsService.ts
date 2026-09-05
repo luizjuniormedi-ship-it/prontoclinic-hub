@@ -195,8 +195,15 @@ export interface AppointmentCreateInput {
   is_walkin?: boolean;
   notes?: string;
   insurance_id?: string;
+  insurance_plan_id?: string;
   card_number?: string;
   authorization_number?: string;
+}
+
+export interface AppointmentSeriesCreateInput extends AppointmentCreateInput {
+  series_id: string;
+  occurrences: number;
+  interval_days: number;
 }
 
 export interface SchedulingRequirements {
@@ -344,6 +351,42 @@ export const appointmentsService = {
     });
     if (error) throw new Error('Erro ao criar agendamento: ' + error.message);
     return data as DbAppointment;
+  },
+
+  async createSeries(input: AppointmentSeriesCreateInput): Promise<DbAppointment[]> {
+    if (!Number.isInteger(input.occurrences) || input.occurrences < 1 || input.occurrences > 52) {
+      throw new Error('A série deve ter entre 1 e 52 ocorrências.');
+    }
+    if (!Number.isInteger(input.interval_days) || input.interval_days < 1 || input.interval_days > 365) {
+      throw new Error('O intervalo da série é inválido.');
+    }
+
+    const { data, error } = await supabase.rpc(
+      'create_appointment_series_with_requirements_secure',
+      {
+        p_series_id: input.series_id,
+        p_patient_id: requiredBigIntParam(input.patient_id, 'Paciente'),
+        p_professional_id: requiredBigIntParam(input.professional_id, 'Profissional'),
+        p_appointment_date: input.appointment_date,
+        p_start_time: input.start_time,
+        p_end_time: input.end_time || null,
+        p_company_id: input.company_id || null,
+        p_unit_id: requiredBigIntParam(input.unit_id, 'Unidade'),
+        p_specialty_id: toBigIntParam(input.specialty_id, 'Especialidade'),
+        p_service_id: toBigIntParam(input.service_id, 'Serviço'),
+        p_appointment_type_id: toBigIntParam(input.appointment_type_id, 'Tipo de atendimento'),
+        p_is_return: !!input.is_return,
+        p_notes: input.notes || null,
+        p_insurance_id: toBigIntParam(input.insurance_id, 'Convênio'),
+        p_insurance_plan_id: toBigIntParam(input.insurance_plan_id, 'Plano'),
+        p_card_number: input.card_number || null,
+        p_authorization_number: input.authorization_number || null,
+        p_occurrences: input.occurrences,
+        p_interval_days: input.interval_days,
+      },
+    );
+    if (error) throw new Error('Erro ao criar série de agendamentos: ' + error.message);
+    return (data || []) as DbAppointment[];
   },
 
   async getRequirements(input: {

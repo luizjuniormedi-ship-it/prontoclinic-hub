@@ -152,7 +152,8 @@ step_seed_data() {
     warn "$seed_file nao encontrado, pulando seed"
     return 0
   fi
-  PGPASSWORD=<DEFINIR_FORA_DO_GIT>
+  : "${HOMOLOG_DB_PASSWORD:?Defina HOMOLOG_DB_PASSWORD fora do Git}"
+  PGPASSWORD="$HOMOLOG_DB_PASSWORD" \
     psql -h "db.${HOMOLOG_SUPABASE_PROJECT_REF}.supabase.co" \
          -p 5432 \
          -U postgres \
@@ -190,7 +191,7 @@ step_set_env_vercel() {
       "VITE_APP_NAME=ProntoClinic Hub (HOMOLOG)" \
       "VITE_APP_ENV=staging" \
       "VITE_TISS_AMBIENTE=HOMOLOGACAO" \
-      "VITE_TISS_VERSION=3.05.00" \
+      "VITE_TISS_VERSION=4.03.00" \
       "VITE_DICOM_BUCKET=dicom-homolog" \
       "VITE_ENABLE_TELEMEDICINE=false" \
       "VITE_ENABLE_WHATSAPP=false"; do

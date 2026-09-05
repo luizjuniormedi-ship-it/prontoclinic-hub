@@ -5,22 +5,23 @@ import { describe, expect, it } from "vitest";
 const migration = readFileSync(
   resolve(
     process.cwd(),
-    "supabase/migrations/20260731013000_auth_refresh_token_session_parity.sql",
+    "supabase/migrations/20260829014500_auth_native_session_contract.sql",
   ),
   "utf8",
 );
 
 describe("auth refresh token session parity migration", () => {
-  it("adiciona session_jti de forma idempotente", () => {
-    expect(migration).toContain(
-      "ADD COLUMN IF NOT EXISTS session_jti UUID",
-    );
+  it("valida session_id nativo sem alterar tabela protegida", () => {
+    expect(migration).toContain("column_name = 'session_id'");
+    expect(migration).toContain("data_type = 'uuid'");
+    expect(migration).not.toContain("ALTER TABLE auth.refresh_tokens");
+    expect(migration).toContain("to_regclass('auth.sessions')");
   });
 
-  it("indexa somente refresh tokens ativos por usuario e sessao", () => {
+  it("falha explicitamente quando o contrato nativo nao existe", () => {
     expect(migration).toContain(
-      "ON auth.refresh_tokens(user_id, session_jti)",
+      "auth.refresh_tokens.session_id UUID is required",
     );
-    expect(migration).toContain("WHERE revoked = FALSE");
+    expect(migration).toContain("must reference auth.sessions(id)");
   });
 });

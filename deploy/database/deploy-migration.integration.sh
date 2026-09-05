@@ -1,9 +1,20 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-database="${PRONTOMEDIC_DATABASE:-prontoclinic_dbdeploy}"
+database="${PRONTOMEDIC_DATABASE:-prontoclinic_dbdeploy_${PPID}_$$}"
 root="${PRONTOMEDIC_DB_INTEGRATION_ROOT:-/tmp/prontomedic-dbdeploy}"
 sha="${PRONTOMEDIC_TEST_COMMIT_SHA:-$(git rev-parse HEAD)}"
+database_created=0
+
+[[ "$sha" =~ ^[0-9a-f]{40}$ ]] || {
+  echo 'SHA de integração deve conter 40 caracteres hexadecimais' >&2
+  exit 1
+}
+
+[[ "$database" = prontoclinic_dbdeploy_* ]] || {
+  echo 'banco de integração fora do prefixo descartável permitido' >&2
+  exit 1
+}
 
 [[ "$root" = /tmp/prontomedic-dbdeploy* ]] || {
   echo 'diretorio de integracao fora do prefixo descartavel permitido' >&2
@@ -30,18 +41,29 @@ contracts=(
   '20260812170000|medical_attendance_billing_handoff|20260812150000|preserve_schema|clinical-billing'
   '20260812211247|tiss_account_materialization_contract|20260812170000|preserve_schema|tiss-materialization'
   '20260813001000|canonical_reception_billing_tiss_handoff|20260812211247|preserve_schema|canonical-reception-tiss'
+  '20260829012947|canonical_runtime_rpc_contracts|20260813001000|preserve_schema|canonical-runtime-rpc'
+  '20260829013235|close_global_catalog_write_policies|20260829012947|forward_only|global-catalog-write'
+  '20260829014500|auth_native_session_contract|20260829013235|forward_only|auth-native-session'
+  '20260902022540|nursing_rpc_owner_rls_closure|20260829014500|preserve_schema|nursing-rpc-owner'
+  '20260902055133|appointment_series_requirements_contract|20260902022540|preserve_schema|appointment-series'
+  '20260904183653|tiss_authorization_serialization|20260902055133|preserve_schema|tiss-authorization'
+  '20260905030000|imaging_order_attendance_contract|20260904183653|inverse|imaging-order-attendance'
 )
 
 cleanup() {
-  if [[ "${PRONTOMEDIC_KEEP_TEST_DATABASE:-0}" != "1" ]]; then
+  if [[ "$database_created" = 1 && "${PRONTOMEDIC_KEEP_TEST_DATABASE:-0}" != "1" ]]; then
     dropdb --if-exists "$database" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
 
 rm -rf "$root"
-dropdb --if-exists "$database"
+if psql -XAt -d postgres -c 'SELECT datname FROM pg_database' | grep -Fxq "$database"; then
+  echo 'banco descartável já existe; recusando exclusão automática' >&2
+  exit 1
+fi
 createdb "$database"
+database_created=1
 REPLAY_STOP_BEFORE=20260804033225_secure_companies_units_admin_contract.sql \
   scripts/replay-migrations.sh "$database"
 
@@ -101,7 +123,14 @@ NODE
 done
 
 bash deploy/database/deploy-migration.sh rollback
-test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260813001000'" -d "$database")" = 0
+test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260905030000'" -d "$database")" = 0
+test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260904183653'" -d "$database")" = 1
+test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260902055133'" -d "$database")" = 1
+test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260902022540'" -d "$database")" = 1
+test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260829014500'" -d "$database")" = 1
+test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260829013235'" -d "$database")" = 1
+test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260829012947'" -d "$database")" = 1
+test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260813001000'" -d "$database")" = 1
 test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260812211247'" -d "$database")" = 1
 test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260812170000'" -d "$database")" = 1
 test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260812150000'" -d "$database")" = 1
@@ -109,11 +138,12 @@ test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migration
 test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260811210000'" -d "$database")" = 1
 # shellcheck disable=SC1090
 . "$root/state/last-deploy.env"
-test "$MIGRATION_VERSION" = 20260812211247
-latest_backup="$(find "$root/20260813001000/backups" -maxdepth 1 -name '*.dump' -type f | sort | tail -n 1)"
+test "$MIGRATION_VERSION" = 20260904183653
+latest_backup="$(find "$root/20260905030000/backups" -maxdepth 1 -name '*.dump' -type f | sort | tail -n 1)"
 test -n "$latest_backup"
 PRONTOMEDIC_DB_RESTORE_CONFIRM="RESTORE:${database}" \
   bash deploy/database/deploy-migration.sh restore "$latest_backup" "${latest_backup}.sha256"
-test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260813001000'" -d "$database")" = 0
+test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260905030000'" -d "$database")" = 0
+test "$(psql -X -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '20260904183653'" -d "$database")" = 1
 bash deploy/database/deploy-migration.test.sh
 echo "DATABASE_DEPLOY_INTEGRATION_PASS"

@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/services/appointmentsService", () => ({
   appointmentsService: {
-    create: mocks.create,
+    createSeries: mocks.create,
     getRequirements: mocks.getRequirements,
   },
 }));
@@ -122,6 +122,18 @@ async function selectOption(label: string, optionName: string | RegExp) {
 describe("NewAppointmentDialog", () => {
   beforeEach(() => {
     mocks.create.mockResolvedValue({ id: "9001" });
+    mocks.getRequirements.mockResolvedValue({
+      insurance_id: null,
+      insurance_name: null,
+      card_number: null,
+      professional_credentialed: true,
+      requires_authorization: false,
+      requires_eligibility: false,
+      preparation: null,
+      service_name: null,
+      private_price: null,
+      errors: [],
+    });
     mocks.patientSearch.mockResolvedValue([]);
     mocks.checkOverlap.mockResolvedValue({ hasOverlap: false });
     mocks.checkReturnRule.mockResolvedValue({ blocked: false });
@@ -203,6 +215,9 @@ describe("NewAppointmentDialog", () => {
 
     await waitFor(() => {
       expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+        occurrences: 1,
+        interval_days: 7,
+        series_id: expect.any(String),
         patient_id: "11",
         professional_id: "42",
         unit_id: "7",
@@ -258,5 +273,60 @@ describe("NewAppointmentDialog", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("envia série semanal preservando plano, carteirinha e autorização", async () => {
+    mocks.getRequirements.mockResolvedValue({
+      insurance_id: 20,
+      insurance_name: "Convênio QA",
+      card_number: "",
+      professional_credentialed: true,
+      requires_authorization: true,
+      requires_eligibility: true,
+      preparation: null,
+      service_name: "Consulta QA",
+      private_price: null,
+      errors: [],
+    });
+
+    render(
+      <NewAppointmentDialog
+        open
+        onOpenChange={vi.fn()}
+        professionals={[professional]}
+        specialties={[specialty]}
+        appointmentTypes={[appointmentType]}
+        services={[]}
+        insurances={[{ id: "20", name: "Convênio QA" }]}
+        insurancePlans={[{ id: "21", insuranceCompanyId: "20", name: "Plano Ouro" }]}
+        units={[{ id: "7", name: "Unidade Agenda QA" }]}
+        patients={[patient]}
+        selectedDate="2026-09-07"
+        defaultUnitId="7"
+        onCreated={vi.fn()}
+      />,
+    );
+
+    await selectOption("Selecionar paciente", /Paciente Agenda QA/);
+    await selectOption("Selecionar profissional", /Profissional Agenda QA/);
+    await selectOption("Selecionar convênio", "Convênio QA");
+    await selectOption("Selecionar plano do convênio", "Plano Ouro");
+    fireEvent.change(screen.getByLabelText("Carteirinha/matrícula"), { target: { value: "CARD-21" } });
+    fireEvent.change(screen.getByLabelText("Autorização"), { target: { value: "AUTH-21" } });
+    fireEvent.change(screen.getByLabelText("Início *"), { target: { value: "10:00" } });
+    fireEvent.click(screen.getByRole("switch", { name: "Repetir semanalmente" }));
+    fireEvent.change(screen.getByLabelText("Quantidade de ocorrências"), { target: { value: "4" } });
+    fireEvent.click(screen.getByRole("button", { name: "Agendar" }));
+
+    await waitFor(() => {
+      expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+        insurance_id: "20",
+        insurance_plan_id: "21",
+        card_number: "CARD-21",
+        authorization_number: "AUTH-21",
+        occurrences: 4,
+        interval_days: 7,
+      }));
+    });
   });
 });

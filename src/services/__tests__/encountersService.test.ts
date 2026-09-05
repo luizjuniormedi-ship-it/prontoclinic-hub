@@ -45,4 +45,13 @@ describe("encountersService - contrato clínico canônico", () => {
     expect(medicalAttendanceService.finalize).toHaveBeenCalledWith("enc-1");
     expect(supabase.from).not.toHaveBeenCalled();
   });
+
+  it("calcula IMC localmente sem depender de RPC ausente", async () => {
+    await expect(encountersService.calcImc(70, 175)).resolves.toEqual({
+      imc: 22.86,
+      classificacao: "Peso normal",
+    });
+    await expect(encountersService.calcImc(0, 175)).resolves.toBeNull();
+    expect(supabase.rpc).not.toHaveBeenCalled();
+  });
 });

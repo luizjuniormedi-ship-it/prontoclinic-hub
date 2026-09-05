@@ -16,6 +16,9 @@ name: Deploy ProntoClinic Hub to Vercel
 on:
   workflow_dispatch:
     inputs:
+      commit_sha:
+        description: "Full commit SHA already integrated into main"
+        required: true
       environment:
         description: "Vercel environment (production | preview)"
         required: false
@@ -23,6 +26,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   id-token: write
 
 concurrency:
@@ -35,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
-      name: production
+      name: ${{ inputs.environment == 'production' && 'Production' || 'Preview' }}
       url: ${{ steps.deploy.outputs.url }}
 
     env:
@@ -44,25 +48,78 @@ jobs:
       VITE_APP_NAME: ProntoClinic Hub
       VITE_APP_ENV: production
       VITE_TISS_AMBIENTE: HOMOLOGACAO
-      VITE_TISS_VERSION: '4.03.00'
+      VITE_TISS_VERSION: "4.03.00"
       VITE_DICOM_BUCKET: dicom
-      VITE_ENABLE_TELEMEDICINE: 'false'
-      VITE_ENABLE_WHATSAPP: 'false'
+      VITE_ENABLE_TELEMEDICINE: "false"
+      VITE_ENABLE_WHATSAPP: "false"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 0
+
+      - name: Validate immutable main commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit_sha='${{ inputs.commit_sha }}'
+          [[ "$commit_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::commit_sha must contain exactly 40 lowercase hexadecimal characters"
+            exit 1
+          }
+          test "$(git rev-parse 'HEAD^{commit}')" = "$commit_sha" || {
+            echo "::error::Checked out commit does not match commit_sha"
+            exit 1
+          }
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "$commit_sha" || {
+            echo "::error::commit_sha must be exactly the current origin/main HEAD"
+            exit 1
+          }
+          echo "commit_sha=$commit_sha" >> "$GITHUB_ENV"
+
+      - name: Require successful CI for the same commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+          curl --fail-with-body --silent --show-error \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            --output "$response_file" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${commit_sha}&branch=main&per_page=100"
+          node - "$commit_sha" "$response_file" <<'NODE'
+          const fs = require('node:fs');
+          const expectedSha = process.argv[2];
+          const payload = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+          const runs = (payload.workflow_runs || [])
+            .filter((run) => run.head_sha === expectedSha && run.head_branch === 'main')
+            .sort((left, right) =>
+              Number(right.run_number) - Number(left.run_number) ||
+              Number(right.run_attempt) - Number(left.run_attempt));
+          const latest = runs[0];
+          if (!latest || latest.status !== 'completed' || latest.conclusion !== 'success') {
+            console.error(`::error::Latest CI for SHA is not green: ${latest?.html_url || 'not found'}`);
+            process.exit(1);
+          }
+          console.log(`CI_GATE_PASS run_id=${latest.id} attempt=${latest.run_attempt} sha=${latest.head_sha}`);
+          NODE
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: "npm"
 
       - name: Show environment
         run: |
           echo "Branch: ${{ github.ref_name }}"
-          echo "Commit: ${{ github.sha }}"
+          echo "Commit: $commit_sha"
           echo "Actor:  ${{ github.actor }}"
           echo "Supabase URL configured: $([ -n "$VITE_SUPABASE_URL" ] && echo yes || echo NO)"
 
@@ -110,7 +167,7 @@ jobs:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: '--prod --yes'
+          vercel-args: "--prod --yes"
           working-directory: ./
           github-comment: false
 
@@ -122,7 +179,7 @@ jobs:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: '--yes'
+          vercel-args: "--yes"
           working-directory: ./
           github-comment: false
 

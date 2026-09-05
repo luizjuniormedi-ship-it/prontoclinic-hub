@@ -145,7 +145,7 @@ describe("local auth server security invariants", () => {
     expect(source).toContain("UPDATE auth.refresh_tokens");
     expect(source).toContain("SET revoked = true");
     expect(source).toContain("RETURNING user_id");
-    expect(source).toContain("INSERT INTO auth.refresh_tokens (token, user_id, parent, session_jti)");
+    expect(source).toContain("INSERT INTO auth.refresh_tokens (token, user_id, parent, session_id)");
   });
 
   it("limita o corpo HTTP e revoga sessoes no logout", () => {

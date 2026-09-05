@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { from, getUser, tables } = vi.hoisted(() => ({
+const { from, getUser, rpc, tables } = vi.hoisted(() => ({
   from: vi.fn(),
   getUser: vi.fn(),
+  rpc: vi.fn(),
   tables: new Map<string, Record<string, ReturnType<typeof vi.fn>>>(),
 }));
 
@@ -10,7 +11,7 @@ vi.mock("@/lib/supabase", () => ({
   supabase: {
     from,
     auth: { getUser },
-    rpc: vi.fn(),
+    rpc,
   },
 }));
 
@@ -38,6 +39,7 @@ describe("nursingCareService", () => {
       error: null,
     });
     from.mockImplementation((name: string) => tables.get(name) ?? tableChain(name));
+    rpc.mockResolvedValue({ data: null, error: null });
   });
 
   it("grava intercorrencia na unidade principal e sem ator fixo", async () => {
@@ -71,5 +73,25 @@ describe("nursingCareService", () => {
       patient_id: 10,
       procedure_type: "curativo",
     })).rejects.toThrow("Unidade principal obrigatoria");
+  });
+
+  it("administra medicamento somente pelo comando atomico", async () => {
+    await nursingCareService.administer(33, 10);
+
+    expect(rpc).toHaveBeenCalledWith("nursing_administer_medication_secure", {
+      p_admin_id: 33,
+      p_patient_confirmado: 10,
+    });
+    expect(from).not.toHaveBeenCalledWith("nursing_medication_administrations");
+  });
+
+  it("registra recusa somente pelo comando atomico", async () => {
+    await nursingCareService.refuse(33, "Paciente recusou");
+
+    expect(rpc).toHaveBeenCalledWith("nursing_refuse_medication_secure", {
+      p_admin_id: 33,
+      p_reason: "Paciente recusou",
+    });
+    expect(from).not.toHaveBeenCalledWith("nursing_medication_administrations");
   });
 });

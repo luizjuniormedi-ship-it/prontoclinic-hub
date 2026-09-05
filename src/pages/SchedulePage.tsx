@@ -30,6 +30,12 @@ interface InsuranceLookupRow {
   name: string;
 }
 
+interface InsurancePlanLookupRow {
+  id: string | number;
+  insurance_company_id: string | number;
+  name: string;
+}
+
 type ScheduleAppointment = Appointment & { insuranceName?: string };
 
 function localDateKey(date = new Date()): string {
@@ -97,6 +103,7 @@ export default function SchedulePage() {
   const [appointmentTypes, setAppointmentTypes] = useState<DbAppointmentType[]>([]);
   const [services, setServices] = useState<DbServiceCatalog[]>([]);
   const [insurances, setInsurances] = useState<Array<{ id: string; name: string }>>([]);
+  const [insurancePlans, setInsurancePlans] = useState<Array<{ id: string; insuranceCompanyId: string; name: string }>>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [insuranceNames, setInsuranceNames] = useState<Record<string, string>>({});
   const [units, setUnits] = useState<Array<{ id: string; name: string }>>([]);
@@ -145,12 +152,20 @@ export default function SchedulePage() {
     setAppointmentTypes(types);
     setServices(serviceRows);
 
-    const [{ data: ins, error: insuranceError }, authorizedContexts] = await Promise.all([
+    const [
+      { data: ins, error: insuranceError },
+      { data: plans, error: insurancePlansError },
+      authorizedContexts,
+    ] = await Promise.all([
       supabase.from("insurance_companies").select("id, name"),
+      supabase.from("insurance_plans").select("id, insurance_company_id, name").eq("lg_ativo", true),
       accessContextService.listAuthorized(),
     ]);
     if (insuranceError) {
       throw new Error(`Erro ao carregar convênios da agenda: ${insuranceError.message}`);
+    }
+    if (insurancePlansError) {
+      throw new Error(`Erro ao carregar planos da agenda: ${insurancePlansError.message}`);
     }
     const activeContext = authorizedContexts.find(
       (context) => context.unitId === activeUnitId,
@@ -166,6 +181,15 @@ export default function SchedulePage() {
     setInsurances(
       insuranceRows
         .map((item) => ({ id: String(item.id), name: item.name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    );
+    setInsurancePlans(
+      ((plans || []) as InsurancePlanLookupRow[])
+        .map((plan) => ({
+          id: String(plan.id),
+          insuranceCompanyId: String(plan.insurance_company_id),
+          name: plan.name,
+        }))
         .sort((a, b) => a.name.localeCompare(b.name)),
     );
     setUnits([{ id: String(activeUnitId), name: activeContext.unitName }]);
@@ -572,6 +596,7 @@ export default function SchedulePage() {
         appointmentTypes={appointmentTypes}
         services={services}
         insurances={insurances}
+        insurancePlans={insurancePlans}
         units={units}
         patients={patients}
         selectedDate={selectedDate}

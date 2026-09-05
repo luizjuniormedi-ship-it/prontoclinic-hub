@@ -1,34 +1,11 @@
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  TISS_COMMUNICATION_VERSION,
-  buildTissLoteGuiasSoapEnvelope,
-  buildTissXml,
-  calculateTissTransactionMd5,
   tissService,
   validateTissTransmissionPrerequisites,
 } from "@/services/tissService";
 import { supabase } from "@/lib/supabase";
-
-const tiss403Required = {
-  cnes: "3041379",
-  professionalCouncilCode: "06",
-  professionalStateCode: "33",
-  professionalCbos: "225125",
-  atendimentoRN: "N" as const,
-  caraterAtendimento: "1" as const,
-  tipoAtendimento: "23" as const,
-  indicadorAcidente: "9" as const,
-  regimeAtendimento: "01" as const,
-};
-
-const transportXml = `<ans:mensagemTISS xmlns:ans="http://www.ans.gov.br/padroes/tiss/schemas">
-  <ans:cabecalho><ans:Padrao>4.03.00</ans:Padrao></ans:cabecalho>
-  <ans:prestadorParaOperadora><ans:loteGuias><ans:numeroLote>1</ans:numeroLote></ans:loteGuias></ans:prestadorParaOperadora>
-  <ans:epilogo><ans:hash>0123456789abcdef0123456789abcdef</ans:hash></ans:epilogo>
-</ans:mensagemTISS>`;
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -41,147 +18,6 @@ vi.mock("@/lib/supabase", () => ({
     auth: { getUser: vi.fn() },
   },
 }));
-
-describe("buildTissXml", () => {
-  it("calcula MD5 TISS conhecido sobre os valores, sem tags", () => {
-    expect(calculateTissTransactionMd5("<raiz><valor>abc</valor></raiz>")).toBe(
-      "900150983CD24FB0D6963F7D28E17F72"
-    );
-  });
-
-  it("monta uma guia SP/SADT sintética sem efeitos colaterais", () => {
-    const result = buildTissXml({
-      appointmentId: 108474,
-      tipoGuia: "SP/SADT",
-      nr_carteira: "ASSIM-TESTE-001",
-      cd_atendimento: "ATD-TESTE-001",
-      pacienteNome: "Paciente <Teste> & Homologacao",
-      profissionalNome: "Dra. Teste",
-      professionalLicense: "123456",
-      providerCnpj: "00.000.000/0001-00",
-      registroAns: "999999",
-      ...tiss403Required,
-      procedimentos: [
-        {
-          cd_tuss: "10101012",
-          ds_procedimento: "Consulta <sintetica>",
-          qt: 1,
-          vl_unitario: 150,
-        },
-      ],
-      agora: new Date("2026-07-15T12:00:00.000Z"),
-    });
-
-    expect(result.vlTotal).toBe(150);
-    expect(result.xml).toContain('<?xml version="1.0" encoding="ISO-8859-1"?>');
-    expect(result.xml).toContain(`<ans:Padrao>${TISS_COMMUNICATION_VERSION}</ans:Padrao>`);
-    expect(result.xml).not.toContain('versao="3.05.00"');
-    expect(result.xml).toContain("<ans:guiaSP-SADT>");
-    expect(result.xml).toContain("<ans:guiasTISS>");
-    expect(result.xml).toContain("ATD-TESTE-001");
-    expect(result.xml).not.toContain("Paciente &lt;Teste&gt; &amp; Homologacao");
-    expect(result.xml).toContain("Consulta &lt;sintetica&gt;");
-    expect(result.xml).toContain("<ans:valorTotalGeral>150.00</ans:valorTotalGeral>");
-    expect(result.hash).toMatch(/^[A-F0-9]{32}$/);
-    expect(result.hash).not.toBe("00000000000000000000000000000000");
-    expect(result.xml).toContain(`<ans:hash>${result.hash}</ans:hash>`);
-    expect(calculateTissTransactionMd5(result.xml)).toBe(result.hash);
-  });
-
-  it("monta o wrapper loteGuiasWS definido pelo WSDL SOAP 1.1", () => {
-    const soap = buildTissLoteGuiasSoapEnvelope(transportXml);
-    expect(soap).toContain('xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"');
-    expect(soap).toContain("<ans:loteGuiasWS>");
-    expect(soap).toContain("<ans:hash>0123456789abcdef0123456789abcdef</ans:hash>");
-    expect(soap).not.toContain("<ans:mensagemTISS");
-  });
-
-  it("falha fechado quando faltam metadados obrigatórios do XSD 04.03.00", () => {
-    expect(() =>
-      buildTissXml({
-        appointmentId: 1,
-        tipoGuia: "SP/SADT",
-        nr_carteira: "CARTEIRA-1",
-        pacienteNome: "Paciente",
-        profissionalNome: "Medico",
-        professionalLicense: "123",
-        providerCnpj: "00000000000100",
-        registroAns: "999999",
-        procedimentos: [{ cd_tuss: "10101012", ds_procedimento: "Teste", qt: 1, vl_unitario: 1 }],
-      })
-    ).toThrow(/Dados obrigatórios TISS 04\.03\.00 ausentes/);
-  });
-
-  it("falha fechado sem propagar NaN ou Infinity para valores da guia", () => {
-    const baseInput = {
-      appointmentId: 1,
-      tipoGuia: "SP/SADT" as const,
-      nr_carteira: "CARTEIRA-1",
-      pacienteNome: "Paciente",
-      profissionalNome: "Medico",
-      professionalLicense: "123",
-      providerCnpj: "00000000000100",
-      registroAns: "999999",
-      ...tiss403Required,
-      procedimentos: [{ cd_tuss: "10101012", ds_procedimento: "Teste", qt: 1, vl_unitario: 1 }],
-    };
-
-    expect(() =>
-      buildTissXml({
-        ...baseInput,
-        procedimentos: [{ ...baseInput.procedimentos[0], vl_unitario: Number.NaN }],
-      })
-    ).toThrow(/procedimentos\[0\]\.vl_unitario/);
-    expect(() => buildTissXml({ ...baseInput, vl_total: Number.POSITIVE_INFINITY })).toThrow(/vl_total/);
-  });
-
-  it.runIf(Boolean(process.env.TISS_XSD_PATH))(
-    "valida a guia gerada contra o tissV4_03_00.xsd oficial",
-    () => {
-      const { xml } = buildTissXml({
-        appointmentId: 108474,
-        tipoGuia: "SP/SADT",
-        nr_carteira: "CARTEIRA-TESTE-1",
-        cd_atendimento: "GUIA-TESTE-1",
-        pacienteNome: "Paciente Teste",
-        profissionalNome: "Medico Teste",
-        professionalLicense: "123456",
-        providerCnpj: "00000000000100",
-        registroAns: "999999",
-        ...tiss403Required,
-        procedimentos: [{ cd_tuss: "10101012", ds_procedimento: "Procedimento teste", qt: 1, vl_unitario: 150 }],
-        agora: new Date("2026-07-15T12:00:00.000Z"),
-      });
-      const escapedXsdPath = process.env.TISS_XSD_PATH?.replace(/'/g, "''");
-      const script = [
-        "$xml=[Console]::In.ReadToEnd()",
-        `$xsd=[System.IO.Path]::GetFullPath('${escapedXsdPath}')`,
-        "$schemas=[System.Xml.Schema.XmlSchemaSet]::new()",
-        "$schemas.XmlResolver=$null",
-        "$schemaSettings=[System.Xml.XmlReaderSettings]::new()",
-        "$schemaSettings.DtdProcessing=[System.Xml.DtdProcessing]::Parse",
-        "$schemaSettings.XmlResolver=$null",
-        "foreach($file in [System.IO.Directory]::GetFiles([System.IO.Path]::GetDirectoryName($xsd),'*.xsd')){$reader=[System.Xml.XmlReader]::Create($file,$schemaSettings);try{$schema=[System.Xml.Schema.XmlSchema]::Read($reader,$null);$null=$schemas.Add($schema)}finally{$reader.Dispose()}}",
-        "$schemas.Compile()",
-        "$s=[System.Xml.XmlReaderSettings]::new()",
-        "$s.DtdProcessing=[System.Xml.DtdProcessing]::Prohibit",
-        "$s.XmlResolver=$null",
-        "$s.ValidationType=[System.Xml.ValidationType]::Schema",
-        "$s.Schemas=$schemas",
-        "$r=[System.Xml.XmlReader]::Create([System.IO.StringReader]::new($xml),$s)",
-        "while($r.Read()){}",
-        "$r.Close()",
-      ].join(";");
-      const powershellExecutable = process.platform === "win32" ? "powershell.exe" : "pwsh";
-      const validation = spawnSync(powershellExecutable, ["-NoProfile", "-Command", script], {
-        input: xml,
-        encoding: "utf8",
-      });
-      expect(validation.stderr ?? "", validation.stderr ?? undefined).toBe("");
-      expect(validation.status, validation.stderr).toBe(0);
-    }
-  );
-});
 
 describe("tissService numeric boundary", () => {
   it("normaliza DECIMAL string e null das faturas em números finitos", async () => {
@@ -364,6 +200,10 @@ describe("tissService secure lifecycle RPCs", () => {
     expect(serviceSources).toContain("m16_list_protocols_secure");
     expect(serviceSources).toContain("m16_list_guides_secure");
     expect(serviceSources).toContain("m16_get_xml_document_secure");
+    expect(serviceSources).not.toContain("buildTissXml");
+    expect(serviceSources).not.toContain("buildTissLoteGuiasSoapEnvelope");
+    expect(serviceSources).not.toContain("calculateTissTransactionMd5");
+    expect(serviceSources.match(/m16_materialize_account_tiss_secure/g)).toHaveLength(1);
   });
 
   it("registra glosa e lê o resultado somente pelas RPCs seguras", async () => {

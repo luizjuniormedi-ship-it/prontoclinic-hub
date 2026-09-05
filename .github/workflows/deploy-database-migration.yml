@@ -27,6 +27,13 @@ on:
           - "20260812170000"
           - "20260812211247"
           - "20260813001000"
+          - "20260829012947"
+          - "20260829013235"
+          - "20260829014500"
+          - "20260902022540"
+          - "20260902055133"
+          - "20260904183653"
+          - "20260905030000"
       full_restore:
         description: Recuperacao integral pelo dump (acao separada do rollback logico)
         required: true
@@ -47,6 +54,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   validate:
@@ -58,7 +66,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.commit_sha }}
 
-      - name: Require immutable commit integrated in main
+      - name: Require immutable commit at current main HEAD
         env:
           COMMIT_SHA: ${{ inputs.commit_sha }}
         run: |
@@ -68,10 +76,51 @@ jobs:
           }
           git fetch --no-tags origin main
           test "$(git rev-parse HEAD)" = "$COMMIT_SHA"
-          git merge-base --is-ancestor "$COMMIT_SHA" origin/main || {
-            echo '::error::commit_sha nao esta integrado em main'
+          test "$(git rev-parse origin/main)" = "$COMMIT_SHA" || {
+            echo '::error::commit_sha deve ser exatamente o HEAD atual de origin/main'
             exit 1
           }
+
+      - name: Require successful CI for the same commit
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+          curl --fail-with-body --silent --show-error \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            --output "$response_file" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${COMMIT_SHA}&branch=main&per_page=100"
+          node - "$COMMIT_SHA" "$response_file" <<'NODE'
+          const fs = require('node:fs');
+          const expectedSha = process.argv[2];
+          const responseFile = process.argv[3];
+          const payload = JSON.parse(fs.readFileSync(responseFile, 'utf8'));
+          const runs = (payload.workflow_runs || [])
+            .filter((run) => run.head_sha === expectedSha && run.head_branch === 'main')
+            .sort((left, right) => {
+              const runDelta = Number(right.run_number) - Number(left.run_number);
+              return runDelta || Number(right.run_attempt) - Number(left.run_attempt);
+            });
+          if (runs.length === 0) {
+            console.error('::error::Nenhuma execucao do workflow CI encontrada para o HEAD informado');
+            process.exit(1);
+          }
+          const latest = runs[0];
+          if (latest.status !== 'completed' || latest.conclusion !== 'success') {
+            console.error(
+              `::error::CI mais recente do SHA nao esta verde: status=${latest.status} conclusion=${latest.conclusion || 'null'} url=${latest.html_url}`
+            );
+            process.exit(1);
+          }
+          console.log(
+            `CI_GATE_PASS run_id=${latest.id} attempt=${latest.run_attempt} sha=${latest.head_sha}`
+          );
+          NODE
 
       - name: Validate database deployment contracts
         run: bash deploy/database/deploy-migration.test.sh
@@ -93,6 +142,13 @@ jobs:
             20260812170000) name=medical_attendance_billing_handoff; predecessor=20260812150000; rollback_mode=preserve_schema ;;
             20260812211247) name=tiss_account_materialization_contract; predecessor=20260812170000; rollback_mode=preserve_schema ;;
             20260813001000) name=canonical_reception_billing_tiss_handoff; predecessor=20260812211247; rollback_mode=preserve_schema ;;
+            20260829012947) name=canonical_runtime_rpc_contracts; predecessor=20260813001000; rollback_mode=preserve_schema ;;
+            20260829013235) name=close_global_catalog_write_policies; predecessor=20260829012947; rollback_mode=forward_only ;;
+            20260829014500) name=auth_native_session_contract; predecessor=20260829013235; rollback_mode=forward_only ;;
+            20260902022540) name=nursing_rpc_owner_rls_closure; predecessor=20260829014500; rollback_mode=preserve_schema ;;
+            20260902055133) name=appointment_series_requirements_contract; predecessor=20260902022540; rollback_mode=preserve_schema ;;
+            20260904183653) name=tiss_authorization_serialization; predecessor=20260902055133; rollback_mode=preserve_schema ;;
+            20260905030000) name=imaging_order_attendance_contract; predecessor=20260904183653; rollback_mode=inverse ;;
             *) echo '::error::migration nao autorizada'; exit 1 ;;
           esac
           stage="release/stage"
@@ -109,6 +165,13 @@ jobs:
             20260812170000) smoke_prefix=deploy/database/clinical-billing ;;
             20260812211247) smoke_prefix=deploy/database/tiss-materialization ;;
             20260813001000) smoke_prefix=deploy/database/canonical-reception-tiss ;;
+            20260829012947) smoke_prefix=deploy/database/canonical-runtime-rpc ;;
+            20260829013235) smoke_prefix=deploy/database/global-catalog-write ;;
+            20260829014500) smoke_prefix=deploy/database/auth-native-session ;;
+            20260902022540) smoke_prefix=deploy/database/nursing-rpc-owner ;;
+            20260902055133) smoke_prefix=deploy/database/appointment-series ;;
+            20260904183653) smoke_prefix=deploy/database/tiss-authorization ;;
+            20260905030000) smoke_prefix=deploy/database/imaging-order-attendance ;;
             *) smoke_prefix=deploy/database/smoke ;;
           esac
           cp "${smoke_prefix}-before.sql" "$stage/smoke-before.sql"
@@ -155,6 +218,48 @@ jobs:
         with:
           name: database-migration-${{ inputs.commit_sha }}
           path: release
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 0
+
+      - name: Revalidate current main and CI after production approval
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          git fetch --no-tags origin main
+          test "$(git rev-parse HEAD)" = "$COMMIT_SHA"
+          test "$(git rev-parse origin/main)" = "$COMMIT_SHA" || {
+            echo '::error::main advanced while production approval was pending'
+            exit 1
+          }
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+          curl --fail-with-body --silent --show-error \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            --output "$response_file" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${COMMIT_SHA}&branch=main&per_page=100"
+          node - "$COMMIT_SHA" "$response_file" <<'NODE'
+          const fs = require('node:fs');
+          const expectedSha = process.argv[2];
+          const payload = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+          const runs = (payload.workflow_runs || [])
+            .filter((run) => run.head_sha === expectedSha && run.head_branch === 'main')
+            .sort((left, right) =>
+              Number(right.run_number) - Number(left.run_number) ||
+              Number(right.run_attempt) - Number(left.run_attempt));
+          const latest = runs[0];
+          if (!latest || latest.status !== 'completed' || latest.conclusion !== 'success') {
+            console.error(`::error::Latest CI for SHA is not green: ${latest?.html_url || 'not found'}`);
+            process.exit(1);
+          }
+          console.log(`CI_GATE_REVALIDATED run_id=${latest.id} sha=${latest.head_sha}`);
+          NODE
 
       - name: Validate SSH transport secrets
         env:

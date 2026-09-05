@@ -1,4 +1,39 @@
 import { expect, test as authed } from './fixtures/auth';
+import { Client } from 'pg';
+
+async function availableSlotsFromCanonicalRpc(
+  page: import('@playwright/test').Page,
+  professionalId: number,
+  date: string,
+): Promise<string[]> {
+  const apiUrl = process.env.VITE_SUPABASE_URL;
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
+  expect(apiUrl, 'VITE_SUPABASE_URL é obrigatória para consultar disponibilidade').toBeTruthy();
+  expect(anonKey, 'VITE_SUPABASE_ANON_KEY é obrigatória para consultar disponibilidade').toBeTruthy();
+
+  return page.evaluate(async ({ apiUrl, anonKey, professionalId, date }) => {
+    const storageKey = Object.keys(localStorage).find((key) => key.startsWith('sb-') && key.endsWith('-auth-token'));
+    const session = storageKey ? JSON.parse(localStorage.getItem(storageKey) || 'null') : null;
+    if (!session?.access_token) throw new Error('Sessão autenticada ausente para consultar disponibilidade');
+    const response = await fetch(`${apiUrl}/rest/v1/rpc/get_professional_available_slots`, {
+      method: 'POST',
+      headers: {
+        apikey: anonKey,
+        authorization: `Bearer ${session.access_token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        p_professional_id: professionalId,
+        p_date: date,
+        p_duration_minutes: 30,
+        p_unit_id: 91001,
+      }),
+    });
+    if (!response.ok) throw new Error(`Disponibilidade rejeitada: ${response.status} ${await response.text()}`);
+    const slots = await response.json() as Array<{ start_time: string }>;
+    return slots.map((slot) => slot.start_time.slice(0, 5));
+  }, { apiUrl: apiUrl!, anonKey: anonKey!, professionalId, date });
+}
 
 authed.describe.configure({ mode: 'serial' });
 
@@ -39,6 +74,46 @@ authed.describe('Agendamento', () => {
   });
 
   authed('persiste agendamento sintetico e permite cancelamento pela agenda', async ({ page }) => {
+    const databaseUrl = process.env.E2E_PATIENT_FIXTURE_DATABASE_URL
+      || `postgresql://${process.env.PGUSER}:${process.env.PGPASSWORD}@${process.env.PGHOST}:${process.env.PGPORT}/${process.env.PGDATABASE}`;
+    expect(databaseUrl, 'Banco descartável obrigatório para selecionar uma vaga livre').toBeTruthy();
+    const tomorrow = new Date(Date.now() + 86_400_000);
+    const appointmentDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(tomorrow);
+    const canonicalSlots = await availableSlotsFromCanonicalRpc(page, 91001, appointmentDate);
+    const availabilityClient = new Client({ connectionString: databaseUrl });
+    await availabilityClient.connect();
+    let appointmentTime = '';
+    try {
+      const strictSlot = await availabilityClient.query<{ start_time: string }>(
+        `SELECT to_char(candidate.start_time, 'HH24:MI') AS start_time
+           FROM unnest($2::time[]) WITH ORDINALITY candidate(start_time, position)
+          WHERE NOT EXISTS (
+            SELECT 1
+              FROM public.appointments appointment
+             WHERE appointment.professional_id = $1
+               AND appointment.appointment_date = $3::date
+               AND appointment.status NOT IN ('cancelled', 'no_show')
+               AND appointment.start_time < candidate.start_time + INTERVAL '30 minutes'
+               AND COALESCE(
+                 appointment.end_time,
+                 appointment.start_time + make_interval(mins => COALESCE(appointment.duration_minutes, 30))
+               ) > candidate.start_time
+          )
+          ORDER BY candidate.position
+          LIMIT 1`,
+        [91001, canonicalSlots, appointmentDate],
+      );
+      appointmentTime = strictSlot.rows[0]?.start_time || '';
+    } finally {
+      await availabilityClient.end();
+    }
+    expect(appointmentTime, 'A Agenda deve oferecer ao menos um horário livre no dia').not.toBe('');
+
     await page.goto('/schedule');
     await page.getByRole('button', { name: /criar novo agendamento/i }).click();
 
@@ -47,18 +122,21 @@ authed.describe('Agendamento', () => {
     await page.getByRole('option').first().click();
 
     await page.getByRole('combobox', { name: /selecionar profissional/i }).click();
-    await page.getByRole('option').first().click();
+    await page.getByRole('option', { name: /Médico E2E/ }).click();
 
-    await page.getByLabel('Início *').fill('22:45');
+    await page.getByLabel('Data *').fill(appointmentDate);
+    await page.getByLabel('Início *').fill(appointmentTime);
     await page.getByLabel(/observações/i).fill('E2E_AGENDA_PERSISTENCIA');
 
     await expect(page.getByLabel('Fim')).toHaveValue(/.+/);
     await page.getByRole('button', { name: /^agendar$/i }).click();
     await expect(page.getByRole('dialog', { name: /novo agendamento/i })).toHaveCount(0);
-    await expect(page.getByText('✓ Agendamento criado com sucesso!', { exact: true })).toBeVisible();
+    await expect(page.getByText('Agendamento criado com sucesso', { exact: true })).toBeVisible();
 
     await page.getByRole('textbox', { name: /buscar agendamento/i }).fill('PACIENTE');
-    const createdRow = page.getByRole('gridcell', { name: /22:45, PACIENTE/i }).first();
+    const createdRow = page.getByRole('gridcell', {
+      name: new RegExp(`${appointmentTime}, PACIENTE`, 'i'),
+    }).first();
     await expect(createdRow).toBeVisible();
     await createdRow.getByRole('button', { name: /mais ações para/i }).click();
     await page.getByRole('menuitem', { name: /cancelar/i }).click();
@@ -67,10 +145,94 @@ authed.describe('Agendamento', () => {
     await expect(page.getByText('Agendamento cancelado', { exact: true })).toBeVisible();
   });
 
-  authed('abre menu de acao rapida de um agendamento existente', async ({ page }) => {
-    await page.goto('/schedule');
+  authed('cria série conveniada pela UI sem perder plano, carteirinha ou autorização', async ({ page }) => {
+    authed.slow();
+    const databaseUrl = process.env.E2E_PATIENT_FIXTURE_DATABASE_URL
+      || `postgresql://${process.env.PGUSER}:${process.env.PGPASSWORD}@${process.env.PGHOST}:${process.env.PGPORT}/${process.env.PGDATABASE}`;
+    expect(databaseUrl, 'Banco descartável obrigatório para validar a série').toBeTruthy();
 
-    await page.getByRole('button', { name: /mais ações para/i }).first().click();
-    await expect(page.getByRole('menuitem', { name: /check-in|remarcar|cancelar|registrar falta/i }).first()).toBeVisible();
+    const marker = `E2E_SERIE_CONVENIO_${Date.now()}`;
+    const futureDate = new Date(Date.now() + (365 + (Date.now() % 180)) * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    await page.goto('/schedule');
+    await page.getByRole('button', { name: /criar novo agendamento/i }).click();
+    const dialog = page.getByRole('dialog', { name: /novo agendamento/i });
+
+    await dialog.getByRole('textbox', { name: /buscar paciente para agendamento/i }).fill('Paciente E2E A');
+    await dialog.getByRole('combobox', { name: /selecionar paciente/i }).click();
+    await page.getByRole('option', { name: /Paciente E2E A/ }).click();
+    await dialog.getByRole('combobox', { name: /selecionar profissional/i }).click();
+    await page.getByRole('option', { name: /Médico E2E/ }).click();
+    await dialog.getByRole('combobox', { name: /selecionar serviço ou procedimento/i }).click();
+    await page.getByRole('option', { name: /Ultrassonografia SADT E2E/i }).click();
+    await dialog.getByRole('combobox', { name: /selecionar convênio/i }).click();
+    await page.getByRole('option', { name: /Convênio Sintético E2E/i }).click();
+    await dialog.getByRole('combobox', { name: /selecionar plano do convênio/i }).click();
+    await page.getByRole('option', { name: /Plano SADT Sintético E2E/i }).click();
+    await dialog.getByLabel(/Carteirinha\/matrícula/i).fill('E2E-CARD-91001');
+    await dialog.getByLabel('Autorização').fill('AUTH-SERIE-E2E');
+    await dialog.getByLabel('Data *').fill(futureDate);
+    await dialog.getByLabel('Início *').fill('22:50');
+    await dialog.getByLabel(/observações/i).fill(marker);
+    await dialog.getByLabel(/repetir semanalmente/i).click();
+    await dialog.getByLabel(/quantidade de ocorrências/i).fill('2');
+    await dialog.getByRole('button', { name: /^agendar$/i }).click();
+
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByText('Série com 2 agendamentos criada', { exact: true })).toBeVisible();
+
+    const client = new Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      const result = await client.query<{
+        series_id: string;
+        appointment_ids: string[];
+        occurrence_count: string;
+        insurance_matches: boolean;
+        plan_matches: boolean;
+        card_matches: boolean;
+        authorization_matches: boolean;
+        authorization_count: string;
+      }>(
+        `SELECT series.id::text AS series_id,
+                array_agg(appointment.id::text ORDER BY item.occurrence_number) AS appointment_ids,
+                count(*)::text AS occurrence_count,
+                bool_and(appointment.insurance_company_id = 91001) AS insurance_matches,
+                bool_and(appointment.insurance_plan_id = 91001) AS plan_matches,
+                bool_and(patient_insurance.card_number = 'E2E-CARD-91001') AS card_matches,
+                bool_and(authz.authorization_number = 'AUTH-SERIE-E2E') AS authorization_matches,
+                count(DISTINCT authz.id)::text AS authorization_count
+           FROM public.appointment_series series
+           JOIN public.appointment_series_items item ON item.series_id = series.id
+           JOIN public.appointments appointment ON appointment.id = item.appointment_id
+           JOIN public.patient_insurances patient_insurance
+             ON patient_insurance.patient_id = appointment.patient_id
+            AND patient_insurance.company_id = appointment.company_id
+            AND patient_insurance.insurance_plan_id = appointment.insurance_plan_id
+            AND patient_insurance.status = 'active'
+           LEFT JOIN public.insurance_authorizations authz
+             ON authz.appointment_id = appointment.id
+            AND authz.company_id = appointment.company_id
+            AND authz.unit_id = appointment.unit_id
+            AND authz.authorization_number = 'AUTH-SERIE-E2E'
+          WHERE appointment.notes = $1
+          GROUP BY series.id`,
+        [marker],
+      );
+
+      expect(result.rows).toEqual([expect.objectContaining({
+        series_id: expect.any(String),
+        occurrence_count: '2',
+        insurance_matches: true,
+        plan_matches: true,
+        card_matches: true,
+        authorization_matches: true,
+        authorization_count: '2',
+      })]);
+
+    } finally {
+      await client.end();
+    }
   });
 });

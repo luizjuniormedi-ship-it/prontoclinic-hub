@@ -51,7 +51,7 @@ describe("DICOM storage security contract", () => {
 
   it("loads the viewer only through signed private URLs", () => {
     expect(viewerSource).toContain("examService.getImages(exam.id)");
-    expect(viewerSource).toContain("`wadouri:${image.bl_dicom_url}`");
+    expect(viewerSource).toContain("`wadouri:${signedUrl}`");
     expect(viewerSource).not.toContain("/dicom-web/");
     expect(viewerSource).not.toContain("/instances/");
   });

@@ -388,7 +388,7 @@ async function isUserSessionActive(payload, client = pool) {
             SELECT 1
               FROM auth.refresh_tokens rt
              WHERE rt.user_id = u.id
-               AND rt.session_jti = $2
+               AND rt.session_id = $2
                AND rt.revoked = false
           )
      ) AS active`,
@@ -577,6 +577,7 @@ const RPC_PERMISSIONS = {
   get_professional_available_slots: { module: 'agenda', action: 'can_view' },
   get_scheduling_requirements: { module: 'agenda', action: 'can_view' },
   create_appointment_with_requirements_secure: { module: 'agenda', action: 'can_create' },
+  create_appointment_series_with_requirements_secure: { module: 'agenda', action: 'can_create' },
   refresh_confirmation_queue_secure: { module: 'agenda', action: 'can_edit' },
   record_confirmation_attempt_secure: { module: 'agenda', action: 'can_edit' },
   mark_overdue_appointments_no_show_secure: { module: 'agenda', action: 'can_edit' },
@@ -611,6 +612,7 @@ const RPC_PERMISSIONS = {
   finalize_attendance_secure: { module: 'prontuario', action: 'can_create' },
   finalize_attendance_with_billing_secure: { module: 'prontuario', action: 'can_create' },
   m18_finalize_appointment_with_billing_secure: { module: 'prontuario', action: 'can_create' },
+  create_imaging_order_from_attendance: { module: 'prontuario', action: 'can_create' },
   tiss_get_stats: { module: 'faturamento', action: 'can_view' },
   m16_list_xml_secure: { module: 'faturamento', action: 'can_view' },
   m16_get_xml_document_secure: { module: 'faturamento', action: 'can_view' },
@@ -813,6 +815,14 @@ async function decryptMfaSecret(payload, ciphertext) {
   return result.rows[0]?.secret;
 }
 
+async function createNativeAuthSession(client, userId, sessionId) {
+  await client.query(
+    `INSERT INTO auth.sessions (id, user_id, created_at, updated_at)
+     VALUES ($1, $2, NOW(), NOW())`,
+    [sessionId, userId],
+  );
+}
+
 async function issueMfaVerifiedSession(user, factors) {
   const now = Math.floor(Date.now() / 1000);
   const sessionId = randomUUID();
@@ -830,10 +840,21 @@ async function issueMfaVerifiedSession(user, factors) {
     user_metadata: user.raw_user_meta_data,
   };
   const accessToken = signJwt(payload);
-  await pool.query(
-    'INSERT INTO auth.refresh_tokens (token, user_id, session_jti) VALUES ($1, $2, $3)',
-    [refreshToken, user.id, sessionId],
-  );
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await createNativeAuthSession(client, user.id, sessionId);
+    await client.query(
+      'INSERT INTO auth.refresh_tokens (token, user_id, session_id) VALUES ($1, $2, $3)',
+      [refreshToken, user.id, sessionId],
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
   return {
     access_token: accessToken,
     token_type: 'bearer',
@@ -943,7 +964,7 @@ const server = createServer(async (req, res) => {
           `UPDATE auth.refresh_tokens
               SET revoked = true, updated_at = now()
             WHERE token = $1 AND revoked = false
-          RETURNING user_id, session_jti`,
+          RETURNING user_id, session_id`,
           [tokenValue],
         );
         if (rt.rows.length === 0) {
@@ -960,7 +981,7 @@ const server = createServer(async (req, res) => {
                 AND password_updated_at IS NULL
                 AND expires_at > NOW()
            ) AS pending`,
-          [rt.rows[0].user_id, rt.rows[0].session_jti],
+          [rt.rows[0].user_id, rt.rows[0].session_id],
         );
         if (pendingPasswordFlow.rows[0]?.pending) {
           await client.query('ROLLBACK');
@@ -979,7 +1000,7 @@ const server = createServer(async (req, res) => {
         }
         const u = userRes.rows[0];
         const now = Math.floor(Date.now() / 1000);
-        const sessionId = rt.rows[0].session_jti || randomUUID();
+        const sessionId = rt.rows[0].session_id || randomUUID();
         const nextPayload = { sub: u.id, email: u.email, role: 'authenticated', aud: 'authenticated', aal: 'aal1', session_id: sessionId, iat: now, exp: now + 3600, app_metadata: u.raw_app_meta_data, user_metadata: u.raw_user_meta_data };
         const profileResult = await queryAsAuthenticatedInTransaction(
           client,
@@ -997,7 +1018,7 @@ const server = createServer(async (req, res) => {
         const accessToken = signJwt(nextPayload);
         const newRefreshToken = randomUUID();
         await client.query(
-          'INSERT INTO auth.refresh_tokens (token, user_id, parent, session_jti) VALUES ($1, $2, $3, $4)',
+          'INSERT INTO auth.refresh_tokens (token, user_id, parent, session_id) VALUES ($1, $2, $3, $4)',
           [newRefreshToken, u.id, tokenValue, sessionId],
         );
         await client.query('COMMIT');
@@ -1051,11 +1072,21 @@ const server = createServer(async (req, res) => {
       }
       const accessToken = signJwt(loginPayload);
       const factors = await loadMfaFactors(loginPayload);
-      // Save refresh token
-      await pool.query(
-        `INSERT INTO auth.refresh_tokens (token, user_id, session_jti) VALUES ($1, $2, $3)`,
-        [refreshToken, user.id, sessionId]
-      );
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await createNativeAuthSession(client, user.id, sessionId);
+        await client.query(
+          `INSERT INTO auth.refresh_tokens (token, user_id, session_id) VALUES ($1, $2, $3)`,
+          [refreshToken, user.id, sessionId],
+        );
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
       return json(res, {
         access_token: accessToken,
         token_type: 'bearer',

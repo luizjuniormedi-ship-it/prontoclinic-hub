@@ -38,6 +38,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -56,14 +58,14 @@ jobs:
           docker run --rm \
             -v "$PWD:/app" -w /app \
             --entrypoint deno denoland/deno:2.5.6 \
-            check \
+            check --no-lock \
             supabase/functions/auth-admin/index.ts \
             supabase/functions/dicom-bridge/index.ts \
             supabase/functions/telemedicina-daily/index.ts
           docker run --rm \
             -v "$PWD:/app" -w /app \
             --entrypoint deno denoland/deno:2.5.6 \
-            test --allow-env supabase/functions/_shared/cors_test.ts
+            test --no-lock --allow-env supabase/functions/_shared/cors_test.ts
           bash deploy/edge-runtime/deploy-functions.test.sh
           if grep -R '"Access-Control-Allow-Origin": "\*"' \
             supabase/functions/auth-admin \
@@ -87,6 +89,12 @@ jobs:
             printf '%s\n' "$duplicates"
             exit 1
           fi
+
+      - name: Validate canonical baseline provenance and contracts
+        run: >-
+          node scripts/validate-origin-main-baseline.mjs
+          --strict
+          --expected-sha=${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Replay clean schema and test authorization twice
         env:
@@ -150,7 +158,31 @@ jobs:
               psql -v ON_ERROR_STOP=1 \
                 -h localhost -p 54322 -U postgres -d "$database" \
                 -f supabase/tests/schedule_rpc_signature_parity.sql >/dev/null
+              psql -v ON_ERROR_STOP=1 \
+                -h localhost -p 54322 -U postgres -d "$database" \
+                -f supabase/tests/appointment_series_requirements_contract.sql >/dev/null
+              psql -v ON_ERROR_STOP=1 \
+                -h localhost -p 54322 -U postgres -d "$database" \
+                -f supabase/tests/auth_native_session_contract.sql >/dev/null
+              psql -v ON_ERROR_STOP=1 \
+                -h localhost -p 54322 -U postgres -d "$database" \
+                -f supabase/tests/canonical_runtime_rpc_contracts.sql >/dev/null
             done
+
+          mkdir -p artifacts/replay/schema
+          for database in migrations_first migrations_second; do
+            pg_dump --schema-only --no-owner --no-privileges \
+              -h localhost -p 54322 -U postgres "$database" \
+              | grep -Ev '^\\(un)?restrict[[:space:]]' \
+              > "artifacts/replay/schema/${database}.sql"
+            sha256sum "artifacts/replay/schema/${database}.sql" \
+              > "artifacts/replay/schema/${database}.sha256"
+          done
+          cmp artifacts/replay/schema/migrations_first.sql \
+              artifacts/replay/schema/migrations_second.sql || {
+            echo 'Replays limpos produziram schemas divergentes' >&2
+            exit 1
+          }
 
           # Retry das migrations críticas no mesmo banco: qualquer aplicação
           # parcial precisa convergir sem objetos duplicados.
@@ -159,7 +191,6 @@ jobs:
             20260716210000_access_context_foundation.sql \
             20260716220000_sessions_and_secure_drafts.sql \
             20260716230000_auth_admin_provisioning.sql \
-            20260716240000_operational_rls_closure.sql \
             20260717000000_legacy_schema_normalization.sql \
             20260717001000_auth_admin_access_transition.sql \
             20260717002000_access_context_options.sql \
@@ -176,7 +207,7 @@ jobs:
           PGPORT: 54322
           PGUSER: postgres
           PGPASSWORD: postgres
-          PRONTOMEDIC_DATABASE: prontoclinic_dbdeploy
+          PRONTOMEDIC_DATABASE: prontoclinic_dbdeploy_ci
           PRONTOMEDIC_DB_TEST_MODE: "1"
           PRONTOMEDIC_DB_DIRECT_POSTGRES: "1"
           PRONTOMEDIC_DB_BACKUP_ROOT: /tmp/prontomedic-dbdeploy/backups
@@ -220,22 +251,31 @@ jobs:
           done
           psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
             -d migrations_upgrade_guard \
-            -c 'CREATE POLICY legacy_allow_all ON public.professional_schedules FOR SELECT TO authenticated USING (true);'
+            -c 'CREATE POLICY legacy_allow_all ON public.insurance_authorizations FOR SELECT TO authenticated USING (true);'
           if psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
             -d migrations_upgrade_guard --single-transaction \
-            -f supabase/migrations/20260716240000_operational_rls_closure.sql >/dev/null 2>&1; then
+            -f supabase/tests/operational_rls_policy_classification.sql >/dev/null 2>&1; then
             echo 'Operational RLS closure accepted an unknown legacy policy' >&2
             exit 1
           fi
           psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
             -d migrations_upgrade_guard \
-            -c 'DROP POLICY legacy_allow_all ON public.professional_schedules;'
+            -c 'DROP POLICY legacy_allow_all ON public.insurance_authorizations;'
           psql -v ON_ERROR_STOP=1 -h localhost -p 54322 -U postgres \
             -d migrations_upgrade_guard --single-transaction \
-            -f supabase/migrations/20260716240000_operational_rls_closure.sql >/dev/null
+            -f supabase/tests/operational_rls_policy_classification.sql >/dev/null
 
       - name: Type check
         run: npm run type-check
+
+      - name: Preserve database replay evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-replay-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: artifacts/replay
 
       - name: Lint
         run: npm run lint
