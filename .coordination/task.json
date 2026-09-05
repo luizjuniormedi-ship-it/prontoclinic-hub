@@ -15,6 +15,7 @@
     "scripts/setup_vercel_env.sh",
     "scripts/validate-origin-main-baseline.mjs",
     "src/pages/NursingCarePage.tsx",
+    "src/pages/BillingAccountsPage.tsx",
     "src/pages/SchedulePage.tsx",
     "src/components/dicom/DicomViewer.tsx",
     "src/components/dicom/__tests__/DicomViewer.test.tsx",
@@ -70,6 +71,7 @@
     "supabase/tests/appointment_series_requirements_contract.sql",
     "supabase/tests/module16_tiss_account_materialization_contract.sql",
     "supabase/tests/module16_tiss_runtime_contract.sql",
+    "supabase/tests/operational_rls_policy_classification.sql",
     "supabase/tests/tiss_authorization_serialization_contract.sql",
     "tests/database/supabase_auth_compatibility.sql"
   ],
