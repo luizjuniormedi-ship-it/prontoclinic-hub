@@ -146,7 +146,7 @@ jobs:
         with:
           name: auth-admin-release-${{ inputs.commit_sha }}
           if-no-files-found: error
-          path: release/*
+          path: release
 
   deploy:
     needs: validate
