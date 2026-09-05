@@ -395,6 +395,7 @@ BEGIN
         'm15_authorizations_reception_owner_update',
         'authorizations_series_owner_access',
         'm16_materialization_authorizations_read',
+        'm16_materialization_authorizations_lock',
         'insurance_eligibility_select_unit',
         'insurance_eligibility_insert_unit',
         'insurance_eligibility_update_unit',
