@@ -1,6 +1,34 @@
 import { clearBrowserAuth, test as authed, expect } from './fixtures/auth';
 import { Client } from 'pg';
 
+async function callAuthenticatedRpc<T>(
+  page: import('@playwright/test').Page,
+  functionName: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  const apiUrl = process.env.VITE_SUPABASE_URL;
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
+  expect(apiUrl, 'VITE_SUPABASE_URL é obrigatória para chamar o contrato canônico').toBeTruthy();
+  expect(anonKey, 'VITE_SUPABASE_ANON_KEY é obrigatória para chamar o contrato canônico').toBeTruthy();
+
+  return page.evaluate(async ({ apiUrl, anonKey, functionName, body }) => {
+    const storageKey = Object.keys(localStorage).find((key) => key.startsWith('sb-') && key.endsWith('-auth-token'));
+    const session = storageKey ? JSON.parse(localStorage.getItem(storageKey) || 'null') : null;
+    if (!session?.access_token) throw new Error(`Sessão autenticada ausente para ${functionName}`);
+    const response = await fetch(`${apiUrl}/rest/v1/rpc/${functionName}`, {
+      method: 'POST',
+      headers: {
+        apikey: anonKey,
+        authorization: `Bearer ${session.access_token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error(`${functionName} rejeitada: ${response.status} ${await response.text()}`);
+    return response.json() as Promise<T>;
+  }, { apiUrl: apiUrl!, anonKey: anonKey!, functionName, body });
+}
+
 function appointmentCardFor(
   page: import('@playwright/test').Page,
   patientName: string,
@@ -90,31 +118,43 @@ authed.describe.serial('Recepção — operação básica', () => {
       day: '2-digit',
     }).format(new Date());
     const authorizationNumber = `AUTH-${Date.now()}`.slice(0, 20);
-    const candidateTimes = Array.from({ length: 20 }, (_, index) => {
-      const minutes = (8 * 60) + (index * 30);
-      return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
-    });
+    await clearBrowserAuth(page);
+    await loginAs('admin');
+    const availableSlots = await callAuthenticatedRpc<Array<{ start_time: string }>>(
+      page,
+      'get_professional_available_slots',
+      { p_professional_id: 91001, p_date: appointmentDate, p_duration_minutes: 30, p_unit_id: 91001 },
+    );
+    const canonicalSlots = availableSlots.map((slot) => slot.start_time.slice(0, 5));
     const availabilityClient = new Client({ connectionString: databaseUrl });
     await availabilityClient.connect();
     let appointmentTime = '';
     try {
-      const occupied = await availabilityClient.query<{ start_time: string }>(
-        `SELECT to_char(start_time, 'HH24:MI') AS start_time
-           FROM public.appointments
-          WHERE professional_id = 91001
-            AND appointment_date = $1::date
-            AND status NOT IN ('cancelled', 'canceled')`,
-        [appointmentDate],
+      const strictSlot = await availabilityClient.query<{ start_time: string }>(
+        `SELECT to_char(candidate.start_time, 'HH24:MI') AS start_time
+           FROM unnest($2::time[]) WITH ORDINALITY candidate(start_time, position)
+          WHERE NOT EXISTS (
+            SELECT 1
+              FROM public.appointments appointment
+             WHERE appointment.professional_id = $1
+               AND appointment.appointment_date = $3::date
+               AND appointment.status NOT IN ('cancelled', 'no_show')
+               AND appointment.start_time < candidate.start_time + INTERVAL '30 minutes'
+               AND COALESCE(
+                 appointment.end_time,
+                 appointment.start_time + make_interval(mins => COALESCE(appointment.duration_minutes, 30))
+               ) > candidate.start_time
+          )
+          ORDER BY candidate.position
+          LIMIT 1`,
+        [91001, canonicalSlots, appointmentDate],
       );
-      const occupiedTimes = new Set(occupied.rows.map((row) => row.start_time));
-      appointmentTime = candidateTimes.find((time) => !occupiedTimes.has(time)) || '';
+      appointmentTime = strictSlot.rows[0]?.start_time || '';
     } finally {
       await availabilityClient.end();
     }
     expect(appointmentTime, 'A Agenda deve oferecer ao menos um horário livre no dia').not.toBe('');
 
-    await clearBrowserAuth(page);
-    await loginAs('admin');
     await page.goto('/schedule');
     await page.getByRole('button', { name: /criar novo agendamento/i }).click();
     const scheduleDialog = page.getByRole('dialog', { name: /novo agendamento/i });
@@ -157,37 +197,21 @@ authed.describe.serial('Recepção — operação básica', () => {
       expect(created.rows).toHaveLength(1);
       appointmentId = Number(created.rows[0].id);
       expect(Number.isSafeInteger(appointmentId)).toBe(true);
-      await fixtureClient.query(
-        `WITH imaging_order AS (
-           INSERT INTO public.imaging_orders (
-             company_id, unit_id, appointment_id, patient_id,
-             requesting_physician_id, referring_physician_name,
-             clinical_indication, priority, accession_number, status, created_by
-           ) VALUES (
-             'eeeeeeee-1000-4000-8000-000000000001', 91001, $1, 91001,
-             91001, 'Médico E2E',
-             'Solicitação sintética para homologar Recepcao -> Worklist',
-             'normal', $2, 'agendado',
-             'eeeeeeee-0000-4000-8000-000000000001'
-           )
-           RETURNING id
-         )
-         INSERT INTO public.imaging_order_items (
-           company_id, unit_id, imaging_order_id, service_id,
-           exam_code, exam_name, modality_type, body_part, laterality,
-           contrast_required, station_aetitle, scheduled_datetime,
-           requested_procedure_id, scheduled_procedure_step_id, status
-         )
-         SELECT 'eeeeeeee-1000-4000-8000-000000000001', 91001, imaging_order.id, 91001,
-                'E2E-USG', 'Ultrassonografia sintética E2E', 'US', 'ABDOME', 'na',
-                FALSE, 'PRONTOMEDIC', ($3::date + $4::time),
-                'E2E-RP-' || $1::text, 'E2E-SPS-' || $1::text, 'agendado'
-           FROM imaging_order`,
-        [appointmentId, `PME2E${appointmentId}`, appointmentDate, appointmentTime],
-      );
     } finally {
       await fixtureClient.end();
     }
+
+    await clearBrowserAuth(page);
+    await loginAs('doctor');
+    const scheduledDatetime = `${appointmentDate}T${appointmentTime}:00-03:00`;
+    await callAuthenticatedRpc(page, 'create_imaging_order_from_attendance', {
+      p_appointment_id: appointmentId,
+      p_exam_name: 'Ultrassonografia sintética E2E',
+      p_modality_type: 'US',
+      p_clinical_indication: 'Solicitação sintética para homologar Recepção → Worklist',
+      p_priority: 'normal',
+      p_scheduled_datetime: scheduledDatetime,
+    });
 
     await clearBrowserAuth(page);
     await loginAs('reception');

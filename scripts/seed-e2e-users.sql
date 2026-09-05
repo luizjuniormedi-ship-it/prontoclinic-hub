@@ -519,6 +519,40 @@ ON CONFLICT (id) DO UPDATE SET
   slot1_duration = EXCLUDED.slot1_duration,
   slot1_unit_id = EXCLUDED.slot1_unit_id;
 
+INSERT INTO public.professional_schedules (
+  id, company_id, professional_id, unit_id, day_of_week, lg_habilitado,
+  slot1_start, slot1_end, slot1_duration, slot1_unit_id
+) VALUES (
+  91002,
+  'eeeeeeee-1000-4000-8000-000000000001',
+  91001,
+  91001,
+  CASE EXTRACT(DOW FROM CURRENT_DATE + 1)::INTEGER
+    WHEN 0 THEN 'domingo'
+    WHEN 1 THEN 'segunda-feira'
+    WHEN 2 THEN 'terça-feira'
+    WHEN 3 THEN 'quarta-feira'
+    WHEN 4 THEN 'quinta-feira'
+    WHEN 5 THEN 'sexta-feira'
+    ELSE 'sábado'
+  END,
+  TRUE,
+  800,
+  1800,
+  30,
+  91001
+)
+ON CONFLICT (id) DO UPDATE SET
+  company_id = EXCLUDED.company_id,
+  professional_id = EXCLUDED.professional_id,
+  unit_id = EXCLUDED.unit_id,
+  day_of_week = EXCLUDED.day_of_week,
+  lg_habilitado = TRUE,
+  slot1_start = EXCLUDED.slot1_start,
+  slot1_end = EXCLUDED.slot1_end,
+  slot1_duration = EXCLUDED.slot1_duration,
+  slot1_unit_id = EXCLUDED.slot1_unit_id;
+
 INSERT INTO public.patients (
   id, company_id, unit_id, user_id, full_name, cpf, birth_date, phone,
   registration_status, status, insurance_plan_id, insurance_card_number, lg_ativo
