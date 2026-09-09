@@ -11,7 +11,7 @@ interface InviteUserInput {
 
 async function invoke<T>(body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke("auth-admin", { body });
-  if (error || !data || (data as { error?: string }).error) {
+  if (error || !data || data.ok !== true || data.error) {
     throw new Error("Não foi possível concluir a operação administrativa.");
   }
   return data as T;
@@ -20,6 +20,9 @@ async function invoke<T>(body: Record<string, unknown>): Promise<T> {
 export const authAdminService = {
   async inviteUser(input: InviteUserInput): Promise<{ userId: string }> {
     const result = await invoke<{ userId: string }>({ action: "invite-user", ...input });
+    if (typeof result.userId !== "string" || !result.userId.trim()) {
+      throw new Error("Não foi possível concluir a operação administrativa.");
+    }
     return { userId: result.userId };
   },
 

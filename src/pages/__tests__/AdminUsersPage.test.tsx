@@ -4,6 +4,8 @@ import AdminUsersPage from "@/pages/AdminUsersPage";
 import { userProfilesService } from "@/services/userProfilesService";
 import { authAdminService } from "@/services/authAdminService";
 
+const { toast } = vi.hoisted(() => ({ toast: vi.fn() }));
+
 vi.mock("@/services/userProfilesService", () => ({
   userProfilesService: { getAll: vi.fn(), getProfiles: vi.fn(), update: vi.fn() },
 }));
@@ -13,7 +15,7 @@ vi.mock("@/services/authAdminService", () => ({
 vi.mock("@/services/applicationSessionStorage", () => ({
   readStoredAccessContext: () => ({ companyId: "company-1", unitId: 7 }),
 }));
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
 vi.mock("@/hooks/useConfirm", () => ({ useConfirm: () => ({ confirm: vi.fn().mockResolvedValue(true) }) }));
 
 const user = {
@@ -76,5 +78,22 @@ describe("AdminUsersPage", () => {
     fireEvent.click(logoutButton);
     await waitFor(() => expect(logoutButton).toBeDisabled());
     await waitFor(() => expect(authAdminService.logoutGlobal).toHaveBeenCalledWith(user.id, "company-1"));
+  });
+
+  it("libera nova tentativa sem anunciar sucesso quando logout falha", async () => {
+    vi.mocked(authAdminService.logoutGlobal).mockRejectedValue(new Error("Operação indisponível"));
+    render(<AdminUsersPage />);
+    const button = await screen.findByTitle("Encerrar todas as sessões");
+    fireEvent.click(button);
+    await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.objectContaining({ variant: "destructive" })));
+    expect(button).not.toBeDisabled();
+    expect(toast).not.toHaveBeenCalledWith(expect.objectContaining({ title: "Sessões encerradas" }));
+  });
+
+  it("anuncia encerramento apenas depois do retorno do serviço", async () => {
+    render(<AdminUsersPage />);
+    fireEvent.click(await screen.findByTitle("Encerrar todas as sessões"));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith({ title: "Sessões encerradas" }));
+    expect(authAdminService.logoutGlobal).toHaveBeenCalledWith(user.id, "company-1");
   });
 });
