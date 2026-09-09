@@ -1,8 +1,8 @@
 {
-  "taskId": "edge-checkout-order-20260905",
-  "module": "edge-deployment",
-  "baseCommit": "62fcb837d35e6e074e9b7c4b42aef9648e80b415",
-  "paths": [".github/workflows/deploy-edge-functions.yml"],
+  "taskId": "attendance-load-isolation-20260909",
+  "module": "medical-attendance",
+  "baseCommit": "49a4c9558847c37ef1fe1f934a81edc244dc6a32",
+  "paths": ["src/pages/AttendancePage.tsx", "src/pages/__tests__/AttendancePage.test.tsx"],
   "sharedPaths": [],
   "status": "active"
 }

@@ -20,6 +20,10 @@ interface AppointmentInfo { id: string; patient_id: string; professional_id: str
 
 export default function AttendancePage() {
   const { appointmentId } = useParams<{ appointmentId: string }>();
+  return <AttendanceForm key={appointmentId ?? "missing"} appointmentId={appointmentId} />;
+}
+
+function AttendanceForm({ appointmentId }: { appointmentId?: string }) {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
@@ -44,20 +48,29 @@ export default function AttendancePage() {
   const [vitalSigns, setVitalSigns] = useState({ bloodPressure: "", heartRate: "", temperature: "", weight: "", height: "", oxygenSaturation: "" });
 
   useEffect(() => {
-    if (!appointmentId) return;
+    let active = true;
+    if (!appointmentId) {
+      setError("Atendimento não encontrado.");
+      setLoading(false);
+      return;
+    }
     (async () => {
       try {
         const { data: appt, error: ae } = await supabase.from("appointments").select("*").eq("id", appointmentId).maybeSingle();
+        if (!active) return;
         if (ae || !appt) { setError("Atendimento não encontrado."); setLoading(false); return; }
         setAppointment(appt);
 
         if (appt.patient_id) {
-          const { data: pat } = await supabase.from("patients").select("id, full_name, birth_date, sex, allergies, clinical_alerts, insurance_plan_id").eq("id", appt.patient_id).maybeSingle();
+          const { data: pat, error: patientError } = await supabase.from("patients").select("id, full_name, birth_date, sex, allergies, clinical_alerts, insurance_plan_id").eq("id", appt.patient_id).maybeSingle();
+          if (!active) return;
+          if (patientError || !pat) throw new Error("Não foi possível carregar o paciente deste atendimento.");
           setPatient(pat);
         }
         setLoading(false);
-      } catch (err) { setError((err as Error).message); setLoading(false); }
+      } catch (err) { if (active) { setError((err as Error).message); setLoading(false); } }
     })();
+    return () => { active = false; };
   }, [appointmentId]);
 
   const handleSave = async () => {
