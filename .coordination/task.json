@@ -2,7 +2,7 @@
   "taskId": "auth-admin-response-contract-20260909",
   "module": "administration",
   "baseCommit": "49a4c9558847c37ef1fe1f934a81edc244dc6a32",
-  "paths": ["src/pages/AttendancePage.tsx", "src/pages/__tests__/AttendancePage.test.tsx", "src/services/authAdminService.ts", "src/services/__tests__/authAdminService.test.ts", "src/pages/__tests__/AdminUsersPage.test.tsx", "docs/ai-execution/MODULE_STATUS.md"],
+  "paths": ["src/pages/AttendancePage.tsx", "src/pages/__tests__/AttendancePage.test.tsx", "src/services/authAdminService.ts", "src/services/__tests__/authAdminService.test.ts", "src/pages/AdminUsersPage.tsx", "src/pages/__tests__/AdminUsersPage.test.tsx", "docs/ai-execution/MODULE_STATUS.md"],
   "sharedPaths": [],
   "status": "active"
 }

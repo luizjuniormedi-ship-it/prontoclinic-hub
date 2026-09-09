@@ -96,4 +96,18 @@ describe("AdminUsersPage", () => {
     await waitFor(() => expect(toast).toHaveBeenCalledWith({ title: "Sessões encerradas" }));
     expect(authAdminService.logoutGlobal).toHaveBeenCalledWith(user.id, "company-1");
   });
+
+  it("bloqueia repeticao da recuperacao pendente e libera apos falha", async () => {
+    let rejectRecovery!: (reason: Error) => void;
+    vi.mocked(authAdminService.sendRecovery).mockImplementation(() => new Promise<void>((_, reject) => { rejectRecovery = reject; }));
+    render(<AdminUsersPage />);
+    const button = await screen.findByTitle("Enviar recuperação de senha");
+    fireEvent.click(button);
+    await waitFor(() => expect(button).toBeDisabled());
+    fireEvent.click(button);
+    expect(authAdminService.sendRecovery).toHaveBeenCalledTimes(1);
+    rejectRecovery(new Error("Falha de transporte"));
+    await waitFor(() => expect(button).not.toBeDisabled());
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: "Não foi possível enviar a recuperação", variant: "destructive" }));
+  });
 });
