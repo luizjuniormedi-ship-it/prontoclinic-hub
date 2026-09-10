@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ErrorState, LoadingState } from "@/components/StateViews";
 import { PageHeader } from "@/components/PageHeader";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserProfileWithEmail[]>([]);
   const [profiles, setProfiles] = useState<PermissionProfile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterProfile, setFilterProfile] = useState("all");
@@ -44,8 +46,9 @@ export default function AdminUsersPage() {
   });
   const [inviteForm, setInviteForm] = useState({ email: "", fullName: "", profileId: "" });
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const [u, p] = await Promise.all([
         userProfilesService.getAll(),
@@ -53,18 +56,16 @@ export default function AdminUsersPage() {
       ]);
       setUsers(u);
       setProfiles(p);
-    } catch (err) {
-      toast({
-        title: "Erro ao carregar usuários",
-        description: err instanceof Error ? err.message : String(err),
-        variant: "destructive",
-      });
+    } catch {
+      setUsers([]);
+      setProfiles([]);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [load]);
 
   const filtered = users.filter((u) => {
     const q = search.toLowerCase();
@@ -225,7 +226,8 @@ export default function AdminUsersPage() {
     }
   };
 
-  if (loading) return <div className="p-6 text-muted-foreground">Carregando...</div>;
+  if (loading) return <LoadingState />;
+  if (loadError) return <ErrorState message="Não foi possível carregar os usuários." onRetry={() => void load()} />;
 
   return (
     <div className="space-y-6">

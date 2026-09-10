@@ -80,6 +80,18 @@ describe("AdminUsersPage", () => {
     await waitFor(() => expect(authAdminService.logoutGlobal).toHaveBeenCalledWith(user.id, "company-1"));
   });
 
+  it("distingue falha de lista vazia e recupera com nova tentativa", async () => {
+    vi.mocked(userProfilesService.getAll).mockRejectedValueOnce(new Error("internal database detail"));
+    render(<AdminUsersPage />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Não foi possível carregar os usuários.");
+    expect(screen.queryByText("internal database detail")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /convidar usuário/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(await screen.findByText("Usuário QA")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(userProfilesService.getAll).toHaveBeenCalledTimes(2);
+  });
+
   it("libera nova tentativa sem anunciar sucesso quando logout falha", async () => {
     vi.mocked(authAdminService.logoutGlobal).mockRejectedValue(new Error("Operação indisponível"));
     render(<AdminUsersPage />);
