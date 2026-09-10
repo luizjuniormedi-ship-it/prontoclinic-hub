@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,8 @@ export default function AdminUsersPage() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterProfile, setFilterProfile] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const saveInFlight = useRef(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
@@ -83,11 +85,13 @@ export default function AdminUsersPage() {
   };
 
   const handleSave = async () => {
-    if (!editingUser) return;
+    if (!editingUser || saveInFlight.current) return;
     if (!form.full_name.trim()) {
       toast({ title: "Nome obrigatório", variant: "destructive" });
       return;
     }
+    saveInFlight.current = true;
+    setSaving(true);
     try {
       await userProfilesService.update(editingUser.id, {
         full_name: form.full_name,
@@ -103,6 +107,9 @@ export default function AdminUsersPage() {
         description: err instanceof Error ? err.message : String(err),
         variant: "destructive",
       });
+    } finally {
+      saveInFlight.current = false;
+      setSaving(false);
     }
   };
 
@@ -298,29 +305,29 @@ export default function AdminUsersPage() {
         </Table>
       </div>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md">
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!saveInFlight.current) setDialogOpen(open); }}>
+        <DialogContent className="max-w-md" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Editar Usuário</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label>Nome completo *</Label>
-              <Input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
+              <Label htmlFor="edit-user-name">Nome completo *</Label>
+              <Input id="edit-user-name" disabled={saving} value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
             </div>
             <div className="space-y-1.5">
-              <Label>CPF</Label>
-              <Input value={form.cpf} onChange={(e) => setForm({ ...form, cpf: e.target.value })} />
+              <Label htmlFor="edit-user-cpf">CPF</Label>
+              <Input id="edit-user-cpf" disabled={saving} value={form.cpf} onChange={(e) => setForm({ ...form, cpf: e.target.value })} />
             </div>
             <div className="space-y-1.5">
-              <Label>Telefone</Label>
-              <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              <Label htmlFor="edit-user-phone">Telefone</Label>
+              <Input id="edit-user-phone" disabled={saving} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
             </div>
 
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={() => void handleSave()}>Salvar</Button>
+            <Button disabled={saving} variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
+            <Button disabled={saving} onClick={() => void handleSave()}>{saving ? "Salvando..." : "Salvar"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

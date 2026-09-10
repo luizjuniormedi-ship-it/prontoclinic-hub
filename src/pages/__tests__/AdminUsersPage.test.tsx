@@ -110,4 +110,25 @@ describe("AdminUsersPage", () => {
     await waitFor(() => expect(button).not.toBeDisabled());
     expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: "Não foi possível enviar a recuperação", variant: "destructive" }));
   });
+
+  it("preserva a edicao e permite retry depois de falha sem duplicar salvamento", async () => {
+    let rejectUpdate!: (reason: Error) => void;
+    vi.mocked(userProfilesService.update).mockImplementationOnce(() => new Promise((_, reject) => { rejectUpdate = reject; }));
+    render(<AdminUsersPage />);
+    fireEvent.click(await screen.findByTitle("Editar"));
+    fireEvent.change(screen.getByLabelText("Nome completo *"), { target: { value: "Nome corrigido" } });
+    const save = screen.getByRole("button", { name: "Salvar" });
+    fireEvent.click(save);
+    fireEvent.click(save);
+    expect(userProfilesService.update).toHaveBeenCalledTimes(1);
+    expect(save).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancelar" })).toBeDisabled();
+    rejectUpdate(new Error("Falha de transporte"));
+    await waitFor(() => expect(save).not.toBeDisabled());
+    expect(screen.getByLabelText("Nome completo *")).toHaveValue("Nome corrigido");
+    vi.mocked(userProfilesService.update).mockResolvedValueOnce(undefined as never);
+    fireEvent.click(save);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(userProfilesService.update).toHaveBeenCalledTimes(2);
+  });
 });
