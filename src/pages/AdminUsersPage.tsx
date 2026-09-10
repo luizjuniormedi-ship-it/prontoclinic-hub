@@ -39,7 +39,18 @@ export default function AdminUsersPage() {
   const saveInFlight = useRef(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviting, setInviting] = useState(false);
-  const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+  const [pendingUsers, setPendingUsers] = useState<Set<string>>(() => new Set());
+  const pendingUsersRef = useRef(new Set<string>());
+  const beginUserOperation = (id: string) => {
+    if (pendingUsersRef.current.has(id)) return false;
+    pendingUsersRef.current.add(id);
+    setPendingUsers(new Set(pendingUsersRef.current));
+    return true;
+  };
+  const endUserOperation = (id: string) => {
+    pendingUsersRef.current.delete(id);
+    setPendingUsers(new Set(pendingUsersRef.current));
+  };
   const [editingUser, setEditingUser] = useState<UserProfileWithEmail | null>(null);
   const [form, setForm] = useState<{ full_name: string; phone: string; cpf: string }>({
     full_name: "", phone: "", cpf: "",
@@ -125,7 +136,7 @@ export default function AdminUsersPage() {
       destructive: isActive,
     });
     if (!accepted) return;
-    setPendingUserId(u.id);
+    if (!beginUserOperation(u.id)) return;
     try {
       const context = readStoredAccessContext<AccessContextOption>();
       if (!context?.companyId) throw new Error("Contexto empresarial ativo não encontrado.");
@@ -139,13 +150,12 @@ export default function AdminUsersPage() {
         variant: "destructive",
       });
     } finally {
-      setPendingUserId(null);
+      endUserOperation(u.id);
     }
   };
 
   const sendRecovery = async (u: UserProfileWithEmail) => {
-    if (pendingUserId === u.id) return;
-    setPendingUserId(u.id);
+    if (!beginUserOperation(u.id)) return;
     try {
       const context = readStoredAccessContext<AccessContextOption>();
       if (!context?.companyId) throw new Error("Contexto empresarial ativo não encontrado.");
@@ -165,7 +175,7 @@ export default function AdminUsersPage() {
         variant: "destructive",
       });
     } finally {
-      setPendingUserId(null);
+      endUserOperation(u.id);
     }
   };
 
@@ -209,7 +219,7 @@ export default function AdminUsersPage() {
       destructive: true,
     });
     if (!accepted) return;
-    setPendingUserId(u.id);
+    if (!beginUserOperation(u.id)) return;
     try {
       const context = readStoredAccessContext<AccessContextOption>();
       if (!context?.companyId) throw new Error("Contexto empresarial ativo não encontrado.");
@@ -222,7 +232,7 @@ export default function AdminUsersPage() {
         variant: "destructive",
       });
     } finally {
-      setPendingUserId(null);
+      endUserOperation(u.id);
     }
   };
 
@@ -294,9 +304,9 @@ export default function AdminUsersPage() {
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
                     <Button variant="ghost" size="icon" onClick={() => openEdit(u)} title="Editar"><Edit className="h-4 w-4" /></Button>
-                    <Button disabled={pendingUserId === u.id} variant="ghost" size="icon" onClick={() => void sendRecovery(u)} title="Enviar recuperação de senha"><KeyRound className="h-4 w-4" /></Button>
-                    <Button disabled={pendingUserId === u.id} variant="ghost" size="icon" onClick={() => void logoutGlobal(u)} title="Encerrar todas as sessões"><LogOut className="h-4 w-4" /></Button>
-                    <Button disabled={pendingUserId === u.id} variant="ghost" size="icon" onClick={() => void toggleStatus(u)} title={u.membership_status === "active" ? "Inativar" : "Ativar"}>
+                    <Button disabled={pendingUsers.has(u.id)} variant="ghost" size="icon" onClick={() => void sendRecovery(u)} title="Enviar recuperação de senha"><KeyRound className="h-4 w-4" /></Button>
+                    <Button disabled={pendingUsers.has(u.id)} variant="ghost" size="icon" onClick={() => void logoutGlobal(u)} title="Encerrar todas as sessões"><LogOut className="h-4 w-4" /></Button>
+                    <Button disabled={pendingUsers.has(u.id)} variant="ghost" size="icon" onClick={() => void toggleStatus(u)} title={u.membership_status === "active" ? "Inativar" : "Ativar"}>
                       {u.membership_status === "active" ? <UserX className="h-4 w-4 text-destructive" /> : <UserCheck className="h-4 w-4 text-green-600" />}
                     </Button>
                   </div>

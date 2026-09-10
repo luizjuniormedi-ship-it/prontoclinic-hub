@@ -143,4 +143,23 @@ describe("AdminUsersPage", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(userProfilesService.update).toHaveBeenCalledTimes(2);
   });
+
+  it("mantem bloqueio independente para operacoes em dois usuarios", async () => {
+    vi.mocked(userProfilesService.getAll).mockResolvedValue([user, { ...user, id: "user-2", full_name: "Segundo QA" }]);
+    const finish = new Map<string, () => void>();
+    vi.mocked(authAdminService.sendRecovery).mockImplementation((id) => new Promise<void>((resolve) => { finish.set(id, resolve); }));
+    render(<AdminUsersPage />);
+    const [first, second] = await screen.findAllByTitle("Enviar recuperação de senha");
+    fireEvent.click(first);
+    fireEvent.click(second);
+    expect(first).toBeDisabled();
+    expect(second).toBeDisabled();
+    finish.get("user-2")!();
+    await waitFor(() => expect(second).not.toBeDisabled());
+    expect(first).toBeDisabled();
+    fireEvent.click(first);
+    expect(authAdminService.sendRecovery).toHaveBeenCalledTimes(2);
+    finish.get(user.id)!();
+    await waitFor(() => expect(first).not.toBeDisabled());
+  });
 });
