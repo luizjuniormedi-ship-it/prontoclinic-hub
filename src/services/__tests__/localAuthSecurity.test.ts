@@ -5,6 +5,15 @@ import { describe, expect, it } from "vitest";
 const source = readFileSync(resolve(process.cwd(), "local-auth-server.mjs"), "utf8");
 
 describe("local auth server security invariants", () => {
+  it("HEAD compartilha filtros e identidade RLS com GET sem mascarar falhas", () => {
+    expect(source).toContain("if (req.method === 'GET' || req.method === 'HEAD')");
+    const head = source.slice(source.indexOf('// HEAD uses the same validated filters'));
+    expect(head).toContain("conditions.join(' AND ')");
+    expect(head).toContain('queryAsAuthenticated(payload, countQuery, values)');
+    expect(source).not.toContain("res.writeHead(200, { 'content-range': '0-0/0' })");
+    expect(source).not.toContain('const hPayload = verifyUserJwt(hAuth)');
+  });
+
   it("exige modo explícito e endurece o gateway em produção", () => {
     expect(source).toContain("const LOCAL_AUTH_MODE = process.env.LOCAL_AUTH_MODE");
     expect(source).toContain("['development', 'test', 'production']");

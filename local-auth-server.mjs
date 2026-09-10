@@ -922,33 +922,6 @@ const server = createServer(async (req, res) => {
     }
   }
 
-  // Support HEAD with count (supabase-js uses HEAD for count)
-  if (req.method === 'HEAD' && path.startsWith('/rest/v1/')) {
-    const table = path.replace('/rest/v1/', '').split('?')[0];
-    // SEGURANÃ‡A: HEAD count exige JWT vÃ¡lido + autorizaÃ§Ã£o (antes vazava contagem sem auth)
-    const hAuth = req.headers.authorization?.replace('Bearer ', '');
-    const hPayload = verifyUserJwt(hAuth);
-    if (!hPayload) { res.writeHead(401); res.end(); return; }
-    if (!await isUserSessionActive(hPayload)) { res.writeHead(401); res.end(); return; }
-    // valida nome de tabela (anti-injection) e permissÃ£o
-    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(table)) { res.writeHead(400); res.end(); return; }
-    const hProfile = await getUserProfile(hPayload);
-    const hDecision = await authorize(hProfile, table, 'GET', hPayload);
-    if (!hDecision.ok) { res.writeHead(403); res.end(); return; }
-    try {
-      const countResult = await queryAsAuthenticated(
-        hPayload,
-        `SELECT count(*) FROM public."${table}"`,
-      );
-      const total = countResult.rows[0].count;
-      res.writeHead(200, { 'content-range': `0-0/${total}` });
-    } catch {
-      res.writeHead(200, { 'content-range': '0-0/0' });
-    }
-    res.end();
-    return;
-  }
-
   try {
     // â”€â”€â”€ AUTH: Refresh Token (MUST come before login) â”€â”€â”€â”€â”€â”€â”€â”€
     if (path === '/auth/v1/token' && req.method === 'POST' && url.searchParams.get('grant_type') === 'refresh_token') {
@@ -1616,7 +1589,7 @@ const server = createServer(async (req, res) => {
         url.searchParams.get('id') === `eq.${payload.sub}`;
       const decision = servicePayload || isSelfProfileRead ? { ok: true } : await authorize(profile, table, req.method, payload);
       if (!decision.ok) return json(res, { error: 'forbidden', message: decision.reason }, 403);
-      if (req.method === 'GET') {
+      if (req.method === 'GET' || req.method === 'HEAD') {
         // Parse select columns (strip embedded relations like "payment_source:payment_sources(name,type)")
         const columns = parseSelectProjection(url.searchParams.get('select')) || '*';
 
@@ -1752,6 +1725,14 @@ const server = createServer(async (req, res) => {
         }
 
         try {
+          // HEAD uses the same validated filters and RLS identity as GET.
+          if (req.method === 'HEAD') {
+            const countQuery = `SELECT COUNT(*) FROM public."${table}"` + (conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '');
+            const countResult = await queryAsAuthenticated(payload, countQuery, values);
+            res.writeHead(200, { 'content-range': `*/${countResult.rows[0].count}` });
+            res.end();
+            return;
+          }
           const result = await queryAsAuthenticated(payload, query, values);
 
           // Count total if Prefer: count=exact

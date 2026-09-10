@@ -268,6 +268,9 @@ jobs:
       - name: Type check
         run: npm run type-check
 
+      - name: Strict type check
+        run: npm run type-check:strict
+
       - name: Preserve database replay evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -346,6 +349,10 @@ jobs:
         run: npx playwright test e2e/auth.spec.ts --project=chromium --workers=1
         env:
           CI: true
+          E2E_ENV: local
+          E2E_MODE: mutating
+          E2E_ALLOW_LOCAL_MUTATIONS: true
+          E2E_REPORT_SUFFIX: auth
           E2E_BASE_URL: http://localhost:4173
           VITE_SUPABASE_URL: http://127.0.0.1:18000
           VITE_SUPABASE_ANON_KEY: local-e2e-public-key
@@ -359,6 +366,10 @@ jobs:
         run: npx playwright test e2e/recepcao.spec.ts --project=chromium --workers=1
         env:
           CI: true
+          E2E_ENV: local
+          E2E_MODE: mutating
+          E2E_ALLOW_LOCAL_MUTATIONS: true
+          E2E_REPORT_SUFFIX: reception
           E2E_BASE_URL: http://localhost:4173
           VITE_SUPABASE_URL: http://127.0.0.1:18000
           VITE_SUPABASE_ANON_KEY: local-e2e-public-key
@@ -372,6 +383,10 @@ jobs:
         run: npx playwright test e2e/pharmacy.spec.ts --project=chromium --workers=1
         env:
           CI: true
+          E2E_ENV: local
+          E2E_MODE: mutating
+          E2E_ALLOW_LOCAL_MUTATIONS: true
+          E2E_REPORT_SUFFIX: pharmacy
           E2E_BASE_URL: http://localhost:4173
           VITE_SUPABASE_URL: http://127.0.0.1:18000
           VITE_SUPABASE_ANON_KEY: local-e2e-public-key
@@ -393,6 +408,10 @@ jobs:
         run: npx playwright test e2e/agendamento.spec.ts --project=chromium --workers=1
         env:
           CI: true
+          E2E_ENV: local
+          E2E_MODE: mutating
+          E2E_ALLOW_LOCAL_MUTATIONS: true
+          E2E_REPORT_SUFFIX: scheduling
           E2E_BASE_URL: http://localhost:4173
           VITE_SUPABASE_URL: http://127.0.0.1:18000
           VITE_SUPABASE_ANON_KEY: local-e2e-public-key
@@ -414,6 +433,10 @@ jobs:
         run: npx playwright test e2e/gate-phase01.spec.ts --project=chromium --workers=1
         env:
           CI: true
+          E2E_ENV: local
+          E2E_MODE: mutating
+          E2E_ALLOW_LOCAL_MUTATIONS: true
+          E2E_REPORT_SUFFIX: phase01
           E2E_BASE_URL: http://localhost:4173
           VITE_SUPABASE_URL: http://127.0.0.1:18000
           VITE_SUPABASE_ANON_KEY: local-e2e-public-key
@@ -438,6 +461,24 @@ jobs:
           E2E_ENV: local
           E2E_MODE: mutating
           E2E_ALLOW_LOCAL_MUTATIONS: true
+          E2E_REPORT_SUFFIX: companies
+          E2E_BASE_URL: http://localhost:4173
+          VITE_SUPABASE_URL: http://127.0.0.1:18000
+          VITE_SUPABASE_ANON_KEY: local-e2e-public-key
+          PGHOST: localhost
+          PGPORT: 54322
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: migrations_second
+
+      - name: Run cross-company HTTP isolation E2E gate
+        run: npx playwright test e2e/company-http-isolation.spec.ts --project=chromium --workers=1
+        env:
+          CI: true
+          E2E_ENV: local
+          E2E_MODE: mutating
+          E2E_ALLOW_LOCAL_MUTATIONS: true
+          E2E_REPORT_SUFFIX: company-http-isolation
           E2E_BASE_URL: http://localhost:4173
           VITE_SUPABASE_URL: http://127.0.0.1:18000
           VITE_SUPABASE_ANON_KEY: local-e2e-public-key
@@ -452,7 +493,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: playwright-report/
+          path: playwright-report*/
           retention-days: 30
 
       - name: Upload JUnit results
@@ -460,7 +501,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-junit
-          path: test-results/junit.xml
+          path: playwright-artifacts/junit*.xml
           retention-days: 30
 
       - name: Upload JSON results
@@ -468,5 +509,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-results
-          path: test-results/results.json
+          path: playwright-artifacts/results*.json
           retention-days: 30

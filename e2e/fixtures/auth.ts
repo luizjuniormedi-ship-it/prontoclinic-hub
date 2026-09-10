@@ -10,6 +10,7 @@ export type UserRole =
   | 'patient'
   | 'callcenter'
   | 'adminA'
+  | 'adminB'
   | 'managerA'
   | 'doctorA'
   | 'nurseA'
@@ -20,6 +21,7 @@ export type UserRole =
   | 'nurseB';
 
 const LOCAL_CREDENTIALS: Partial<Record<UserRole, { email: string; password: string }>> = {
+  adminB: { email: 'admin.company-b@prontomedic.test', password: E2E_PASSWORD },
   admin: { email: 'admin@prontomedic.test', password: E2E_PASSWORD },
   doctor: { email: 'doctor@prontomedic.test', password: E2E_PASSWORD },
   reception: { email: 'recepcao@prontomedic.test', password: E2E_PASSWORD },
@@ -64,6 +66,7 @@ function totpCode(secret: string, timestamp = Date.now()): string {
 }
 
 const ENV_KEYS: Partial<Record<UserRole, { email: string; password: string }>> = {
+  adminB: { email: 'E2E_COMPANY_B_ADMIN_EMAIL', password: 'E2E_COMPANY_B_ADMIN_PASSWORD' },
   admin: { email: 'E2E_ADMIN_EMAIL', password: 'E2E_ADMIN_PASSWORD' },
   doctor: { email: 'E2E_DOCTOR_EMAIL', password: 'E2E_DOCTOR_PASSWORD' },
   reception: { email: 'E2E_RECEPTION_EMAIL', password: 'E2E_RECEPTION_PASSWORD' },

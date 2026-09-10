@@ -5,6 +5,91 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { E2E_PASSWORD } from './env';
 
+function runLocalSeed(seedPath: string): void {
+  const psqlArgs = ['-X', '-v', 'ON_ERROR_STOP=1', '-f', seedPath];
+  const seedEnv = {
+    ...process.env,
+    E2E_PASSWORD,
+    PGCONNECT_TIMEOUT: process.env.PGCONNECT_TIMEOUT || '5',
+  };
+
+  try {
+    execFileSync('psql', psqlArgs, {
+      env: seedEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 45_000,
+    });
+    return;
+  } catch (error) {
+    const isMissingPsql =
+      error instanceof Error &&
+      'code' in error &&
+      (error as NodeJS.ErrnoException).code === 'ENOENT';
+    const container = process.env.E2E_PSQL_DOCKER_CONTAINER?.trim();
+    if (!isMissingPsql || !container) throw error;
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(container)) {
+      throw new Error('[global-setup] Nome de container PostgreSQL inválido.');
+    }
+    if (process.env.DOCKER_HOST) {
+      throw new Error('[global-setup] Seed recusado: DOCKER_HOST não pode sobrescrever o contexto local.');
+    }
+
+    const dockerHost = execFileSync(
+      'docker',
+      ['context', 'inspect', '--format', '{{.Endpoints.docker.Host}}'],
+      { encoding: 'utf8', timeout: 10_000 },
+    ).trim();
+    if (!/^(npipe|unix):/i.test(dockerHost)) {
+      throw new Error('[global-setup] Seed recusado: o contexto Docker não é local.');
+    }
+    const publishedPorts = execFileSync(
+      'docker',
+      ['port', container, '5432/tcp'],
+      { encoding: 'utf8', timeout: 10_000 },
+    ).trim().split(/\r?\n/);
+    const expectedPort = process.env.PGPORT!;
+    const localPublishedPort = new RegExp(
+      `^(?:127\\.0\\.0\\.1|0\\.0\\.0\\.0|\\[::1?\\]):${expectedPort}$`,
+    );
+    if (!publishedPorts.some((address) => localPublishedPort.test(address))) {
+      throw new Error(
+        '[global-setup] Seed recusado: o container não publica a porta PostgreSQL validada.',
+      );
+    }
+
+    const containerSeedPath = `/tmp/prontomedic-e2e-seed-${process.pid}.sql`;
+    execFileSync('docker', ['cp', seedPath, `${container}:${containerSeedPath}`], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 15_000,
+    });
+    try {
+      const dockerArgs = [
+        'exec',
+        '-e', 'E2E_PASSWORD',
+        '-e', 'E2E_MFA_SECRET',
+        '-e', 'AUTH_MFA_ENCRYPTION_KEY',
+        container,
+        'psql',
+        '-X',
+        '-v', 'ON_ERROR_STOP=1',
+        '-h', '/var/run/postgresql',
+        '-U', process.env.PGUSER!,
+        '-d', process.env.PGDATABASE!,
+        '-f', containerSeedPath,
+      ];
+      execFileSync('docker', dockerArgs, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 45_000,
+      });
+    } finally {
+      execFileSync('docker', ['exec', container, 'rm', '-f', containerSeedPath], {
+        stdio: 'ignore',
+        timeout: 10_000,
+      });
+    }
+  }
+}
+
 function acquireLocalMutationLock(port: string, database: string): () => void {
   const safeDatabase = database.replace(/[^a-zA-Z0-9_-]/g, '_');
   const lockPath = resolve(tmpdir(), `prontomedic-e2e-${port}-${safeDatabase}.lock`);
@@ -81,11 +166,27 @@ export default async function globalSetup(config: FullConfig) {
   }
 
   if (isLocalAuth) {
+    if (
+      process.env.E2E_ENV !== 'local'
+      || process.env.E2E_MODE !== 'mutating'
+      || process.env.E2E_ALLOW_LOCAL_MUTATIONS !== 'true'
+    ) {
+      throw new Error(
+        '[global-setup] Seed local exige E2E_ENV=local, E2E_MODE=mutating e autorização explícita.',
+      );
+    }
     const requiredDatabaseEnv = ['PGHOST', 'PGPORT', 'PGDATABASE', 'PGUSER'] as const;
     const missingDatabaseEnv = requiredDatabaseEnv.filter((name) => !process.env[name]);
     if (missingDatabaseEnv.length > 0) {
       throw new Error(
         `[global-setup] Ambiente PostgreSQL local incompleto: ${missingDatabaseEnv.join(', ')}`
+      );
+    }
+    const requiredSeedSecrets = ['E2E_MFA_SECRET', 'AUTH_MFA_ENCRYPTION_KEY'] as const;
+    const missingSeedSecrets = requiredSeedSecrets.filter((name) => !process.env[name]);
+    if (missingSeedSecrets.length > 0) {
+      throw new Error(
+        `[global-setup] Segredos das fixtures locais ausentes: ${missingSeedSecrets.join(', ')}`,
       );
     }
     const databaseHost = process.env.PGHOST!.trim().toLowerCase();
@@ -105,31 +206,20 @@ export default async function globalSetup(config: FullConfig) {
       process.env.PGDATABASE!,
     );
     try {
-      execFileSync(
-        'psql',
-        [
-          '-X',
-          '-v',
-          'ON_ERROR_STOP=1',
-          '-f',
-          resolve(process.cwd(), 'scripts/seed-e2e-users.sql'),
-        ],
-        {
-          env: {
-            ...process.env,
-            E2E_PASSWORD,
-            PGCONNECT_TIMEOUT: process.env.PGCONNECT_TIMEOUT || '5',
-          },
-          stdio: ['ignore', 'pipe', 'pipe'],
-          timeout: 45_000,
-        },
-      );
+      runLocalSeed(resolve(process.cwd(), 'scripts/seed-e2e-users.sql'));
     } catch (error) {
       releaseMutationLock();
       const stderr = error instanceof Error && 'stderr' in error
         ? String((error as Error & { stderr?: Buffer }).stderr || '')
         : '';
-      const safeDetails = stderr.replaceAll(E2E_PASSWORD, '<redacted>').trim();
+      const sensitiveValues = [
+        E2E_PASSWORD,
+        process.env.E2E_MFA_SECRET,
+        process.env.AUTH_MFA_ENCRYPTION_KEY,
+      ].filter((value): value is string => Boolean(value));
+      const safeDetails = sensitiveValues
+        .reduce((details, value) => details.replaceAll(value, '<redacted>'), stderr)
+        .trim();
       throw new Error(
         `[global-setup] Falha restaurando fixtures locais.${safeDetails ? ` ${safeDetails}` : ''}`,
       );
@@ -139,6 +229,11 @@ export default async function globalSetup(config: FullConfig) {
   }
 
   console.log('[global-setup] Supabase OK — verificando usuários de teste...');
+
+  if (process.env.E2E_ALLOW_REMOTE_USER_PROVISIONING !== 'true') {
+    console.log('[global-setup] Provisionamento remoto desativado; usando usuários pré-existentes.');
+    return;
+  }
 
   // 2. Criar/atualizar usuários de teste (idempotente via signUp + error handling).
   //    Em staging, desabilitar confirmação de e-mail para que login funcione direto.

@@ -30,3 +30,20 @@ Nenhuma dependencia externa incorporada, deploy executado ou acesso ao DataSIGH 
 | Cadastros mestres | Bloqueado | Contagens zeradas reportadas anteriormente |
 
 Nenhum modulo marcado como parcial ou bloqueado deve ser apresentado como 100% funcional.
+
+## Gate HTTP multiempresa - 2026-09-10
+
+As referencias a runtime publicado acima sao historicas, nao uma verificacao da VPS nesta rodada.
+
+- Backend existente: HEAD reutiliza o parser de filtros, autorizacao e identidade RLS de GET. Erros de contagem deixam de retornar sucesso com zero.
+- Harness existente: fixture da segunda empresa sintetica, login administrativo com MFA e matriz HTTP GET/HEAD/COUNT/POST/PATCH nas duas direcoes, com controles positivos e readback pelo proprietario.
+- CI existente: etapa dedicada ao teste `e2e/company-http-isolation.spec.ts` no banco descartavel.
+- Verificacao local: 1141 testes unitarios aprovados em 143 arquivos; type-check normal e estrito, build e lint sem erros aprovados.
+- Bloqueio de infraestrutura resolvido: PostgreSQL 16 descartavel no Docker em loopback:54322, banco migrations_second com baseline completo e backend existente em 18000.
+- Primeira execucao detectou contexto B sem unidade. O teste agora seleciona explicitamente a unidade de cada empresa pela UI, sem mudar permissoes do produto.
+- Matriz E2E integral aprovada duas vezes nesta rodada apos restauracao da fixture: 50.3s e 49.0s. GET/HEAD/COUNT/POST/PATCH com controles positivos, contagem paginada e readback A/B, login e MFA reais locais.
+- Evidencia: playwright-artifacts/results-company-http-isolation-local.json, playwright-artifacts/junit-company-http-isolation-local.xml e playwright-report-company-http-isolation-local/index.html. Execucao sobre checkout com alteracoes locais, nao SHA publicado.
+- Revisao independente do PR continua pendente. As alteracoes desta rodada nao foram publicadas e precisam de novo CI para o SHA que as integrar.
+- Nenhum acesso DataSIGH, deploy, XML real ou criacao de identidade real.
+
+O gate HTTP de pacientes entre as duas empresas sinteticas esta APROVADO LOCALMENTE em PostgreSQL 16. Nao equivale a homologacao de todas as tabelas ou da VPS; essas validacoes continuam pendentes.
