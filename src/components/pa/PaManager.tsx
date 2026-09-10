@@ -138,7 +138,7 @@ export function PaManager() {
     }
   }, [selectedAtend, corSelecionada, news2, toast, carregar]);
 
-  const handleAlta = useCallback(async (destino: PaAtendimento["tp_destino"]) => {
+  const handleAlta = useCallback(async (destino: NonNullable<PaAtendimento["tp_destino"]>) => {
     if (!selectedAtend) return;
     setSaving(true);
     try {

@@ -78,7 +78,7 @@ export const userProfilesService = {
       updated_at: row.updated_at,
     }));
     const normalizedSearch = filters?.search?.trim().toLowerCase();
-    return users.filter((user) =>
+    return users.filter((user: UserProfileWithEmail) =>
       (filters?.lg_ativo === undefined || user.lg_ativo === filters.lg_ativo)
       && (!normalizedSearch
         || user.full_name.toLowerCase().includes(normalizedSearch)

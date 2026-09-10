@@ -251,7 +251,7 @@ export function TriageForm(props: TriageFormProps): JSX.Element {
             label="P. Sistólica"
             unit="mmHg"
             icon={<Heart className="h-3 w-3" />}
-            value={sinais.pressaoSistolica}
+            value={sinais.pressaoSistolica ?? null}
             onChange={(v) => handleSinaisChange("pressaoSistolica", v)}
           />
           <VitalInput
@@ -259,7 +259,7 @@ export function TriageForm(props: TriageFormProps): JSX.Element {
             label="P. Diastólica"
             unit="mmHg"
             icon={<Heart className="h-3 w-3" />}
-            value={sinais.pressaoDiastolica}
+            value={sinais.pressaoDiastolica ?? null}
             onChange={(v) => handleSinaisChange("pressaoDiastolica", v)}
           />
           <VitalInput
@@ -267,7 +267,7 @@ export function TriageForm(props: TriageFormProps): JSX.Element {
             label="FC"
             unit="bpm"
             icon={<Heart className="h-3 w-3" />}
-            value={sinais.frequenciaCardiaca}
+            value={sinais.frequenciaCardiaca ?? null}
             onChange={(v) => handleSinaisChange("frequenciaCardiaca", v)}
           />
           <VitalInput
@@ -275,7 +275,7 @@ export function TriageForm(props: TriageFormProps): JSX.Element {
             label="FR"
             unit="irpm"
             icon={<Wind className="h-3 w-3" />}
-            value={sinais.frequenciaRespiratoria}
+            value={sinais.frequenciaRespiratoria ?? null}
             onChange={(v) => handleSinaisChange("frequenciaRespiratoria", v)}
           />
           <VitalInput
@@ -283,7 +283,7 @@ export function TriageForm(props: TriageFormProps): JSX.Element {
             label="Temperatura"
             unit="°C"
             icon={<Thermometer className="h-3 w-3" />}
-            value={sinais.temperatura}
+            value={sinais.temperatura ?? null}
             onChange={(v) => handleSinaisChange("temperatura", v)}
             step="0.1"
           />
@@ -292,14 +292,14 @@ export function TriageForm(props: TriageFormProps): JSX.Element {
             label="SpO2"
             unit="%"
             icon={<Droplet className="h-3 w-3" />}
-            value={sinais.saturacaoO2}
+            value={sinais.saturacaoO2 ?? null}
             onChange={(v) => handleSinaisChange("saturacaoO2", v)}
           />
           <VitalInput
             id="gli"
             label="Glicemia"
             unit="mg/dL"
-            value={sinais.glicemia}
+            value={sinais.glicemia ?? null}
             onChange={(v) => handleSinaisChange("glicemia", v)}
           />
           <div className="space-y-1.5 col-span-2 md:col-span-1">

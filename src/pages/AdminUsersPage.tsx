@@ -193,7 +193,7 @@ export default function AdminUsersPage() {
         fullName: inviteForm.fullName.trim(),
         companyId: context.companyId,
         roleId: profile.databaseId,
-        primaryUnitId: context.unitId,
+        primaryUnitId: context.unitId ?? null,
         redirectTo: `${window.location.origin}/reset-password`,
       });
       toast({ title: "Convite enviado" });

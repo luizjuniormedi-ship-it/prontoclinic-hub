@@ -38,6 +38,7 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint . --ext ts,tsx",
     "type-check": "tsc -b --force --pretty false",
+    "type-check:strict": "tsc --noEmit -p tsconfig.strict.json --pretty false",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,md}\"",
     "preview": "vite preview",
     "test": "vitest run",

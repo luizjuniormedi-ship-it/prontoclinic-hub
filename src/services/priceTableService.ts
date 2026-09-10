@@ -20,7 +20,7 @@ export interface PriceTable {
   company_id: string;
   appointment_type_id?: number;
   service_id?: number;
-  insurance_plan_id?: number;
+  insurance_plan_id?: number | null;
   dt_inicio: string;
   dt_fim?: string;
   vl_particular: number;
