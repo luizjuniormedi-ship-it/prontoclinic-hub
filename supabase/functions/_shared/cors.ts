@@ -14,7 +14,7 @@ export function corsHeaders(request: Request): HeadersInit | null {
   }
   return {
     "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-application-name, x-client-info, x-supabase-api-version",
+    "Access-Control-Allow-Headers": "authorization, apikey, content-type, idempotency-key, x-application-name, x-client-info, x-supabase-api-version",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Max-Age": "600",
     Vary: "Origin",

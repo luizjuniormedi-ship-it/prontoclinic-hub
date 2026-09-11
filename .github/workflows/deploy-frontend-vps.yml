@@ -144,7 +144,7 @@ jobs:
           checksum="$(sha256sum "$helper" | cut -d' ' -f1)"
           scp -i ~/.ssh/id_ed25519_root -o IdentitiesOnly=yes "$helper" "root@${VPS_HOST}:/tmp/prontomedic-frontend-deploy"
           ssh -i ~/.ssh/id_ed25519_root -o IdentitiesOnly=yes "root@${VPS_HOST}" \
-            "EXPECTED_SHA='$checksum' DEPLOY_USER='$VPS_USER' bash -s" <<'EOF'
+            "EXPECTED_SHA='$checksum' EXPECTED_COMMIT='${{ inputs.commit_sha }}' DEPLOY_USER='$VPS_USER' bash -s" <<'EOF'
           set -Eeuo pipefail
           source=/tmp/prontomedic-frontend-deploy
           target=/usr/local/sbin/prontomedic-frontend-deploy
@@ -158,6 +158,19 @@ jobs:
           /usr/sbin/visudo -cf "${sudoers}.next"
           mv -f "${sudoers}.next" "$sudoers"
           rm -f "$source"
+
+          database_state=/var/lib/prontomedic/database-deploy/last-deploy.env
+          test -r "$database_state"
+          # shellcheck disable=SC1090
+          . "$database_state"
+          test "$COMMIT_SHA" = "$EXPECTED_COMMIT"
+          test "$MIGRATION_VERSION" = 20260910223000 || \
+            test "$MIGRATION_VERSION" = 20260910224500 || \
+            test "$MIGRATION_VERSION" = 20260910230000
+          edge_target="$(readlink -f /opt/prontomedic/edge-runtime/current)"
+          test "$(basename "$(dirname "$edge_target")")" = "$EXPECTED_COMMIT"
+          /usr/local/sbin/prontomedic-edge-deploy --audit-contract
+          echo "FRONTEND_BACKEND_DEPENDENCY_GATE_PASS sha=$EXPECTED_COMMIT"
           EOF
 
       - name: Upload and deploy atomically
@@ -193,6 +206,13 @@ jobs:
           curl --fail --silent --show-error --max-time 15 https://prontomedic.191-252-196-6.sslip.io/login >/dev/null
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 https://prontomedic.191-252-196-6.sslip.io/rest/v1/)" = 400
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 https://prontomedic.191-252-196-6.sslip.io/functions/v1/auth-admin)" = 401
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 \
+            -X OPTIONS -H 'Origin: https://prontomedic.191-252-196-6.sslip.io' \
+            https://prontomedic.191-252-196-6.sslip.io/functions/v1/pre-cadastro)" = 200
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 \
+            -X POST -H 'Origin: https://prontomedic.191-252-196-6.sslip.io' \
+            -H 'Content-Type: application/json' --data '{"action":"status","token":"invalid"}' \
+            https://prontomedic.191-252-196-6.sslip.io/functions/v1/pre-cadastro)" = 404
 
       - name: Roll back frontend after failed public smoke
         if: ${{ failure() && steps.deploy.outputs.release_id != '' }}

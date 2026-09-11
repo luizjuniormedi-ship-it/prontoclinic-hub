@@ -160,8 +160,6 @@ interface ViaCepResponse {
 // =============================================================================
 
 export interface PreCadastroFormProps {
-  /** ID da empresa alvo (omitir = resolve automaticamente) */
-  companyId?: string;
   /** Callback apos envio bem-sucedido */
   onSuccess?: (result: CriarPreCadastroResult) => void;
   /** Callback ao cancelar */
@@ -181,7 +179,7 @@ const UF_LIST = [
   "RS", "RO", "RR", "SC", "SP", "SE", "TO",
 ];
 
-export function PreCadastroForm({ companyId, onSuccess, onCancel }: PreCadastroFormProps) {
+export function PreCadastroForm({ onSuccess, onCancel }: PreCadastroFormProps) {
   const [step, setStep] = useState<StepKey>(1);
   const [submitting, setSubmitting] = useState(false);
   const [cepLoading, setCepLoading] = useState(false);
@@ -287,9 +285,9 @@ export function PreCadastroForm({ companyId, onSuccess, onCancel }: PreCadastroF
         versao_termo: versaoTermo,
       };
 
-      const result = await preCadastroService.criar(payload, { companyId });
+      const result = await preCadastroService.criar(payload);
       setSuccessResult(result);
-      toast.success("Pre-cadastro enviado! Verifique seu e-mail.");
+      toast.success("Solicitacao de pre-cadastro recebida.");
       onSuccess?.(result);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Erro ao enviar pre-cadastro";
@@ -310,10 +308,9 @@ export function PreCadastroForm({ companyId, onSuccess, onCancel }: PreCadastroF
           <div className="rounded-full bg-green-100 p-4">
             <PartyPopper className="h-10 w-10 text-green-600" aria-hidden="true" />
           </div>
-          <h2 className="text-2xl font-bold text-slate-900">Pre-cadastro enviado!</h2>
+          <h2 className="text-2xl font-bold text-slate-900">Solicitacao recebida</h2>
           <p className="max-w-md text-slate-600">
-            Enviamos um link de confirmacao para o seu e-mail. Clique no link para confirmar
-            seu pre-cadastro (expira em 72 horas).
+            Se o e-mail estiver apto, enviaremos um link de confirmacao valido por 72 horas.
           </p>
           <Alert className="max-w-md border-amber-200 bg-amber-50 text-amber-900">
             <AlertDescription className="text-sm">

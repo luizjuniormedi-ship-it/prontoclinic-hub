@@ -34,6 +34,9 @@ on:
           - "20260902055133"
           - "20260904183653"
           - "20260905030000"
+          - "20260910223000"
+          - "20260910224500"
+          - "20260910230000"
       full_restore:
         description: Recuperacao integral pelo dump (acao separada do rollback logico)
         required: true
@@ -149,11 +152,22 @@ jobs:
             20260902055133) name=appointment_series_requirements_contract; predecessor=20260902022540; rollback_mode=preserve_schema ;;
             20260904183653) name=tiss_authorization_serialization; predecessor=20260902055133; rollback_mode=preserve_schema ;;
             20260905030000) name=imaging_order_attendance_contract; predecessor=20260904183653; rollback_mode=inverse ;;
+            20260910223000) name=secure_pre_cadastro_edge_contract; predecessor=20260905030000; rollback_mode=preserve_schema ;;
+            20260910224500) name=retire_legacy_pre_cadastro_rpc_grants; predecessor=20260910223000; rollback_mode=inverse ;;
+            20260910230000) name=purge_legacy_pre_cadastro_plaintext; predecessor=20260910224500; rollback_mode=preserve_schema ;;
             *) echo '::error::migration nao autorizada'; exit 1 ;;
           esac
           stage="release/stage"
           install -d "$stage" release/bootstrap-root/deploy/database
-          cp "supabase/migrations/${version}_${name}.sql" "$stage/migration.sql"
+          if [[ "$version" = 20260910223000 ]]; then
+            {
+              printf '%s\n' 'BEGIN;'
+              cat "supabase/migrations/${version}_${name}.sql"
+              printf '%s\n' 'COMMIT;'
+            } > "$stage/migration.sql"
+          else
+            cp "supabase/migrations/${version}_${name}.sql" "$stage/migration.sql"
+          fi
           cp "supabase/rollbacks/${version}_${name}.sql" "$stage/rollback.sql"
           case "$version" in
             20260804143000) smoke_prefix=deploy/database/rbac ;;
@@ -172,11 +186,22 @@ jobs:
             20260902055133) smoke_prefix=deploy/database/appointment-series ;;
             20260904183653) smoke_prefix=deploy/database/tiss-authorization ;;
             20260905030000) smoke_prefix=deploy/database/imaging-order-attendance ;;
+            20260910223000) smoke_prefix=deploy/database/pre-cadastro-edge ;;
+            20260910224500) smoke_prefix=deploy/database/pre-cadastro-contract ;;
+            20260910230000) smoke_prefix=deploy/database/pre-cadastro-cleanup ;;
             *) smoke_prefix=deploy/database/smoke ;;
           esac
-          cp "${smoke_prefix}-before.sql" "$stage/smoke-before.sql"
-          cp "${smoke_prefix}-applied.sql" "$stage/smoke-applied.sql"
-          cp "${smoke_prefix}-rollback.sql" "$stage/smoke-rollback.sql"
+          if [[ "$version" = 20260910230000 ]]; then
+            for phase in before applied rollback; do
+              cat deploy/database/pre-cadastro-contract-applied.sql \
+                "${smoke_prefix}-${phase}.sql" \
+                > "$stage/smoke-${phase}.sql"
+            done
+          else
+            cp "${smoke_prefix}-before.sql" "$stage/smoke-before.sql"
+            cp "${smoke_prefix}-applied.sql" "$stage/smoke-applied.sql"
+            cp "${smoke_prefix}-rollback.sql" "$stage/smoke-rollback.sql"
+          fi
           cp deploy/database/deploy-migration.sh release/bootstrap-root/deploy/database/
           bash -n release/bootstrap-root/deploy/database/deploy-migration.sh
           node - "$stage" "$COMMIT_SHA" "$version" "$name" "$predecessor" "$rollback_mode" <<'NODE'
@@ -335,6 +360,22 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: ssh "${VPS_USER}@${VPS_HOST}" 'sudo /usr/local/sbin/prontomedic-db-deploy audit'
+
+      - name: Verify Edge and frontend before retiring legacy pre-registration RPCs
+        if: ${{ inputs.migration_version == '20260910224500' }}
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh "${VPS_USER}@${VPS_HOST}" "EXPECTED_COMMIT='$COMMIT_SHA' bash -s" <<'EOF'
+          set -Eeuo pipefail
+          test "$(cat /var/www/prontomedic/current/COMMIT_SHA)" = "$EXPECTED_COMMIT"
+          edge_target="$(readlink -f /opt/prontomedic/edge-runtime/current)"
+          test "$(basename "$(dirname "$edge_target")")" = "$EXPECTED_COMMIT"
+          /usr/local/sbin/prontomedic-edge-deploy --audit-contract
+          echo "PRE_CADASTRO_CONTRACT_DEPENDENCY_GATE_PASS sha=$EXPECTED_COMMIT"
+          EOF
 
       - name: Upload immutable database bundle
         env:

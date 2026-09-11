@@ -186,7 +186,10 @@ load_manifest_contract() {
     20260902022540:nursing_rpc_owner_rls_closure:20260829014500:preserve_schema|\
     20260902055133:appointment_series_requirements_contract:20260902022540:preserve_schema|\
     20260904183653:tiss_authorization_serialization:20260902055133:preserve_schema|\
-    20260905030000:imaging_order_attendance_contract:20260904183653:inverse) ;;
+    20260905030000:imaging_order_attendance_contract:20260904183653:inverse|\
+    20260910223000:secure_pre_cadastro_edge_contract:20260905030000:preserve_schema|\
+    20260910224500:retire_legacy_pre_cadastro_rpc_grants:20260910223000:inverse|\
+    20260910230000:purge_legacy_pre_cadastro_plaintext:20260910224500:preserve_schema) ;;
     *) die 'migration fora da allowlist do coordenador' ;;
   esac
 }
@@ -236,6 +239,102 @@ verify_backup() {
   (cd "$(dirname "$backup")" && sha256sum -c "$(basename "$checksum")") >/dev/null \
     || die 'checksum do backup PostgreSQL invalido'
   host_postgres pg_restore --list <"$backup" >/dev/null || die 'catalogo do backup PostgreSQL invalido'
+}
+
+snapshot_coordinator_state() {
+  local backup="$1" snapshot="${1}.state.tgz" checksum="${1}.state.tgz.sha256"
+  local stage state found=0
+  stage="$(mktemp -d)"
+  for state in "$state_root"/deploy-*.env; do
+    [[ -f "$state" && ! -L "$state" ]] || continue
+    cp -- "$state" "$stage/$(basename "$state")"
+    found=1
+  done
+  if [[ -f "$state_root/last-deploy.env" && ! -L "$state_root/last-deploy.env" ]]; then
+    cp -- "$state_root/last-deploy.env" "$stage/last-deploy.env"
+    found=1
+  fi
+  if [[ "$found" = 0 ]]; then
+    : >"$stage/NO_MANAGED_STATE"
+  elif [[ ! -f "$stage/last-deploy.env" ]]; then
+    rm -rf -- "$stage"
+    die 'estado ativo sem last-deploy.env; backup recusado'
+  fi
+  tar -C "$stage" -czf "${snapshot}.next" .
+  mv -f "${snapshot}.next" "$snapshot"
+  chmod 600 "$snapshot"
+  (cd "$(dirname "$snapshot")" && sha256sum "$(basename "$snapshot")" >"$(basename "$checksum").next")
+  mv -f "${checksum}.next" "$checksum"
+  chmod 600 "$checksum"
+  rm -rf -- "$stage"
+}
+
+validate_state_snapshot() {
+  local backup="$1" target_database="$2" destination="$3"
+  local snapshot="${1}.state.tgz" checksum="${1}.state.tgz.sha256" entry state latest
+  verify_private_file "$snapshot"
+  verify_private_file "$checksum"
+  (cd "$(dirname "$snapshot")" && sha256sum -c "$(basename "$checksum")") >/dev/null \
+    || die 'checksum do estado do coordenador invalido'
+  while IFS= read -r entry; do
+    [[ "$entry" = './' || "$entry" = './NO_MANAGED_STATE' ||
+       "$entry" = './last-deploy.env' || "$entry" =~ ^\./deploy-[0-9]+-[0-9a-f]{40}\.env$ ]] \
+      || die "entrada insegura no estado do coordenador: $entry"
+  done < <(tar -tzf "$snapshot")
+  mkdir -p "$destination"
+  tar -xzf "$snapshot" -C "$destination" --no-same-owner --no-same-permissions
+  if [[ -f "$destination/NO_MANAGED_STATE" ]]; then
+    [[ ! -f "$destination/last-deploy.env" ]] || die 'snapshot vazio contem last-deploy.env'
+    return
+  fi
+  [[ -f "$destination/last-deploy.env" && ! -L "$destination/last-deploy.env" ]] \
+    || die 'snapshot do coordenador sem last-deploy.env'
+  latest="$(psql_db "$target_database" -Atqc 'SELECT max(version) FROM supabase_migrations.schema_migrations')"
+  (
+    # shellcheck disable=SC1090
+    . "$destination/last-deploy.env"
+    [[ "$MIGRATION_VERSION" = "$latest" ]] \
+      || die "estado do coordenador divergente do banco restaurado: state=$MIGRATION_VERSION database=$latest"
+    [[ -f "$destination/$(basename "$STATE_RECORD")" ]] \
+      || die 'registro apontado por last-deploy.env ausente no snapshot'
+  )
+  for state in "$destination"/deploy-*.env; do
+    [[ -f "$state" && ! -L "$state" ]] || continue
+    (
+      # shellcheck disable=SC1090
+      . "$state"
+      [[ "$(basename "$state")" = "deploy-${MIGRATION_VERSION}-${COMMIT_SHA}.env" ]] \
+        || die 'nome de registro divergente de seu conteudo'
+      [[ "$(psql_db "$target_database" -Atqc "SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version = '$MIGRATION_VERSION'")" = 1 ]] \
+        || die "registro do coordenador ausente no banco restaurado: $MIGRATION_VERSION"
+      [[ -f "$BUNDLE_COPY" && ! -L "$BUNDLE_COPY" ]] || die "bundle de rollback ausente: $BUNDLE_COPY"
+      verify_backup "$DATABASE_BACKUP" "$DATABASE_BACKUP_CHECKSUM"
+    )
+  done
+}
+
+apply_state_snapshot() {
+  local source="$1" timestamp state
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  for state in "$state_root"/deploy-*.env; do
+    [[ -f "$state" && ! -L "$state" ]] || continue
+    mv -f "$state" "${state}.pre-restore-${timestamp}.archive"
+  done
+  if [[ -f "$state_root/last-deploy.env" && ! -L "$state_root/last-deploy.env" ]]; then
+    mv -f "$state_root/last-deploy.env" "$state_root/last-deploy.pre-restore-${timestamp}.archive"
+  fi
+  if [[ -f "$source/NO_MANAGED_STATE" ]]; then
+    return
+  fi
+  for state in "$source"/deploy-*.env; do
+    [[ -f "$state" && ! -L "$state" ]] || continue
+    cp -- "$state" "$state_root/$(basename "$state").next"
+    mv -f "$state_root/$(basename "$state").next" "$state_root/$(basename "$state")"
+    chmod 600 "$state_root/$(basename "$state")"
+  done
+  cp -- "$source/last-deploy.env" "$state_root/last-deploy.env.next"
+  mv -f "$state_root/last-deploy.env.next" "$state_root/last-deploy.env"
+  chmod 600 "$state_root/last-deploy.env"
 }
 
 require_backup_space() {
@@ -305,6 +404,7 @@ backup_and_rehearse() {
   mv -f "${backup_checksum}.next" "$backup_checksum"
   chmod 600 "$backup_checksum"
   verify_backup "$backup" "$backup_checksum"
+  snapshot_coordinator_state "$backup"
 
   (
     restore_created=0
@@ -337,9 +437,11 @@ backup_and_rehearse() {
 audit() {
   require_root
   safe_database_contract
-  for command in docker tar sha256sum node flock date stat df awk; do require_command "$command"; done
+  for command in tar sha256sum node flock date stat df awk; do require_command "$command"; done
   if [[ "${PRONTOMEDIC_DB_DIRECT_POSTGRES:-0}" = 1 ]]; then
     for command in psql pg_dump pg_restore createdb dropdb; do require_command "$command"; done
+  else
+    require_command docker
   fi
   [[ "$(psql_db "$database" -Atqc 'SELECT 1')" = 1 ]] || die 'PostgreSQL indisponivel'
   log "AUDIT_OK database=$database history=$(history_contract)"
@@ -516,6 +618,7 @@ rollback() {
 restore() {
   local backup="$1" checksum="$2" confirmation="${PRONTOMEDIC_DB_RESTORE_CONFIRM:-}"
   local rehearsal_db="prontoclinic_restore_verify_$$" safety_backup timestamp restore_failed
+  local desired_state safety_state
   audit
   [[ "$confirmation" = "RESTORE:${database}" ]] || die "restauracao integral requer PRONTOMEDIC_DB_RESTORE_CONFIRM=RESTORE:${database}"
   [[ "$backup" = "$backup_root"/*.dump && "$(basename "$backup")" =~ ^[A-Za-z0-9._-]+\.dump$ ]] \
@@ -531,6 +634,8 @@ restore() {
   trap 'host_postgres dropdb --if-exists "$rehearsal_db" >/dev/null 2>&1 || true' EXIT
   host_postgres pg_restore --exit-on-error -d "$rehearsal_db" <"$backup" >/dev/null
   [[ "$(psql_db "$rehearsal_db" -Atqc 'SELECT 1')" = 1 ]] || die 'ensaio do dump falhou'
+  desired_state="$(mktemp -d)"
+  validate_state_snapshot "$backup" "$rehearsal_db" "$desired_state"
   host_postgres dropdb --if-exists "$rehearsal_db" >/dev/null
   trap - EXIT
 
@@ -543,6 +648,9 @@ restore() {
   mv -f "${safety_backup}.sha256.next" "${safety_backup}.sha256"
   chmod 600 "${safety_backup}.sha256"
   verify_backup "$safety_backup" "${safety_backup}.sha256"
+  snapshot_coordinator_state "$safety_backup"
+  safety_state="$(mktemp -d)"
+  validate_state_snapshot "$safety_backup" "$database" "$safety_state"
 
   restore_failed=0
   recover_failed_restore() {
@@ -553,6 +661,10 @@ restore() {
     host_postgres createdb -T template0 "$database" >/dev/null 2>&1
     host_postgres pg_restore --exit-on-error -d "$database" <"$safety_backup" >/dev/null 2>&1
     restore_failed=$?
+    if [[ "$restore_failed" = 0 ]]; then
+      apply_state_snapshot "$safety_state"
+      restore_failed=$?
+    fi
     printf 'PRONTOMEDIC_DB_FULL_RESTORE_FAILED status=%s recovery_status=%s safety_backup=%s\n' \
       "$status" "$restore_failed" "$safety_backup" >&2
     [[ "$restore_failed" = 0 ]] || exit 71
@@ -564,6 +676,13 @@ restore() {
   host_postgres createdb -T template0 "$database"
   host_postgres pg_restore --exit-on-error -d "$database" <"$backup" >/dev/null
   [[ "$(psql_db "$database" -Atqc 'SELECT 1')" = 1 ]] || die 'banco restaurado indisponivel'
+  if [[ "${PRONTOMEDIC_DB_TEST_MODE:-0}" = 1 &&
+        "${PRONTOMEDIC_DB_INJECT_RESTORE_STATE_FAILURE:-0}" = 1 ]]; then
+    echo 'PRONTOMEDIC_DB_TEST: falha injetada antes da aplicacao do estado restaurado' >&2
+    false
+  fi
+  apply_state_snapshot "$desired_state"
+  rm -rf -- "$desired_state" "$safety_state"
   trap - ERR
   log "FULL_RESTORE_OK database=$database backup=$backup safety_backup=$safety_backup"
 }
