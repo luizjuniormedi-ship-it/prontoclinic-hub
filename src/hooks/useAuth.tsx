@@ -261,7 +261,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (active) setIsLoading(false);
     }, PROFILE_TIMEOUT_MS + 3_000);
     void supabase.auth.getSession()
-      .then(({ data: { session: sess } }) => active && initializeSession(sess))
+      .then(async ({ data: { session: sess } }) => {
+        if (active) await initializeSession(sess);
+      })
       .catch((error) => {
         console.error("Failed to restore authentication session:", error);
         if (active) setIsLoading(false);

@@ -11,6 +11,20 @@ vi.mock("@/lib/supabase", () => ({
 describe("authAdminService", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it.each([{}, { ok: false }, { ok: "true" }])("rejeita resposta sem sucesso explicito: %j", async (data) => {
+    vi.mocked(supabase.functions.invoke).mockResolvedValue({ data, error: null } as never);
+    await expect(authAdminService.logoutGlobal("user-1", "company-1"))
+      .rejects.toThrow("Não foi possível concluir a operação administrativa.");
+  });
+
+  it.each([undefined, "", 42])("rejeita convite sem identidade valida: %j", async (userId) => {
+    vi.mocked(supabase.functions.invoke).mockResolvedValue({ data: { ok: true, userId }, error: null } as never);
+    await expect(authAdminService.inviteUser({
+      email: "nova@example.test", fullName: "Nova Pessoa", companyId: "company-1",
+      roleId: 3, primaryUnitId: 1, redirectTo: "https://app.example.test/reset-password",
+    })).rejects.toThrow("Não foi possível concluir a operação administrativa.");
+  });
+
   it("envia convite somente pela Edge Function privilegiada", async () => {
     vi.mocked(supabase.functions.invoke).mockResolvedValue({
       data: { ok: true, userId: "user-1" },

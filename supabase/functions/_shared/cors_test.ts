@@ -31,6 +31,7 @@ Deno.test("CORS permite os cabeçalhos reais do cliente Supabase", () => {
   const allowedHeaders = headers.get("Access-Control-Allow-Headers") ?? "";
   assertEquals(allowedHeaders.includes("x-application-name"), true);
   assertEquals(allowedHeaders.includes("x-supabase-api-version"), true);
+  assertEquals(allowedHeaders.includes("idempotency-key"), true);
 });
 
 Deno.test("redirect administrativo aceita somente origem e caminho autorizados", () => {

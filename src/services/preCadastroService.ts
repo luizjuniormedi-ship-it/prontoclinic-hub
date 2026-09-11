@@ -9,9 +9,9 @@
  * paciente definitivo via admin/recepcao.
  *
  * Operacoes:
- *   - criar(dados)            -> RPC create_pre_cadastro
- *   - confirmar(token)        -> RPC confirm_pre_cadastro
- *   - buscarPorToken(token)   -> SELECT (somente campos publicos)
+ *   - criar(dados)            -> Edge Function pre-cadastro
+ *   - confirmar(token)        -> Edge Function pre-cadastro
+ *   - buscarPorToken(token)   -> Edge Function pre-cadastro
  *   - listarPendentes(companyId) -> SELECT pre_cadastros_pendentes
  *   - listar(companyId, filtros)
  *   - promoverParaPaciente(id) -> RPC promote_pre_cadastro
@@ -29,8 +29,6 @@
 
 import { z } from "zod";
 import { supabase } from "@/lib/supabase";
-import { env } from "@/lib/env";
-import { emailService } from "./emailService";
 
 // =============================================================================
 // Enums
@@ -85,7 +83,8 @@ export interface PreCadastro {
   texto_termo_hash: string;
   ip_origem: string | null;
   user_agent: string | null;
-  token_confirmacao: string;
+  token_confirmacao: string | null;
+  token_confirmacao_hash?: string | null;
   dt_token_exp: string;
   lg_confirmado: boolean;
   dt_confirmacao: string | null;
@@ -124,13 +123,19 @@ export interface PreCadastroFormData {
 }
 
 export interface CriarPreCadastroResult {
-  id: string;
-  token: string;
-  dt_exp: string;
-  linkConfirmacao: string;
+  accepted: true;
 }
 
 export type PreCadastroFormErrors = Partial<Record<keyof PreCadastroFormData, string>>;
+
+const PRE_CADASTRO_OPERATIONAL_COLUMNS = [
+  "id", "company_id", "full_name", "cpf", "birth_date", "gender", "email",
+  "phone", "whatsapp", "cep", "logradouro", "numero", "complemento", "bairro",
+  "cidade", "uf", "ibge_cidade", "lg_aceite_termo", "dt_aceite_termo",
+  "versao_termo", "dt_token_exp", "lg_confirmado", "dt_confirmacao",
+  "cd_paciente_final", "dt_migracao", "status", "tentativas_confirmacao",
+  "dt_ultimo_envio", "motivo_cancelamento", "created_at", "updated_at",
+].join(", ");
 
 // =============================================================================
 // Validacao (Zod)
@@ -192,6 +197,23 @@ async function hashTermoPreCadastro(): Promise<string> {
     .join("");
 }
 
+async function requestKeyFor(form: { email: string; cpf?: string; versao_termo: string }): Promise<{ key: string; storageKey: string }> {
+  const fingerprint = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(JSON.stringify({
+      email: form.email.toLowerCase().trim(),
+      cpf: form.cpf?.replace(/\D/g, "") ?? "",
+      versao: form.versao_termo,
+    })),
+  );
+  const digest = Array.from(new Uint8Array(fingerprint), (value) => value.toString(16).padStart(2, "0")).join("");
+  const storageKey = `prontomedic:pre-cadastro:${digest}`;
+  const existing = typeof sessionStorage === "undefined" ? null : sessionStorage.getItem(storageKey);
+  const key = existing && /^[0-9a-f-]{36}$/i.test(existing) ? existing : crypto.randomUUID();
+  if (typeof sessionStorage !== "undefined") sessionStorage.setItem(storageKey, key);
+  return { key, storageKey };
+}
+
 const preCadastroSchema = z.object({
   full_name: z
     .string()
@@ -247,35 +269,6 @@ const preCadastroSchema = z.object({
 // Helpers
 // =============================================================================
 
-/** Detecta IP do cliente (no navegador, via servico externo) */
-async function getClientIp(): Promise<string | null> {
-  if (typeof window === "undefined") return null;
-  try {
-    const ctrl = new AbortController();
-    const timeout = setTimeout(() => ctrl.abort(), 2000);
-    const res = await fetch("https://api.ipify.org?format=json", {
-      signal: ctrl.signal,
-    });
-    clearTimeout(timeout);
-    if (!res.ok) return null;
-    const data = (await res.json()) as { ip?: string };
-    return data.ip ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function getUserAgent(): string {
-  if (typeof navigator === "undefined") return "";
-  return navigator.userAgent.slice(0, 500);
-}
-
-/** Constroi link publico de confirmacao */
-function buildConfirmLink(token: string): string {
-  const base = env.VITE_APP_URL ?? (typeof window !== "undefined" ? window.location.origin : "");
-  return `${base}/pre-cadastro/confirmar?token=${encodeURIComponent(token)}`;
-}
-
 /** Resolve companyId padrao (em producao, vir de um mapping dominio->empresa) */
 async function resolveCompanyId(explicitCompanyId?: string): Promise<string> {
   if (explicitCompanyId) return explicitCompanyId;
@@ -303,14 +296,6 @@ async function resolveCompanyId(explicitCompanyId?: string): Promise<string> {
   return (data as { id: string }).id;
 }
 
-async function gerarTokenAleatorio(): Promise<string> {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
 // =============================================================================
 // Service
 // =============================================================================
@@ -321,85 +306,34 @@ export const preCadastroService = {
   // ---------------------------------------------------------------------------
   async criar(
     formData: PreCadastroFormData,
-    opts: { companyId?: string; sendEmail?: boolean } = {},
+    _opts: { companyId?: string; sendEmail?: boolean } = {},
   ): Promise<CriarPreCadastroResult> {
-    const parsed = preCadastroSchema.parse(formData);
-
-    const companyId = await resolveCompanyId(opts.companyId);
+    const parsed = preCadastroSchema.parse(formData) as PreCadastroFormData;
     const textoHash = await hashTermoPreCadastro();
-    const ipOrigem = await getClientIp();
-    const userAgent = getUserAgent();
-
-    const { data, error } = await supabase.rpc("create_pre_cadastro", {
-      p_company_id: companyId,
-      p_full_name: parsed.full_name,
-      p_email: parsed.email,
-      p_phone: parsed.phone,
-      p_birth_date: parsed.birth_date,
-      p_gender: parsed.gender,
-      p_cep: parsed.cep,
-      p_logradouro: parsed.logradouro,
-      p_numero: parsed.numero,
-      p_complemento: parsed.complemento ?? null,
-      p_bairro: parsed.bairro,
-      p_cidade: parsed.cidade,
-      p_uf: parsed.uf,
-      p_versao_termo: parsed.versao_termo,
-      p_texto_termo_hash: textoHash,
-      p_ip_origem: ipOrigem,
-      p_user_agent: userAgent,
+    const { key: requestKey, storageKey } = await requestKeyFor(parsed);
+    const { data, error } = await supabase.functions.invoke("pre-cadastro", {
+      headers: { "Idempotency-Key": requestKey },
+      body: { action: "request", ...parsed, texto_termo_hash: textoHash },
     });
 
     if (error) {
-      throw new Error(`Falha ao criar pre-cadastro: ${error.message}`);
+      throw new Error("Falha ao enviar o pré-cadastro. Tente novamente sem alterar os dados.");
     }
-
-    type RpcRow = { id: string; token: string; dt_exp: string };
-    const row = Array.isArray(data) ? (data[0] as RpcRow) : (data as RpcRow);
-    if (!row) {
-      throw new Error("Resposta invalida do servidor (sem id/token)");
-    }
-
-    const linkConfirmacao = buildConfirmLink(row.token);
-
-    if (opts.sendEmail !== false) {
-      try {
-        await emailService.sendPreCadastroConfirmation({
-          to: parsed.email,
-          nome: parsed.full_name,
-          linkConfirmacao,
-          dtExp: row.dt_exp,
-        });
-      } catch (err) {
-        // Nao bloquear o sign-up se o email falhar — apenas logar
-        console.error("[pre-cadastro] falha ao enviar email de confirmacao", err);
-      }
-    }
-
-    return {
-      id: row.id,
-      token: row.token,
-      dt_exp: row.dt_exp,
-      linkConfirmacao,
-    };
+    if (data?.accepted !== true) throw new Error("Resposta inválida do serviço de pré-cadastro.");
+    if (typeof sessionStorage !== "undefined") sessionStorage.removeItem(storageKey);
+    return { accepted: true };
   },
 
   // ---------------------------------------------------------------------------
   // 2. Confirmar pre-cadastro (clica no link do email)
   // ---------------------------------------------------------------------------
-  async confirmar(token: string): Promise<{
-    id: string;
-    full_name: string;
-    email: string;
-    status: PreCadastroStatus;
-    company_id: string;
-  }> {
+  async confirmar(token: string): Promise<{ status: PreCadastroStatus }> {
     if (!token || token.length < 16) {
       throw new Error("Token invalido");
     }
 
-    const { data, error } = await supabase.rpc("confirm_pre_cadastro", {
-      p_token: token,
+    const { data, error } = await supabase.functions.invoke("pre-cadastro", {
+      body: { action: "confirm", token },
     });
 
     if (error) {
@@ -407,50 +341,23 @@ export const preCadastroService = {
       throw new Error(error.message);
     }
 
-    type RpcRow = {
-      id: string;
-      full_name: string;
-      email: string;
-      status: PreCadastroStatus;
-      company_id: string;
-    };
-    const row = Array.isArray(data) ? (data[0] as RpcRow) : (data as RpcRow);
-    if (!row) {
+    if (!PRE_CADASTRO_STATUS.includes(data?.status)) {
       throw new Error("Resposta invalida do servidor");
     }
-
-    // E-mail de boas-vindas (fire-and-forget)
-    void emailService.sendWelcome(row.email, row.full_name).catch((err) => {
-      console.error("[pre-cadastro] falha ao enviar welcome", err);
-    });
-
-    return row;
+    return { status: data.status as PreCadastroStatus };
   },
 
   // ---------------------------------------------------------------------------
   // 3. Buscar pre-cadastro por token (para exibir antes de confirmar)
-  //    Tenta SELECT direto (somente campos publicos); se RLS bloquear,
-  //    retorna null silenciosamente.
+  //    A resposta publica contem apenas estado e expiracao, nunca PII.
   // ---------------------------------------------------------------------------
   async buscarPorToken(token: string): Promise<Partial<PreCadastro> | null> {
     if (!token || token.length < 16) return null;
-
-    const { data, error } = await supabase
-      .from("pre_cadastro")
-      .select(
-        "id, company_id, full_name, email, status, dt_token_exp, lg_confirmado, created_at",
-      )
-      .eq("token_confirmacao", token)
-      .maybeSingle();
-
-    if (error) {
-      if (error.code === "PGRST116" || /row-level security/i.test(error.message)) {
-        return null;
-      }
-      console.warn("[pre-cadastro] buscarPorToken falhou", error);
-      return null;
-    }
-    return data as Partial<PreCadastro> | null;
+    const { data, error } = await supabase.functions.invoke("pre-cadastro", {
+      body: { action: "status", token },
+    });
+    if (error || !PRE_CADASTRO_STATUS.includes(data?.status)) return null;
+    return { status: data.status, dt_token_exp: data.expiresAt ?? null };
   },
 
   // ---------------------------------------------------------------------------
@@ -461,12 +368,16 @@ export const preCadastroService = {
 
     const { data, error } = await supabase
       .from("pre_cadastros_pendentes")
-      .select("*")
+      .select([
+        "id", "company_id", "full_name", "email", "phone", "birth_date", "gender",
+        "cep", "cidade", "uf", "created_at", "dt_token_exp",
+        "horas_para_expirar", "dt_ultimo_envio", "tentativas_confirmacao",
+      ].join(", "))
       .eq("company_id", targetCompanyId)
       .order("created_at", { ascending: false });
 
     if (error) throw new Error(`Erro ao listar pendentes: ${error.message}`);
-    return (data ?? []) as PreCadastroPendente[];
+    return (data ?? []) as unknown as PreCadastroPendente[];
   },
 
   // ---------------------------------------------------------------------------
@@ -480,7 +391,7 @@ export const preCadastroService = {
 
     let query = supabase
       .from("pre_cadastro")
-      .select("*")
+      .select(PRE_CADASTRO_OPERATIONAL_COLUMNS)
       .eq("company_id", targetCompanyId)
       .order("created_at", { ascending: false })
       .limit(filtros?.limit ?? 100);
@@ -491,7 +402,7 @@ export const preCadastroService = {
 
     const { data, error } = await query;
     if (error) throw new Error(`Erro ao listar pre-cadastros: ${error.message}`);
-    return (data ?? []) as PreCadastro[];
+    return (data ?? []) as unknown as PreCadastro[];
   },
 
   // ---------------------------------------------------------------------------
@@ -514,49 +425,20 @@ export const preCadastroService = {
   // ---------------------------------------------------------------------------
   // 7. Reenviar email de confirmacao (renova token)
   // ---------------------------------------------------------------------------
-  async reenviarEmail(preCadastroId: string): Promise<{ linkConfirmacao: string }> {
+  async reenviarEmail(preCadastroId: string): Promise<{ accepted: true }> {
     if (!preCadastroId) throw new Error("preCadastroId obrigatorio");
-
-    const { data: atual, error: fetchErr } = await supabase
-      .from("pre_cadastro")
-      .select("id, status, email, full_name")
-      .eq("id", preCadastroId)
-      .single();
-
-    if (fetchErr || !atual) {
-      throw new Error("Pre-cadastro nao encontrado");
-    }
-    if (atual.status === "MIGRADO" || atual.status === "CANCELADO") {
-      throw new Error(`Pre-cadastro ja esta como ${atual.status} — reenvio nao permitido`);
-    }
-
-    const novoToken = await gerarTokenAleatorio();
-    const novaExp = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
-
-    const { error: updateErr } = await supabase
-      .from("pre_cadastro")
-      .update({
-        token_confirmacao: novoToken,
-        dt_token_exp: novaExp,
-        dt_ultimo_envio: new Date().toISOString(),
-        tentativas_confirmacao: 0,
-        // Se estava EXPIRADO, volta para PENDENTE
-        status: "PENDENTE",
-      })
-      .eq("id", preCadastroId);
-
-    if (updateErr) throw new Error(`Falha ao reenviar: ${updateErr.message}`);
-
-    const linkConfirmacao = buildConfirmLink(novoToken);
-
-    await emailService.sendPreCadastroConfirmation({
-      to: atual.email as string,
-      nome: atual.full_name as string,
-      linkConfirmacao,
-      dtExp: novaExp,
+    const storageKey = `prontomedic:pre-cadastro-resend:${preCadastroId}`;
+    const storedKey = typeof sessionStorage === "undefined" ? null : sessionStorage.getItem(storageKey);
+    const requestKey = storedKey && /^[0-9a-f-]{36}$/i.test(storedKey) ? storedKey : crypto.randomUUID();
+    if (typeof sessionStorage !== "undefined") sessionStorage.setItem(storageKey, requestKey);
+    const { data, error } = await supabase.functions.invoke("pre-cadastro", {
+      headers: { "Idempotency-Key": requestKey },
+      body: { action: "resend", pre_cadastro_id: preCadastroId },
     });
-
-    return { linkConfirmacao };
+    if (error) throw new Error("Falha ao reenviar a confirmação.");
+    if (data?.accepted !== true) throw new Error("Resposta inválida do serviço de pré-cadastro.");
+    if (typeof sessionStorage !== "undefined") sessionStorage.removeItem(storageKey);
+    return { accepted: true };
   },
 
   // ---------------------------------------------------------------------------

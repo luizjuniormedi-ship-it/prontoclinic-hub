@@ -3,6 +3,8 @@ import { defineConfig, devices } from '@playwright/test';
 const isLocalMutatingRun =
   process.env.E2E_ENV === 'local' && process.env.E2E_MODE === 'mutating';
 const serviceWorkersEnabled = process.env.E2E_ENABLE_SERVICE_WORKERS === 'true';
+const reportSuffix = process.env.E2E_REPORT_SUFFIX?.trim().replace(/[^a-zA-Z0-9_-]/g, '');
+const reportTag = reportSuffix ? `-${reportSuffix}` : '';
 
 export default defineConfig({
   testDir: './e2e',
@@ -11,9 +13,9 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI || isLocalMutatingRun ? 1 : undefined,
   reporter: [
-    ['html', { open: 'never' }],
-    ['json', { outputFile: 'test-results/results.json' }],
-    ['junit', { outputFile: 'test-results/junit.xml' }]
+    ['html', { open: 'never', outputFolder: `playwright-report${reportTag}` }],
+    ['json', { outputFile: `playwright-artifacts/results${reportTag}.json` }],
+    ['junit', { outputFile: `playwright-artifacts/junit${reportTag}.xml` }]
   ],
   globalSetup: './e2e/global-setup.ts',
   use: {

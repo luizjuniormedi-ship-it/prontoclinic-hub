@@ -19,7 +19,14 @@ for variable in \
   SUPABASE_ANON_KEY \
   SUPABASE_SERVICE_ROLE_KEY \
   JWT_SECRET \
-  ALLOWED_ORIGINS; do
+  ALLOWED_ORIGINS \
+  PRE_CADASTRO_TENANT_MAP \
+  PRE_CADASTRO_TOKEN_SECRET \
+  PRE_CADASTRO_CONFIRM_BASE_URL \
+  PRE_CADASTRO_EMAIL_FROM \
+  PRE_CADASTRO_TERM_VERSION \
+  PRE_CADASTRO_TERM_SHA256 \
+  RESEND_API_KEY; do
   grep -Eq "^${variable}=.+$" "${root}/secrets/.env.functions" || {
     echo "Configuração obrigatória ausente em .env.functions: ${variable}" >&2
     exit 32

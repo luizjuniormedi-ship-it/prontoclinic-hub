@@ -228,13 +228,13 @@ export function LabResultForm({
             vl_resultado_texto: p.vl_resultado && v === null
               ? p.vl_resultado
               : null,
-            ds_unidade: p.ds_unidade || null,
+            ds_unidade: p.ds_unidade || undefined,
             vl_minimo_referencia: min,
             vl_maximo_referencia: max,
             cd_equipamento: equipamento || null,
             cd_lote_reagente: loteReagente || null,
             cd_usuario_laboratorio: userId || null,
-            ds_observacao: p.ds_observacao || null,
+            ds_observacao: p.ds_observacao,
             ds_hl7_message: hl7Raw || null,
           };
         });

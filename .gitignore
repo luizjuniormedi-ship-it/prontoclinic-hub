@@ -69,10 +69,12 @@ lerna-debug.log*
 # -----------------------------------------------------------------------------
 coverage/
 .nyc_output/
-playwright-report/
+playwright-report*/
+playwright-artifacts/
 test-results/
 blob-report/
 .playwright/
+artifacts/
 
 # -----------------------------------------------------------------------------
 # Cache

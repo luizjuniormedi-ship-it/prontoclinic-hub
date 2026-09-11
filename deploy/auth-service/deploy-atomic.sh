@@ -186,23 +186,12 @@ health_check() {
 }
 
 edge_smoke() {
-  local function_name status
-  for function_name in auth-admin dicom-bridge telemedicina-daily; do
-    status="$(curl -sS --connect-timeout 2 --max-time 5 -o /dev/null -w '%{http_code}' \
-      -X OPTIONS "${edge_smoke_base}/${function_name}" 2>/dev/null || true)"
-    test "$status" = 200 || die "smoke Edge falhou em ${function_name}: HTTP ${status}"
-  done
+  "$edge_helper" --smoke "$edge_smoke_base"
   "$edge_helper" --audit-contract >/dev/null
 }
 
 edge_rollback_smoke() {
-  local function_name status
-  for function_name in dicom-bridge telemedicina-daily; do
-    status="$(curl -sS --connect-timeout 2 --max-time 5 -o /dev/null -w '%{http_code}' \
-      -X OPTIONS "${edge_smoke_base}/${function_name}" 2>/dev/null || true)"
-    test "$status" = 200 || die "smoke Edge de rollback falhou em ${function_name}: HTTP ${status}"
-  done
-  "$edge_helper" --audit-contract >/dev/null
+  "$edge_helper" --smoke-rollback "$edge_smoke_base"
 }
 
 smoke_all() {

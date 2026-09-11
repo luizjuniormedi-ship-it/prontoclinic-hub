@@ -2,23 +2,22 @@
  * ConfirmarEmailPage.tsx
  *
  * Pagina PUBLICA acessada via link do e-mail de confirmacao do pre-cadastro.
- * URL: /pre-cadastro/confirmar?token=<token>
- * (tambem aceita /confirmar-email?token=<token> para compatibilidade)
+ * URL: /pre-cadastro/confirmar#token=<token>
+ * Aceita query string legada apenas para compatibilidade e a remove imediatamente.
  *
  * Fluxo:
  *   1. Le o token da URL
- *   2. Busca os dados publicos do pre-cadastro (preCadastroService.buscarPorToken)
- *   3. Mostra resumo dos dados
+ *   2. Busca somente estado e expiracao (nenhum dado pessoal)
  *   4. Usuario confirma -> preCadastroService.confirmar(token)
  *   5. Sucesso -> "Bem-vindo! Aguarde contato da clinica"
  */
 
-import { useEffect, useState } from "react";
-import { Link, useSearchParams, useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Heart, Loader2, CheckCircle2, AlertCircle, ArrowLeft, ArrowRight,
-  ShieldCheck, Mail, Edit3, XCircle, Clock,
+  ShieldCheck, Mail, XCircle, Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -41,14 +40,21 @@ function formatDate(iso: string | null | undefined): string {
 }
 
 export default function ConfirmarEmailPage() {
-  const [params] = useSearchParams();
-  const token = params.get("token") ?? "";
+  const [token] = useState(() => {
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const legacyQuery = new URLSearchParams(window.location.search);
+    const consumed = fragment.get("token") ?? legacyQuery.get("token") ?? "";
+    if (fragment.has("token") || legacyQuery.has("token")) {
+      window.history.replaceState(window.history.state, document.title, window.location.pathname);
+    }
+    return consumed;
+  });
   const navigate = useNavigate();
   const { toast } = useToast();
   const [confirmed, setConfirmed] = useState(false);
 
   const query = useQuery({
-    queryKey: ["pre-cadastro", token],
+    queryKey: ["pre-cadastro-confirmacao"],
     queryFn: async () => {
       if (!token) return null;
       return preCadastroService.buscarPorToken(token);
@@ -167,9 +173,7 @@ export default function ConfirmarEmailPage() {
             <Mail className="h-5 w-5" />
             Confirme seus dados
           </CardTitle>
-          <CardDescription>
-            Verifique se as informações abaixo estão corretas antes de finalizar seu pré-cadastro.
-          </CardDescription>
+          <CardDescription>Confirme a solicitação associada a este link seguro.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {isError && (
@@ -194,10 +198,6 @@ export default function ConfirmarEmailPage() {
           ) : record ? (
             <>
               <dl className="divide-y rounded-md border">
-                <Row label="Nome" value={record.full_name ?? "—"} />
-                <Row label="E-mail" value={record.email ?? "—"} />
-                {record.cpf && <Row label="CPF" value={record.cpf} />}
-                {record.birth_date && <Row label="Data de nascimento" value={formatDate(record.birth_date)} />}
                 <Row
                   label="Validade do link"
                   value={
@@ -228,14 +228,6 @@ export default function ConfirmarEmailPage() {
               </Alert>
 
               <div className="flex flex-col sm:flex-row gap-2 pt-2">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => navigate(`/pre-cadastro?token=${token}`)}
-                >
-                  <Edit3 className="mr-2 h-4 w-4" />
-                  Editar
-                </Button>
                 <Button
                   className="flex-1"
                   onClick={() => mutation.mutate(token)}

@@ -6,12 +6,15 @@ releases="${root}/releases"
 current="${root}/current"
 previous_link="${root}/previous"
 compose="${root}/docker-compose.yml"
+global_lock="${PRONTOMEDIC_GLOBAL_DEPLOY_LOCK:-/var/lock/prontomedic-deploy.lock}"
 
-exec 9>"${root}/.deploy.lock"
+if [[ "${1:-}" != --smoke* ]]; then
+exec 9>"${global_lock}"
 flock -n 9 || {
   echo "Outra publicação Edge está em andamento" >&2
   exit 25
 }
+fi
 
 host_postgres() {
   docker run --rm --privileged -i -v /:/host alpine:3.20 \
@@ -21,7 +24,7 @@ host_postgres() {
 audit_runtime_contract() {
   local nginx_config
   nginx_config="$(/usr/sbin/nginx -T 2>&1)"
-  for route in auth-admin dicom-bridge telemedicina-daily; do
+  for route in auth-admin dicom-bridge telemedicina-daily pre-cadastro; do
     grep -Fq "location = /functions/v1/${route}" <<<"$nginx_config" || {
       echo "Rota Nginx ausente: /functions/v1/${route}" >&2
       exit 28
@@ -69,11 +72,74 @@ BEGIN
 END
 $audit$;
 SQL
+  host_postgres psql -X -d prontoclinic -v ON_ERROR_STOP=1 <<'SQL'
+DO $audit$
+DECLARE
+  signature text;
+  function_id oid;
+BEGIN
+  FOREACH signature IN ARRAY ARRAY[
+    'public.pre_cadastro_edge_request(uuid,uuid,character,character varying,character varying,character varying,character varying,character varying,date,character,character varying,character varying,character varying,character varying,character varying,character varying,character,character varying,character varying,character,inet,text)',
+    'public.pre_cadastro_edge_status(character)',
+    'public.pre_cadastro_edge_confirm(character)',
+    'public.pre_cadastro_edge_resend(uuid,uuid,text,uuid,uuid,character)'
+  ] LOOP
+    function_id := to_regprocedure(signature);
+    IF function_id IS NULL THEN
+      RAISE EXCEPTION 'Apply secure_pre_cadastro_edge_contract migration before Edge deploy: %', signature;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid = function_id AND prosecdef
+      AND proconfig @> ARRAY['search_path=pg_catalog, pg_temp'])
+      OR has_function_privilege('anon', function_id, 'EXECUTE')
+      OR has_function_privilege('authenticated', function_id, 'EXECUTE')
+      OR NOT has_function_privilege('service_role', function_id, 'EXECUTE')
+      OR EXISTS (SELECT 1 FROM pg_proc p,
+        LATERAL aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+        WHERE p.oid = function_id AND a.grantee = 0 AND a.privilege_type = 'EXECUTE') THEN
+      RAISE EXCEPTION 'Invalid pre-cadastro RPC grants/security: %', signature;
+    END IF;
+  END LOOP;
+END
+$audit$;
+SQL
   echo "EDGE_RUNTIME_CONTRACT_AUDIT_PASS"
 }
 
 if test "${1:-}" = "--audit-contract"; then
   audit_runtime_contract
+  exit 0
+fi
+
+if test "${1:-}" = "--smoke" || test "${1:-}" = "--smoke-rollback"; then
+  set -a
+  . "${root}/secrets/.env.functions"
+  set +a
+  origin="${ALLOWED_ORIGINS%%,*}"
+  test -n "$origin"
+  base="${2:-http://127.0.0.1:9000}"
+  headers="$(mktemp)"
+  body="$(mktemp)"
+  trap 'rm -f "$headers" "$body"' EXIT
+  routes=(auth-admin dicom-bridge telemedicina-daily)
+  if test -f "$current/pre-cadastro/index.ts"; then routes+=(pre-cadastro); fi
+  if test "$1" = --smoke; then test -f "$current/pre-cadastro/index.ts"; fi
+  for route in "${routes[@]}"; do
+    status="$(curl --silent --show-error --connect-timeout 2 --max-time 15 \
+      -D "$headers" -o "$body" -w '%{http_code}' -X OPTIONS \
+      -H "Origin: $origin" "$base/$route")"
+    test "$status" = 200
+    tr -d '\r' < "$headers" | grep -Fxiq "Access-Control-Allow-Origin: $origin"
+  done
+  if test -f "$current/pre-cadastro/index.ts"; then
+    status="$(curl --silent --show-error --connect-timeout 2 --max-time 15 \
+      -D "$headers" -o "$body" -w '%{http_code}' \
+      -H "Origin: $origin" -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+      -H 'Content-Type: application/json' --data '{"action":"status","token":"invalid"}' \
+      "$base/pre-cadastro")"
+    test "$status" = 404
+    tr -d '\r' < "$headers" | grep -Fxiq "Access-Control-Allow-Origin: $origin"
+    grep -Eq '^\{"status":"INVALIDO"\}$' "$body"
+  fi
   exit 0
 fi
 
@@ -90,6 +156,7 @@ if test "${1:-}" = "--rollback"; then
 fi
 
 sha="${1:?commit SHA ausente}"
+audit_runtime_contract
 archive="${2:?arquivo da release ausente}"
 checksum="${3:?checksum da release ausente}"
 release="${releases}/${sha}"
@@ -104,7 +171,14 @@ for variable in \
   SUPABASE_ANON_KEY \
   SUPABASE_SERVICE_ROLE_KEY \
   JWT_SECRET \
-  ALLOWED_ORIGINS; do
+  ALLOWED_ORIGINS \
+  PRE_CADASTRO_TENANT_MAP \
+  PRE_CADASTRO_TOKEN_SECRET \
+  PRE_CADASTRO_CONFIRM_BASE_URL \
+  PRE_CADASTRO_EMAIL_FROM \
+  PRE_CADASTRO_TERM_VERSION \
+  PRE_CADASTRO_TERM_SHA256 \
+  RESEND_API_KEY; do
   grep -Eq "^${variable}=.+$" "${root}/secrets/.env.functions" || {
     echo "Configuração obrigatória ausente em .env.functions: ${variable}" >&2
     exit 27
@@ -163,7 +237,8 @@ for path in \
   "$release/supabase/functions/_shared/cors.ts" \
   "$release/supabase/functions/auth-admin/index.ts" \
   "$release/supabase/functions/dicom-bridge/index.ts" \
-  "$release/supabase/functions/telemedicina-daily/index.ts"; do
+  "$release/supabase/functions/telemedicina-daily/index.ts" \
+  "$release/supabase/functions/pre-cadastro/index.ts"; do
   test -f "$path"
 done
 
@@ -179,7 +254,7 @@ mv -Tf "${previous_link}.next" "$previous_link"
 
 mkdir -p "${release}/functions/main"
 cp "${previous}/main/index.ts" "${release}/functions/main/index.ts"
-for function_name in _shared auth-admin dicom-bridge telemedicina-daily; do
+for function_name in _shared auth-admin dicom-bridge telemedicina-daily pre-cadastro; do
   cp -a "${release}/supabase/functions/${function_name}" "${release}/functions/${function_name}"
 done
 
@@ -190,7 +265,7 @@ docker compose -f "$compose" up -d --no-deps --force-recreate functions
 
 for attempt in $(seq 1 60); do
   all_healthy=1
-  for function_name in auth-admin dicom-bridge telemedicina-daily; do
+  for function_name in auth-admin dicom-bridge telemedicina-daily pre-cadastro; do
     status="$(curl -sS --connect-timeout 2 --max-time 5 \
       -D /tmp/prontomedic-edge-headers -o /dev/null -w '%{http_code}' \
       -X OPTIONS -H "Origin: ${ALLOWED_ORIGINS%%,*}" \
@@ -216,5 +291,6 @@ for attempt in $(seq 1 60); do
 done
 
 docker compose -f "$compose" ps functions
+bash "$0" --smoke
 trap - ERR
 rm -f "$archive" "$checksum"

@@ -142,7 +142,7 @@ export default function CallCenterPage() {
     const notes = outcome === "cancelled" ? window.prompt("Motivo do cancelamento:") : undefined;
     if (outcome === "cancelled" && !notes?.trim()) return;
     try {
-      await callCenterService.recordConfirmation(item.id, outcome, notes);
+      await callCenterService.recordConfirmation(item.id, outcome, notes ?? undefined);
       toast({ title: outcome === "confirmed" ? "Presença confirmada" : "Tentativa registrada" });
       await reload(false);
     } catch (error) {

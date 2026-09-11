@@ -73,6 +73,7 @@ function MedicamentoForm({ onClose }: { onClose: () => void }) {
     cd_classe_terapeutica: "ANALGESICO",
     lg_generico: false,
     lg_controlado: false,
+    lg_ativo: true,
     vl_unitario: 0,
   });
   const [error, setError] = useState<string | null>(null);

@@ -34,7 +34,7 @@ export default function WorklistPage() {
     modality: string;
     requestingDoctorName: string;
     unitName: string;
-    scheduledAt: string;
+    scheduledAt: string | undefined;
     priority: string;
     status: string;
   }>>([]);

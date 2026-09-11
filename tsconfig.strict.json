@@ -12,6 +12,7 @@
     "alwaysStrict": true
   },
   "include": [
+    "src/vite-env.d.ts",
     "src/services/**/*.ts",
     "src/components/**/*.tsx",
     "src/pages/**/*.tsx"

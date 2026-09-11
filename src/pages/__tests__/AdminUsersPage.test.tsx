@@ -4,6 +4,8 @@ import AdminUsersPage from "@/pages/AdminUsersPage";
 import { userProfilesService } from "@/services/userProfilesService";
 import { authAdminService } from "@/services/authAdminService";
 
+const { toast } = vi.hoisted(() => ({ toast: vi.fn() }));
+
 vi.mock("@/services/userProfilesService", () => ({
   userProfilesService: { getAll: vi.fn(), getProfiles: vi.fn(), update: vi.fn() },
 }));
@@ -13,7 +15,7 @@ vi.mock("@/services/authAdminService", () => ({
 vi.mock("@/services/applicationSessionStorage", () => ({
   readStoredAccessContext: () => ({ companyId: "company-1", unitId: 7 }),
 }));
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
 vi.mock("@/hooks/useConfirm", () => ({ useConfirm: () => ({ confirm: vi.fn().mockResolvedValue(true) }) }));
 
 const user = {
@@ -76,5 +78,88 @@ describe("AdminUsersPage", () => {
     fireEvent.click(logoutButton);
     await waitFor(() => expect(logoutButton).toBeDisabled());
     await waitFor(() => expect(authAdminService.logoutGlobal).toHaveBeenCalledWith(user.id, "company-1"));
+  });
+
+  it("distingue falha de lista vazia e recupera com nova tentativa", async () => {
+    vi.mocked(userProfilesService.getAll).mockRejectedValueOnce(new Error("internal database detail"));
+    render(<AdminUsersPage />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Não foi possível carregar os usuários.");
+    expect(screen.queryByText("internal database detail")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /convidar usuário/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(await screen.findByText("Usuário QA")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(userProfilesService.getAll).toHaveBeenCalledTimes(2);
+  });
+
+  it("libera nova tentativa sem anunciar sucesso quando logout falha", async () => {
+    vi.mocked(authAdminService.logoutGlobal).mockRejectedValue(new Error("Operação indisponível"));
+    render(<AdminUsersPage />);
+    const button = await screen.findByTitle("Encerrar todas as sessões");
+    fireEvent.click(button);
+    await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.objectContaining({ variant: "destructive" })));
+    expect(button).not.toBeDisabled();
+    expect(toast).not.toHaveBeenCalledWith(expect.objectContaining({ title: "Sessões encerradas" }));
+  });
+
+  it("anuncia encerramento apenas depois do retorno do serviço", async () => {
+    render(<AdminUsersPage />);
+    fireEvent.click(await screen.findByTitle("Encerrar todas as sessões"));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith({ title: "Sessões encerradas" }));
+    expect(authAdminService.logoutGlobal).toHaveBeenCalledWith(user.id, "company-1");
+  });
+
+  it("bloqueia repeticao da recuperacao pendente e libera apos falha", async () => {
+    let rejectRecovery!: (reason: Error) => void;
+    vi.mocked(authAdminService.sendRecovery).mockImplementation(() => new Promise<void>((_, reject) => { rejectRecovery = reject; }));
+    render(<AdminUsersPage />);
+    const button = await screen.findByTitle("Enviar recuperação de senha");
+    fireEvent.click(button);
+    await waitFor(() => expect(button).toBeDisabled());
+    fireEvent.click(button);
+    expect(authAdminService.sendRecovery).toHaveBeenCalledTimes(1);
+    rejectRecovery(new Error("Falha de transporte"));
+    await waitFor(() => expect(button).not.toBeDisabled());
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: "Não foi possível enviar a recuperação", variant: "destructive" }));
+  });
+
+  it("preserva a edicao e permite retry depois de falha sem duplicar salvamento", async () => {
+    let rejectUpdate!: (reason: Error) => void;
+    vi.mocked(userProfilesService.update).mockImplementationOnce(() => new Promise((_, reject) => { rejectUpdate = reject; }));
+    render(<AdminUsersPage />);
+    fireEvent.click(await screen.findByTitle("Editar"));
+    fireEvent.change(screen.getByLabelText("Nome completo *"), { target: { value: "Nome corrigido" } });
+    const save = screen.getByRole("button", { name: "Salvar" });
+    fireEvent.click(save);
+    fireEvent.click(save);
+    expect(userProfilesService.update).toHaveBeenCalledTimes(1);
+    expect(save).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancelar" })).toBeDisabled();
+    rejectUpdate(new Error("Falha de transporte"));
+    await waitFor(() => expect(save).not.toBeDisabled());
+    expect(screen.getByLabelText("Nome completo *")).toHaveValue("Nome corrigido");
+    vi.mocked(userProfilesService.update).mockResolvedValueOnce(undefined as never);
+    fireEvent.click(save);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(userProfilesService.update).toHaveBeenCalledTimes(2);
+  });
+
+  it("mantem bloqueio independente para operacoes em dois usuarios", async () => {
+    vi.mocked(userProfilesService.getAll).mockResolvedValue([user, { ...user, id: "user-2", full_name: "Segundo QA" }]);
+    const finish = new Map<string, () => void>();
+    vi.mocked(authAdminService.sendRecovery).mockImplementation((id) => new Promise<void>((resolve) => { finish.set(id, resolve); }));
+    render(<AdminUsersPage />);
+    const [first, second] = await screen.findAllByTitle("Enviar recuperação de senha");
+    fireEvent.click(first);
+    fireEvent.click(second);
+    expect(first).toBeDisabled();
+    expect(second).toBeDisabled();
+    finish.get("user-2")!();
+    await waitFor(() => expect(second).not.toBeDisabled());
+    expect(first).toBeDisabled();
+    fireEvent.click(first);
+    expect(authAdminService.sendRecovery).toHaveBeenCalledTimes(2);
+    finish.get(user.id)!();
+    await waitFor(() => expect(first).not.toBeDisabled());
   });
 });

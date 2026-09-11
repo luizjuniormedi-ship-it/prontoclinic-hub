@@ -98,7 +98,8 @@ jobs:
             check \
             supabase/functions/auth-admin/index.ts \
             supabase/functions/dicom-bridge/index.ts \
-            supabase/functions/telemedicina-daily/index.ts
+            supabase/functions/telemedicina-daily/index.ts \
+            supabase/functions/pre-cadastro/index.ts
       - name: Test Edge Function security helpers
         run: |
           docker run --rm \
@@ -116,7 +117,8 @@ jobs:
           if grep -R '"Access-Control-Allow-Origin": "\*"' \
             supabase/functions/auth-admin \
             supabase/functions/dicom-bridge \
-            supabase/functions/telemedicina-daily; then
+            supabase/functions/telemedicina-daily \
+            supabase/functions/pre-cadastro; then
             echo "::error::CORS wildcard encontrado nas Edge Functions"
             exit 1
           fi
@@ -131,6 +133,7 @@ jobs:
             supabase/functions/auth-admin \
             supabase/functions/dicom-bridge \
             supabase/functions/telemedicina-daily \
+            supabase/functions/pre-cadastro \
             deploy/edge-runtime
           (cd release && sha256sum "edge-${COMMIT_SHA}.tgz" > "edge-${COMMIT_SHA}.tgz.sha256")
           cp supabase/migrations/20260802183000_local_auth_admin_contract.sql \
@@ -141,6 +144,9 @@ jobs:
             deploy/auth-service/ecosystem.config.cjs \
             release/bootstrap-root/deploy/auth-service/
           cp deploy/edge-runtime/deploy-functions.sh \
+            deploy/edge-runtime/install-nginx-routes.sh \
+            deploy/edge-runtime/nginx-functions.conf \
+            deploy/edge-runtime/nginx-http.conf \
             release/bootstrap-root/deploy/edge-runtime/
       - uses: actions/upload-artifact@v4
         with:
@@ -183,6 +189,9 @@ jobs:
           test -s "release/migration-${COMMIT_SHA}.sql"
           test -s release/bootstrap-root/deploy/auth-service/deploy-atomic.sh
           test -s release/bootstrap-root/deploy/edge-runtime/deploy-functions.sh
+          test -s release/bootstrap-root/deploy/edge-runtime/install-nginx-routes.sh
+          test -s release/bootstrap-root/deploy/edge-runtime/nginx-functions.conf
+          test -s release/bootstrap-root/deploy/edge-runtime/nginx-http.conf
 
       - name: Revalidate current main and CI after production approval
         env:
@@ -308,7 +317,7 @@ jobs:
             release/bootstrap-root "root@${VPS_HOST}:$bootstrap_path"
           ssh -i ~/.ssh/id_ed25519_root -o IdentitiesOnly=yes \
             "root@${VPS_HOST}" \
-            "bash '$bootstrap_path/deploy/auth-service/install-coordinator.sh' '$bootstrap_path' /opt/prontomedic/backend && test \"\$(sha256sum /usr/local/sbin/prontomedic-auth-deploy | cut -d ' ' -f1)\" = '$auth_helper_sha'"
+            "bash '$bootstrap_path/deploy/auth-service/install-coordinator.sh' '$bootstrap_path' /opt/prontomedic/backend && bash '$bootstrap_path/deploy/edge-runtime/install-nginx-routes.sh' '$bootstrap_path/deploy/edge-runtime' && test \"\$(sha256sum /usr/local/sbin/prontomedic-auth-deploy | cut -d ' ' -f1)\" = '$auth_helper_sha'"
 
       - name: Audit privileged deployment contracts
         env:
@@ -344,7 +353,9 @@ jobs:
             "sudo /usr/local/sbin/prontomedic-auth-deploy deploy '$COMMIT_SHA' '/tmp/auth-${COMMIT_SHA}.tgz' '/tmp/auth-${COMMIT_SHA}.tgz.sha256' '/tmp/edge-${COMMIT_SHA}.tgz' '/tmp/edge-${COMMIT_SHA}.tgz.sha256' '/tmp/migration-${COMMIT_SHA}.sql'"
 
           smoke_failed=0
-          for function_name in auth-admin dicom-bridge telemedicina-daily; do
+          ssh "${VPS_USER}@${VPS_HOST}" \
+            "sudo /usr/local/sbin/prontomedic-edge-deploy --smoke '${PUBLIC_URL}/functions/v1'" || smoke_failed=1
+          for function_name in auth-admin dicom-bridge telemedicina-daily pre-cadastro; do
             status="$(curl -sS --connect-timeout 5 --max-time 15 \
               -D /tmp/headers -o /tmp/response -w '%{http_code}' \
               -X OPTIONS \

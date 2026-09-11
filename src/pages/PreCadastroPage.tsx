@@ -92,7 +92,7 @@ function formatCEP(value: string): string {
 export default function PreCadastroPage() {
   const [data, setData] = useState<PreCadastroFormData>(initialData);
   const [errors, setErrors] = useState<PreCadastroFormErrors>({});
-  const [success, setSuccess] = useState<{ email: string; nome: string; link: string } | null>(null);
+  const [success, setSuccess] = useState<{ email: string } | null>(null);
   const [termoOpen, setTermoOpen] = useState(false);
   const [step, setStep] = useState(1);
   const [cepLoading, setCepLoading] = useState(false);
@@ -154,15 +154,13 @@ export default function PreCadastroPage() {
 
   const mutation = useMutation({
     mutationFn: async (formData: PreCadastroFormData) => {
-      return preCadastroService.criar(formData, { sendEmail: true });
+      return preCadastroService.criar(formData);
     },
-    onSuccess: (result) => {
+    onSuccess: () => {
       setSuccess({
         email: data.email,
-        nome: data.full_name,
-        link: result.linkConfirmacao,
       });
-      toast({ title: "Pré-cadastro enviado! Verifique seu e-mail." });
+      toast({ title: "Solicitação de pré-cadastro recebida." });
     },
     onError: (err: Error) => {
       toast({ title: friendlyError(err, "Enviar pré-cadastro"), variant: "destructive" });
@@ -187,10 +185,10 @@ export default function PreCadastroPage() {
             <div className="mx-auto rounded-full bg-success/10 p-4 w-fit">
               <CheckCircle2 className="h-10 w-10 text-success" />
             </div>
-            <h1 className="text-2xl font-bold tracking-tight">Pré-cadastro enviado!</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Pré-cadastro registrado!</h1>
             <p className="text-sm text-muted-foreground">
-              Enviamos um link de confirmação para <strong>{success.email}</strong>.
-              Verifique sua caixa de entrada (e a pasta de spam) — o link é válido por <strong>72 horas</strong>.
+              Se o endereço <strong>{success.email}</strong> estiver apto, você receberá um link de confirmação.
+              Verifique sua caixa de entrada e a pasta de spam.
             </p>
             <div className="rounded-md bg-muted/50 p-3 text-left text-xs space-y-1">
               <p className="font-medium">Próximos passos:</p>

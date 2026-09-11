@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ErrorState, LoadingState } from "@/components/StateViews";
 import { PageHeader } from "@/components/PageHeader";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -29,21 +30,36 @@ export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserProfileWithEmail[]>([]);
   const [profiles, setProfiles] = useState<PermissionProfile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterProfile, setFilterProfile] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const saveInFlight = useRef(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviting, setInviting] = useState(false);
-  const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+  const [pendingUsers, setPendingUsers] = useState<Set<string>>(() => new Set());
+  const pendingUsersRef = useRef(new Set<string>());
+  const beginUserOperation = (id: string) => {
+    if (pendingUsersRef.current.has(id)) return false;
+    pendingUsersRef.current.add(id);
+    setPendingUsers(new Set(pendingUsersRef.current));
+    return true;
+  };
+  const endUserOperation = (id: string) => {
+    pendingUsersRef.current.delete(id);
+    setPendingUsers(new Set(pendingUsersRef.current));
+  };
   const [editingUser, setEditingUser] = useState<UserProfileWithEmail | null>(null);
   const [form, setForm] = useState<{ full_name: string; phone: string; cpf: string }>({
     full_name: "", phone: "", cpf: "",
   });
   const [inviteForm, setInviteForm] = useState({ email: "", fullName: "", profileId: "" });
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const [u, p] = await Promise.all([
         userProfilesService.getAll(),
@@ -51,18 +67,16 @@ export default function AdminUsersPage() {
       ]);
       setUsers(u);
       setProfiles(p);
-    } catch (err) {
-      toast({
-        title: "Erro ao carregar usuários",
-        description: err instanceof Error ? err.message : String(err),
-        variant: "destructive",
-      });
+    } catch {
+      setUsers([]);
+      setProfiles([]);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [load]);
 
   const filtered = users.filter((u) => {
     const q = search.toLowerCase();
@@ -83,11 +97,13 @@ export default function AdminUsersPage() {
   };
 
   const handleSave = async () => {
-    if (!editingUser) return;
+    if (!editingUser || saveInFlight.current) return;
     if (!form.full_name.trim()) {
       toast({ title: "Nome obrigatório", variant: "destructive" });
       return;
     }
+    saveInFlight.current = true;
+    setSaving(true);
     try {
       await userProfilesService.update(editingUser.id, {
         full_name: form.full_name,
@@ -103,6 +119,9 @@ export default function AdminUsersPage() {
         description: err instanceof Error ? err.message : String(err),
         variant: "destructive",
       });
+    } finally {
+      saveInFlight.current = false;
+      setSaving(false);
     }
   };
 
@@ -117,7 +136,7 @@ export default function AdminUsersPage() {
       destructive: isActive,
     });
     if (!accepted) return;
-    setPendingUserId(u.id);
+    if (!beginUserOperation(u.id)) return;
     try {
       const context = readStoredAccessContext<AccessContextOption>();
       if (!context?.companyId) throw new Error("Contexto empresarial ativo não encontrado.");
@@ -131,11 +150,12 @@ export default function AdminUsersPage() {
         variant: "destructive",
       });
     } finally {
-      setPendingUserId(null);
+      endUserOperation(u.id);
     }
   };
 
   const sendRecovery = async (u: UserProfileWithEmail) => {
+    if (!beginUserOperation(u.id)) return;
     try {
       const context = readStoredAccessContext<AccessContextOption>();
       if (!context?.companyId) throw new Error("Contexto empresarial ativo não encontrado.");
@@ -154,6 +174,8 @@ export default function AdminUsersPage() {
         description: err instanceof Error ? err.message : String(err),
         variant: "destructive",
       });
+    } finally {
+      endUserOperation(u.id);
     }
   };
 
@@ -171,7 +193,7 @@ export default function AdminUsersPage() {
         fullName: inviteForm.fullName.trim(),
         companyId: context.companyId,
         roleId: profile.databaseId,
-        primaryUnitId: context.unitId,
+        primaryUnitId: context.unitId ?? null,
         redirectTo: `${window.location.origin}/reset-password`,
       });
       toast({ title: "Convite enviado" });
@@ -197,7 +219,7 @@ export default function AdminUsersPage() {
       destructive: true,
     });
     if (!accepted) return;
-    setPendingUserId(u.id);
+    if (!beginUserOperation(u.id)) return;
     try {
       const context = readStoredAccessContext<AccessContextOption>();
       if (!context?.companyId) throw new Error("Contexto empresarial ativo não encontrado.");
@@ -210,11 +232,12 @@ export default function AdminUsersPage() {
         variant: "destructive",
       });
     } finally {
-      setPendingUserId(null);
+      endUserOperation(u.id);
     }
   };
 
-  if (loading) return <div className="p-6 text-muted-foreground">Carregando...</div>;
+  if (loading) return <LoadingState />;
+  if (loadError) return <ErrorState message="Não foi possível carregar os usuários." onRetry={() => void load()} />;
 
   return (
     <div className="space-y-6">
@@ -281,9 +304,9 @@ export default function AdminUsersPage() {
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
                     <Button variant="ghost" size="icon" onClick={() => openEdit(u)} title="Editar"><Edit className="h-4 w-4" /></Button>
-                    <Button disabled={pendingUserId === u.id} variant="ghost" size="icon" onClick={() => void sendRecovery(u)} title="Enviar recuperação de senha"><KeyRound className="h-4 w-4" /></Button>
-                    <Button disabled={pendingUserId === u.id} variant="ghost" size="icon" onClick={() => void logoutGlobal(u)} title="Encerrar todas as sessões"><LogOut className="h-4 w-4" /></Button>
-                    <Button disabled={pendingUserId === u.id} variant="ghost" size="icon" onClick={() => void toggleStatus(u)} title={u.membership_status === "active" ? "Inativar" : "Ativar"}>
+                    <Button disabled={pendingUsers.has(u.id)} variant="ghost" size="icon" onClick={() => void sendRecovery(u)} title="Enviar recuperação de senha"><KeyRound className="h-4 w-4" /></Button>
+                    <Button disabled={pendingUsers.has(u.id)} variant="ghost" size="icon" onClick={() => void logoutGlobal(u)} title="Encerrar todas as sessões"><LogOut className="h-4 w-4" /></Button>
+                    <Button disabled={pendingUsers.has(u.id)} variant="ghost" size="icon" onClick={() => void toggleStatus(u)} title={u.membership_status === "active" ? "Inativar" : "Ativar"}>
                       {u.membership_status === "active" ? <UserX className="h-4 w-4 text-destructive" /> : <UserCheck className="h-4 w-4 text-green-600" />}
                     </Button>
                   </div>
@@ -294,29 +317,29 @@ export default function AdminUsersPage() {
         </Table>
       </div>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md">
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!saveInFlight.current) setDialogOpen(open); }}>
+        <DialogContent className="max-w-md" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Editar Usuário</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label>Nome completo *</Label>
-              <Input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
+              <Label htmlFor="edit-user-name">Nome completo *</Label>
+              <Input id="edit-user-name" disabled={saving} value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
             </div>
             <div className="space-y-1.5">
-              <Label>CPF</Label>
-              <Input value={form.cpf} onChange={(e) => setForm({ ...form, cpf: e.target.value })} />
+              <Label htmlFor="edit-user-cpf">CPF</Label>
+              <Input id="edit-user-cpf" disabled={saving} value={form.cpf} onChange={(e) => setForm({ ...form, cpf: e.target.value })} />
             </div>
             <div className="space-y-1.5">
-              <Label>Telefone</Label>
-              <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              <Label htmlFor="edit-user-phone">Telefone</Label>
+              <Input id="edit-user-phone" disabled={saving} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
             </div>
 
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={() => void handleSave()}>Salvar</Button>
+            <Button disabled={saving} variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
+            <Button disabled={saving} onClick={() => void handleSave()}>{saving ? "Salvando..." : "Salvar"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

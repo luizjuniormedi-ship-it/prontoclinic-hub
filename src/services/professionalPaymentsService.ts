@@ -54,15 +54,17 @@ export interface ProfessionalPaymentWithDetails extends ProfessionalPayment {
   unitName?: string;
 }
 
+interface ProfessionalPaymentFilters {
+  cd_professional?: number;
+  cd_unit?: number;
+  status?: ProfessionalPaymentStatus;
+  dataInicio?: string;
+  dataFim?: string;
+  limit?: number;
+}
+
 export const professionalPaymentsService = {
-  async getAll(filters?: {
-    cd_professional?: number;
-    cd_unit?: number;
-    status?: ProfessionalPaymentStatus;
-    dataInicio?: string;
-    dataFim?: string;
-    limit?: number;
-  }): Promise<ProfessionalPayment[]> {
+  async getAll(filters?: ProfessionalPaymentFilters): Promise<ProfessionalPayment[]> {
     let q = supabase
       .from("professional_payments")
       .select("*")
@@ -79,7 +81,7 @@ export const professionalPaymentsService = {
     return (data ?? []) as ProfessionalPayment[];
   },
 
-  async getAllWithDetails(filters?: Parameters<typeof professionalPaymentsService.getAll>[0]): Promise<ProfessionalPaymentWithDetails[]> {
+  async getAllWithDetails(filters?: ProfessionalPaymentFilters): Promise<ProfessionalPaymentWithDetails[]> {
     const payments = await professionalPaymentsService.getAll(filters);
     // Carregar profissionais e unidades em paralelo
     const [profsRes, unitsRes] = await Promise.all([

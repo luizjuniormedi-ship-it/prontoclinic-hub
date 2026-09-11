@@ -874,4 +874,69 @@ BEGIN
 END;
 $fixture_contract$;
 
+-- Independent tenant for HTTP isolation tests. Reuse A's synthetic auth/MFA
+-- and permission contracts without changing any existing A rows.
+INSERT INTO public.companies (id, name, cnpj, lg_ativo)
+VALUES ('eeeeeeee-1000-4000-8000-000000000002', 'Empresa E2E Isolamento B', '99999999000272', TRUE)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, lg_ativo = TRUE;
+
+INSERT INTO public.units (id, company_id, cd_codigo, ds_nome, ds_uf, cnes, lg_principal, lg_ativo)
+VALUES (92001, 'eeeeeeee-1000-4000-8000-000000000002', 'E2E-TENANT-B', 'Unidade E2E Isolamento B', 'BA', '9999997', TRUE, TRUE)
+ON CONFLICT (id) DO UPDATE SET company_id = EXCLUDED.company_id,
+  cd_codigo = EXCLUDED.cd_codigo, ds_nome = EXCLUDED.ds_nome, lg_ativo = TRUE;
+
+INSERT INTO auth.users (id, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+SELECT 'eeeeeeee-0000-4000-8000-000000000101', 'admin.company-b@prontomedic.test',
+  encrypted_password, now(), raw_app_meta_data,
+  jsonb_build_object('full_name', 'Admin E2E Empresa B', 'role', 'admin', 'e2e', true), now(), now()
+FROM auth.users WHERE id = 'eeeeeeee-0000-4000-8000-000000000001'
+ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email,
+  encrypted_password = EXCLUDED.encrypted_password, email_confirmed_at = EXCLUDED.email_confirmed_at,
+  raw_app_meta_data = EXCLUDED.raw_app_meta_data, raw_user_meta_data = EXCLUDED.raw_user_meta_data, updated_at = now();
+
+INSERT INTO public.user_profiles (id, user_id, full_name, email, role_name, role_id,
+  company_id, primary_unit_id, lg_ativo, must_change_password)
+SELECT 'eeeeeeee-0000-4000-8000-000000000101', 'eeeeeeee-0000-4000-8000-000000000101',
+  'Admin E2E Empresa B', 'admin.company-b@prontomedic.test', 'admin', id,
+  'eeeeeeee-1000-4000-8000-000000000002', 92001, TRUE, FALSE
+FROM public.roles WHERE name = 'admin'
+ON CONFLICT (id) DO UPDATE SET user_id = EXCLUDED.user_id, company_id = EXCLUDED.company_id,
+  primary_unit_id = EXCLUDED.primary_unit_id, role_name = EXCLUDED.role_name,
+  role_id = EXCLUDED.role_id, lg_ativo = TRUE, must_change_password = FALSE;
+
+INSERT INTO public.auth_mfa_factors (id, user_id, factor_type, friendly_name, secret_ciphertext, status, created_at, updated_at)
+SELECT md5('eeeeeeee-0000-4000-8000-000000000101:e2e-totp')::uuid,
+  'eeeeeeee-0000-4000-8000-000000000101', factor_type, friendly_name, secret_ciphertext, 'verified', now(), now()
+FROM public.auth_mfa_factors
+WHERE user_id = 'eeeeeeee-0000-4000-8000-000000000001' AND friendly_name = 'ProntoMedic E2E'
+ON CONFLICT (user_id, friendly_name) DO UPDATE SET secret_ciphertext = EXCLUDED.secret_ciphertext,
+  status = 'verified', updated_at = now();
+
+INSERT INTO public.memberships (id, user_id, company_id, status)
+VALUES (md5('eeeeeeee-0000-4000-8000-000000000101:membership:eeeeeeee-1000-4000-8000-000000000002')::uuid,
+  'eeeeeeee-0000-4000-8000-000000000101', 'eeeeeeee-1000-4000-8000-000000000002', 'active')
+ON CONFLICT (user_id, company_id) DO UPDATE SET status = 'active';
+
+INSERT INTO public.membership_roles (membership_id, role_id)
+SELECT m.id, r.id FROM public.memberships m CROSS JOIN public.roles r
+WHERE m.user_id = 'eeeeeeee-0000-4000-8000-000000000101'
+  AND m.company_id = 'eeeeeeee-1000-4000-8000-000000000002' AND r.name = 'admin'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO public.membership_units (membership_id, unit_id)
+SELECT id, 92001 FROM public.memberships
+WHERE user_id = 'eeeeeeee-0000-4000-8000-000000000101'
+  AND company_id = 'eeeeeeee-1000-4000-8000-000000000002'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO public.role_permissions (company_id, role_id, module, can_view, can_create, can_edit, can_delete, can_export)
+SELECT 'eeeeeeee-1000-4000-8000-000000000002', p.role_id, p.module,
+  p.can_view, p.can_create, p.can_edit, p.can_delete, p.can_export
+FROM public.role_permissions p JOIN public.roles r ON r.id = p.role_id
+WHERE p.company_id = 'eeeeeeee-1000-4000-8000-000000000001' AND r.name = 'admin'
+ON CONFLICT (company_id, role_id, module) DO UPDATE SET can_view = EXCLUDED.can_view,
+  can_create = EXCLUDED.can_create, can_edit = EXCLUDED.can_edit,
+  can_delete = EXCLUDED.can_delete, can_export = EXCLUDED.can_export;
+
 COMMIT;

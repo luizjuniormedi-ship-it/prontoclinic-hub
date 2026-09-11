@@ -124,13 +124,14 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
   useEffect(() => {
     let mounted = true;
     const element = elementRef.current;
-    const cs = window.cornerstone;
-    const cst = window.cornerstoneTools;
+    let enabledCornerstone: CornerstoneLike | undefined;
     (async () => {
       try {
         setStatus("loading");
         const ok = await loadCornerstone();
-        if (!ok || !window.cornerstone) {
+        const cs = window.cornerstone;
+        const cst = window.cornerstoneTools;
+        if (!ok || !cs) {
           // Fallback: usar WADO-URI JPEG
           setStatus("fallback");
           return;
@@ -138,6 +139,7 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
         if (!mounted) return;
         if (!element) return;
         cs.enable(element);
+        enabledCornerstone = cs;
         if (cst) cst.init();
 
         const imageId = buildImageId(displayImage.bl_dicom_url);
@@ -164,7 +166,7 @@ export function DicomViewer({ exam, image, onSnapshot, lgpdConsentPush = false }
     return () => {
       mounted = false;
       try {
-        if (element && cs) cs.disable(element);
+        if (element && enabledCornerstone) enabledCornerstone.disable(element);
       } catch { /* noop */ }
     };
   }, [displayImage.id, displayImage.bl_dicom_url, exam.id]);

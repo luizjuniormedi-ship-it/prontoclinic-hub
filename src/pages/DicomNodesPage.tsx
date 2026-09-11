@@ -38,7 +38,12 @@ export default function DicomNodesPage() {
   const save = async () => {
     if (!form.name || !form.aetitle) { toast({ title: "Nome e AE Title são obrigatórios", variant: "destructive" }); return; }
     try {
-      const payload = { ...form, port: form.port ? parseInt(form.port, 10) : null };
+      const parsedPort = form.port ? Number(form.port) : 104;
+      if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
+        toast({ title: "Porta DICOM inválida", variant: "destructive" });
+        return;
+      }
+      const payload = { ...form, port: parsedPort };
       if (editing) await dicomNodesService.update(editing.id, payload);
       else await dicomNodesService.create(payload);
       toast({ title: editing ? "Nó atualizado" : "Nó criado" });
